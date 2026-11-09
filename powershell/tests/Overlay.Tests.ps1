@@ -50,3 +50,26 @@ Describe 'Get-CachedImage' {
         $a.Width | Should -Be 64; [object]::ReferenceEquals($a, $b) | Should -BeTrue
     }
 }
+Describe 'New-Overlay / Select-Layer' {
+    BeforeAll { $l = New-Fixture; $o = New-Overlay $l }
+    It 'creates one picture box and label per key and sizes the form' {
+        $o.Buttons.Count | Should -Be 3; $o.Labels.Count | Should -Be 3
+        $o.Form.ClientSize.Width | Should -Be 192; $o.Form.ClientSize.Height | Should -Be 81
+        $o.Form.TransparencyKey.ToArgb() | Should -Be ([System.Drawing.Color]::FromArgb(1,1,1).ToArgb())
+    }
+    It 'starts with nothing selected' { $o.Selected | Should -Be -1 }
+    It 'refuses blank and out-of-range layers' { Select-Layer $o 1 | Should -BeFalse; Select-Layer $o 7 | Should -BeFalse; $o.Selected | Should -Be -1 }
+    It 'selects a layer and renders its state' {
+        Select-Layer $o 0 | Should -BeTrue
+        $o.Selected | Should -Be 0
+        $o.Labels[0].Text | Should -Be 'M0'; $o.Labels[1].Text | Should -Be ''
+        $o.Labels[1].BackColor.ToArgb() | Should -Be $o.Form.TransparencyKey.ToArgb()
+        [object]::ReferenceEquals($o.Buttons[0].Image, (Get-CachedImage (P 'chrome\selected_macro.png'))) | Should -BeTrue
+        $o.ToolTip.GetToolTip($o.Labels[0]) | Should -Be "M0`nd0"
+    }
+    It 'shows the Fn key when ShowFn is set' {
+        $l2 = Layout (Key 'ScrollLock' 2 1 2 1) @((Key 'F13' 1 1)) @((Layer 'A' (Icon 'chrome'))) 1 ' ' $true $true
+        $o2 = New-Overlay $l2
+        $o2.FnButton | Should -Not -BeNullOrEmpty; $o2.FnLabel.Text | Should -Be ' '; $o2.Form.ClientSize.Height | Should -Be 164
+    }
+}

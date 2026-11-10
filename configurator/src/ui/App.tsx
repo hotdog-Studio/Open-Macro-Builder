@@ -5,6 +5,7 @@ import { Header } from './Header'
 import { LayersTab } from './LayersTab'
 import { MacrosTab } from './MacrosTab'
 import { OpenScreen } from './OpenScreen'
+import { SaveFlow } from './SaveFlow'
 import { ShapeTab } from './ShapeTab'
 
 function Editor() {
@@ -13,6 +14,7 @@ function Editor() {
     <div className="flex h-full flex-col">
       <Header />
       <Banner />
+      <SaveFlow />
       <div className="flex min-h-0 flex-1">
         {state.tab === 'shape' && <ShapeTab />}
         {state.tab === 'layers' && <LayersTab />}

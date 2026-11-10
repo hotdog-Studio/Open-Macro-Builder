@@ -50,6 +50,24 @@ export interface PickLanguageState {
   session: Session
 }
 
+/** The dialog of the save flow (SaveFlow.tsx) that is open, if any. */
+export type SaveDialog =
+  /** checkWorkspace found errors; nothing was written. */
+  | { kind: 'blocked'; errors: string[] }
+  /** Saved; the warnings are about a language the user does not run. */
+  | { kind: 'saved'; warnings: string[] }
+  /** config.json changed on disk since it was loaded; nothing was written. */
+  | { kind: 'conflict' }
+  /** Overwrite anyway was chosen and waits for its confirmation. */
+  | { kind: 'confirm-overwrite' }
+
+/** The config file on disk is not the version the app holds. */
+export interface OutsideChange {
+  /** The version seen on disk (null: the file is gone), so a dismissed banner returns only for a newer change. */
+  version: string | null
+  dismissed: boolean
+}
+
 /** The editor as the reducer keeps it: no derived fields. */
 export interface EditCore extends Session {
   screen: 'edit'
@@ -58,6 +76,8 @@ export interface EditCore extends Session {
   selectedKey: KeyId | null
   selectedLayer: string | null
   banner: Banner | null
+  saveDialog: SaveDialog | null
+  outsideChange: OutsideChange | null
 }
 
 /** The editor as components see it. */
@@ -84,6 +104,14 @@ export type Action =
   | { type: 'tab'; tab: Tab }
   | { type: 'banner'; banner: Banner | null }
   | { type: 'settings'; settings: Settings }
+  /** A save wrote `configFile`; `saved` is the workspace it holds. */
+  | { type: 'saved'; configFile: TextFile; saved: Workspace }
+  /** Reload from disk: a fresh session, edits dropped; settings and tab stay. */
+  | { type: 'reloaded'; session: Session }
+  | { type: 'save-dialog'; dialog: SaveDialog | null }
+  /** A recheck of the config file: `changed` when the disk holds another version than the app. */
+  | { type: 'disk'; changed: boolean; version: string | null }
+  | { type: 'dismiss-disk' }
 
 export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
 
@@ -97,7 +125,16 @@ function loadedState(session: Session, settings: Settings): EditCore {
     selectedKey: null,
     selectedLayer: null,
     banner: notices.length > 0 ? { text: notices.join('\n'), kind: 'info' } : null,
+    saveDialog: null,
+    outsideChange: null,
   }
+}
+
+function diskReducer(state: EditCore, changed: boolean, version: string | null): EditCore {
+  if (!changed) return state.outsideChange ? { ...state, outsideChange: null } : state
+  // The same outside version again (another focus, another watch event): the banner stays as it is.
+  if (state.outsideChange?.version === version) return state
+  return { ...state, outsideChange: { version, dismissed: false } }
 }
 
 /** Actions that only make sense while editing. */
@@ -117,6 +154,17 @@ function editReducer(state: EditCore, action: Action): EditCore {
       return { ...state, banner: action.banner }
     case 'settings':
       return { ...state, settings: action.settings }
+    case 'saved':
+      // The disk now holds what the app wrote, so an outside-change banner is out of date.
+      return { ...state, configFile: action.configFile, saved: action.saved, outsideChange: null }
+    case 'reloaded':
+      return { ...loadedState(action.session, state.settings), tab: state.tab }
+    case 'save-dialog':
+      return { ...state, saveDialog: action.dialog }
+    case 'disk':
+      return diskReducer(state, action.changed, action.version)
+    case 'dismiss-disk':
+      return state.outsideChange ? { ...state, outsideChange: { ...state.outsideChange, dismissed: true } } : state
     default:
       return state
   }
@@ -159,9 +207,11 @@ export function AppProvider({ platform, children }: { platform: Platform; childr
     () => (stored.screen === 'edit' ? { ...stored, dirty: wsText !== savedText } : stored),
     [stored, wsText, savedText],
   )
-  const { actions, sync } = useMemo(() => createActions(platform, dispatch), [platform])
+  const { actions, sync, dispose } = useMemo(() => createActions(platform, dispatch), [platform])
   // Actions run from clicks and after awaits; they read the last committed state.
   useEffect(() => sync(state), [sync, state])
+  // Stops watching config.json when the app goes away.
+  useEffect(() => dispose, [dispose])
   const value = useMemo(() => ({ state, dispatch, actions }), [state, actions])
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }

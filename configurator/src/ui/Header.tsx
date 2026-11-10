@@ -57,9 +57,12 @@ export function Header() {
       </fieldset>
       <button
         type="button"
-        disabled
-        className="rounded-md bg-sky-600 px-3 py-1.5 font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={!state.dirty}
+        title={state.dirty ? 'You have unsaved changes' : undefined}
+        className="flex items-center gap-1.5 rounded-md bg-sky-600 px-3 py-1.5 font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={() => void actions.save()}
       >
+        {state.dirty && <span data-dot aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-300" />}
         Save config.json
       </button>
     </header>

@@ -1,11 +1,23 @@
 import { ConfigError, parseConfig } from '../core/config/parse'
-import { EncodingError, readTextFile } from '../core/folder/textFile'
+import { checkWorkspace, type CheckContext } from '../core/config/validate'
+import { writeConfig } from '../core/config/write'
+import { hashBytes } from '../core/folder/hash'
+import {
+  ConflictError,
+  currentVersion,
+  EncodingError,
+  readTextFile,
+  writeTextFile,
+  type TextFile,
+} from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import { commandCatalog, scanCommands, type LangId } from '../core/languages'
+import { commandCatalog, definedNames, LANG_IDS, scanCommands, type LangId } from '../core/languages'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
-import type { Action, AppState, Session } from './store'
+import type { Action, AppState, EditState, SaveDialog, Session } from './store'
+
+export type SaveResult = 'saved' | 'blocked' | 'conflict'
 
 export interface AppActions {
   /** On start: reopens the remembered folder, or offers Reopen <name>, or says it is gone. */
@@ -24,6 +36,17 @@ export interface AppActions {
   setLanguages(languages: LangId[]): Promise<void>
   /** Back to the open screen without writing anything. */
   closeFolder(): void
+  /**
+   * Save config.json: checkWorkspace, then <configPath>.bak, then the file itself.
+   * 'blocked' when errors (or a failed write) stopped it, 'conflict' when the file
+   * changed on disk since it was loaded; a blocked or conflicting save writes
+   * nothing. `force` is Overwrite anyway, chosen by the user after a conflict.
+   */
+  save(opts?: { force?: boolean }): Promise<SaveResult>
+  /** Drops the edits and reads config.json, the commands and the icons again. */
+  reloadFromDisk(): Promise<void>
+  /** Shows the changed-on-disk banner when the file is not the version the app holds. */
+  recheck(): Promise<void>
 }
 
 const PERSONAL_CONFIG = 'local/config.json'
@@ -34,6 +57,15 @@ export function openError(e: unknown): string {
   if (e instanceof ConfigError || e instanceof EncodingError) return e.message
   return `The folder could not be opened: ${e instanceof Error ? e.message : String(e)}`
 }
+
+/** What checkWorkspace needs to know about the folder and the languages the user runs. */
+function checkContext(state: EditState): CheckContext {
+  const defined = {} as Record<LangId, Set<string>>
+  for (const lang of LANG_IDS) defined[lang] = definedNames(state.commandFiles, lang)
+  return { iconSets: new Set(state.iconSets), defined, languages: state.settings.languages }
+}
+
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** Reads the config, the command files and the icon sets of an opened folder. */
 async function readSession(folder: FolderAccess, configPath: string): Promise<Session> {
@@ -52,13 +84,94 @@ async function readSession(folder: FolderAccess, configPath: string): Promise<Se
 export function createActions(
   platform: Platform,
   dispatch: (a: Action) => void,
-): { actions: AppActions; sync: (state: AppState) => void } {
+): { actions: AppActions; sync: (state: AppState) => void; dispose: () => void } {
   let current: AppState = { screen: 'open', message: null, reopen: null }
   const getState = () => current
   /** Each load gets a number; a load that a newer one overtook drops its result. */
   let loads = 0
-  const showOpen = (message: string | null, reopen: string | null = null) =>
+
+  /**
+   * The config file as the app last read or wrote it. Kept here rather than read
+   * from the state, so a recheck straight after a save (before React commits it)
+   * compares with the saved version and never mistakes the app's own write for
+   * an outside change. A new object for every load and save.
+   */
+  let held: { folder: FolderAccess; configFile: TextFile } | null = null
+  /** Stops the platform's watch of the held config file. */
+  let stopWatch: (() => void) | null = null
+  /** The save in progress; rechecks and reloads wait for it. */
+  let saving: Promise<SaveResult> | null = null
+  /** Resolves once the save in progress, if any, has finished, however it ended. */
+  const saveDone = async () => {
+    await saving?.catch(() => undefined)
+  }
+
+  function forget(): void {
+    stopWatch?.()
+    stopWatch = null
+    held = null
+  }
+
+  /** Holds the config file and watches it, replacing the previous watch. */
+  function hold(folder: FolderAccess, configFile: TextFile): void {
+    forget()
+    held = { folder, configFile }
+    stopWatch = platform.watch?.([configFile.path], () => actions.recheck()) ?? null
+  }
+
+  const showOpen = (message: string | null, reopen: string | null = null) => {
+    forget()
     dispatch({ type: 'show-open', message, reopen })
+  }
+
+  /** The editor opens on a loaded session. */
+  function opened(session: Session, settings: Settings): void {
+    dispatch({ type: 'loaded', session, settings })
+    hold(session.folder, session.configFile)
+  }
+
+  const showDialog = (dialog: SaveDialog | null) => dispatch({ type: 'save-dialog', dialog })
+
+  async function trySave(force: boolean): Promise<SaveResult> {
+    const state = getState()
+    const file = held
+    if (state.screen !== 'edit' || !file) return 'blocked'
+    const { ws } = state
+    const { errors, warnings } = checkWorkspace(ws, checkContext(state))
+    if (errors.length > 0) {
+      showDialog({ kind: 'blocked', errors })
+      return 'blocked'
+    }
+    const { folder, configFile } = file
+    let written: TextFile
+    try {
+      // The conflict check comes first: a refused save writes nothing, not even the .bak.
+      const onDisk = await folder.readBytes(configFile.path)
+      const version = onDisk === null ? null : await hashBytes(onDisk)
+      if (!force && version !== configFile.version) throw new ConflictError(configFile.path)
+      // The file being replaced; after Overwrite anyway, that is the outside edit.
+      if (onDisk !== null) await folder.writeBytes(`${configFile.path}.bak`, onDisk)
+      // writeTextFile checks the version again, in case the file changed since the read above.
+      written = await writeTextFile(folder, { ...configFile, text: writeConfig(ws) }, { force })
+    } catch (e) {
+      // The folder was closed or reloaded meanwhile: nobody to tell.
+      if (held !== file) return 'blocked'
+      if (e instanceof ConflictError) {
+        showDialog({ kind: 'conflict' })
+        return 'conflict'
+      }
+      showDialog(null)
+      dispatch({ type: 'banner', banner: { text: `${configFile.path} was not saved: ${messageOf(e)}`, kind: 'error' } })
+      return 'blocked'
+    }
+    // The folder was closed meanwhile: the write happened, but there is no editor to update.
+    if (held !== file) return 'saved'
+    held = { folder, configFile: written }
+    dispatch({ type: 'saved', configFile: written, saved: ws })
+    // Task 17 adds the running macropad here, so the after-save dialog can offer Reload macropad.
+    showDialog(warnings.length > 0 ? { kind: 'saved', warnings } : null)
+    return 'saved'
+  }
 
   /** Settings to use without asking, or null when the user has to choose. */
   async function defaultSettings(): Promise<Settings | null> {
@@ -81,7 +194,7 @@ export function createActions(
       if (settings) await saveSettings(folder, settings)
     }
     if (token !== loads) return
-    if (settings) dispatch({ type: 'loaded', session, settings })
+    if (settings) opened(session, settings)
     else dispatch({ type: 'pick-language', session })
   }
 
@@ -181,7 +294,7 @@ export function createActions(
       const settings: Settings = { languages: [lang] }
       await guarded(token, async () => {
         await saveSettings(state.session.folder, settings)
-        if (token === loads) dispatch({ type: 'loaded', session: state.session, settings })
+        if (token === loads) opened(state.session, settings)
       })
     },
 
@@ -202,12 +315,59 @@ export function createActions(
       loads++
       showOpen(null)
     },
+
+    save({ force = false } = {}) {
+      // A second click while saving gets the same save.
+      saving ??= trySave(force).finally(() => {
+        saving = null
+      })
+      return saving
+    },
+
+    async reloadFromDisk() {
+      await saveDone()
+      const file = held
+      if (getState().screen !== 'edit' || !file) return
+      const token = ++loads
+      try {
+        const session = await readSession(file.folder, file.configFile.path)
+        if (token !== loads || held !== file) return
+        dispatch({ type: 'reloaded', session })
+        hold(session.folder, session.configFile)
+      } catch (e) {
+        // The edits stay: a disk version that cannot be opened is no reason to lose them.
+        if (token !== loads || held !== file) return
+        showDialog(null)
+        dispatch({ type: 'banner', banner: { text: openError(e), kind: 'error' } })
+      }
+    },
+
+    async recheck() {
+      await saveDone()
+      const file = held
+      if (!file) return
+      let version: string | null
+      try {
+        version = await currentVersion(file.folder, file.configFile.path)
+      } catch {
+        // Unreadable for now (a locked file, a lost permission); the next save says why.
+        return
+      }
+      // A save or a load since the read holds a newer version, and that one decides.
+      if (held !== file || saving !== null) return
+      dispatch({ type: 'disk', changed: version !== file.configFile.version, version })
+    },
   }
 
   return {
     actions,
     sync: (state) => {
       current = state
+    },
+    dispose: () => {
+      // A load still running when the app goes away must not start a new watch.
+      loads++
+      forget()
     },
   }
 }

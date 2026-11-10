@@ -14,3 +14,9 @@ coverage/
 
 # Backups left by local config edits
 *.bak
+
+# Configurator build output and dependencies
+node_modules/
+configurator/dist/
+configurator/dist-electron/
+configurator/*.tsbuildinfo

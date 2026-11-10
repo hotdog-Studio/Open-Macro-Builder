@@ -57,25 +57,6 @@ OpenYoutube(Macro)
 }
 
 /**
- * Opens Gmail in Google Chrome.
- * @param {Macro} Macro - The macro object (not used in this function).
- */
-OpenGmail1(Macro)
-{
-    ActivateOrOpenChrome("https://mail.google.com/mail/u/0/#inbox")
-}
-
-
-/**
- * Opens Gmail in Google Chrome.
- * @param {Macro} Macro - The macro object (not used in this function).
- */
-OpenGmail2(Macro)
-{
-    ActivateOrOpenChrome("https://mail.google.com/mail/u/0/#inbox")
-}
-
-/**
  * Opens Google in Google Chrome.
  * @param {Macro} Macro - The macro object (not used in this function).
  */

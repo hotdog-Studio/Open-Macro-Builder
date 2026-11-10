@@ -18,8 +18,6 @@ function ActivateOrOpenChrome {
 function EnsureActiveOrOpenChrome { param($Macro) EnsureActiveOrOpen 'chrome.exe' 'chrome.exe' }
 
 function OpenYoutube { param($Macro) ActivateOrOpenChrome 'https://www.youtube.com/' }
-function OpenGmail1 { param($Macro) ActivateOrOpenChrome 'https://mail.google.com/mail/u/0/#inbox' }
-function OpenGmail2 { param($Macro) ActivateOrOpenChrome 'https://mail.google.com/mail/u/0/#inbox' }
 function OpenGoogle { param($Macro) ActivateOrOpenChrome 'https://www.google.com/' }
 function ChromeOpen { param($Macro) ActivateOrOpenChrome }
 

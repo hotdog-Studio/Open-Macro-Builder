@@ -1,12 +1,29 @@
-# The macropad config lives in macropad_ahk\config.json, shared with the AutoHotkey version
-# (ahk\config.ahk reads the same file). This turns it into the DSL objects from Model.ps1 and,
-# for hotkeys and hotstrings, Hotkeys.ps1.
+# The macropad config is a JSON file shared with the AutoHotkey version (ahk\config.ahk reads the
+# same one). This turns it into the DSL objects from Model.ps1 and, for hotkeys and hotstrings,
+# Hotkeys.ps1.
 #
 # Layers and macro slots that are null are blank; a layer with "disabled": true is skipped
 # entirely (it keeps its definition in the file without taking a key).
 
+# The layout file: $env:OMB_CONFIG when set, else local\config.json (your own layout, ignored by
+# git) when it exists, else the example config.json. $Root is the repository root.
 function Get-MacropadConfigPath {
-    Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'config.json'
+    param([string]$Root = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
+    if ($env:OMB_CONFIG) { return $env:OMB_CONFIG }
+    $local = Join-Path $Root 'local\config.json'
+    if (Test-Path -LiteralPath $local -PathType Leaf) { return $local }
+    Join-Path $Root 'config.json'
+}
+
+# Every command file: powershell\commands, then your own in local\powershell\commands (ignored by
+# git). Dot-source each in the caller's scope: Get-MacropadCommandFiles | ForEach-Object { . $_ }
+function Get-MacropadCommandFiles {
+    param([string]$Root = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
+    foreach ($dir in @((Join-Path $Root 'powershell\commands'), (Join-Path $Root 'local\powershell\commands'))) {
+        if (Test-Path -LiteralPath $dir -PathType Container) {
+            Get-ChildItem -LiteralPath $dir -Recurse -Filter *.ps1 | Sort-Object FullName | ForEach-Object { $_.FullName }
+        }
+    }
 }
 
 function Read-MacropadConfigJson {

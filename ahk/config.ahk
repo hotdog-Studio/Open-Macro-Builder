@@ -15,19 +15,21 @@
 #Include commands\windows.ahk
 
 ; ************************ Custom Commands ************************
-; Add your custom command files here
+; Generic command sets and examples.
 #Include commands\custom\chrome.ahk
-#Include commands\custom\dev.ahk
-#Include commands\custom\programs.ahk
-#Include commands\custom\server.ahk
+#Include commands\custom\ssh.ahk
+#Include commands\custom\examples.ahk
 #Include commands\custom\vscode.ahk
 #Include commands\custom\vsstudio.ahk
 #Include commands\custom\automation.ahk
+; Your own commands: ..\local\ahk\commands.ahk, which git ignores. *i skips it when it is missing.
+#Include *i ..\local\ahk\commands.ahk
 
 
 ; *********************** Macro Definitions ***********************
-; The layout lives in ..\config.json, shared with the PowerShell version (powershell\config.ps1
-; reads the same file). Edit that file, not this one:
+; The layout is a JSON file shared with the PowerShell version (powershell\config.ps1 reads the same
+; one): the OMB_CONFIG environment variable when set, else ..\local\config.json (your own layout,
+; ignored by git) when it exists, else the example ..\config.json. Edit that file, not this one:
 ;   "fn" and "keys"   the function key and macro keys: key name, row, col, optional width/height
 ;   "layers"          one per macro key: title, icon (folder in ..\img) and macros; null skips a
 ;                     layer, "disabled": true keeps a layer in the file without using a key
@@ -38,10 +40,16 @@
 ;   "hotkeys", "hotstrings"  optional extra hotkeys and hotstrings (see RegisterConfigHotkeys)
 
 /**
- * @description The full path of config.json (beside the ahk folder).
+ * @description The full path of the layout file: OMB_CONFIG, else local\config.json when it
+ * exists, else the example config.json (both beside the ahk folder).
  */
 ConfigFile() {
+    override := EnvGet("OMB_CONFIG")
+    if (override != "")
+        return override
     SplitPath(A_ScriptDir, , &parent)
+    if FileExist(parent "\local\config.json")
+        return parent "\local\config.json"
     return parent "\config.json"
 }
 

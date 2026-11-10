@@ -4,6 +4,9 @@
 // every action is a command defined in BOTH versions. Jenkins runs it on the Linux agent.
 //
 // Usage: node scripts/validate-config.mjs [path/to/config.json]
+// Without a path it checks the file both versions would load: OMB_CONFIG, else local/config.json
+// (your own layout, ignored by git) when it exists, else the example config.json. Commands in
+// local/ahk and local/powershell/commands count as defined.
 // Exit 0 when the config is valid; 1 with one line per problem otherwise.
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, resolve, extname } from 'node:path';
@@ -138,19 +141,38 @@ export function commandNames(dir, ext) {
   return names;
 }
 
-/** The checks against this repository: img/ icon sets and both versions' command folders. */
+/** Command names in each folder that exists, merged. */
+function namesIn(dirs, ext) {
+  const names = new Set();
+  for (const dir of dirs) {
+    if (existsSync(dir)) for (const n of commandNames(dir, ext)) names.add(n);
+  }
+  return names;
+}
+
+/**
+ * The checks against this repository: img/ icon sets and both versions' command folders, plus
+ * your own commands in local/ when that folder exists.
+ */
 export function repoChecks(root) {
   return {
     iconExists: (name) => existsSync(join(root, 'img', name, 'layer.png')),
-    ahkActions: commandNames(join(root, 'ahk', 'commands'), '.ahk'),
-    psActions: commandNames(join(root, 'powershell', 'commands'), '.ps1'),
+    ahkActions: namesIn([join(root, 'ahk', 'commands'), join(root, 'local', 'ahk')], '.ahk'),
+    psActions: namesIn([join(root, 'powershell', 'commands'), join(root, 'local', 'powershell', 'commands')], '.ps1'),
   };
+}
+
+/** The config both versions load: OMB_CONFIG, else local/config.json when it exists, else config.json. */
+export function activeConfigPath(root, env = process.env) {
+  if (env.OMB_CONFIG) return env.OMB_CONFIG;
+  const local = join(root, 'local', 'config.json');
+  return existsSync(local) ? local : join(root, 'config.json');
 }
 
 const self = fileURLToPath(import.meta.url);
 if (process.argv[1] && resolve(process.argv[1]) === self) {
   const root = resolve(dirname(self), '..');
-  const file = resolve(process.argv[2] ?? join(root, 'config.json'));
+  const file = resolve(process.argv[2] ?? activeConfigPath(root));
   let config;
   try {
     config = JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, ''));

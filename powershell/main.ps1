@@ -9,7 +9,8 @@ Set-Location $PSScriptRoot
 foreach ($f in 'Native', 'Interop', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'Tray', 'Instance', 'AhkSyntax', 'Send', 'WinTitle', 'WindowOps', 'Hotkeys', 'Screen', 'Sound', 'ConfigJson') {
     . (Join-Path $PSScriptRoot "lib\$f.ps1")
 }
-foreach ($f in Get-ChildItem (Join-Path $PSScriptRoot 'commands') -Recurse -Filter *.ps1) { . $f.FullName }
+# Commands: powershell\commands, then your own in local\powershell\commands (ignored by git).
+foreach ($f in Get-MacropadCommandFiles) { . $f }
 . (Join-Path $PSScriptRoot 'config.ps1')
 
 [void][Macropad.Native]::ShowWindow([Macropad.Native]::GetConsoleWindow(), [Macropad.Native]::SW_HIDE)

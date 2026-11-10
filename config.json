@@ -1,0 +1,178 @@
+{
+  "fn": { "key": "ScrollLock", "row": 4, "col": 1, "width": 2 },
+  "keys": [
+    { "key": "F13", "row": 1, "col": 1 },
+    { "key": "F14", "row": 1, "col": 2 },
+    { "key": "F15", "row": 1, "col": 3 },
+    { "key": "F16", "row": 2, "col": 1 },
+    { "key": "F17", "row": 2, "col": 2 },
+    { "key": "F18", "row": 2, "col": 3 },
+    { "key": "F19", "row": 3, "col": 1 },
+    { "key": "F20", "row": 3, "col": 2 },
+    { "key": "F21", "row": 3, "col": 3 },
+    { "key": "F22", "row": 1, "col": 4, "height": 2 },
+    { "key": "F23", "row": 3, "col": 4, "height": 2 },
+    { "key": "F24", "row": 4, "col": 3 }
+  ],
+  "layers": [
+    {
+      "title": "Media",
+      "icon": "media",
+      "macros": [
+        { "action": "PreviousTrack", "name": "Prev", "description": "Previous track" },
+        { "action": "PlayPause", "name": "Play", "description": "Play or pause" },
+        { "action": "NextTrack", "name": "Next", "description": "Next track" },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        { "action": "VolumeUp", "name": "Vol +", "description": "Volume up" },
+        { "action": "VolumeDown", "name": "Vol -", "description": "Volume down" }
+      ]
+    },
+    {
+      "title": "Programs",
+      "icon": "programs",
+      "macros": [
+        { "action": "OpenFileExplorer", "name": "Explorer", "description": "Open File Explorer" },
+        { "action": "OpenPowershell", "name": "PowerShell", "description": "Open PowerShell" },
+        { "action": "OpenCommandPrompt", "name": "Cmd", "description": "Open Command Prompt" },
+        { "action": "OpenTaskManager", "name": "Task Mgr", "description": "Open Task Manager" },
+        { "action": "OpenSettings", "name": "Settings", "description": "Open Windows Settings" },
+        { "action": "OpenControlPanel", "name": "Control", "description": "Open Control Panel" },
+        { "action": "OpenServices", "name": "Services", "description": "Open Services" },
+        { "action": "OpenCalculator", "name": "Calc", "description": "Open Calculator" },
+        { "action": "ExampleOpenProgram", "name": "Notepad", "description": "Open Notepad, an example of opening a program" },
+        { "action": "SnippingTool", "name": "Snip", "description": "Open the Snipping Tool" },
+        { "action": "PrintScreen", "name": "PrtSc", "description": "Screenshot the screen" },
+        { "action": "PrintActiveWindow", "name": "PrtSc Win", "description": "Screenshot the active window" }
+      ]
+    },
+    {
+      "title": "Chrome",
+      "icon": "chrome",
+      "macros": [
+        { "action": "OpenYoutube", "name": "YouTube", "description": "Open YouTube in Chrome" },
+        { "action": "OpenGoogle", "name": "Google", "description": "Open Google in Chrome" },
+        { "action": "ChromeNewTab", "name": "New Tab", "description": "Open a new tab" },
+        { "action": "ChromePreviousTab", "name": "Prev Tab", "description": "Switch to the previous tab" },
+        { "action": "ChromeCloseTab", "name": "Close Tab", "description": "Close the tab" },
+        { "action": "ChromeNextTab", "name": "Next Tab", "description": "Switch to the next tab" },
+        { "action": "ChromeOpenNewWindow", "name": "Window", "description": "Open a new window" },
+        { "action": "ChromeReopenClosedTab", "name": "Reopen", "description": "Reopen the last closed tab" },
+        { "action": "ChromeOpenIncognitoWindow", "name": "Incognito", "description": "Open an incognito window" },
+        { "action": "ChromeOpenHistory", "name": "History", "description": "Open the history" },
+        { "action": "ChromeOpenDownloads", "name": "Downloads", "description": "Open the downloads" },
+        { "action": "ChromeDevTools", "name": "DevTools", "description": "Open the developer tools" }
+      ]
+    },
+    null,
+    {
+      "title": "VS Code",
+      "icon": "vs_code",
+      "macros": [
+        { "action": "VsCodePreviousEditor", "name": "Prev Ed", "description": "Switch to the previous editor" },
+        { "action": "VsCodeOpenCommandPalette", "name": "Commands", "description": "Open the command palette" },
+        { "action": "VsCodeNextEditor", "name": "Next Ed", "description": "Switch to the next editor" },
+        { "action": "VsCodeToggleSidebar", "name": "Sidebar", "description": "Show or hide the sidebar" },
+        { "action": "VsCodeSearchInFiles", "name": "Search", "description": "Search in files" },
+        { "action": "VsCodeToggleBottomPanel", "name": "Panel", "description": "Show or hide the bottom panel" },
+        { "action": "VsCodeCloseEditor", "name": "Close Ed", "description": "Close the editor" },
+        { "action": "VsCodeOpenSourceControl", "name": "Git", "description": "Open source control" },
+        { "action": "VsCodeReopenClosedEditor", "name": "Reopen", "description": "Reopen the last closed editor" },
+        { "action": "VsCodeOpenTerminal", "name": "Terminal", "description": "Open the terminal" },
+        { "action": "VsCodeSplitPanel", "name": "Split", "description": "Split the editor" },
+        { "action": "VsCodeToggleZenMode", "name": "Zen", "description": "Toggle zen mode" }
+      ]
+    },
+    {
+      "title": "VS Code Debug",
+      "icon": "vs_code_debug",
+      "macros": [
+        { "action": "VsCodeStepOver", "name": "Over", "description": "Step over" },
+        { "action": "VsCodeStepInto", "name": "Into", "description": "Step into" },
+        { "action": "VsCodeStepOut", "name": "Out", "description": "Step out" },
+        { "action": "VsCodeAddBreakpoint", "name": "Break", "description": "Toggle a breakpoint" },
+        { "action": "VsCodePauseDebugging", "name": "Pause", "description": "Pause debugging" },
+        { "action": "VsCodeRestartDebugging", "name": "Restart", "description": "Restart debugging" },
+        { "action": "VsCodeGoToDefinition", "name": "Go to Def", "description": "Go to the definition" },
+        { "action": "VsCodePeekDefinition", "name": "Peek Def", "description": "Peek the definition" },
+        { "action": "VsCodeGoToReferences", "name": "Refs", "description": "Go to the references" },
+        { "action": "VsCodeDebug", "name": "Debug", "description": "Start debugging" },
+        { "action": "VsCodeStopDebugging", "name": "Stop", "description": "Stop debugging" },
+        { "action": "VsCodeGoToImplementation", "name": "Impl", "description": "Go to the implementation" }
+      ]
+    },
+    {
+      "title": "VS Studio",
+      "icon": "vs_studio",
+      "macros": [
+        { "action": "VsStudioShowSolutionExplorer", "name": "Solution", "description": "Show Solution Explorer" },
+        { "action": "VsStudioShowTestExplorer", "name": "Tests", "description": "Show Test Explorer" },
+        { "action": "VsStudioSplitPanel", "name": "Split", "description": "Split the editor" },
+        { "action": "VsStudioBuild", "name": "Build", "description": "Build the solution" },
+        { "action": "VsStudioGoToDefinition", "name": "Go to Def", "description": "Go to the definition" }
+      ]
+    },
+    {
+      "title": "Examples",
+      "icon": "default_commands",
+      "macros": [
+        { "action": "ExampleOpenWebsite", "name": "Website", "description": "Open example.com, an example of opening a website" },
+        { "action": "ExampleOpenFolder", "name": "Documents", "description": "Open your Documents folder, an example of opening a folder" },
+        { "action": "SshExample", "name": "SSH", "description": "Open an SSH session to an example server" },
+        { "action": "SshMacroName", "name": "example-server", "description": "Open the saved PuTTY session named like this macro" },
+        { "action": "Message", "name": "Hello", "description": "Message shows the macro's description, here this text" },
+        { "action": "ShowDelayedKeyForm", "name": "Delay Key", "description": "Send a key after a delay" },
+        { "action": "ShowDelayedClickForm", "name": "Delay Click", "description": "Replay a click after a delay" }
+      ]
+    },
+    null,
+    {
+      "title": "Windows",
+      "icon": "windows",
+      "macros": [
+        { "action": "PreviousWindow", "name": "Prev Win", "description": "Switch to the previous window" },
+        { "action": "TaskView", "name": "Task View", "description": "Open Task View" },
+        { "action": "NextWindow", "name": "Next Win", "description": "Switch to the next window" },
+        { "action": "MoveFocusLeft", "name": "Focus <-", "description": "Move the focus left" },
+        { "action": "ShowDesktop", "name": "Desktop", "description": "Show the desktop" },
+        { "action": "MoveFocusRight", "name": "Focus ->", "description": "Move the focus right" },
+        { "action": "Escape", "name": "Esc", "description": "Press Escape" },
+        { "action": "CloseWindow", "name": "Close", "description": "Close the window" },
+        { "action": "Enter", "name": "Enter", "description": "Press Enter" },
+        { "action": "Lock", "name": "Lock", "description": "Lock the PC" },
+        { "action": "TurnMonitorsOff", "name": "Screens Off", "description": "Turn the monitors off" }
+      ]
+    },
+    {
+      "title": "Window Management",
+      "icon": "window_management",
+      "macros": [
+        { "action": "SnapThirdsLeft", "name": "1/3 <-", "description": "Snap the window to the left third" },
+        { "action": "SnapWindowTop", "name": "Snap Up", "description": "Snap the window up" },
+        { "action": "SnapThirdsRight", "name": "1/3 ->", "description": "Snap the window to the right third" },
+        { "action": "SnapWindowLeft", "name": "Snap <-", "description": "Snap the window left" },
+        { "action": "SnapWindowBottom", "name": "Snap Down", "description": "Snap the window down" },
+        { "action": "SnapWindowRight", "name": "Snap ->", "description": "Snap the window right" },
+        { "action": "PreviousDesktop", "name": "Desk <-", "description": "Switch to the previous virtual desktop" },
+        { "action": "CreateDesktop", "name": "New Desk", "description": "Create a virtual desktop" },
+        { "action": "NextDesktop", "name": "Desk ->", "description": "Switch to the next virtual desktop" },
+        { "action": "PreviousScreen", "name": "Screen <-", "description": "Move the window to the previous screen" },
+        { "action": "NextScreen", "name": "Screen ->", "description": "Move the window to the next screen" },
+        { "action": "CloseDesktop", "name": "Close Desk", "description": "Close the virtual desktop" }
+      ]
+    },
+    null
+  ],
+  "default": 1,
+  "showFn": " ",
+  "showMacroMarkers": true,
+  "showLabels": true,
+  "useMacroIcons": false,
+  "iconAction": "Layer",
+  "hotkeys": [],
+  "hotstrings": []
+}

@@ -1,10 +1,49 @@
 // node --test scripts/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateConfig, commandNames, repoChecks } from './validate-config.mjs';
+import { validateConfig, commandNames, repoChecks, activeConfigPath } from './validate-config.mjs';
+
+// A throwaway repository root holding the given files.
+function tempRoot(files) {
+  const dir = mkdtempSync(join(tmpdir(), 'omb-'));
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
+}
+
+test('loads OMB_CONFIG, else local/config.json, else the example config.json', () => {
+  const plain = tempRoot({ 'config.json': '{}' });
+  const withLocal = tempRoot({ 'config.json': '{}', 'local/config.json': '{}' });
+  try {
+    assert.equal(activeConfigPath(plain, {}), join(plain, 'config.json'));
+    assert.equal(activeConfigPath(withLocal, {}), join(withLocal, 'local', 'config.json'));
+    assert.equal(activeConfigPath(withLocal, { OMB_CONFIG: 'x.json' }), 'x.json');
+  } finally {
+    rmSync(plain, { recursive: true }); rmSync(withLocal, { recursive: true });
+  }
+});
+
+test('counts your own commands in local/ as defined', () => {
+  const dir = tempRoot({
+    'ahk/commands/a.ahk': 'Shared(Macro) {\n}\n',
+    'powershell/commands/a.ps1': 'function Shared { }\n',
+    'local/ahk/mine.ahk': 'Mine(Macro) {\n}\n',
+    'local/powershell/commands/mine.ps1': 'function Mine { }\n',
+  });
+  try {
+    const checks = repoChecks(dir);
+    assert.ok(checks.ahkActions.has('shared') && checks.ahkActions.has('mine'));
+    assert.ok(checks.psActions.has('shared') && checks.psActions.has('mine'));
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 

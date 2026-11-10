@@ -16,7 +16,7 @@ Describe 'parity with ahk/commands' {
         $missing | Should -BeNullOrEmpty
     }
     It 'defines every custom AHK command function' {
-        $expected = @(Get-AhkFunctionNames 'custom\chrome.ahk','custom\programs.ahk','custom\server.ahk','custom\dev.ahk','custom\vscode.ahk','custom\vsstudio.ahk') + 'ShowDelayedKeyForm','ShowDelayedClickForm'
+        $expected = @(Get-AhkFunctionNames 'custom\chrome.ahk','custom\ssh.ahk','custom\examples.ahk','custom\vscode.ahk','custom\vsstudio.ahk') + 'ShowDelayedKeyForm','ShowDelayedClickForm'
         $missing = $expected | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) }
         $missing | Should -BeNullOrEmpty
     }
@@ -30,7 +30,18 @@ Describe 'custom commands send the right chords' {
         Should -Invoke EnsureActiveOrOpen -Times 1 -Exactly
         Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+t' }
     }
-    It 'OpenGmail2' { OpenGmail2 $null; Should -Invoke ActivateOrOpenChrome -ParameterFilter { $Url -eq 'https://mail.google.com/mail/u/0/#inbox' } }
+    It 'ExampleOpenWebsite' { ExampleOpenWebsite $null; Should -Invoke ActivateOrOpenChrome -ParameterFilter { $Url -eq 'https://example.com/' } }
+}
+Describe 'SSH commands' {
+    BeforeEach { Mock Start-Program {}; Mock LoadPuttySession {} }
+    It 'SshMacroName opens the PuTTY session named like the macro' {
+        SshMacroName ([pscustomobject]@{ Name = 'example-server'; Description = 'x' })
+        Should -Invoke LoadPuttySession -Times 1 -Exactly -ParameterFilter { $Name -eq 'example-server' }
+    }
+    It 'SshExample opens ssh to the example server' {
+        SshExample $null
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'ssh' -and $Arguments -eq 'user@server.example.com' }
+    }
 }
 Describe 'core commands send the right chords' {
     BeforeEach { Mock Send-Chord {}; Mock Send-Key {}; Mock Start-Program {}; Mock ActivateOrOpen {} }
@@ -61,11 +72,11 @@ Describe 'File Explorer commands' {
         OpenFileExplorer $null
         Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' }
     }
-    It 'ShareFileExplorer opens the share and activates the new window' {
+    It 'ExampleOpenFolder opens the folder and activates the new window' {
         $script:finds = 0
         Mock Find-Window { $script:finds++; if ($script:finds -eq 1) { , [IntPtr[]]@([IntPtr]5) } else { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) } } -ParameterFilter { $WinTitle -eq 'ahk_class CabinetWClass' }
-        ShareFileExplorer $null
-        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' -and $Arguments -eq '\\fileserver\' }
+        ExampleOpenFolder $null
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' -and $Arguments -eq (Join-Path $env:USERPROFILE 'Documents') }
         Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]7 }
     }
 }

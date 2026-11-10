@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useApp, useEditor } from '../state/store'
 import { Banner } from './Banner'
 import { Header } from './Header'
+import { LayersTab } from './LayersTab'
 import { OpenScreen } from './OpenScreen'
 import { CentrePanel, LeftPanel, RightPanel } from './Panels'
 import { ShapeTab } from './ShapeTab'
@@ -13,9 +14,9 @@ function Editor() {
       <Header />
       <Banner />
       <div className="flex min-h-0 flex-1">
-        {state.tab === 'shape' ? (
-          <ShapeTab />
-        ) : (
+        {state.tab === 'shape' && <ShapeTab />}
+        {state.tab === 'layers' && <LayersTab />}
+        {state.tab === 'macros' && (
           <>
             <LeftPanel />
             <CentrePanel />

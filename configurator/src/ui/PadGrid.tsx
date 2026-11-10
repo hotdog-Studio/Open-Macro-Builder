@@ -152,12 +152,14 @@ interface KeyBoxProps {
   dragId: string | null
   /** Whether other things can be dropped on this key. */
   droppable: boolean
+  /** What to draw in the label strip above the key; null or left out draws no strip. */
+  strip?: ReactNode
   onSelect: () => void
   children: ReactNode
 }
 
-function KeyBox({ k, mode, labels, selected, dragId, droppable, onSelect, children }: Readonly<KeyBoxProps>) {
-  const r = keyRect(k, labels).key
+function KeyBox({ k, mode, labels, selected, dragId, droppable, strip, onSelect, children }: Readonly<KeyBoxProps>) {
+  const { key: r, label } = keyRect(k, labels)
   const drag = useDraggable({ id: dragId ?? `still:${k.id}`, disabled: dragId === null })
   const drop = useDroppable({ id: `key:${k.id}`, disabled: !droppable })
   const setRefs = (node: HTMLElement | null) => {
@@ -194,6 +196,14 @@ function KeyBox({ k, mode, labels, selected, dragId, droppable, onSelect, childr
         {children}
       </div>
       {mode === 'shape' && <ResizeHandle k={k} />}
+      {label && strip !== undefined && strip !== null && (
+        <div
+          className="pointer-events-none absolute overflow-hidden whitespace-nowrap bg-[#101010] text-center font-mono text-xs font-bold italic leading-[21px] text-white"
+          style={{ left: px(label.x - (r.x + 2)), top: px(label.y - (r.y + 2)), width: px(label.w), height: px(label.h) }}
+        >
+          {strip}
+        </div>
+      )}
     </li>
   )
 }
@@ -204,12 +214,17 @@ export interface PadGridProps {
   renderKey: (k: PadKey) => ReactNode
   /** Draws one extra row and column of free cells, as drop targets for moving a key. */
   extraCell?: boolean
+  /**
+   * What to write in the label strip above a key (the layer's title, say). Giving it draws the grid
+   * with label strips whatever the overlay option says, since the strips are the point of the tab.
+   */
+  renderStrip?: (k: PadKey) => ReactNode
 }
 
-function Grid({ mode, renderKey, extraCell = false }: Readonly<PadGridProps>) {
+function Grid({ mode, renderKey, extraCell = false, renderStrip }: Readonly<PadGridProps>) {
   const { state, dispatch } = useEditor()
   const { ws, selectedKey, selectedLayer } = state
-  const labels = ws.options.showLabels ?? false
+  const labels = renderStrip !== undefined || (ws.options.showLabels ?? false)
   const all = [ws.fn, ...ws.keys]
 
   let rows = 1
@@ -254,6 +269,7 @@ function Grid({ mode, renderKey, extraCell = false }: Readonly<PadGridProps>) {
               selected={selectedKey === k.id}
               dragId={dragIdOf(k.id)}
               droppable={mode !== 'shape' && k.id !== 'fn'}
+              strip={renderStrip?.(k)}
               onSelect={() => dispatch({ type: 'select', key: k.id })}
             >
               {renderKey(k)}

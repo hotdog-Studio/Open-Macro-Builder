@@ -218,7 +218,9 @@ describe('the header', () => {
     await screen.findByRole('list', { name: 'Keys' })
     await user.click(screen.getByRole('tab', { name: 'Layers' }))
     expect(screen.getByRole('tab', { name: 'Layers', selected: true })).toBeTruthy()
-    expect(screen.queryByRole('list', { name: 'Keys' })).toBeNull()
+    // The Pad shape tab's text has gone and the Layers tab's is there.
+    expect(screen.queryByText('Overlay options')).toBeNull()
+    expect(screen.getByText('What each key selects while Fn is held.')).toBeTruthy()
   })
 })
 

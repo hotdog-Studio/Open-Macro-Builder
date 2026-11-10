@@ -16,7 +16,7 @@ Describe 'parity with ahk/commands' {
         $missing | Should -BeNullOrEmpty
     }
     It 'defines every custom AHK command function' {
-        $expected = Get-AhkFunctionNames 'custom\chrome.ahk','custom\programs.ahk','custom\server.ahk','custom\dev.ahk','custom\vscode.ahk','custom\vsstudio.ahk'
+        $expected = @(Get-AhkFunctionNames 'custom\chrome.ahk','custom\programs.ahk','custom\server.ahk','custom\dev.ahk','custom\vscode.ahk','custom\vsstudio.ahk') + 'ShowDelayedKeyForm','ShowDelayedClickForm'
         $missing = $expected | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) }
         $missing | Should -BeNullOrEmpty
     }
@@ -39,4 +39,13 @@ Describe 'core commands send the right chords' {
     It 'PlayPause' { PlayPause $null; Should -Invoke Send-Key -ParameterFilter { $Name -eq 'Media_Play_Pause' } }
     It 'Shutdown' { Shutdown $null; Should -Invoke Start-Program -ParameterFilter { $Program -eq 'shutdown' -and $Arguments -eq '/s /t 1' } }
     It 'OpenFileExplorer' { OpenFileExplorer $null; Should -Invoke ActivateOrOpen -ParameterFilter { $Exe -eq 'explorer.exe' } }
+}
+Describe 'Get-KeyNameFromKeys' {
+    It 'maps WinForms key codes back to chord names' {
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Left) | Should -Be 'Left'
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::A) | Should -Be 'a'
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::F5) | Should -Be 'F5'
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem5) | Should -Be '\'
+    }
+    It 'round-trips through Get-VirtualKey' { Get-VirtualKey (Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::PageDown)) | Should -Be 0x22 }
 }

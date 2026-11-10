@@ -95,6 +95,20 @@ printf '#!/bin/sh\nexec node scripts/check-private.mjs --pre-push\n' > .git/hook
 node scripts/check-private.mjs --history          # check every commit
 ```
 
+## Configurator
+
+A visual editor for `config.json`: the pad shape, the layers and the macros. It edits `local/config.json` when that exists, else the example `config.json`. It ignores `OMB_CONFIG`.
+
+```
+cd configurator
+npm install
+npm run dev
+```
+
+Open the address it prints in Chrome or Edge, press **Open folder** and pick this repository. Firefox and Safari can't open folders, so they can't run it.
+
+For a desktop app instead of a browser tab, run `npm run electron`. It can also reload the running macropad after you save.
+
 ## Repository layout
 
 - `config.json`: the example layout.
@@ -103,6 +117,7 @@ node scripts/check-private.mjs --history          # check every commit
 - `img/`: icon sets, one folder per icon.
 - `qmk/`: the VIA/QMK layout of the EPOMAKER EK21 keypad this was built for.
 - `scripts/`: the config validator, the private-details check and their tests.
+- `configurator/`: the web and desktop configurator (React, Vite, TypeScript, Electron). See [Configurator](#configurator).
 - `Jenkinsfile`, `sonar-project.properties`, `ci/`: CI and the Jenkins job definition.
 - `local/`: yours, ignored by git.
 
@@ -110,10 +125,11 @@ node scripts/check-private.mjs --history          # check every commit
 
 ```
 node --test "scripts/*.test.mjs"                          # validator and private-details check
+cd configurator && npm install && npm test                # configurator (Vitest); also npm run lint and npm run build
 powershell -NoProfile -File powershell\tests\run.ps1      # Pester suite (Windows)
 ```
 
-Jenkins validates `config.json` and runs the script tests on the Linux agent. It runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one, then sends everything to SonarQube and waits for the quality gate. The `Jenkinsfile` header lists the globals, such as `OMB_NTFY_URL` for build notifications.
+Jenkins validates `config.json`, runs the script tests, then installs, lints, tests and builds the configurator on the Linux agent (without the Electron binary, which it never starts). It runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one, then sends everything to SonarQube and waits for the quality gate. The `Jenkinsfile` header lists the globals, such as `OMB_NTFY_URL` for build notifications.
 
 The Jenkins job is a multibranch pipeline defined in `ci/jenkins-job.xml`. It checks out over SSH and scans for new commits every 2 minutes. To create it, or update it after editing the XML, put `JENKINS_URL` and `JENKINS_CREDENTIALS_ID` in `local/ci/jenkins.env` and run:
 

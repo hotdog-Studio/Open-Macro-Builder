@@ -15,10 +15,10 @@
 //
 // STAGES, in order: Checkout → Validate config (scripts/validate-config.mjs: config.json's
 // structure, icons, and every action defined in both versions) → Script tests (node:test,
-// scripts/*.test.mjs) → Windows tests (only with OMB_WINDOWS_LABEL) → SonarQube analysis →
-// quality gate → Cleanup. The web configurator adds its Install / Lint / Test / Build stages ahead
-// of the SonarQube analysis when it lands; nothing is deployed from here, the macropad runs on
-// the desktop it drives.
+// scripts/*.test.mjs) → Configurator install / lint / test / build (configurator/, installed with
+// ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron) → Windows tests (only
+// with OMB_WINDOWS_LABEL) → SonarQube analysis → quality gate → Cleanup. Nothing is deployed from
+// here, the macropad runs on the desktop it drives.
 
 // Push the build outcome to the ntfy topic in OMB_NTFY_URL. Missing URL or credential → a log
 // line, never a failed build. Only failures/aborts and the first green after a failure notify, so
@@ -86,6 +86,31 @@ node {
     stage('Report Script Tests') {
         junit testResults: 'results/node/test-results.xml', skipPublishingChecks: true, allowEmptyResults: true
         stopIfFailed('Script tests')
+    }
+
+    stage('Configurator Install') {
+        // The Linux agent never starts Electron, so skip its binary download; test, lint and build
+        // work without it.
+        runGated('cd configurator && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci')
+        stopIfFailed('Configurator install')
+    }
+
+    stage('Configurator Lint') {
+        runGated('cd configurator && npm run lint')
+        stopIfFailed('Configurator lint')
+    }
+
+    stage('Configurator Test') {
+        // Vitest: junit for Jenkins, the default reporter for the log, lcov for SonarQube
+        // (coverage/configurator/lcov.info, set in configurator/vite.config.ts).
+        runGated('mkdir -p results/configurator && cd configurator && npx vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=../results/configurator/junit.xml')
+        junit testResults: 'results/configurator/junit.xml', skipPublishingChecks: true, allowEmptyResults: true
+        stopIfFailed('Configurator tests')
+    }
+
+    stage('Configurator Build') {
+        runGated('cd configurator && npm run build')
+        stopIfFailed('Configurator build')
     }
 
     stage('Windows Tests') {

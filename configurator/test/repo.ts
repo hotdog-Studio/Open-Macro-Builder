@@ -1,8 +1,11 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MemoryFolder } from '../src/core/folder/memory'
 
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+// Not `new URL('../../', import.meta.url)`: under the jsdom environment Vite
+// rewrites that pattern into an http:// asset URL.
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..') + '/'
 
 function repoParts(rel: string, who: string): string[] {
   const parts = rel.split(/[\\/]+/).filter((p) => p !== '' && p !== '.')

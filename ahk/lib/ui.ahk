@@ -1,6 +1,7 @@
 #Requires AutoHotkey v2.0
 
 #Include create_image_button.ahk
+#Include assets.ahk
 ; *********************** Gui ********************************
 /**
  * @class
@@ -149,18 +150,18 @@ class LayerSelectGui {
     */
    static GetEmptyIcon(Key) {
       if (Key.width == 1 && Key.height == 1) {
-         return "img/empty_1x1.png"
+         return Assets.Path("empty_1x1.png")
       } else if (Key.width == 1 && Key.height == 2) {
-         return "img/empty_1x2.png"
+         return Assets.Path("empty_1x2.png")
       } else if (Key.width == 2 && Key.height == 1) {
-         return "img/empty_2x1.png"
+         return Assets.Path("empty_2x1.png")
       } else if (Key.width == 2 && Key.height == 2) {
-         return "img/empty_2x2.png"
+         return Assets.Path("empty_2x2.png")
       }
-      return "img/empty.png"
+      return Assets.Path("empty.png")
    }
 
    static GetBlankIcon() {
-      return "img/blank.png"
+      return Assets.Path("blank.png")
    }
 }

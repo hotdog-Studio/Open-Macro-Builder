@@ -3,6 +3,7 @@
 
 #Include lib\ui.ahk
 #Include lib\io.ahk
+#Include lib\assets.ahk
 
 #Include config.ahk
 ; *********************** Header - some configuration  ***********************
@@ -14,7 +15,7 @@
 ; *********************** Main ********************************
 ; To use CreateImageButton function must first call
 UseGDIP()
-TraySetIcon("img\icon.ico")
+TraySetIcon(Assets.Path("icon.ico"))
 
 ; MODE 0 = Macro Mode
 ; MODE 1 = Layer Selection Mode

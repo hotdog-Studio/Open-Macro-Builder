@@ -1,0 +1,13 @@
+# Agent tooling scratch
+.superpowers/
+
+# CI and local test / scan output
+results/
+coverage/
+.scannerwork/
+
+# SonarQube credentials for local scans (see sonar-project.properties)
+.env.sonar
+
+# Backups left by local config edits
+*.bak

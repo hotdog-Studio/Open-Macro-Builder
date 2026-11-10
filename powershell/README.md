@@ -1,5 +1,52 @@
 # Layered Macropad (PowerShell)
 
+A Windows PowerShell 5.1 port of the AutoHotkey macropad in `../ahk`. It uses the same images (`../img`), the same config shape and the same command names.
+
+Hold the Fn key (ScrollLock) to show the overlay, and press a macro key (F13 to F24) while holding it to pick that key's layer. Release Fn to hide the overlay. Without Fn, a macro key runs the macro in its slot of the selected layer.
+
+## Requirements
+
+- Windows PowerShell 5.1 (`powershell.exe`). PowerShell 7 is not needed.
+- Nothing else at runtime. WinForms and System.Drawing come with .NET Framework.
+- For the tests only: Pester 5.5 or newer, installed for the current user:
+
+```powershell
+Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+```
+
+## Run
+
+Close the AutoHotkey macropad first (tray icon, then Exit). Its keyboard hook swallows F13 to F24 and ScrollLock, so the two versions cannot run at the same time.
+
+```
+wscript powershell\launch.vbs
+```
+
+`launch.vbs` starts `main.ps1` with no console window. A tray icon appears with Reload and Exit. Launching again replaces the running instance.
+
+Errors from macros show as a tray balloon and are appended to `%TEMP%\LayeredMacropad.log`. Startup errors, such as a config naming a command that does not exist, show a message box and stop the program.
+
+## Configure
+
+Edit `config.ps1`. It mirrors `../ahk/config.ahk`: `Key`, `Icon`, `Layer`, `Macro` and `Layout` take the same arguments in the same order, and `''` skips a layer or a macro slot. Command functions live in `commands/` and take the macro as their only parameter. Key chords are written as key names joined by `+`, for example `Send-Chord 'Ctrl+Shift+t'`. The key names are listed in `lib/Input.ps1`.
+
+## Test
+
+From `macropad_ahk`:
+
+```
+powershell -NoProfile -File powershell\tests\run.ps1
+powershell -NoProfile -File powershell\tests\run.ps1 -ExcludeTag Integration
+```
+
+The Integration tests open and close Character Map and send a real ScrollLock press, which the Fn hook swallows. Exclude them when you do not want windows or keys touched.
+
+`tools/spike-hotkeys.ps1` and `tools/preview-overlay.ps1` are manual checks for the hotkeys and the overlay.
+
+## Start with Windows
+
+The startup shortcut `shell:startup\LayeredMacropad.lnk` runs one version. Point it at `launch.vbs` to switch to this one; see the steps below.
+
 ## How the Fn key is detected
 
 The Fn key (ScrollLock) is handled by a low-level keyboard hook (`WH_KEYBOARD_LL`), not by `RegisterHotKey`.
@@ -9,3 +56,11 @@ The Fn key (ScrollLock) is handled by a low-level keyboard hook (`WH_KEYBOARD_LL
 The hook in `lib/Native.ps1` (`Macropad.KeyHook`) swallows ScrollLock and posts its down and up transitions to the hotkey window, which raises `FnDown` and `FnUp`. The hook runs on its own thread with its own message loop. A macro that keeps the PowerShell thread busy for seconds therefore cannot stall keyboard input for the rest of the system, and Windows never removes the hook for timing out.
 
 The twelve macro keys (F13 to F24) still use `RegisterHotKey` with `MOD_NOREPEAT`.
+
+## Differences from the AutoHotkey version
+
+- The overlay never takes focus, so clicking it leaves keys going to the app you were in.
+- Keys are sent as chords (`'LWin+Left'`) instead of AutoHotkey `Send` syntax.
+- `VsCodeRestartDebugging`, `VsCodePauseDebugging` and `VsCodePeekImplementations` send the F-key the AutoHotkey version meant to send. The AutoHotkey source typed the letters because of missing braces.
+- `Restart` uses `shutdown /r /t 1`.
+- The fluent `Layout` methods (`AddLayer`, `RemoveLayer`, `ShowLabel` and so on) are not ported.

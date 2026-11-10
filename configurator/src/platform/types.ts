@@ -14,8 +14,12 @@ export interface Platform {
   openFolder(): Promise<FolderAccess | null>
   /** Resolves to null when nothing is remembered. */
   restoreFolder(): Promise<Restore>
-  /** Browser: call from a click, after restoreFolder gave needsPermission. */
-  grantPermission?(): Promise<FolderAccess | null>
+  /**
+   * Browser: call from a click, after restoreFolder gave needsPermission.
+   * null only when the user declines; lost when permission was granted but the
+   * folder can no longer be read.
+   */
+  grantPermission?(): Promise<{ folder: FolderAccess } | { lost: string } | null>
   watch?(paths: string[], onChange: (path: string) => void): () => void
   findMacropad?(): Promise<LangId | null>
   reloadMacropad?(): Promise<LangId | null>

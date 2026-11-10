@@ -110,6 +110,20 @@ describe('createBrowserPlatform', () => {
       expect(await platformWith().platform.restoreFolder()).toBeNull()
     })
 
+    it('restoreFolder treats a failing store as nothing remembered', async () => {
+      const platform = createBrowserPlatform({
+        pick: async () => new FakeDir('x').asHandle(),
+        store: {
+          get: async () => {
+            throw new Error('IndexedDB blocked')
+          },
+          set: async () => {},
+          clear: async () => {},
+        },
+      })
+      expect(await platform.restoreFolder()).toBeNull()
+    })
+
     it('returns the folder when permission is granted', async () => {
       const dir = new FakeDir('omb')
       dir.put('config.json', '{}')
@@ -155,24 +169,38 @@ describe('createBrowserPlatform', () => {
       dir.permission = 'prompt'
       const { platform } = platformWith({ handle: dir })
       await platform.restoreFolder()
-      const folder = await platform.grantPermission!()
-      expect(folder?.name).toBe('omb')
+      const result = await platform.grantPermission!()
+      expect(result).toMatchObject({ folder: { name: 'omb' } })
     })
 
-    it('returns null when the user declines', async () => {
+    it('grantPermission returns null when the user declines', async () => {
       const dir = new FakeDir('omb')
       dir.permission = 'prompt'
       dir.requested = 'denied'
-      const { platform } = platformWith({ handle: dir })
+      const { platform, store } = platformWith({ handle: dir })
       expect(await platform.grantPermission!()).toBeNull()
+      expect(store.cleared).toBe(0)
     })
 
-    it('returns null and forgets the folder when it has gone', async () => {
+    it('grantPermission reports a folder that disappeared', async () => {
       const dir = new FakeDir('omb')
       dir.permission = 'prompt'
       dir.failWith = 'NotFoundError'
       const { platform, store } = platformWith({ handle: dir })
-      expect(await platform.grantPermission!()).toBeNull()
+      expect(await platform.grantPermission!()).toEqual({
+        lost: 'The folder omb is no longer available. Open it again.',
+      })
+      expect(store.cleared).toBe(1)
+    })
+
+    it('grantPermission reports a folder whose permission request finds it gone', async () => {
+      const dir = new FakeDir('omb')
+      dir.permission = 'prompt'
+      dir.permissionFailWith = 'NotFoundError'
+      const { platform, store } = platformWith({ handle: dir })
+      expect(await platform.grantPermission!()).toEqual({
+        lost: 'The folder omb is no longer available. Open it again.',
+      })
       expect(store.cleared).toBe(1)
     })
 

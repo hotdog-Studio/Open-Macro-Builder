@@ -1,7 +1,7 @@
 import { del, get, set } from 'idb-keyval'
 import { normalizePath } from '../core/folder/path'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
-import type { Platform, Restore } from './types'
+import type { Platform } from './types'
 
 function errorName(e: unknown): string | undefined {
   return typeof e === 'object' && e !== null && 'name' in e ? String((e as { name: unknown }).name) : undefined
@@ -119,22 +119,32 @@ export function createBrowserPlatform(deps: {
   /** The handle restoreFolder found, kept so grantPermission can run straight from a click. */
   let remembered: FileSystemDirectoryHandle | undefined
 
-  async function lost(handle: FileSystemDirectoryHandle): Promise<Restore> {
+  async function lost(handle: FileSystemDirectoryHandle): Promise<{ lost: string }> {
     remembered = undefined
-    await store.clear()
+    await store.clear().catch(() => {})
     return { lost: lostMessage(handle.name) }
   }
 
-  /** The folder when it can be listed, else null (forgetting the handle). */
-  async function openIfReadable(handle: FileSystemDirectoryHandle): Promise<FolderAccess | null> {
+  /** The folder when it can be listed, else lost (forgetting the handle). */
+  async function openIfReadable(
+    handle: FileSystemDirectoryHandle,
+  ): Promise<{ folder: FolderAccess } | { lost: string }> {
     const folder = new BrowserFolder(handle)
     try {
       await folder.list('')
     } catch {
-      await lost(handle)
-      return null
+      return lost(handle)
     }
-    return folder
+    return { folder }
+  }
+
+  /** A store that cannot be read (IndexedDB blocked) is the same as nothing remembered. */
+  async function storedHandle(): Promise<FileSystemDirectoryHandle | undefined> {
+    try {
+      return await store.get()
+    } catch {
+      return undefined
+    }
   }
 
   return {
@@ -155,7 +165,7 @@ export function createBrowserPlatform(deps: {
     },
 
     async restoreFolder() {
-      const handle = await store.get()
+      const handle = await storedHandle()
       if (!handle) return null
       remembered = handle
       let state: PermissionState
@@ -166,21 +176,17 @@ export function createBrowserPlatform(deps: {
         throw e
       }
       if (state !== 'granted') return { needsPermission: handle.name }
-      const folder = await openIfReadable(handle)
-      return folder ? { folder } : { lost: lostMessage(handle.name) }
+      return openIfReadable(handle)
     },
 
     async grantPermission() {
-      const handle = remembered ?? (await store.get())
+      const handle = remembered ?? (await storedHandle())
       if (!handle) return null
       try {
         const state = await handle.requestPermission({ mode: 'readwrite' })
         if (state !== 'granted') return null
       } catch (e) {
-        if (isMissing(e)) {
-          await lost(handle)
-          return null
-        }
+        if (isMissing(e)) return lost(handle)
         throw e
       }
       return openIfReadable(handle)

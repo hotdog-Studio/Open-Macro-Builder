@@ -13,8 +13,11 @@ function Get-KeyNameFromKeys {
 
 function New-AutomationForm {
     param([string]$Name, [string]$Title, [int]$Height)
-    # Showing a form again replaces the previous one.
-    foreach ($old in @([System.Windows.Forms.Application]::OpenForms | Where-Object { $_.Name -eq $Name })) { $old.Dispose() }
+    # Showing a form again replaces the previous one and cancels the send it scheduled.
+    foreach ($old in @([System.Windows.Forms.Application]::OpenForms | Where-Object { $_.Name -eq $Name })) {
+        if ($old.Tag -is [hashtable] -and $null -ne $old.Tag.PendingTimer) { $old.Tag.PendingTimer.Stop(); $old.Tag.PendingTimer.Dispose() }
+        $old.Dispose()
+    }
     $form = New-Object System.Windows.Forms.Form
     $form.Name = $Name
     $form.Text = $Title

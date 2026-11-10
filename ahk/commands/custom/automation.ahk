@@ -3,6 +3,8 @@ ShowDelayedKeyForm(Macro) {
 	global AutomationKey, AutomationDelay, AutomationGui
 	global AutomationCaptureStatus
 
+	; Opening the form again cancels the send it scheduled, as the PowerShell version does.
+	SetTimer(AutomationSendPending, 0)
 	if (IsSet(AutomationGui))
 		AutomationGui.Destroy()
 
@@ -85,6 +87,8 @@ ShowDelayedClickForm(Macro) {
 	global AutomationClickGui, AutomationClickDelay, AutomationClickStatus
 	global AutomationClickCaptured
 
+	; Opening the form again cancels the click it scheduled.
+	SetTimer(AutomationSendPendingClick, 0)
 	if (IsSet(AutomationClickGui))
 		AutomationClickGui.Destroy()
 

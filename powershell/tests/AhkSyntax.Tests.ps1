@@ -41,3 +41,9 @@ Describe 'ConvertFrom-AhkHotstring' {
     It 'reads options' { (ConvertFrom-AhkHotstring ':*?B0:ty').Options | Should -Be 19; (ConvertFrom-AhkHotstring ':C1:Abc').Options | Should -Be 8; (ConvertFrom-AhkHotstring ':X:go').Execute | Should -BeTrue }
     It 'rejects bad specs' { { ConvertFrom-AhkHotstring ':Q:x' } | Should -Throw "Unknown hotstring option 'Q' in ':Q:x'"; { ConvertFrom-AhkHotstring '::' } | Should -Throw "Empty hotstring abbreviation in '::'" }
 }
+Describe 'ConvertFrom-AhkHotkey with an arrow key' {
+    It 'reads Up after & as the arrow key, not as a release' {
+        $h = ConvertFrom-AhkHotkey 'a & Up'; $h.PrefixVk | Should -Be 0x41; $h.Vk | Should -Be 0x26; $h.KeyUp | Should -BeFalse
+        $u = ConvertFrom-AhkHotkey 'a & Up up'; $u.PrefixVk | Should -Be 0x41; $u.Vk | Should -Be 0x26; $u.KeyUp | Should -BeTrue
+    }
+}

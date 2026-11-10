@@ -119,7 +119,11 @@ function ConvertFrom-AhkHotkey {
     param([Parameter(Mandatory)][string]$Spec)
     $result = [pscustomobject]@{ Vk = 0; Mods = 0; Wildcard = $false; Passthrough = $false; KeyUp = $false; PrefixVk = 0 }
     $body = $Spec.Trim()
-    if ($body -match '^(.*\S)\s+up$') { $result.KeyUp = $true; $body = $Matches[1] }
+    if ($body -match '^(.*\S)\s+up$') {
+        $rest = $Matches[1]
+        # In 'a & Up' the Up is the arrow key after a prefix, not a release.
+        if ($rest -notmatch '\s&$') { $result.KeyUp = $true; $body = $rest }
+    }
 
     if ($body -match '^(.+?)\s+&\s+(.+)$') {
         $a = $Matches[1].Trim(); $b = $Matches[2].Trim()

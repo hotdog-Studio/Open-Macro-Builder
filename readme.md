@@ -1,154 +1,97 @@
-# AutoStreamDeck
-*The starting point to build your perfect macro keyboard.*
+# Open Macro Builder
+*Build your perfect macropad, with any keyboard.*
 
-Define macro layers and macros in code, automatically bound to your macro pad buttons. A user interface is generated from your configuration for easy management.
+Turn a spare keypad into layers of macros. Bind its keys to F13 to F24 and pick one key as Fn. Hold Fn to see an overlay of your layers and tap a key to choose one. Let go, and each key runs the macro in its slot of that layer.
 
-## Getting Started
+## Two versions, one config
 
-1. **Install [AutoHotkey v2](https://www.autohotkey.com/download/)**
-2. **Edit `config.ahk`** – This is now the main configuration file for your macro pad. Here you define your layout, layers, and macros in a single place.
-3. **Run `main.ahk`** – This will load your configuration and start the macro pad UI.
+| Folder | Runs on | Notes |
+| --- | --- | --- |
+| `ahk/` | [AutoHotkey v2](https://www.autohotkey.com/download/) | The original version. |
+| `powershell/` | Windows PowerShell 5.1, built into Windows | Nothing to install. See [powershell/README.md](powershell/README.md). |
 
-### Editing `config.ahk`
+Both read the same `config.json`, use the same icons in `img/` and have the same command names, so you can switch between them without touching your layout. Run one at a time: both claim the macro keys.
 
-The `Config()` function in `config.ahk` returns a `Layout` object that defines your macro pad's structure. You specify:
+## Getting started
 
-- The function key (e.g., `ScrollLock`)
-- The macro keys (e.g., `F13`–`F24`)
-- The layers, each with a title, icon, and a list of macros
+**AutoHotkey:** install AutoHotkey v2, edit `config.json`, then run `ahk/main.ahk`.
 
-**Example:**
+**PowerShell:** edit `config.json`, then run `wscript powershell\launch.vbs`.
 
-```ahk
-Config() {
-   return Layout(Key("ScrollLock", 4, 1, 2, 1), [
-        Key("F13", 1, 1),
-        Key("F14", 1, 2),
-        Key("F15", 1, 3),
-        Key("F16", 2, 1),
-        Key("F17", 2, 2),
-        Key("F18", 2, 3),
-        Key("F19", 3, 1),
-        Key("F20", 3, 2),
-        Key("F21", 3, 3),
-        Key("F22", 1, 4, 1, 2),
-        Key("F23", 3, 4, 1, 2),
-        Key("F24", 4, 3)
-    ], [
-      Layer("Programs", Icon("programs"), [
-         Macro(OpenPowershell, "Powershell", "Open Powershell"),
-         Macro(OpenCommandPrompt, "Cmd Prompt", "Open Command Prompt"),
-         Macro(OpenFileExplorer, "File Explorer", "Open File Explorer"),
-      ]),
-      Layer("VS Code", Icon("vs_code"), [
-         Macro(VsCodeGoToDefinition, "Go to Def", "Go to Definition in VS Code"),
-         ...
-      ]),
-      ...
-   ], 11, " " , true, true, , )
+To start either one with Windows, point the shortcut in `shell:startup` at `ahk\main.ahk` or at `launch.vbs` (powershell/README.md has the steps).
+
+## config.json
+
+```json
+{
+  "fn": { "key": "ScrollLock", "row": 4, "col": 1, "width": 2 },
+  "keys": [
+    { "key": "F13", "row": 1, "col": 1 },
+    { "key": "F14", "row": 1, "col": 2 },
+    { "key": "F22", "row": 1, "col": 4, "height": 2 }
+  ],
+  "layers": [
+    {
+      "title": "Programs",
+      "icon": "programs",
+      "macros": [
+        { "action": "OpenYoutube", "name": "YouTube", "description": "Open YouTube in Chrome" },
+        null,
+        { "action": "OpenFileExplorer", "name": "File Explorer" }
+      ]
+    },
+    null,
+    { "title": "Dev Environment", "icon": "portainer", "disabled": true, "macros": [] }
+  ],
+  "default": 1,
+  "showFn": " ",
+  "showMacroMarkers": true,
+  "showLabels": true,
+  "useMacroIcons": false,
+  "iconAction": "Layer",
+  "hotkeys": [],
+  "hotstrings": []
 }
 ```
 
-## Layout Objects
+- `fn` is the key you hold to choose a layer. `keys` are the macro keys, placed on a grid by `row` and `col`, with `width` and `height` in keys (default 1).
+- Layers and macros are matched to keys by position: the first layer belongs to the first key, and so on. `null` leaves a slot empty. `"disabled": true` keeps a layer in the file without giving it a key.
+- `icon` names a folder in `img/` holding `layer.png`, `macro.png`, `selected.png` and `selected_macro.png`.
+- `action` names a command function. `name` is the label shown above the key, and `description` is its tooltip.
+- `default` is the layer selected at startup, counted from 1. `showFn` is the text above the Fn key. `showMacroMarkers` marks keys that have a macro on the selected layer, and `showLabels` shows the macro names. `useMacroIcons` and `iconAction` change what the overlay's icons show and do.
+- `hotkeys` and `hotstrings` add ordinary AutoHotkey-style hotkeys and hotstrings, such as `{ "hotkey": "^!e", "action": "OpenFileExplorer" }` and `{ "hotstring": "::btw", "replacement": "by the way" }`. powershell/README.md describes the options.
 
-### Setting up the Layout Object
+`node scripts/validate-config.mjs` checks the file: its structure, the icon folders, and that every action exists in both versions.
 
-The `Layout` object controls the structure and display of your macro pad. You create it in `config.ahk` using:
+## Commands
 
-```ahk
-Layout(FunctionKey, MacroKeys, Layers := [], Default := 1, ShowFn := false, ShowMacroMarkers := false, ShowLabels := false, UseMacroIcons := false, IconAction := "Layer")
+Command functions live in `ahk/commands/` and `powershell/commands/`, with the same names in both. Each takes the macro as its only parameter. Put your own in the `custom/` folders. In AutoHotkey, add an `#Include` for the file to `ahk/config.ahk`. In PowerShell, every `.ps1` file under `powershell/commands` is loaded automatically.
+
+## Repository layout
+
+- `config.json`: the layout both versions read.
+- `ahk/`: the AutoHotkey version (`main.ahk`, `lib/`, `commands/`).
+- `powershell/`: the PowerShell version, its tests and its docs.
+- `img/`: icon sets, one folder per icon.
+- `qmk/`: the VIA/QMK layout of the EPOMAKER EK21 keypad this was built for.
+- `scripts/`: the config validator and its tests.
+- `docs/`: design plans.
+- `Jenkinsfile`, `sonar-project.properties`: CI.
+
+## Tests and CI
+
+```
+node --test "scripts/*.test.mjs"                          # config validator
+powershell -NoProfile -File powershell\tests\run.ps1      # Pester suite (Windows)
 ```
 
-**Parameters:**
-
-- `FunctionKey` – The key used as the function key (e.g., `Key("ScrollLock", 4, 1, 2, 1)`).
-- `MacroKeys` – An array of macro key definitions (e.g., `Key("F13", 1, 1)`, ...).
-- `Layers` – An array of layer objects (see above for how to define layers and macros).
-- `Default` – (Optional) The default layer index to start on (default: 1).
-- `ShowFn` – (Optional) Show the function key outline (default: false).
-- `ShowMacroMarkers` – (Optional) Show macro markers on the buttons (default: false).
-- `ShowLabels` – (Optional) Show labels on the buttons (default: false).
-- `UseMacroIcons` – (Optional) Use macro icons on buttons instead of layer icons when a macro is assigned and has a icon (default: false).
-- `IconAction` – (Optional) Set icon click action: `"Layer"` to switch layers (default), or `"Macro"` to trigger the macro action.
-
-See `lib/layout.ahk` for full documentation of all options and methods.
-
-### Setting up the Layer Object
-
-The `Layer` object represents a set of macros grouped under a title and icon. You create it in `config.ahk` or in your layers array using:
-
-```ahk
-Layer(Title := "", Icon := "", Macros := [])
-```
-
-**Parameters:**
-
-- `Title` – The name of the layer (string).
-- `Icon` – An `Icon` object for the layer (see below).
-- `Macros` – An array of macro objects (see above for how to define macros).
-
-See `lib/layer.ahk` for full documentation.
-
-### Setting up the Icon Object
-
-The `Icon` object manages the images used for a layer or macro button in different states. You create it by passing the name of the icon set (which matches a folder in `img/`).
-
-```ahk
-Icon(name)
-```
-
-**Parameters:**
-
-- `name` – The name of the icon folder inside `img/` (string).
-
-This will automatically set the following properties:
-
-- `icon.layer` – Path to the default layer icon (`img/name/layer.png`)
-- `icon.macro` – Path to the macro icon (`img/name/macro.png`)
-- `icon.selected` – Path to the selected layer icon (`img/name/selected.png`)
-- `icon.selectedMacro` – Path to the selected macro icon (`img/name/selected_macro.png`)
-
-See `lib/icon.ahk` for full documentation.
-
-### Setting up the Macro Object
-
-The `Macro` object represents an individual macro action. You create it by specifying the function to call, a label, optionally, a description, or optionally an icon.
-
-```ahk
-Macro(Action, Name, Description := "", Icon := "")
-```
-
-**Parameters:**
-
-- `Action` – The function to be called when the macro is triggered.
-- `Name` – The label for the macro (string).
-- `Description` – (Optional) A brief description for tooltips or UI (string).
-- `Icon` – (Optional) An `Icon` object for the macro (see above).
-
-See `lib/macro.ahk` for full documentation.
-
-### Where to define macro functions?
-
-Macro functions (like `OpenPowershell`, `VsCodeGoToDefinition`, etc.) are defined in the `commands/` directory. You can add your own in `commands/custom/` and include them in `config.ahk`.
-
-**Example custom macro:**
-
-```ahk
-; In commands/custom/vscode.ahk
-VsCodeGoToDefinition() {
-   Send("^F12") ; Ctrl+F12 in VS Code
-}
-```
-
-## File Structure
-
-- `config.ahk` – Main configuration (edit this file)
-- `main.ahk` – Entry point, loads your config and starts the UI
-- `commands/` – Macro function definitions (grouped by category)
-- `lib/` – Core library code (do not edit unless customizing core behavior)
-- `img/` – Icons and images for the UI
+Jenkins validates `config.json` and runs the script tests on the Linux agent. It runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one, then sends everything to SonarQube and waits for the quality gate. The `Jenkinsfile` header lists the globals.
 
 ## Showcase
 
 ### Example with Numpad
 ![numpad example](img/showcase.png)
+
+## License
+
+See [LICENSE](LICENSE).

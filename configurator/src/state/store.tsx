@@ -3,7 +3,7 @@ import type { KeyId, Workspace } from '../core/config/model'
 import { writeConfig } from '../core/config/write'
 import type { TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import type { CatalogEntry, CommandFile } from '../core/languages'
+import type { CatalogEntry, CommandFile, LangId } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
 import { createActions, type AppActions } from './actions'
@@ -54,8 +54,12 @@ export interface PickLanguageState {
 export type SaveDialog =
   /** checkWorkspace found errors; nothing was written. */
   | { kind: 'blocked'; errors: string[] }
-  /** Saved; the warnings are about a language the user does not run. */
-  | { kind: 'saved'; warnings: string[] }
+  /**
+   * Saved. The warnings are about a language the user does not run; `macropad` is the
+   * running macropad that Reload macropad would restart (Electron only), and `note` what
+   * came of pressing it.
+   */
+  | { kind: 'saved'; warnings: string[]; macropad: LangId | null; note: string | null }
   /** config.json changed on disk since it was loaded; nothing was written. */
   | { kind: 'conflict' }
   /** Overwrite anyway was chosen and waits for its confirmation. */

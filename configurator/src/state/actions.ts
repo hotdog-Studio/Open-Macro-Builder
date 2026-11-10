@@ -11,7 +11,7 @@ import {
   type TextFile,
 } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import { commandCatalog, definedNames, LANG_IDS, scanCommands, type LangId } from '../core/languages'
+import { commandCatalog, definedNames, LANG_IDS, LANGUAGES, scanCommands, type LangId } from '../core/languages'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
@@ -47,9 +47,17 @@ export interface AppActions {
   reloadFromDisk(): Promise<void>
   /** Shows the changed-on-disk banner when the file is not the version the app holds. */
   recheck(): Promise<void>
+  /** Electron: restarts the running macropad from the after-save dialog; the dialog then shows what happened. */
+  reloadMacropad(): Promise<void>
 }
 
-const PERSONAL_CONFIG = 'local/config.json'
+/** The config file as the app last read or wrote it, with its folder. */
+interface Held {
+  folder: FolderAccess
+  configFile: TextFile
+}
+
+const PERSONAL_CONFIG ='local/config.json'
 const EXAMPLE_CONFIG = 'config.json'
 
 /** What the open screen shows for an error while opening a folder. */
@@ -96,7 +104,7 @@ export function createActions(
    * compares with the saved version and never mistakes the app's own write for
    * an outside change. A new object for every load and save.
    */
-  let held: { folder: FolderAccess; configFile: TextFile } | null = null
+  let held: Held | null = null
   /** Stops the platform's watch of the held config file. */
   let stopWatch: (() => void) | null = null
   /** The save in progress; rechecks and reloads wait for it. */
@@ -130,7 +138,28 @@ export function createActions(
     hold(session.folder, session.configFile)
   }
 
-  const showDialog = (dialog: SaveDialog | null) => dispatch({ type: 'save-dialog', dialog })
+  /** Counts the dialogs the save flow shows, so a slow macropad lookup can tell it was overtaken. */
+  let dialogs = 0
+  const showDialog = (dialog: SaveDialog | null) => {
+    dialogs++
+    dispatch({ type: 'save-dialog', dialog })
+  }
+
+  /**
+   * Electron only: after a save, looks for the running macropad and, when there is one, adds
+   * Reload macropad to the after-save dialog. It runs in the background, so a slow lookup never
+   * holds up the save, and gives up when another save or dialog came first.
+   */
+  async function offerReload(mine: Held, warnings: string[], shown: number): Promise<void> {
+    if (!platform.findMacropad) return
+    let macropad: LangId | null
+    try {
+      macropad = await platform.findMacropad()
+    } catch {
+      return // Not finding it only means no Reload button; the save itself succeeded.
+    }
+    if (macropad && held === mine && dialogs === shown) showDialog({ kind: 'saved', warnings, macropad, note: null })
+  }
 
   async function trySave(force: boolean): Promise<SaveResult> {
     const state = getState()
@@ -168,9 +197,34 @@ export function createActions(
     if (held !== file) return 'saved'
     held = { folder, configFile: written }
     dispatch({ type: 'saved', configFile: written, saved: ws })
-    // Task 17 adds the running macropad here, so the after-save dialog can offer Reload macropad.
-    showDialog(warnings.length > 0 ? { kind: 'saved', warnings } : null)
+    showDialog(warnings.length > 0 ? { kind: 'saved', warnings, macropad: null, note: null } : null)
+    void offerReload(held, warnings, dialogs)
     return 'saved'
+  }
+
+  let reloading = false
+
+  /** The after-save dialog when it is open. */
+  const openSavedDialog = () => {
+    const state = getState()
+    return state.screen === 'edit' && state.saveDialog?.kind === 'saved' ? state.saveDialog : null
+  }
+
+  async function reloadMacropad(): Promise<void> {
+    const dialog = openSavedDialog()
+    if (reloading || !dialog?.macropad || !platform.reloadMacropad) return
+    reloading = true
+    let note: string
+    try {
+      const lang = await platform.reloadMacropad()
+      note = lang ? `Reloaded the ${LANGUAGES[lang].label} macropad.` : 'No running macropad was found to reload.'
+    } catch (e) {
+      note = `The macropad was not reloaded: ${messageOf(e)}`
+    } finally {
+      reloading = false
+    }
+    // Only if the dialog is still the one that offered the reload.
+    if (openSavedDialog() === dialog) showDialog({ ...dialog, macropad: null, note })
   }
 
   /** Settings to use without asking, or null when the user has to choose. */
@@ -341,6 +395,8 @@ export function createActions(
         dispatch({ type: 'banner', banner: { text: openError(e), kind: 'error' } })
       }
     },
+
+    reloadMacropad,
 
     async recheck() {
       await saveDone()

@@ -1,5 +1,7 @@
 import { dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { realpathSync } from 'node:fs'
 import { CHANNELS } from './channels'
+import { autoHotkeyInstalled, findMacropad, listProcesses, relaunch, type FoundMacropad } from './macropad'
 import { NodeFolder } from './nodeFolder'
 import { forgetLastFolder, restoreLastFolder, saveLastFolder } from './store'
 import { watchFiles } from './watch'
@@ -90,10 +92,26 @@ export function registerIpc(win: BrowserWindow, storeFile: string): () => void {
     })
   })
 
-  // Task 17 finds and reloads the macropad and detects installed languages.
-  handle(CHANNELS.findMacropad, () => null)
-  handle(CHANNELS.reloadMacropad, () => null)
-  handle(CHANNELS.installedLanguages, () => [])
+  /** The macropad running from the opened folder, looked up fresh each time. */
+  const runningMacropad = async (): Promise<{ found: FoundMacropad; root: string } | null> => {
+    if (!folder) return null
+    // realpath, so 8.3 short names in the folder path match the long names in command lines.
+    const root = realpathSync.native(folder.root)
+    const found = findMacropad(await listProcesses(), root)
+    return found ? { found, root } : null
+  }
+
+  handle(CHANNELS.findMacropad, async () => (await runningMacropad())?.found.lang ?? null)
+  handle(CHANNELS.reloadMacropad, async () => {
+    const running = await runningMacropad()
+    if (!running) return null
+    relaunch(running.found, running.root)
+    return running.found.lang
+  })
+  handle(CHANNELS.installedLanguages, () => {
+    if (process.platform !== 'win32') return []
+    return autoHotkeyInstalled(process.env) ? ['ahk', 'ps'] : ['ps']
+  })
 
   return () => {
     unwatch()

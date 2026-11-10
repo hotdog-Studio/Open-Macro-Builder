@@ -28,14 +28,28 @@ function SaveDialogView({ dialog }: Readonly<{ dialog: SaveDialog }>) {
           <Messages items={dialog.errors} />
         </ConfirmDialog>
       )
-    case 'saved':
-      // The after-save dialog. Task 17 adds Reload macropad to its choices.
+    case 'saved': {
+      // The after-save dialog: notes about the other language and, in Electron, Reload macropad.
+      const choices = dialog.macropad
+        ? [{ label: 'Reload macropad', primary: true, onChoose: () => void actions.reloadMacropad() }, ...ok.map((c) => ({ ...c, primary: false }))]
+        : ok
       return (
-        <ConfirmDialog title="Saved, with notes about the other language" choices={ok} onCancel={close}>
-          <p className="mb-2">These only matter if you switch to the version you do not run:</p>
-          <Messages items={dialog.warnings} />
+        <ConfirmDialog
+          title={dialog.warnings.length > 0 ? 'Saved, with notes about the other language' : 'Saved'}
+          choices={choices}
+          onCancel={close}
+        >
+          {dialog.warnings.length > 0 && (
+            <>
+              <p className="mb-2">These only matter if you switch to the version you do not run:</p>
+              <Messages items={dialog.warnings} />
+            </>
+          )}
+          {dialog.macropad && <p className="mt-2">The macropad is running. Reload it to use these changes.</p>}
+          {dialog.note && <p className="mt-2">{dialog.note}</p>}
         </ConfirmDialog>
       )
+    }
     case 'conflict':
       return (
         <ConfirmDialog

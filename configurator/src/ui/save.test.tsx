@@ -397,3 +397,92 @@ describe('outside changes', () => {
     expect(watch.stops).toBe(1)
   })
 })
+
+describe('Reload macropad', () => {
+  it('offers Reload macropad after saving when one is running', async () => {
+    const reloadMacropad = vi.fn(async (): Promise<LangId | null> => 'ahk')
+    const { user } = await start({ platform: { kind: 'electron', findMacropad: async () => 'ahk', reloadMacropad } })
+    await editLabel(user)
+    await user.click(saveButton())
+
+    const dialog = await screen.findByRole('dialog', { name: 'Saved' })
+    expect(reloadMacropad).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Reload macropad' }))
+    expect(reloadMacropad).toHaveBeenCalledTimes(1)
+    expect(await within(dialog).findByText('Reloaded the AutoHotkey macropad.')).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: 'Reload macropad' })).toBeNull()
+
+    await user.click(within(dialog).getByRole('button', { name: 'OK' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(reloadMacropad).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the PowerShell macropad and keeps the warnings', async () => {
+    const config = exampleWith((c) => {
+      c.layers[0].macros[3] = { action: 'ZzAhkOnly', name: 'Only AHK' }
+    })
+    const { user } = await start({
+      languages: ['ahk'],
+      config,
+      files: { 'ahk/commands/custom/zz_only.ahk': 'ZzAhkOnly(Macro)\n{\n}\n' },
+      platform: { kind: 'electron', findMacropad: async () => 'ps', reloadMacropad: async () => 'ps' },
+    })
+    await editLabel(user)
+    await user.click(saveButton())
+    const dialog = await screen.findByRole('dialog', { name: 'Saved, with notes about the other language' })
+    expect(within(dialog).getByText(/not defined in powershell\/commands/)).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Reload macropad' }))
+    expect(await within(dialog).findByText('Reloaded the PowerShell macropad.')).toBeTruthy()
+    expect(within(dialog).getByText(/not defined in powershell\/commands/)).toBeTruthy()
+  })
+
+  it('says so when the reload fails', async () => {
+    const { user } = await start({
+      platform: {
+        kind: 'electron',
+        findMacropad: async () => 'ahk',
+        reloadMacropad: async () => {
+          throw new Error('spawn denied')
+        },
+      },
+    })
+    await editLabel(user)
+    await user.click(saveButton())
+    const dialog = await screen.findByRole('dialog', { name: 'Saved' })
+    await user.click(within(dialog).getByRole('button', { name: 'Reload macropad' }))
+    expect(await within(dialog).findByText('The macropad was not reloaded: spawn denied')).toBeTruthy()
+  })
+
+  it('shows no dialog when no macropad is running, and none in the browser', async () => {
+    const find = vi.fn(async (): Promise<LangId | null> => null)
+    const a = await start({ platform: { kind: 'electron', findMacropad: find } })
+    await editLabel(a.user)
+    await a.user.click(saveButton())
+    await waitFor(() => expect(saveButton().disabled).toBe(true))
+    expect(find).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    cleanup()
+
+    const b = await start()
+    await editLabel(b.user)
+    await b.user.click(saveButton())
+    await waitFor(() => expect(saveButton().disabled).toBe(true))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reload macropad' })).toBeNull()
+  })
+
+  it('still saves when looking for the macropad fails', async () => {
+    const { user } = await start({
+      platform: {
+        kind: 'electron',
+        findMacropad: async () => {
+          throw new Error('no powershell')
+        },
+      },
+    })
+    await editLabel(user)
+    await user.click(saveButton())
+    await waitFor(() => expect(saveButton().disabled).toBe(true))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})

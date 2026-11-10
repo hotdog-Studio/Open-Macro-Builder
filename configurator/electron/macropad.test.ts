@@ -6,6 +6,7 @@ import {
   autoHotkeyInstalled,
   findMacropad,
   parseProcessList,
+  PROCESS_QUERY,
   relaunch,
   relaunchCommand,
   type ProcInfo,
@@ -40,6 +41,25 @@ describe('parseProcessList', () => {
   it('gives an empty list for empty output', () => {
     expect(parseProcessList('')).toEqual([])
     expect(parseProcessList('  \r\n')).toEqual([])
+  })
+})
+
+describe('process list query', () => {
+  it('sets UTF-8 output (no BOM) before it reads the processes', () => {
+    const utf8 = PROCESS_QUERY.indexOf('[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)')
+    expect(utf8).toBe(0)
+    expect(PROCESS_QUERY.indexOf('Get-CimInstance')).toBeGreaterThan(utf8)
+    expect(PROCESS_QUERY).toContain("Name LIKE 'AutoHotkey%' OR Name = 'powershell.exe'")
+  })
+})
+
+describe('parseProcessList with non-ASCII paths', () => {
+  it('parseProcessList keeps non-ASCII paths', () => {
+    const commandLine = '"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe" "C:\\Users\\José\\omb\\ahk\\main.ahk"'
+    const json = JSON.stringify({ Name: 'AutoHotkey64.exe', ProcessId: 5, ExecutablePath: AHK_EXE, CommandLine: commandLine })
+    const procs = parseProcessList(json)
+    expect(procs[0].commandLine).toBe(commandLine)
+    expect(findMacropad(procs, 'C:\\Users\\José\\omb')).toEqual({ lang: 'ahk', exe: AHK_EXE })
   })
 })
 

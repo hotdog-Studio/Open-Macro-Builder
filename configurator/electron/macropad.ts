@@ -83,7 +83,13 @@ export function relaunch(found: FoundMacropad, root: string, spawn: Spawn = node
   child.unref()
 }
 
-const QUERY =
+/**
+ * Windows PowerShell 5.1 writes redirected output in the OEM code page, which Node would read
+ * as UTF-8 and turn any non-ASCII character of a path (a user name such as José) into U+FFFD.
+ * Setting the console output encoding first, without a byte-order mark, makes both sides UTF-8.
+ */
+export const PROCESS_QUERY =
+  '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); ' +
   `Get-CimInstance Win32_Process -Filter "Name LIKE 'AutoHotkey%' OR Name = 'powershell.exe'" | ` +
   'Select-Object Name,ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress'
 
@@ -93,7 +99,7 @@ export function listProcesses(): Promise<ProcInfo[]> {
   return new Promise((resolve, reject) => {
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', QUERY],
+      ['-NoProfile', '-NonInteractive', '-Command', PROCESS_QUERY],
       { windowsHide: true, timeout: 20_000, maxBuffer: 16 * 1024 * 1024 },
       (error, stdout) => {
         if (error) return reject(error)

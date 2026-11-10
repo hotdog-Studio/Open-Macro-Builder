@@ -69,7 +69,12 @@ export function createActions(
 
   /** Reads the chosen config and everything else, then shows the tabs or the language prompt. */
   async function finishLoad(folder: FolderAccess, configPath: string, token: number): Promise<void> {
-    const session = await readSession(folder, configPath)
+    await finishSession(await readSession(folder, configPath), token)
+  }
+
+  /** Settings last: loads or asks for them, then shows the tabs or the language prompt. */
+  async function finishSession(session: Session, token: number): Promise<void> {
+    const { folder } = session
     let settings = await loadSettings(folder)
     if (!settings) {
       settings = await defaultSettings()
@@ -157,8 +162,15 @@ export function createActions(
       if (state.screen !== 'pick-config' || !firstAnswer(state)) return
       const token = ++loads
       await guarded(token, async () => {
-        if (choice === 'copy') await copyExampleConfig(state.folder)
-        await finishLoad(state.folder, choice === 'copy' ? PERSONAL_CONFIG : EXAMPLE_CONFIG, token)
+        if (choice === 'example') return finishLoad(state.folder, EXAMPLE_CONFIG, token)
+        // Every load check runs on the example first: a copy that cannot be
+        // opened would hide config.json for good, since local/config.json wins.
+        const session = await readSession(state.folder, EXAMPLE_CONFIG)
+        if (token !== loads) return
+        await copyExampleConfig(state.folder)
+        const configFile = await readTextFile(state.folder, PERSONAL_CONFIG)
+        if (!configFile) throw new ConfigError(`${PERSONAL_CONFIG} is missing.`)
+        await finishSession({ ...session, configFile }, token)
       })
     },
 

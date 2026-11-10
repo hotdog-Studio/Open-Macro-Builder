@@ -50,17 +50,26 @@ export interface PickLanguageState {
   session: Session
 }
 
-export interface EditState extends Session {
+/** The editor as the reducer keeps it: no derived fields. */
+export interface EditCore extends Session {
   screen: 'edit'
   settings: Settings
   tab: Tab
   selectedKey: KeyId | null
   selectedLayer: string | null
   banner: Banner | null
-  /** writeConfig(ws) !== writeConfig(saved); recomputed whenever ws or saved change. */
+}
+
+/** The editor as components see it. */
+export interface EditState extends EditCore {
+  /** writeConfig(ws) !== writeConfig(saved), derived by AppProvider; never stored. */
   dirty: boolean
 }
 
+/** What the reducer keeps. */
+export type StoredState = OpenState | PickConfigState | PickLanguageState | EditCore
+
+/** What useApp() gives: the stored state plus derived fields. */
 export type AppState = OpenState | PickConfigState | PickLanguageState | EditState
 
 export type Action =
@@ -76,11 +85,9 @@ export type Action =
   | { type: 'banner'; banner: Banner | null }
   | { type: 'settings'; settings: Settings }
 
-export const initialState: AppState = { screen: 'open', message: null, reopen: null }
+export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
 
-const isDirty = (ws: Workspace, saved: Workspace) => writeConfig(ws) !== writeConfig(saved)
-
-function loadedState(session: Session, settings: Settings): EditState {
+function loadedState(session: Session, settings: Settings): EditCore {
   const notices = session.ws.notices
   return {
     ...session,
@@ -90,15 +97,14 @@ function loadedState(session: Session, settings: Settings): EditState {
     selectedKey: null,
     selectedLayer: null,
     banner: notices.length > 0 ? { text: notices.join('\n'), kind: 'info' } : null,
-    dirty: isDirty(session.ws, session.saved),
   }
 }
 
 /** Actions that only make sense while editing. */
-function editReducer(state: EditState, action: Action): EditState {
+function editReducer(state: EditCore, action: Action): EditCore {
   switch (action.type) {
     case 'edit':
-      return action.ws === state.ws ? state : { ...state, ws: action.ws, dirty: isDirty(action.ws, state.saved) }
+      return action.ws === state.ws ? state : { ...state, ws: action.ws }
     case 'select':
       return {
         ...state,
@@ -116,7 +122,7 @@ function editReducer(state: EditState, action: Action): EditState {
   }
 }
 
-export function reducer(state: AppState, action: Action): AppState {
+export function reducer(state: StoredState, action: Action): StoredState {
   switch (action.type) {
     case 'show-open':
       return { screen: 'open', message: action.message, reopen: action.reopen ?? null }
@@ -139,8 +145,20 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null)
 
+/** The text each workspace would be saved as, so dirty compares what Save would write. */
+function useConfigText(ws: Workspace | null): string | null {
+  return useMemo(() => (ws ? writeConfig(ws) : null), [ws])
+}
+
 export function AppProvider({ platform, children }: { platform: Platform; children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState)
+  const [stored, dispatch] = useReducer(reducer, initialState)
+  const editing = stored.screen === 'edit' ? stored : null
+  const wsText = useConfigText(editing?.ws ?? null)
+  const savedText = useConfigText(editing?.saved ?? null)
+  const state = useMemo<AppState>(
+    () => (stored.screen === 'edit' ? { ...stored, dirty: wsText !== savedText } : stored),
+    [stored, wsText, savedText],
+  )
   const { actions, sync } = useMemo(() => createActions(platform, dispatch), [platform])
   // Actions run from clicks and after awaits; they read the last committed state.
   useEffect(() => sync(state), [sync, state])

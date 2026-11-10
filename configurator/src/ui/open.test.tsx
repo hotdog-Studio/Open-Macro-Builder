@@ -83,6 +83,33 @@ describe('opening a folder', () => {
     await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/ (recommended)' }))
     await screen.findByRole('list', { name: 'Keys' })
     expect(await folder.readBytes('local/config.json')).toEqual(await folder.readBytes('config.json'))
+    expect(screen.getByText('local/config.json')).toBeTruthy()
+  })
+
+  it('does not copy a config.json that is not JSON into local/', async () => {
+    const folder = repoFolder()
+    await folder.writeBytes('config.json', new TextEncoder().encode('{ "fn": { "key": "ScrollLock" }, "keys": [\n'))
+    await folder.writeBytes(SETTINGS_PATH, new TextEncoder().encode('{ "languages": ["ahk"] }\n'))
+    const before = await snapshot(folder)
+    const user = await openFolder(fakePlatform(folder))
+    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/ (recommended)' }))
+    expect(await screen.findByText(/^config\.json is not valid JSON: /)).toBeTruthy()
+    expect(await folder.readBytes('local/config.json')).toBeNull()
+    expect(await snapshot(folder)).toEqual(before)
+  })
+
+  it('does not copy the example into local/ when a command file is not UTF-8', async () => {
+    const folder = repoFolder()
+    await folder.writeBytes('ahk/commands/broken.ahk', new Uint8Array([0x4f, 0x6b, 0xe9, 0x0a]))
+    await folder.writeBytes(SETTINGS_PATH, new TextEncoder().encode('{ "languages": ["ahk"] }\n'))
+    const before = await snapshot(folder)
+    const user = await openFolder(fakePlatform(folder))
+    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/ (recommended)' }))
+    expect(
+      await screen.findByText('ahk/commands/broken.ahk is not UTF-8 text, so the configurator will not edit it.'),
+    ).toBeTruthy()
+    expect(await folder.readBytes('local/config.json')).toBeNull()
+    expect(await snapshot(folder)).toEqual(before)
   })
 
   it('edits the shared example without writing anything when asked to', async () => {

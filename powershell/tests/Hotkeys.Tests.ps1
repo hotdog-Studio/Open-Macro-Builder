@@ -56,3 +56,27 @@ Describe 'Hotstring' {
     It 'wraps execute actions in a macro' { $d = Hotstring ':X:go' 'Act'; $d.Macro.Action | Should -Be 'Act'; $d.Replacement | Should -BeNullOrEmpty }
     It 'checks execute actions exist' { { Test-HotkeyActions @((Hotstring ':X:go' 'NoSuchFn')) } | Should -Throw 'Undefined hotkey action(s): NoSuchFn (:X:go)' }
 }
+# Both tests need their form in the foreground. Windows lets another program keep it (someone
+# typing elsewhere during the run), and then the test reports Inconclusive rather than failing.
+Describe 'ForegroundWatcher title hook' -Tag Integration {
+    It 'listens for title changes only in the foreground window''s process' {
+        $w = [Macropad.ForegroundWatcher]::new()
+        $f = New-Object System.Windows.Forms.Form; $f.Show(); $f.Activate(); Wait-Pump 200
+        try {
+            $fg = Get-ForegroundInfo
+            if ($null -eq $fg -or $fg.Pid -ne $PID) { Set-ItResult -Inconclusive -Because "$($fg.Exe) kept the foreground"; return }
+            $w.NameHookProcessId | Should -Be $PID
+        } finally { $f.Dispose(); $w.Dispose() }
+    }
+    It 'raises Changed when the foreground window''s title changes' {
+        $f = New-Object System.Windows.Forms.Form; $f.Show(); $f.Activate(); Wait-Pump 200
+        $w = [Macropad.ForegroundWatcher]::new(); $w.Context = @{ Count = 0 }
+        $w.add_Changed({ param($sender, $e) $sender.Context.Count++ })
+        try {
+            $fg = Get-ForegroundInfo
+            if ($null -eq $fg -or $fg.Pid -ne $PID) { Set-ItResult -Inconclusive -Because "$($fg.Exe) kept the foreground"; return }
+            $f.Text = 'renamed'; Wait-Pump 200
+            $w.Context.Count | Should -BeGreaterThan 0
+        } finally { $f.Dispose(); $w.Dispose() }
+    }
+}

@@ -40,7 +40,7 @@ class Layout {
         this.SetLayers(Layers)
         ; display options
         if (ShowFn) 
-            this.showFn := this.ShowFunctionKey(true, ShowFn)
+            this.ShowFunctionKey(true, ShowFn)
         else
             this.showFn := false
         this.showMacroMarkers := ShowMacroMarkers
@@ -360,21 +360,31 @@ class Layout {
      */
     SetNextLayerLabels(Index, Labels) {
         for (i, label in Labels) {
+            x := y := w := h := 0
+            label.GetPos(&x, &y, &w, &h)
             if (this.macroIcons) {
                 if (i > this.layers.Length || !this.layers[i]) {
                     label.Text := ""
+                    label.Opt(" +Background010101")
+                    label.Redraw()
                 } 
                 else {
                     label.Text := this.layers[i].title
-                }
+                    label.Opt(" -theme +0x8000 -0x1 +Background101010")
+                    label.Redraw()
+                }                
                 continue
             }
             ; If new layer has no macro assigned
             if (i > this.layers[Index].macros.Length || !this.layers[Index].macros[i]) {
                 label.Text := ""
+                label.Opt(" +Background010101")
+                label.Redraw()
             } 
             else {
                 label.Text := this.layers[Index].macros[i].name
+                label.Opt(" -theme +0x8000 -0x1 +Background101010")
+                label.Redraw()
             }
         }
     }

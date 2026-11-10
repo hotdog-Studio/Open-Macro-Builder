@@ -39,7 +39,7 @@ class LayerSelectGui {
 
       ; Add Layout Labels
       Loop Layout.keys.Length {
-         this.labels.Push(this.window.AddText("r1 center x" Layout.keys[A_Index].label.x " y" Layout.keys[A_Index].label.y " w" Layout.keys[A_Index].label.w " h" Layout.keys[A_Index].label.h " Section", layout.keys[A_Index].key))
+         this.labels.Push(this.window.AddText("r1 center x" Layout.keys[A_Index].label.x " y" Layout.keys[A_Index].label.y " w" Layout.keys[A_Index].label.w " h" Layout.keys[A_Index].label.h " Section -theme +0x8000 -0x1", layout.keys[A_Index].key))
       }
 
       ; Add Layout Buttons
@@ -69,7 +69,13 @@ class LayerSelectGui {
 
       if (Layout.showFn) {
          ; Show the function key label
-         this.window.AddText("r1 center x" Layout.fn.label.x " y" Layout.fn.label.y " w" Layout.fn.label.w " h" Layout.fn.label.h " Section", Layout.showFn)
+         text := this.window.AddText("r1 center x" Layout.fn.label.x " y" Layout.fn.label.y " w" Layout.fn.label.w " h" Layout.fn.label.h " Section", Layout.showFn)
+
+         if (Layout.showFn != " ") {
+            text.Opt(" +Background101010")
+            text.Redraw()
+         }
+
          ; Show the function key button
          fnButton := this.window.AddButton("x" Layout.fn.x " y" Layout.fn.y " w" Layout.fn.w " h" Layout.fn.h " disabled")
          icon := LayerSelectGui.GetEmptyIcon(Layout.fn)

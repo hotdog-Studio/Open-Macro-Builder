@@ -12,6 +12,11 @@ describe('detectPlatform', () => {
     expect(detectPlatform(w)).toMatchObject({ kind: 'browser' })
   })
 
+  it('gives the Electron platform when the preload exposed window.omb', () => {
+    const w = { omb: {}, showDirectoryPicker: async () => ({}) } as unknown as Window
+    expect(detectPlatform(w)).toMatchObject({ kind: 'electron' })
+  })
+
   it('opens the picker in readwrite mode', async () => {
     const calls: unknown[] = []
     const w = {

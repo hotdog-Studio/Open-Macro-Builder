@@ -45,7 +45,20 @@ The Integration tests open and close Character Map and send a real ScrollLock pr
 
 ## Start with Windows
 
-The startup shortcut `shell:startup\LayeredMacropad.lnk` runs one version. Point it at `launch.vbs` to switch to this one; see the steps below.
+The startup shortcut `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LayeredMacropad.lnk` starts one version at login. The AutoHotkey and PowerShell versions cannot run at the same time, so point it at only one of them.
+
+To switch to the PowerShell version, retarget the shortcut to `wscript.exe` with `launch.vbs` as its argument:
+
+```powershell
+$lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\LayeredMacropad.lnk"
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+$s.TargetPath = 'C:\Windows\System32\wscript.exe'
+$s.Arguments = '"<repo>\macropad_ahk\powershell\launch.vbs"'
+$s.WorkingDirectory = '<repo>\macropad_ahk\powershell'
+$s.Save()
+```
+
+To switch back, set `TargetPath` to `<repo>\macropad_ahk\ahk\main.ahk`, `Arguments` to `''` and `WorkingDirectory` to `<repo>\macropad_ahk\ahk`. Replace `<repo>` with the folder that holds this repository.
 
 ## How the Fn key is detected
 

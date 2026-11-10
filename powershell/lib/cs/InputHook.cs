@@ -75,6 +75,9 @@ namespace Macropad
         private string endChars = "-()[]{}:;'\"/\\,.?!\r\t ";
         private bool capsToggled;
         private bool capsDown;
+        private bool capsSeen;
+        private int lastKeyTick;
+        private const int CapsResyncPauseMs = 1500;
 
         private readonly FiredWindow window;
         private readonly Queue<HookResult> injectQueue = new Queue<HookResult>();
@@ -413,6 +416,7 @@ namespace Macropad
             {
                 if (heldPrefix != vk)
                 {
+                    if (heldPrefix != 0) HandOverPrefix(r);
                     heldPrefix = vk;
                     prefixUsed = false;
                     prefixPassthrough = false;
@@ -444,6 +448,20 @@ namespace Macropad
                 if (WinOrAltDown()) r.MaskMenu = true;
             }
             return r;
+        }
+
+        // A second prefix pressed while the first is still held takes over. If no combination used
+        // the first, it acts as if released now: its own hotkey fires, or the key is typed. Its real
+        // release comes later and is swallowed, because its press was.
+        private void HandOverPrefix(HookResult r)
+        {
+            int old = heldPrefix;
+            if (prefixPassthrough) return;
+            suppressedDown.Add(old);
+            if (prefixUsed) return;
+            Def own = BestMatch(delegate (Def d) { return d.PrefixVk == 0 && d.Vk == old && ModsFit(d, old); });
+            if (own != null) Fire(r, own.Id);
+            else r.ReinjectVk = old;
         }
 
         private HookResult KeyUp(int vk, HookResult r)
@@ -594,6 +612,34 @@ namespace Macropad
             if (modifierDown[left] || modifierDown[right]) state[neutral] = 0x80;
         }
 
+        // Caps Lock: the hook flips its own copy on each press, which stays exact while it sees every
+        // key. It never sees keys pressed on another desktop (the lock screen, UAC), so after a pause
+        // of more than 1.5 s it takes Windows' state instead. A pause that long cannot hide a held
+        // key, which would still be repeating. systemToggled is Windows' state before this event.
+        public void TrackCapsLock(int vk, bool up, int tick, bool systemToggled)
+        {
+            lock (sync)
+            {
+                if (!capsSeen || tick - lastKeyTick > CapsResyncPauseMs)
+                {
+                    capsToggled = systemToggled;
+                    capsDown = false;
+                }
+                capsSeen = true;
+                lastKeyTick = tick;
+                if (vk == 0x14)
+                {
+                    if (!up && !capsDown) capsToggled = !capsToggled;
+                    capsDown = !up;
+                }
+            }
+        }
+
+        public bool CapsLockToggled { get { lock (sync) return capsToggled; } }
+
+        // Typed text only matters to hotstrings, so without any the hook skips reading it.
+        public bool WantsTypedText { get { lock (sync) return hotstrings.Count > 0; } }
+
         // The text the key produces in the foreground window's layout. Flag 0x4 leaves the kernel
         // keyboard state alone, so dead keys keep working (Windows 10 1607+). Dead keys give "".
         private string TypedText(int vk, uint scanCode)
@@ -620,17 +666,10 @@ namespace Macropad
             KBDLLHOOKSTRUCT k = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
             bool up = (k.flags & LLKHF_UP) != 0;
             bool self = k.dwExtraInfo.ToInt64() == Interop.Signature;
-            if (k.vkCode == 0x14)
-            {
-                lock (sync)
-                {
-                    if (!up && !capsDown) capsToggled = !capsToggled;
-                    capsDown = !up;
-                }
-            }
+            TrackCapsLock((int)k.vkCode, up, unchecked((int)k.time), (GetKeyState(0x14) & 1) != 0);
             ResyncModifiers(SystemModifiersDown(), (int)k.vkCode);
             string typed = "";
-            if (!up && !self)
+            if (!up && !self && WantsTypedText)
             {
                 NoteForeground(GetForegroundWindow());
                 typed = TypedText((int)k.vkCode, k.scanCode);

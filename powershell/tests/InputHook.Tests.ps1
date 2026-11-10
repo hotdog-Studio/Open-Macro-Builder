@@ -119,3 +119,67 @@ Describe 'InputHook resync and delivery' {
         $script:log -join ',' | Should -Be 'fire:1'
     }
 }
+Describe 'InputHook Caps Lock' {
+    AfterEach { if ($h) { $h.Dispose() } }
+    It 'counts Caps Lock presses itself while keys come quickly' {
+        $h = [Macropad.InputHook]::new()
+        $h.TrackCapsLock(0x41, $false, 1000, $false)
+        $h.TrackCapsLock(0x14, $false, 1100, $false); $h.TrackCapsLock(0x14, $true, 1150, $false)
+        $h.TrackCapsLock(0x41, $false, 1200, $false)
+        $h.CapsLockToggled | Should -BeTrue
+    }
+    It 'ignores the auto-repeat of a held Caps Lock' {
+        $h = [Macropad.InputHook]::new()
+        $h.TrackCapsLock(0x14, $false, 1000, $false); $h.TrackCapsLock(0x14, $false, 1030, $false); $h.TrackCapsLock(0x14, $true, 1060, $false)
+        $h.CapsLockToggled | Should -BeTrue
+    }
+    It 'takes the Windows state after a pause, so a toggle on the lock screen is not missed' {
+        $h = [Macropad.InputHook]::new()
+        $h.TrackCapsLock(0x41, $false, 1000, $false)
+        $h.TrackCapsLock(0x41, $false, 9000, $true)
+        $h.CapsLockToggled | Should -BeTrue
+    }
+    It 'counts a press after a pause even when the last release was never seen' {
+        $h = [Macropad.InputHook]::new()
+        $h.TrackCapsLock(0x14, $false, 1000, $false)
+        $h.TrackCapsLock(0x14, $false, 9000, $true)
+        $h.CapsLockToggled | Should -BeFalse
+    }
+}
+Describe 'InputHook typed text' {
+    It 'reads typed text only when there are hotstrings' {
+        $h = [Macropad.InputHook]::new()
+        try {
+            $h.WantsTypedText | Should -BeFalse
+            $h.AddHotstring(0, 'btw', 0, $false, 'by the way', 0)
+            $h.WantsTypedText | Should -BeTrue
+        } finally { $h.Dispose() }
+    }
+}
+Describe 'InputHook second prefix' {
+    AfterEach { if ($h) { $h.Dispose() } }
+    It 'types a held prefix when a second prefix is pressed' {
+        $h = New-Hook 'a & b', 'c & d'
+        [void](Dn $h 0x41)
+        $r = Dn $h 0x43; $r.Suppress | Should -BeTrue; $r.ReinjectVk | Should -Be 0x41
+        (Up $h 0x41).Suppress | Should -BeTrue
+        (Dn $h 0x44).Fired | Should -Be @(1)
+    }
+    It 'runs the first prefix''s own hotkey instead of typing it' {
+        $h = New-Hook 'a & b', 'c & d', 'a'
+        [void](Dn $h 0x41)
+        $r = Dn $h 0x43; $r.Fired | Should -Be @(2); $r.ReinjectVk | Should -Be 0
+    }
+    It 'swallows the release of a used prefix after a second prefix' {
+        $h = New-Hook 'a & b', 'c & d'
+        [void](Dn $h 0x41); [void](Dn $h 0x42); [void](Up $h 0x42)
+        (Dn $h 0x43).ReinjectVk | Should -Be 0
+        (Up $h 0x41).Suppress | Should -BeTrue
+    }
+    It 'lets a passthrough prefix''s release through after a second prefix' {
+        $h = New-Hook '~a & b', 'c & d'
+        (Dn $h 0x41).Suppress | Should -BeFalse
+        (Dn $h 0x43).ReinjectVk | Should -Be 0
+        (Up $h 0x41).Suppress | Should -BeFalse
+    }
+}

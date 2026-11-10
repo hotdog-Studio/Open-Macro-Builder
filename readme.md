@@ -10,17 +10,18 @@ Turn a spare keypad into layers of macros. Bind its keys to F13 to F24 and pick 
 | `ahk/` | [AutoHotkey v2](https://www.autohotkey.com/download/) | The original version. |
 | `powershell/` | Windows PowerShell 5.1, built into Windows | Nothing to install. See [powershell/README.md](powershell/README.md). |
 
-Both read the same `config.json`, use the same icons in `img/` and have the same command names, so you can switch between them without touching your layout. Run one at a time: both claim the macro keys.
+Both read the same layout file, use the same icons in `img/` and have the same command names, so you can switch between them without touching your layout. Run one at a time: both claim the macro keys.
 
 ## Getting started
 
-**AutoHotkey:** install AutoHotkey v2, edit `config.json`, then run `ahk/main.ahk`.
-
-**PowerShell:** edit `config.json`, then run `wscript powershell\launch.vbs`.
+1. Copy the example `config.json` to `local/config.json` and edit it. The `local/` folder is yours: git ignores it (see [Your own layout and commands](#your-own-layout-and-commands)).
+2. **AutoHotkey:** install AutoHotkey v2, then run `ahk/main.ahk`. **PowerShell:** run `wscript powershell\launch.vbs`.
 
 To start either one with Windows, point the shortcut in `shell:startup` at `ahk\main.ahk` or at `launch.vbs` (powershell/README.md has the steps).
 
-## config.json
+## The layout file
+
+Both versions load the first of these that exists: the file named by the `OMB_CONFIG` environment variable, `local/config.json`, then the example `config.json`.
 
 ```json
 {
@@ -32,16 +33,16 @@ To start either one with Windows, point the shortcut in `shell:startup` at `ahk\
   ],
   "layers": [
     {
-      "title": "Programs",
-      "icon": "programs",
+      "title": "Media",
+      "icon": "media",
       "macros": [
-        { "action": "OpenYoutube", "name": "YouTube", "description": "Open YouTube in Chrome" },
+        { "action": "PlayPause", "name": "Play", "description": "Play or pause" },
         null,
-        { "action": "OpenFileExplorer", "name": "File Explorer" }
+        { "action": "VolumeUp", "name": "Vol +" }
       ]
     },
     null,
-    { "title": "Dev Environment", "icon": "portainer", "disabled": true, "macros": [] }
+    { "title": "Spare", "icon": "default_commands", "disabled": true, "macros": [] }
   ],
   "default": 1,
   "showFn": " ",
@@ -61,33 +62,60 @@ To start either one with Windows, point the shortcut in `shell:startup` at `ahk\
 - `default` is the layer selected at startup, counted from 1. `showFn` is the text above the Fn key. `showMacroMarkers` marks keys that have a macro on the selected layer, and `showLabels` shows the macro names. `useMacroIcons` and `iconAction` change what the overlay's icons show and do.
 - `hotkeys` and `hotstrings` add ordinary AutoHotkey-style hotkeys and hotstrings, such as `{ "hotkey": "^!e", "action": "OpenFileExplorer" }` and `{ "hotstring": "::btw", "replacement": "by the way" }`. powershell/README.md describes the options.
 
-`node scripts/validate-config.mjs` checks the file: its structure, the icon folders, and that every action exists in both versions.
+`node scripts/validate-config.mjs` checks the layout both versions would load: its structure, the icon folders, and that every action exists in both versions. Pass a path to check another file.
 
 ## Commands
 
-Command functions live in `ahk/commands/` and `powershell/commands/`, with the same names in both. Each takes the macro as its only parameter. Put your own in the `custom/` folders. In AutoHotkey, add an `#Include` for the file to `ahk/config.ahk`. In PowerShell, every `.ps1` file under `powershell/commands` is loaded automatically.
+Command functions live in `ahk/commands/` and `powershell/commands/`, with the same names in both. Each takes the macro as its only parameter.
+
+- `helper`, `media`, `power`, `windows`: the core commands.
+- `custom/chrome`, `custom/vscode`, `custom/vsstudio`: keyboard shortcuts for Chrome, VS Code and Visual Studio.
+- `custom/ssh`: `LoadPuttySession`, `SshMacroName` and `SshMacroDescription` (open the saved PuTTY session named like the macro), and `SshExample`.
+- `custom/examples`: small commands to copy from, for opening a website, a program, Calculator or a folder.
+- `custom/automation`: forms that send a key or replay a click after a delay.
+
+The example `config.json` uses all of them.
+
+## Your own layout and commands
+
+Everything specific to you lives in `local/`, which git ignores, so your hosts, paths, accounts and layout never reach the repository:
+
+- `local/config.json`: your layout.
+- `local/ahk/commands.ahk`: your AutoHotkey commands. `ahk/config.ahk` includes it when it exists; `#Include` your other files from it.
+- `local/powershell/commands/*.ps1`: your PowerShell commands, loaded automatically.
+- `local/powershell/tests/*.Tests.ps1`: tests for them, which `powershell/tests/run.ps1` runs too.
+- `local/ci/jenkins.env`: the Jenkins URL and checkout credential id for `ci/create-jenkins-job.sh`.
+- `local/denylist.txt`: strings that must never be committed, one per line.
+
+`scripts/check-private.mjs` fails when a deny-listed string would reach git. Run it from git hooks so nothing slips through:
+
+```
+printf '#!/bin/sh\nexec node scripts/check-private.mjs --staged\n' > .git/hooks/pre-commit
+printf '#!/bin/sh\nexec node scripts/check-private.mjs --pre-push\n' > .git/hooks/pre-push
+node scripts/check-private.mjs --history          # check every commit
+```
 
 ## Repository layout
 
-- `config.json`: the layout both versions read.
-- `ahk/`: the AutoHotkey version (`main.ahk`, `lib/`, `commands/`).
+- `config.json`: the example layout.
+- `ahk/`: the AutoHotkey version (`main.ahk`, `lib/`, `commands/`, `tests/`).
 - `powershell/`: the PowerShell version, its tests and its docs.
 - `img/`: icon sets, one folder per icon.
 - `qmk/`: the VIA/QMK layout of the EPOMAKER EK21 keypad this was built for.
-- `scripts/`: the config validator and its tests.
-- `docs/`: design plans.
+- `scripts/`: the config validator, the private-details check and their tests.
 - `Jenkinsfile`, `sonar-project.properties`, `ci/`: CI and the Jenkins job definition.
+- `local/`: yours, ignored by git.
 
 ## Tests and CI
 
 ```
-node --test "scripts/*.test.mjs"                          # config validator
+node --test "scripts/*.test.mjs"                          # validator and private-details check
 powershell -NoProfile -File powershell\tests\run.ps1      # Pester suite (Windows)
 ```
 
-Jenkins validates `config.json` and runs the script tests on the Linux agent. It runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one, then sends everything to SonarQube and waits for the quality gate. The `Jenkinsfile` header lists the globals.
+Jenkins validates `config.json` and runs the script tests on the Linux agent. It runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one, then sends everything to SonarQube and waits for the quality gate. The `Jenkinsfile` header lists the globals, such as `OMB_NTFY_URL` for build notifications.
 
-The Jenkins job is a multibranch pipeline defined in `ci/jenkins-job.xml`. It checks out over SSH with an SSH key credential and scans for new commits every 2 minutes. To create it, or update it after editing the XML, run this with a Jenkins API token:
+The Jenkins job is a multibranch pipeline defined in `ci/jenkins-job.xml`. It checks out over SSH and scans for new commits every 2 minutes. To create it, or update it after editing the XML, put `JENKINS_URL` and `JENKINS_CREDENTIALS_ID` in `local/ci/jenkins.env` and run:
 
 ```
 JENKINS_USER=<user> JENKINS_TOKEN=<api token> sh ci/create-jenkins-job.sh

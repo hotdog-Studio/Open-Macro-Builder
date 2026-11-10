@@ -28,7 +28,9 @@ Errors from macros show as a tray balloon and are appended to `%TEMP%\LayeredMac
 
 ## Configure
 
-The layout lives in `../config.json`, which the AutoHotkey version reads too, so both stay in step. `config.ps1` here and `../ahk/config.ahk` only load it. A test checks that both versions build the same layout from it.
+The layout is a JSON file that the AutoHotkey version reads too, so both stay in step: the file named by `$env:OMB_CONFIG`, else your own `../local/config.json` (ignored by git), else the example `../config.json`. `config.ps1` here and `../ahk/config.ahk` only load it. A test checks that both versions build the same layout from the example and from your own file.
+
+Your own commands go in `../local/powershell/commands`, which is loaded after `commands/`, and their tests in `../local/powershell/tests`. The root readme describes the `local` folder.
 
 ```json
 {
@@ -36,15 +38,15 @@ The layout lives in `../config.json`, which the AutoHotkey version reads too, so
   "keys": [ { "key": "F13", "row": 1, "col": 1 }, { "key": "F22", "row": 1, "col": 4, "height": 2 } ],
   "layers": [
     {
-      "title": "Programs",
-      "icon": "programs",
+      "title": "Examples",
+      "icon": "default_commands",
       "macros": [
-        { "action": "OpenYoutube", "name": "YouTube", "description": "Open YouTube in Chrome" },
+        { "action": "ExampleOpenWebsite", "name": "Website", "description": "Open example.com" },
         null
       ]
     },
     null,
-    { "title": "Old layer", "icon": "portainer", "disabled": true, "macros": [] }
+    { "title": "Old layer", "icon": "default_commands", "disabled": true, "macros": [] }
   ],
   "default": 1,
   "showFn": " ",
@@ -60,7 +62,7 @@ The layout lives in `../config.json`, which the AutoHotkey version reads too, so
 - `keys` are the macro keys; `width` and `height` default to 1. Layers and macros are matched to keys by position.
 - `null` leaves a layer or macro slot empty. `"disabled": true` keeps a layer in the file without giving it a key.
 - `icon` names a folder in `../img`. A macro can have its own `icon`, used with `useMacroIcons`.
-- `action` is the name of a command function in `commands/`. Command functions take the macro as their only parameter. A name that matches no function stops startup with every missing name listed.
+- `action` is the name of a command function in `commands/` or `../local/powershell/commands`. Command functions take the macro as their only parameter. A name that matches no function stops startup with every missing name listed.
 - `default` is the layer selected at startup, counted from 1. `showFn` is the text above the Fn key (`" "` for none, `true` for its name).
 
 Key chords in commands are key names joined by `+`, for example `Send-Chord 'Ctrl+Shift+t'`. The key names are listed in `lib/Input.ps1`.

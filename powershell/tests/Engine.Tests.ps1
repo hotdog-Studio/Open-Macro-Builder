@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Pump.ps1"; . "$PSScriptRoot\..\lib\Assets.ps1"; . "$PSScriptRoot\..\lib\Input.ps1"; . "$PSScriptRoot\..\lib\Model.ps1"; . "$PSScriptRoot\..\lib\Engine.ps1"
+    . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Interop.ps1"; . "$PSScriptRoot\..\lib\Pump.ps1"; . "$PSScriptRoot\..\lib\Assets.ps1"; . "$PSScriptRoot\..\lib\Input.ps1"; . "$PSScriptRoot\..\lib\Model.ps1"; . "$PSScriptRoot\..\lib\Engine.ps1"
     function Act { param($m) $script:ran = $m.Name }
     function New-TestEngine {
         $script:calls = [System.Collections.ArrayList]::new(); $script:selected = 0; $script:ran = $null

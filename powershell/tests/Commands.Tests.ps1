@@ -1,6 +1,6 @@
 BeforeAll {
     $ps = Split-Path $PSScriptRoot -Parent
-    foreach ($f in 'Native','Pump','Assets','Input','Model','Overlay','Window','Engine') { . "$ps\lib\$f.ps1" }
+    foreach ($f in 'Native','Interop','Pump','Assets','Input','Model','Overlay','Window','Engine') { . "$ps\lib\$f.ps1" }
     Get-ChildItem "$ps\commands" -Recurse -Filter *.ps1 | ForEach-Object { . $_.FullName }
     $ahk = Join-Path (Split-Path $ps -Parent) 'ahk\commands'
     function Get-AhkFunctionNames([string[]]$Files) {

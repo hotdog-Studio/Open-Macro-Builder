@@ -57,11 +57,8 @@ function ConvertTo-KeyEvent {
 
 function Send-KeyEvent {
     param([Parameter(Mandatory)]$Event)
-    $flags = 0
-    if (Test-ExtendedKey $Event.Vk) { $flags = $flags -bor [Macropad.Native]::KEYEVENTF_EXTENDEDKEY }
-    if ($Event.Up) { $flags = $flags -bor [Macropad.Native]::KEYEVENTF_KEYUP }
-    $scan = [Macropad.Native]::MapVirtualKey([uint32]$Event.Vk, 0)
-    [Macropad.Native]::keybd_event([byte]$Event.Vk, [byte]($scan -band 0xFF), [uint32]$flags, [UIntPtr]::Zero)
+    # Tagged SendInput (lib/cs/Inject.cs), so the macropad's own hooks ignore it.
+    [Macropad.Inject]::Key([int]$Event.Vk, [bool]$Event.Up, (Test-ExtendedKey $Event.Vk))
 }
 
 function Send-Chord {
@@ -92,6 +89,6 @@ function Send-Click {
     if (-not $buttons.ContainsKey($Button)) { throw "Unknown mouse button '$Button'" }
     $b = $buttons[$Button]
     [void][Macropad.Native]::SetCursorPos($X, $Y)
-    [Macropad.Native]::mouse_event([uint32]$b[0], 0, 0, [uint32]$b[2], [UIntPtr]::Zero)
-    [Macropad.Native]::mouse_event([uint32]$b[1], 0, 0, [uint32]$b[2], [UIntPtr]::Zero)
+    [Macropad.Inject]::Mouse([uint32]$b[0], [uint32]$b[2])
+    [Macropad.Inject]::Mouse([uint32]$b[1], [uint32]$b[2])
 }

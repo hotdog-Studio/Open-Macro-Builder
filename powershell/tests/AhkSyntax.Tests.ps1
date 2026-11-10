@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\lib\Input.ps1"; . "$PSScriptRoot\..\lib\AhkSyntax.ps1"
+    . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Interop.ps1"; . "$PSScriptRoot\..\lib\Input.ps1"; . "$PSScriptRoot\..\lib\AhkSyntax.ps1"
     function Fmt($Result) {
         ($Result.Events | ForEach-Object {
             $label = if ($_.Char) { [string][char]$_.Char } else { '{0:X2}' -f $_.Vk }

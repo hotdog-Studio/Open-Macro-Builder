@@ -21,6 +21,8 @@ namespace Macropad
         public const int WM_HOTKEY = 0x0312;
         public const int SW_HIDE = 0;
         public const int SW_RESTORE = 9;
+        // dwExtraInfo tag on the macropad's own input; must equal Macropad.Interop.Signature (lib/cs/Interop.cs).
+        public const int MacropadSignature = 0x4D504144;
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -117,8 +119,8 @@ namespace Macropad
 
             if (GetForegroundWindow() != hWnd)
             {
-                keybd_event(0x12, 0, 0, UIntPtr.Zero);
-                keybd_event(0x12, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(0x12, 0, 0, new UIntPtr((uint)MacropadSignature));
+                keybd_event(0x12, 0, KEYEVENTF_KEYUP, new UIntPtr((uint)MacropadSignature));
                 SetForegroundWindow(hWnd);
             }
             return GetForegroundWindow() == hWnd;
@@ -234,7 +236,8 @@ namespace Macropad
             if (nCode >= 0)
             {
                 KBDLLHOOKSTRUCT key = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
-                if (key.vkCode == vk)
+                // The macropad's own tagged input (Set-LockKeyState, Send-Ahk) passes straight through.
+                if (key.vkCode == vk && key.dwExtraInfo.ToInt64() != Native.MacropadSignature)
                 {
                     int message = wParam.ToInt32();
                     if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN)

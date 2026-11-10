@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Assets.ps1"; . "$PSScriptRoot\..\lib\Input.ps1"; . "$PSScriptRoot\..\lib\Model.ps1"; . "$PSScriptRoot\..\lib\Engine.ps1"
+    . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Pump.ps1"; . "$PSScriptRoot\..\lib\Assets.ps1"; . "$PSScriptRoot\..\lib\Input.ps1"; . "$PSScriptRoot\..\lib\Model.ps1"; . "$PSScriptRoot\..\lib\Engine.ps1"
     function Act { param($m) $script:ran = $m.Name }
     function New-TestEngine {
         $script:calls = [System.Collections.ArrayList]::new(); $script:selected = 0; $script:ran = $null
@@ -83,5 +83,29 @@ Describe 'Register-LayoutHotkeys' {
     It 'throws naming the key when Register returns false' {
         $e = New-TestEngine
         { Register-LayoutHotkeys (New-FakeWindow $false) $e.Layout $e } | Should -Throw "Could not register hotkey 'F13'. Is the AutoHotkey macropad or another instance running?"
+    }
+}
+Describe 'Invoke-EngineMacro guard' {
+    It 'drops a macro key pressed while a macro is running' {
+        $e = New-TestEngine; $script:eng = $e
+        $e.Layout.Layers[0].Macros[1] = Macro { param($m) Invoke-EngineKey $script:eng 0 } 'Outer'
+        Invoke-EngineKey $e 1
+        $calls | Should -Be @('run:Outer'); $ran | Should -BeNullOrEmpty; $e.Busy | Should -BeFalse
+    }
+    It 'runs timer ticks but drops macros during a pumped wait' {
+        $e = New-TestEngine
+        $script:timer = New-Object System.Windows.Forms.Timer; $script:timer.Interval = 20; $script:timer.Tag = $e
+        $script:timer.add_Tick({ param($sender, $a) $sender.Stop(); [void]$script:calls.Add('tick'); Invoke-EngineKey $sender.Tag 0 })
+        $e.Layout.Layers[0].Macros[1] = Macro { param($m) $script:timer.Start(); Wait-Pump 200 } 'Waits'
+        Invoke-EngineKey $e 1; $script:timer.Dispose()
+        $calls | Should -Be @('run:Waits', 'tick')
+    }
+    It 'returns false when busy' { $e = New-TestEngine; $e.Busy = $true; Invoke-EngineMacro $e (Macro 'Act' 'M0') | Should -BeFalse; $calls.Count | Should -Be 0 }
+    It 'clears Busy after a throwing macro' { $e = New-TestEngine; Invoke-EngineKey $e 2; $e.Busy | Should -BeFalse; $calls[-1] | Should -Be 'error:Bad:boom' }
+    It 'does not report cancellation as an error' {
+        $e = New-TestEngine
+        $e.Layout.Layers[0].Macros[1] = Macro { throw [OperationCanceledException]::new('Macropad is exiting') } 'Cancelled'
+        Invoke-EngineKey $e 1
+        $calls | Should -Be @('run:Cancelled'); $e.Busy | Should -BeFalse
     }
 }

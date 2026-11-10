@@ -1,4 +1,4 @@
-BeforeAll { . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Window.ps1"; . "$PSScriptRoot\..\commands\helper.ps1" }
+BeforeAll { . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Pump.ps1"; . "$PSScriptRoot\..\lib\Window.ps1"; . "$PSScriptRoot\..\commands\helper.ps1" }
 Describe 'Select-WindowToActivate' {
     BeforeAll { $w = [IntPtr[]]@([IntPtr]10, [IntPtr]20, [IntPtr]30) }
     It 'returns null for no windows' { Select-WindowToActivate @() ([IntPtr]10) | Should -BeNullOrEmpty }

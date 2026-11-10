@@ -15,6 +15,7 @@ function New-Engine {
     [pscustomobject]@{
         Layout      = $Layout
         Mode        = 0
+        Busy        = $false
         GetSelected = $GetSelected
         SelectLayer = $SelectLayer
         RunMacro    = $RunMacro
@@ -51,11 +52,32 @@ function Invoke-EngineKey {
     if ($Index -lt 0 -or $Index -ge $macros.Count) { return }
     $macro = $macros[$Index]
     if ($null -eq $macro) { return }
-    try {
-        & $Engine.RunMacro $macro
-    } catch {
-        & $Engine.OnError $macro $_
+    [void](Invoke-EngineMacro $Engine $macro)
+}
+
+# True when the exception, or one it wraps, is the cancellation Wait-Pump throws on exit.
+function Test-MacroCancelled {
+    param([Exception]$Exception)
+    for ($ex = $Exception; $null -ne $ex; $ex = $ex.InnerException) {
+        if ($ex -is [OperationCanceledException]) { return $true }
     }
+    $false
+}
+
+# The one way a macro runs. While one runs (including during its pumped waits), further macro
+# requests are dropped, not queued, so stale keys never replay into whatever window has focus later.
+function Invoke-EngineMacro {
+    param($Engine, $Macro)
+    if ($Engine.Busy) { return $false }
+    $Engine.Busy = $true
+    try {
+        [void](& $Engine.RunMacro $Macro)
+    } catch {
+        if (-not (Test-MacroCancelled $_.Exception)) { & $Engine.OnError $Macro $_ }
+    } finally {
+        $Engine.Busy = $false
+    }
+    $true
 }
 
 # Runs a macro's action: a function name or a scriptblock, given the macro itself.

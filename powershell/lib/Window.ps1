@@ -25,7 +25,7 @@ function Wait-ProcessWindow {
     do {
         $windows = Get-ProcessWindow $Exe
         if ($windows.Count -gt 0) { return , $windows }
-        Start-Sleep -Milliseconds 100
+        Wait-Pump 100
     } while ([DateTime]::Now -lt $deadline)
     , ([IntPtr[]]@())
 }

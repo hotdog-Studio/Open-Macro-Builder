@@ -4,15 +4,15 @@
 
 function VsCodeToggleBottomPanel { param($Macro) Send-Chord 'Ctrl+j' }
 function VsCodeToggleSidebar { param($Macro) Send-Chord 'Ctrl+b' }
-function VsCodeToggleZenMode { param($Macro) Send-Chord 'Ctrl+k'; Start-Sleep -Milliseconds 100; Send-Chord 'z' }
+function VsCodeToggleZenMode { param($Macro) Send-Chord 'Ctrl+k'; Wait-Pump 100; Send-Chord 'z' }
 function VsCodeCloseEditor { param($Macro) Send-Chord 'Ctrl+w' }
 function VsCodeReopenClosedEditor { param($Macro) Send-Chord 'Ctrl+Shift+t' }
 function VsCodeNextEditor { param($Macro) Send-Chord 'Ctrl+PgDn' }
 function VsCodePreviousEditor { param($Macro) Send-Chord 'Ctrl+PgUp' }
-function VsCodeNextGroup { param($Macro) Send-Chord 'Ctrl+k'; Start-Sleep -Milliseconds 100; Send-Chord 'Ctrl+Right' }
-function VsCodePreviousGroup { param($Macro) Send-Chord 'Ctrl+k'; Start-Sleep -Milliseconds 100; Send-Chord 'Ctrl+Left' }
-function VsCodeMoveGroupLeft { param($Macro) Send-Chord 'Ctrl+k'; Start-Sleep -Milliseconds 100; Send-Chord 'Left' }
-function VsCodeMoveGroupRight { param($Macro) Send-Chord 'Ctrl+k'; Start-Sleep -Milliseconds 100; Send-Chord 'Right' }
+function VsCodeNextGroup { param($Macro) Send-Chord 'Ctrl+k'; Wait-Pump 100; Send-Chord 'Ctrl+Right' }
+function VsCodePreviousGroup { param($Macro) Send-Chord 'Ctrl+k'; Wait-Pump 100; Send-Chord 'Ctrl+Left' }
+function VsCodeMoveGroupLeft { param($Macro) Send-Chord 'Ctrl+k'; Wait-Pump 100; Send-Chord 'Left' }
+function VsCodeMoveGroupRight { param($Macro) Send-Chord 'Ctrl+k'; Wait-Pump 100; Send-Chord 'Right' }
 function VsCodeSearchInFiles { param($Macro) Send-Chord 'Ctrl+Shift+f' }
 function VsCodeMovePanelRight { param($Macro) Send-Chord 'Ctrl+LAlt+Right' }
 function VsCodeMovePanelLeft { param($Macro) Send-Chord 'Ctrl+LAlt+Left' }

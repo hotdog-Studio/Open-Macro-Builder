@@ -3,7 +3,7 @@
 function TurnMonitorsOff {
     param($Macro)
     # Wait a moment so the key release does not wake the monitors straight back up.
-    Start-Sleep 1
+    Wait-Pump 1000
     # WM_SYSCOMMAND / SC_MONITORPOWER / 2 = off, sent to the desktop window like the AHK version.
     [void][Macropad.Native]::SendMessage([Macropad.Native]::FindWindow('Progman', $null), 0x112, [IntPtr]0xF170, [IntPtr]2)
 }

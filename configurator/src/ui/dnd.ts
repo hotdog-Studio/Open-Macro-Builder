@@ -1,4 +1,4 @@
-import type { KeyId, PadKey, Workspace } from '../core/config/model'
+import type { KeyId, Macro, PadKey, Workspace } from '../core/config/model'
 import { size } from '../core/config/model'
 import {
   macroLabel,
@@ -10,6 +10,7 @@ import {
   swapMacros,
   type OpResult,
 } from '../core/config/ops'
+import type { CatalogEntry } from '../core/languages'
 import type { Tab } from '../state/store'
 
 // Drag ids:  'key:<id>' (Pad shape), 'slot:<keyId>' (a layer on its key), 'parked:<layerId>',
@@ -54,10 +55,25 @@ export function dropAction(tab: Tab, dragId: string, overId: string): DropAction
 }
 
 /**
- * Runs a drop on the workspace. `layerId` is the layer being edited on the Macros tab.
- * A refusal carries the words to show the user.
+ * The description to give a macro made from a command: the first one the catalog has for that
+ * name (ignoring case), since one command can be listed twice when its files are paired differently.
  */
-export function applyDrop(ws: Workspace, action: DropAction, layerId: string | null): OpResult {
+export function commandDescription(catalog: CatalogEntry[], command: string): string | undefined {
+  const lower = command.toLowerCase()
+  return catalog.find((e) => e.name.toLowerCase() === lower && e.description !== '')?.description
+}
+
+/**
+ * Runs a drop on the workspace. `layerId` is the layer being edited on the Macros tab.
+ * `describe` gives a command's description for a macro made from it. A refusal carries the words to
+ * show the user.
+ */
+export function applyDrop(
+  ws: Workspace,
+  action: DropAction,
+  layerId: string | null,
+  describe?: (command: string) => string | undefined,
+): OpResult {
   switch (action.type) {
     case 'moveKey':
       return moveKey(ws, action.id, action.row, action.col)
@@ -75,10 +91,15 @@ export function applyDrop(ws: Workspace, action: DropAction, layerId: string | n
       return layerId
         ? {
             ok: true,
-            ws: setMacro(ws, layerId, action.key, { action: action.command, name: macroLabel(action.command), extra: {} }),
+            ws: setMacro(ws, layerId, action.key, newMacro(action.command, describe?.(action.command))),
           }
         : { ok: false, reason: 'Pick a layer first.' }
   }
+}
+
+function newMacro(command: string, description: string | undefined): Macro {
+  const name = macroLabel(command)
+  return description ? { action: command, name, description, extra: {} } : { action: command, name, extra: {} }
 }
 
 const UNIT_W = 64

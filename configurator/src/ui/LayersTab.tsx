@@ -8,7 +8,7 @@ import { CentrePanel, LeftPanel, RightPanel, STYLE } from './Panels'
 import { useAsset } from './useAsset'
 
 /** A layer's picture: the layer.png of its icon set. */
-function LayerIcon({ icon, title, className }: Readonly<{ icon: string; title: string; className: string }>) {
+export function LayerIcon({ icon, title, className }: Readonly<{ icon: string; title: string; className: string }>) {
   const src = useAsset(`img/${icon}/layer.png`)
   // Until it loads, or when the set has no layer.png, keep the room so nothing jumps.
   return src ? (

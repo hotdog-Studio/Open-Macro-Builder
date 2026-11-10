@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PadKey } from '../core/config/model'
 import { parseConfig } from '../core/config/parse'
 import { readRepoText } from '../../test/repo'
-import { applyDrop, dropAction, resizeFromDelta } from './dnd'
+import { applyDrop, commandDescription, dropAction, resizeFromDelta } from './dnd'
 
 describe('applyDrop', () => {
   const ws = parseConfig(readRepoText('config.json'), 'config.json')
@@ -32,6 +32,14 @@ describe('applyDrop', () => {
     expect(set.ok && set.ws.slots.k1.macros.k4).toMatchObject({ action: 'ChromeNewTab', name: 'Chrome New Tab' })
     const swapped = applyDrop(ws, { type: 'swapMacros', a: 'k1', b: 'k2' }, 'L1')
     expect(swapped.ok && swapped.ws.slots.k1.macros.k2.name).toBe('Prev')
+  })
+
+  it('gives a placed command its description, and leaves the field out when there is none', () => {
+    const act = { type: 'setMacroFromCommand', command: 'ChromeNewTab', key: 'k4' } as const
+    const described = applyDrop(ws, act, 'L1', () => 'Opens a tab.')
+    expect(described.ok && described.ws.slots.k1.macros.k4.description).toBe('Opens a tab.')
+    const bare = applyDrop(ws, act, 'L1', () => undefined)
+    expect(bare.ok && bare.ws.slots.k1.macros.k4).not.toHaveProperty('description')
   })
 
   it('asks for a layer when the drop needs one', () => {
@@ -98,5 +106,15 @@ describe('resizeFromDelta', () => {
 
   it('takes the row spacing when the labels are off', () => {
     expect(resizeFromDelta(one, 0, 64, 1, 64)).toEqual({ width: 1, height: 2 })
+  })
+})
+
+describe('commandDescription', () => {
+  const entry = (name: string, pair: string, description: string) => ({ name, pair, group: 'shared' as const, description, in: {} })
+
+  it('finds the first non-empty description for a name, ignoring case and file pair', () => {
+    const catalog = [entry('OpenX', 'a', ''), entry('openx', 'b', 'Opens X.'), entry('Other', 'a', 'Nope.')]
+    expect(commandDescription(catalog, 'OPENX')).toBe('Opens X.')
+    expect(commandDescription(catalog, 'Missing')).toBeUndefined()
   })
 })

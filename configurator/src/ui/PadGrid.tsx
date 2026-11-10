@@ -16,7 +16,7 @@ import { size, type KeyId, type PadKey, type Workspace } from '../core/config/mo
 import { findLayer, resizeKey, type OpResult } from '../core/config/ops'
 import { keyRect } from '../core/overlay'
 import { useEditor, type Tab } from '../state/store'
-import { applyDrop, dropAction, resizeFromDelta } from './dnd'
+import { applyDrop, commandDescription, dropAction, resizeFromDelta } from './dnd'
 
 /** The grid is drawn this many times larger than the overlay, so it is easy to grab. */
 const SCALE = 1.25
@@ -94,7 +94,8 @@ export function PadDnd({ mode, children }: Readonly<{ mode: Tab; children: React
     if (!e.over) return
     const action = dropAction(mode, active, String(e.over.id))
     if (!action) return
-    const done = commit(applyDrop(ws, action, editableLayer(ws, state.selectedLayer)))
+    const describe = (command: string) => commandDescription(state.catalog, command)
+    const done = commit(applyDrop(ws, action, editableLayer(ws, state.selectedLayer), describe))
     if (done && action.type === 'moveKey') dispatch({ type: 'select', key: action.id })
   }
 

@@ -3,8 +3,8 @@ import { useApp, useEditor } from '../state/store'
 import { Banner } from './Banner'
 import { Header } from './Header'
 import { LayersTab } from './LayersTab'
+import { MacrosTab } from './MacrosTab'
 import { OpenScreen } from './OpenScreen'
-import { CentrePanel, LeftPanel, RightPanel } from './Panels'
 import { ShapeTab } from './ShapeTab'
 
 function Editor() {
@@ -16,13 +16,7 @@ function Editor() {
       <div className="flex min-h-0 flex-1">
         {state.tab === 'shape' && <ShapeTab />}
         {state.tab === 'layers' && <LayersTab />}
-        {state.tab === 'macros' && (
-          <>
-            <LeftPanel />
-            <CentrePanel />
-            <RightPanel />
-          </>
-        )}
+        {state.tab === 'macros' && <MacrosTab />}
       </div>
     </div>
   )

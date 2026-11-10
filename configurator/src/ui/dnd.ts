@@ -14,7 +14,8 @@ import type { CatalogEntry } from '../core/languages'
 import type { Tab } from '../state/store'
 
 // Drag ids:  'key:<id>' (Pad shape), 'slot:<keyId>' (a layer on its key), 'parked:<layerId>',
-//            'macro:<keyId>' (a macro on its key), 'cmd:<name>' (a command from the list).
+//            'macro:<keyId>' (a macro on its key), 'cmd:<group>/<pair>/<name>' (a row of the command list;
+//            the bare 'cmd:<name>' is read too).
 // Drop ids:  'cell:<row>:<col>', 'key:<id>', 'shelf'.
 
 export type DropAction =
@@ -49,7 +50,8 @@ export function dropAction(tab: Tab, dragId: string, overId: string): DropAction
   }
 
   if (over !== 'key') return null
-  if (drag === 'cmd') return { type: 'setMacroFromCommand', command: from, key: to }
+  // A palette row's id is 'group/pair/name' so that a command listed under two file pairs has two ids.
+  if (drag === 'cmd') return { type: 'setMacroFromCommand', command: from.slice(from.lastIndexOf('/') + 1), key: to }
   if (drag === 'macro') return from === to ? null : { type: 'swapMacros', a: from, b: to }
   return null
 }

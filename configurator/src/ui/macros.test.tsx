@@ -224,6 +224,10 @@ describe('Macros tab', () => {
     const entries = within(palette()).getAllByText('ZzSplit')
     expect(entries).toHaveLength(2)
     for (const e of entries) expect(within(e.closest('[data-command]') as HTMLElement).queryByText(/^no /)).toBeNull()
+    // Each row can be dragged on its own: the two rows of one command have different drag ids.
+    const ids = entries.map((e) => (e.closest('[data-command]') as HTMLElement).getAttribute('data-drag-id'))
+    expect(ids.every((id) => id?.endsWith('/ZzSplit'))).toBe(true)
+    expect(new Set(ids).size).toBe(2)
   })
 
   it('placing a command fills name and description', async () => {

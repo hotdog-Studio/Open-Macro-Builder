@@ -71,6 +71,20 @@ describe('dropAction', () => {
     expect(dropAction('macros', 'macro:k1', 'key:k2')).toEqual({ type: 'swapMacros', a: 'k1', b: 'k2' })
   })
 
+  it('reads the command name from a palette row id', () => {
+    expect(dropAction('macros', 'cmd:yours/x/Foo', 'key:k2')).toEqual({ type: 'setMacroFromCommand', command: 'Foo', key: 'k2' })
+    expect(dropAction('macros', 'cmd:shared/custom/chrome/OpenYoutube', 'key:k2')).toEqual({
+      type: 'setMacroFromCommand',
+      command: 'OpenYoutube',
+      key: 'k2',
+    })
+    expect(dropAction('macros', 'cmd:ChromeNewTab', 'key:k2')).toEqual({
+      type: 'setMacroFromCommand',
+      command: 'ChromeNewTab',
+      key: 'k2',
+    })
+  })
+
   it('ignores a drop on the key it came from', () => {
     expect(dropAction('layers', 'slot:k1', 'key:k1')).toBeNull()
     expect(dropAction('macros', 'macro:k1', 'key:k1')).toBeNull()

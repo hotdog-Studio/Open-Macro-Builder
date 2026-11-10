@@ -126,13 +126,16 @@ const matches = (e: CatalogEntry, q: string) => e.name.toLowerCase().includes(q)
 const CHIP = 'mb-1 rounded border border-zinc-700 bg-zinc-950 px-2 py-1'
 
 function CommandItem({ entry, missing }: Readonly<{ entry: CatalogEntry; missing: LangId[] }>) {
-  const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: `cmd:${entry.name}` })
+  // Unique per row: one command can be listed under two file pairs, and dnd-kit keys by id.
+  const dragId = `cmd:${entry.group}/${entry.pair}/${entry.name}`
+  const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: dragId })
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
       data-command={entry.name}
+      data-drag-id={dragId}
       title={entry.description || undefined}
       className={`${CHIP} cursor-grab touch-none select-none ${isDragging ? 'opacity-40' : ''}`}
     >
@@ -158,7 +161,7 @@ function DraggedCommand() {
   return (
     <DragOverlay>
       {id.startsWith('cmd:') ? (
-        <div className={`${CHIP} cursor-grabbing font-mono text-[11px] text-zinc-200`}>{id.slice('cmd:'.length)}</div>
+        <div className={`${CHIP} cursor-grabbing font-mono text-[11px] text-zinc-200`}>{id.slice(id.lastIndexOf('/') + 1)}</div>
       ) : null}
     </DragOverlay>
   )
@@ -203,7 +206,7 @@ function GroupList({ group, missingIn }: Readonly<{ group: Group; missingIn: (c:
         {group.yours && <span className="rounded bg-sky-950 px-1 normal-case text-sky-300">yours</span>}
       </div>
       {group.entries.map((e) => (
-        <CommandItem key={e.name} entry={e} missing={missingIn(e.name)} />
+        <CommandItem key={`${e.group}/${e.pair}/${e.name}`} entry={e} missing={missingIn(e.name)} />
       ))}
     </div>
   )

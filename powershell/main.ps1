@@ -6,7 +6,7 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-foreach ($f in 'Native', 'Interop', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'Tray', 'Instance', 'AhkSyntax', 'Send', 'WinTitle', 'WindowOps') {
+foreach ($f in 'Native', 'Interop', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'Tray', 'Instance', 'AhkSyntax', 'Send', 'WinTitle', 'WindowOps', 'Hotkeys') {
     . (Join-Path $PSScriptRoot "lib\$f.ps1")
 }
 foreach ($f in Get-ChildItem (Join-Path $PSScriptRoot 'commands') -Recurse -Filter *.ps1) { . $f.FullName }
@@ -54,12 +54,22 @@ try {
 
     $hk = [Macropad.HotkeyWindow]::new()
     Register-LayoutHotkeys $hk $layout $global:engine
+
+    # Optional AHK-style hotkeys and hotstrings from config.ps1 (Get-MacropadHotkeys).
+    $global:inputHook = $null
+    if (Get-Command Get-MacropadHotkeys -CommandType Function -ErrorAction SilentlyContinue) {
+        $defs = @(Get-MacropadHotkeys)
+        Test-HotkeyActions $defs
+        $global:inputHook = New-InputHook $defs $global:engine $layout
+    }
+
     $global:MacropadExiting = $false
     [System.Windows.Forms.Application]::Run()
 } catch {
     [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Layered Macropad failed to start')
     exit 1
 } finally {
+    if ($null -ne $global:inputHook) { Remove-InputHook $global:inputHook }
     if ($null -ne $hk) { $hk.Dispose() }
     if ($null -ne $global:tray) { $global:tray.Visible = $false; $global:tray.Dispose() }
     Exit-SingleInstance

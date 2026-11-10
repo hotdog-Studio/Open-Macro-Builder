@@ -30,6 +30,24 @@ Errors from macros show as a tray balloon and are appended to `%TEMP%\LayeredMac
 
 Edit `config.ps1`. It mirrors `../ahk/config.ahk`: `Key`, `Icon`, `Layer`, `Macro` and `Layout` take the same arguments in the same order, and `''` skips a layer or a macro slot. Command functions live in `commands/` and take the macro as their only parameter. Key chords are written as key names joined by `+`, for example `Send-Chord 'Ctrl+Shift+t'`. The key names are listed in `lib/Input.ps1`.
 
+## Hotkeys and hotstrings
+
+Besides the macropad keys, `config.ps1` can define ordinary AutoHotkey-style hotkeys. Add a `Get-MacropadHotkeys` function that returns `Hotkey` definitions. Each one takes an AutoHotkey hotkey spec and a command function name or a scriptblock:
+
+```powershell
+function Get-MacropadHotkeys {
+    @(
+        (Hotkey '^!e' 'OpenFileExplorer'),              # Ctrl+Alt+E
+        (Hotkey '#n' { param($m) Start-Process notepad }),
+        (Hotkey 'XButton1 & WheelUp' 'NextDesktop')
+    )
+}
+```
+
+The spec syntax is AutoHotkey's: `^ ! + #` for Ctrl, Alt, Shift and Win, `<` / `>` for the left or right one, `~` to let the key through as well, `*` to ignore extra modifiers, a trailing ` up` to fire on release, and `A & B` for a custom combination. A hotkey on a macropad key (F13 to F24 or the Fn key) stops startup with an error.
+
+Hotkeys run through the same guard as macros: while one macro or hotkey is running, further ones are dropped. Their errors are reported in the tray like macro errors. The hook that catches them ignores everything the macropad sends itself.
+
 ## Test
 
 From `macropad_ahk`:

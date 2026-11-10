@@ -24,7 +24,7 @@ wscript powershell\launch.vbs
 
 `launch.vbs` starts `main.ps1` with no console window. A tray icon appears with Reload and Exit. Launching again replaces the running instance.
 
-Errors from macros show as a tray balloon and are appended to `%TEMP%\LayeredMacropad.log`. Startup errors, such as a config naming a command that does not exist, show a message box and stop the program.
+Errors from macros show as a tray balloon and are appended to `%TEMP%\LayeredMacropad.log`. Once that file passes 1 MB it becomes `LayeredMacropad.log.old` and a new one starts. Startup errors, such as a config naming a command that does not exist, show a message box and stop the program.
 
 ## Configure
 
@@ -118,7 +118,7 @@ powershell -NoProfile -File powershell\tests\run.ps1
 powershell -NoProfile -File powershell\tests\run.ps1 -ExcludeTag Integration
 ```
 
-The Integration tests open and close Character Map and send a real ScrollLock press, which the Fn hook swallows. Exclude them when you do not want windows or keys touched.
+The Integration tests send real keys and clicks, open and close Character Map, and run AutoHotkey check scripts. They type only into their own test windows, and the Fn hook swallows their ScrollLock press. Exclude them when you do not want keys sent or other programs started. The unit tests still flash a few of their own forms while they run: the overlay, tooltips, the delayed key and click forms, and the window tests' target windows.
 
 `tools/spike-hotkeys.ps1` and `tools/preview-overlay.ps1` are manual checks for the hotkeys and the overlay.
 

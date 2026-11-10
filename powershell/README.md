@@ -28,41 +28,69 @@ Errors from macros show as a tray balloon and are appended to `%TEMP%\LayeredMac
 
 ## Configure
 
-Edit `config.ps1`. It mirrors `../ahk/config.ahk`: `Key`, `Icon`, `Layer`, `Macro` and `Layout` take the same arguments in the same order, and `''` skips a layer or a macro slot. Command functions live in `commands/` and take the macro as their only parameter. Key chords are written as key names joined by `+`, for example `Send-Chord 'Ctrl+Shift+t'`. The key names are listed in `lib/Input.ps1`.
+The layout lives in `../config.json`, which the AutoHotkey version reads too, so both stay in step. `config.ps1` here and `../ahk/config.ahk` only load it. A test checks that both versions build the same layout from it.
+
+```json
+{
+  "fn": { "key": "ScrollLock", "row": 4, "col": 1, "width": 2 },
+  "keys": [ { "key": "F13", "row": 1, "col": 1 }, { "key": "F22", "row": 1, "col": 4, "height": 2 } ],
+  "layers": [
+    {
+      "title": "Programs",
+      "icon": "programs",
+      "macros": [
+        { "action": "OpenYoutube", "name": "YouTube", "description": "Open YouTube in Chrome" },
+        null
+      ]
+    },
+    null,
+    { "title": "Old layer", "icon": "portainer", "disabled": true, "macros": [] }
+  ],
+  "default": 1,
+  "showFn": " ",
+  "showMacroMarkers": true,
+  "showLabels": true,
+  "useMacroIcons": false,
+  "iconAction": "Layer",
+  "hotkeys": [],
+  "hotstrings": []
+}
+```
+
+- `keys` are the macro keys; `width` and `height` default to 1. Layers and macros are matched to keys by position.
+- `null` leaves a layer or macro slot empty. `"disabled": true` keeps a layer in the file without giving it a key.
+- `icon` names a folder in `../img`. A macro can have its own `icon`, used with `useMacroIcons`.
+- `action` is the name of a command function in `commands/`. Command functions take the macro as their only parameter. A name that matches no function stops startup with every missing name listed.
+- `default` is the layer selected at startup, counted from 1. `showFn` is the text above the Fn key (`" "` for none, `true` for its name).
+
+Key chords in commands are key names joined by `+`, for example `Send-Chord 'Ctrl+Shift+t'`. The key names are listed in `lib/Input.ps1`.
 
 ## Hotkeys and hotstrings
 
-Besides the macropad keys, `config.ps1` can define ordinary AutoHotkey-style hotkeys. Add a `Get-MacropadHotkeys` function that returns `Hotkey` definitions. Each one takes an AutoHotkey hotkey spec and a command function name or a scriptblock:
+Besides the macropad keys, `config.json` can define ordinary AutoHotkey-style hotkeys and hotstrings. Both versions register them.
 
-```powershell
-function Get-MacropadHotkeys {
-    @(
-        (Hotkey '^!e' 'OpenFileExplorer'),              # Ctrl+Alt+E
-        (Hotkey '#n' { param($m) Start-Process notepad }),
-        (Hotkey 'XButton1 & WheelUp' 'NextDesktop')
-    )
-}
+```json
+"hotkeys": [
+  { "hotkey": "^!e", "action": "OpenFileExplorer" },
+  { "hotkey": "XButton1 & WheelUp", "action": "NextDesktop" },
+  { "hotkey": "^+d", "action": "VsCodeDebug", "ifWinActive": "ahk_exe Code.exe" }
+],
+"hotstrings": [
+  { "hotstring": "::btw", "replacement": "by the way" },
+  { "hotstring": ":*:@@", "replacement": "hello@example.com" },
+  { "hotstring": ":X:now", "action": "SomeCommand" }
+]
 ```
 
-The spec syntax is AutoHotkey's: `^ ! + #` for Ctrl, Alt, Shift and Win, `<` / `>` for the left or right one, `~` to let the key through as well, `*` to ignore extra modifiers, a trailing ` up` to fire on release, and `A & B` for a custom combination. A hotkey on a macropad key (F13 to F24 or the Fn key) stops startup with an error.
+The hotkey syntax is AutoHotkey's: `^ ! + #` for Ctrl, Alt, Shift and Win, `<` / `>` for the left or right one, `~` to let the key through as well, `*` to ignore extra modifiers, a trailing ` up` to fire on release, and `A & B` for a custom combination. A hotkey on a macropad key (F13 to F24 or the Fn key) stops startup with an error.
 
-Hotkeys run through the same guard as macros: while one macro or hotkey is running, further ones are dropped. Their errors are reported in the tray like macro errors. The hook that catches them ignores everything the macropad sends itself.
+Hotkeys run through the same guard as macros: while one macro or hotkey is running, further ones are dropped. Their errors are reported in the tray like macro errors. The hook that catches them ignores everything the macropad sends itself. The hook is only installed when the config has hotkeys or hotstrings.
 
-Hotstrings go in the same list. `Hotstring` takes an AutoHotkey hotstring spec and the replacement text:
+Hotstring options are `*` (no end character needed), `?` (fire inside words), `C` (case-sensitive), `C1` (match any case, keep the replacement as written), `B0` (keep the typed abbreviation), `O` (leave out the end character) and `X` (run `action` instead of typing a replacement; an `action` needs `X`). Without `C` or `C1` the replacement follows the case you typed: `BTW` gives `BY THE WAY`, `Btw` gives `By the way`. Clicking, switching windows, the arrow keys and any Ctrl, Alt or Win combination start the abbreviation over.
 
-```powershell
-function Get-MacropadHotkeys {
-    @(
-        (Hotstring '::btw' 'by the way'),               # after an end character such as space or .
-        (Hotstring ':*:@@' 'hello@example.com'),        # * fires without an end character
-        (Hotstring ':X:now' { param($m) Send-Text (Get-Date -Format t) })   # X runs a macro instead
-    )
-}
-```
+`ifWinActive` or `ifWinNotActive` take a WinTitle (for example `"ahk_exe Code.exe"`), like AutoHotkey's `#HotIfWinActive`. A window-specific variant wins over a global one with the same keys.
 
-Supported options are `*` (no end character needed), `?` (fire inside words), `C` (case-sensitive), `C1` (match any case, keep the replacement as written), `B0` (keep the typed abbreviation), `O` (leave out the end character) and `X` (execute). Without `C` or `C1` the replacement follows the case you typed: `BTW` gives `BY THE WAY`, `Btw` gives `By the way`. Clicking, switching windows, the arrow keys and any Ctrl, Alt or Win combination start the abbreviation over.
-
-Both `Hotkey` and `Hotstring` accept `-IfWinActive` or `-IfWinNotActive` with a WinTitle (for example `'ahk_exe Code.exe'`), like AutoHotkey's `#HotIfWinActive`. A window-specific variant wins over a global one with the same keys.
+In PowerShell code, the same definitions can be built with `Hotkey` and `Hotstring` from `lib/Hotkeys.ps1`, which also accept a scriptblock as the action.
 
 ## AutoHotkey built-ins
 

@@ -6,7 +6,7 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-foreach ($f in 'Native', 'Interop', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'Tray', 'Instance', 'AhkSyntax', 'Send', 'WinTitle', 'WindowOps', 'Hotkeys', 'Screen', 'Sound') {
+foreach ($f in 'Native', 'Interop', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'Tray', 'Instance', 'AhkSyntax', 'Send', 'WinTitle', 'WindowOps', 'Hotkeys', 'Screen', 'Sound', 'ConfigJson') {
     . (Join-Path $PSScriptRoot "lib\$f.ps1")
 }
 foreach ($f in Get-ChildItem (Join-Path $PSScriptRoot 'commands') -Recurse -Filter *.ps1) { . $f.FullName }
@@ -55,12 +55,15 @@ try {
     $hk = [Macropad.HotkeyWindow]::new()
     Register-LayoutHotkeys $hk $layout $global:engine
 
-    # Optional AHK-style hotkeys and hotstrings from config.ps1 (Get-MacropadHotkeys).
+    # Optional AHK-style hotkeys and hotstrings (config.json "hotkeys" / "hotstrings"). The input
+    # hook is only installed when there is something for it to catch.
     $global:inputHook = $null
     if (Get-Command Get-MacropadHotkeys -CommandType Function -ErrorAction SilentlyContinue) {
         $defs = @(Get-MacropadHotkeys)
-        Test-HotkeyActions $defs
-        $global:inputHook = New-InputHook $defs $global:engine $layout
+        if ($defs.Count -gt 0) {
+            Test-HotkeyActions $defs
+            $global:inputHook = New-InputHook $defs $global:engine $layout
+        }
     }
 
     $global:MacropadExiting = $false

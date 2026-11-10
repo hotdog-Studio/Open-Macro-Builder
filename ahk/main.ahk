@@ -31,6 +31,9 @@ for(i, j in selectionGui.layout.keys) {
    Hotkey(j.key " Up", DoNothing)
 }
 
+; Optional extra hotkeys and hotstrings from config.json ("hotkeys" / "hotstrings")
+RegisterConfigHotkeys()
+
 ; *********************** Mouse Handling for Tooltips and Clicks  ***********************
 OnMessage(WM_MOUSEMOVE  := 0x0200, OnMouseEvent)
 OnMessage(WM_MOUSELEAVE := 0x02A3, OnMouseEvent)

@@ -11,7 +11,7 @@ $layout = $null
 $config = Join-Path $root 'config.ps1'
 if (Test-Path $config) {
     try {
-        foreach ($f in 'Input', 'Window') { $p = Join-Path $root "lib\$f.ps1"; if (Test-Path $p) { . $p } }
+        foreach ($f in 'Interop', 'Pump', 'Input', 'Window', 'AhkSyntax', 'WinTitle', 'Hotkeys', 'ConfigJson') { $p = Join-Path $root "lib\$f.ps1"; if (Test-Path $p) { . $p } }
         Get-ChildItem (Join-Path $root 'commands') -Recurse -Filter *.ps1 -ErrorAction Stop | ForEach-Object { . $_.FullName }
         . $config
         $layout = Get-MacropadConfig

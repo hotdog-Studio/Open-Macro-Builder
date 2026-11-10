@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateConfig, commandNames, repoChecks, activeConfigPath, main } from './validate-config.mjs';
+import { functionNames } from './validate-config-core.mjs';
 
 // A throwaway repository root holding the given files.
 function tempRoot(files) {
@@ -167,4 +168,14 @@ test('reports each kind of layout problem', () => {
     'hotstrings[1]: needs a "replacement"',
   ]) assert.ok(errors.includes(expected), `missing "${expected}" in:\n${errors.join('\n')}`);
   assert.ok(validateConfig({ fn: { key: 'S' }, keys: [{ key: 'F13' }], layers: 'x' }).includes('layers: must be a list'));
+});
+
+test('functionNames finds names the way the validator always has', () => {
+  assert.deepEqual(functionNames('Foo(Macro) {\n}\n  Bar(x)\nBaz (a, b)\n', '.ahk'), ['foo', 'baz']);
+  assert.deepEqual(functionNames('function Get-X { }\n  function Y {\n', '.ps1'), ['get-x', 'y']);
+});
+
+test('validate-config-core.mjs has no Node imports', () => {
+  const src = readFileSync(new URL('./validate-config-core.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /from\s+['"]node:/);
 });

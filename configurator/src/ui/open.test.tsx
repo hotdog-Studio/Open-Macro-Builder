@@ -67,7 +67,11 @@ describe('opening a folder', () => {
   it('opens a folder and shows the Pad shape tab with 12 keys', async () => {
     await openFolder(fakePlatform(await readyFolder()))
     const keys = await screen.findByRole('list', { name: 'Keys' })
-    expect(within(keys).getAllByRole('listitem').map((li) => li.textContent)).toEqual(KEY_NAMES)
+    // Each key is a button named like "F13 1×1": its name, then its size.
+    const names = within(keys)
+      .getAllByRole('button', { name: /^F\d+ \d×\d$/ })
+      .map((b) => /^(\S+) /.exec(b.textContent ?? '')?.[1])
+    expect(names).toEqual(KEY_NAMES)
     expect(screen.getByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Layers' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'Macros' })).toBeTruthy()

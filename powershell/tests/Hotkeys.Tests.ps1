@@ -51,3 +51,8 @@ Describe 'ForegroundWatcher' -Tag Integration {
         try { $w.Context.Count | Should -BeGreaterThan 0 } finally { $f.Dispose(); $w.Dispose() }
     }
 }
+Describe 'Hotstring' {
+    It 'keeps replacement text' { $d = Hotstring ':*:btw' 'by the way'; $d.Parsed.Abbrev | Should -Be 'btw'; $d.Replacement | Should -Be 'by the way'; $d.Macro | Should -BeNullOrEmpty }
+    It 'wraps execute actions in a macro' { $d = Hotstring ':X:go' 'Act'; $d.Macro.Action | Should -Be 'Act'; $d.Replacement | Should -BeNullOrEmpty }
+    It 'checks execute actions exist' { { Test-HotkeyActions @((Hotstring ':X:go' 'NoSuchFn')) } | Should -Throw 'Undefined hotkey action(s): NoSuchFn (:X:go)' }
+}

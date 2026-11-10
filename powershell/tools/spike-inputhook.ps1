@@ -3,6 +3,9 @@
 #   1  #x       (Win+X; the Quick Link menu must not open, releasing Win must not open Start)
 #   2  a & b    (hold a, press b; a alone types a on release)
 #   3  ^!t      only while Notepad is active (#HotIfWinActive ahk_exe notepad.exe)
+#   hotstrings: 'btw ' -> 'by the way ', '@@' -> 'hello@example.com' (no end char needed),
+#   4..6        'now ' prints "Fired 6" and leaves only the space
+# Type into Notepad to try the hotstrings.
 # Exit both macropads first. Usage: powershell -NoProfile -File powershell\tools\spike-inputhook.ps1 [-Seconds 60]
 param([int]$Seconds = 60)
 
@@ -15,6 +18,11 @@ try {
     for ($i = 0; $i -lt $specs.Count; $i++) {
         $p = ConvertFrom-AhkHotkey $specs[$i][0]
         $hook.AddHotkey($i, $p.Vk, $p.Mods, [int]$p.Wildcard + 2 * [int]$p.Passthrough + 4 * [int]$p.KeyUp, $p.PrefixVk, $specs[$i][1])
+    }
+    $strings = @(@('::btw', 'by the way'), @(':*:@@', 'hello@example.com'), @(':X:now', ''))
+    for ($i = 0; $i -lt $strings.Count; $i++) {
+        $p = ConvertFrom-AhkHotstring $strings[$i][0]
+        $hook.AddHotstring(4 + $i, $p.Abbrev, $p.Options, $p.Execute, $strings[$i][1], 0)
     }
     $contexts = @([pscustomobject]@{ Id = 1; WinTitle = 'ahk_exe notepad.exe'; Negate = $false })
     $watcher = [Macropad.ForegroundWatcher]::new()

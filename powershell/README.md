@@ -48,6 +48,22 @@ The spec syntax is AutoHotkey's: `^ ! + #` for Ctrl, Alt, Shift and Win, `<` / `
 
 Hotkeys run through the same guard as macros: while one macro or hotkey is running, further ones are dropped. Their errors are reported in the tray like macro errors. The hook that catches them ignores everything the macropad sends itself.
 
+Hotstrings go in the same list. `Hotstring` takes an AutoHotkey hotstring spec and the replacement text:
+
+```powershell
+function Get-MacropadHotkeys {
+    @(
+        (Hotstring '::btw' 'by the way'),               # after an end character such as space or .
+        (Hotstring ':*:@@' 'hello@example.com'),        # * fires without an end character
+        (Hotstring ':X:now' { param($m) Send-Text (Get-Date -Format t) })   # X runs a macro instead
+    )
+}
+```
+
+Supported options are `*` (no end character needed), `?` (fire inside words), `C` (case-sensitive), `C1` (match any case, keep the replacement as written), `B0` (keep the typed abbreviation), `O` (leave out the end character) and `X` (execute). Without `C` or `C1` the replacement follows the case you typed: `BTW` gives `BY THE WAY`, `Btw` gives `By the way`. Clicking, switching windows, the arrow keys and any Ctrl, Alt or Win combination start the abbreviation over.
+
+Both `Hotkey` and `Hotstring` accept `-IfWinActive` or `-IfWinNotActive` with a WinTitle (for example `'ahk_exe Code.exe'`), like AutoHotkey's `#HotIfWinActive`. A window-specific variant wins over a global one with the same keys.
+
 ## Test
 
 From `macropad_ahk`:

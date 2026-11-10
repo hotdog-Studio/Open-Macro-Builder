@@ -53,3 +53,43 @@ Describe 'InputHook contexts' {
         [void](Dn $h 0xA2); $r = Dn $h 0x54; $r.Suppress | Should -BeFalse; $r.Fired.Count | Should -Be 0
     }
 }
+Describe 'InputHook hotstrings' {
+    BeforeAll {
+        function New-StringHook([string]$Spec, [string]$Replacement = 'by the way') {
+            $h = [Macropad.InputHook]::new(); $p = ConvertFrom-AhkHotstring $Spec
+            $h.AddHotstring(0, $p.Abbrev, $p.Options, $p.Execute, $Replacement, 0); $h
+        }
+        # Types each character (down then up) and returns the result of the last key down.
+        function Invoke-Typing($h, [string]$Text) {
+            $last = $null
+            foreach ($c in $Text.ToCharArray()) {
+                $vk = switch ($c) { ' ' { 0x20 } '.' { 0xBE } default { [int][char]::ToUpper($c) } }
+                $last = $h.ProcessKey($vk, $false, $false, [string]$c); [void]$h.ProcessKey($vk, $true, $false, '')
+            }
+            $last
+        }
+    }
+    AfterEach { if ($h) { $h.Dispose() } }
+    It 'replaces after an end char' { $h = New-StringHook '::btw'; $r = Invoke-Typing $h 'btw '; $r.Suppress | Should -BeTrue; $r.Backspaces | Should -Be 3; $r.Text | Should -Be 'by the way ' }
+    It 'fires on the last character with *' { $h = New-StringHook ':*:btw'; $r = Invoke-Typing $h 'btw'; $r.Backspaces | Should -Be 2; $r.Text | Should -Be 'by the way' }
+    It 'needs a word boundary without ?' { $h = New-StringHook '::btw'; (Invoke-Typing $h 'abtw ').Text | Should -BeNullOrEmpty }
+    It 'fires inside a word with ?' { $h = New-StringHook ':?:btw'; (Invoke-Typing $h 'abtw ').Text | Should -Be 'by the way ' }
+    It 'conforms case' { $h = New-StringHook '::btw'; (Invoke-Typing $h 'BTW ').Text | Should -Be 'BY THE WAY '; (Invoke-Typing $h 'Btw ').Text | Should -Be 'By the way ' }
+    It 'matches case exactly with C' { $h = New-StringHook ':C:btw'; (Invoke-Typing $h 'BTW ').Text | Should -BeNullOrEmpty }
+    It 'does not conform with C1' { $h = New-StringHook ':C1:btw'; (Invoke-Typing $h 'BTW ').Text | Should -Be 'by the way ' }
+    It 'omits the end char with O' { $h = New-StringHook ':O:btw'; (Invoke-Typing $h 'btw.').Text | Should -Be 'by the way' }
+    It 'keeps the abbreviation with B0' { $h = New-StringHook ':B0:btw'; $r = Invoke-Typing $h 'btw '; $r.Backspaces | Should -Be 0; $r.Text | Should -Be 'by the way ' }
+    It 'applies Backspace to the buffer' { $h = New-StringHook '::btw'; [void](Invoke-Typing $h 'btx'); [void]$h.ProcessKey(0x08, $false, $false, "`b"); (Invoke-Typing $h 'w ').Text | Should -Be 'by the way ' }
+    It 'resets on mouse click' { $h = New-StringHook '::btw'; [void](Invoke-Typing $h 'bt'); [void]$h.ProcessMouse(0x01, $false, $false); (Invoke-Typing $h 'w ').Text | Should -BeNullOrEmpty }
+    It 'resets when the foreground window changes' { $h = New-StringHook '::btw'; $h.NoteForeground([IntPtr]1); [void](Invoke-Typing $h 'bt'); $h.NoteForeground([IntPtr]2); (Invoke-Typing $h 'w ').Text | Should -BeNullOrEmpty }
+    It 'resets on Ctrl combinations' {
+        $h = New-StringHook '::btw'; [void](Invoke-Typing $h 'bt')
+        [void]$h.ProcessKey(0xA2, $false, $false, ''); [void]$h.ProcessKey(0x43, $false, $false, ''); [void]$h.ProcessKey(0x43, $true, $false, ''); [void]$h.ProcessKey(0xA2, $true, $false, '')
+        (Invoke-Typing $h 'w ').Text | Should -BeNullOrEmpty
+    }
+    It 'does not match on its own replacement' {
+        $h = New-StringHook '::btw'; [void]$h.ProcessKey(0x42, $false, $true, 'b'); [void]$h.ProcessKey(0x54, $false, $true, 't')
+        (Invoke-Typing $h 'w ').Text | Should -BeNullOrEmpty
+    }
+    It 'fires execute hotstrings' { $h = New-StringHook ':X:go'; $r = Invoke-Typing $h 'go '; $r.Fired | Should -Be @(0); $r.Backspaces | Should -Be 2; $r.Text | Should -Be ' ' }
+}

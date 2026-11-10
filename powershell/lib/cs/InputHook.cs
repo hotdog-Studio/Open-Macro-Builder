@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -61,6 +62,20 @@ namespace Macropad
         private bool prefixUsed;
         private bool prefixPassthrough;
 
+        // Hotstrings: option bits 1 '*', 2 '?', 4 'C', 8 'C1', 16 'B0', 32 'O'.
+        private class HotstringDef
+        {
+            public int Id, Options, Context;
+            public string Abbrev, Replacement;
+            public bool Execute;
+        }
+        private readonly List<HotstringDef> hotstrings = new List<HotstringDef>();
+        private readonly StringBuilder buffer = new StringBuilder();
+        private IntPtr lastForeground = IntPtr.Zero;
+        private string endChars = "-()[]{}:;'\"/\\,.?!\r\t ";
+        private bool capsToggled;
+        private bool capsDown;
+
         private readonly FiredWindow window;
         private readonly Queue<HookResult> injectQueue = new Queue<HookResult>();
         private Thread thread;
@@ -98,6 +113,40 @@ namespace Macropad
             lock (sync)
             {
                 if (active) activeContexts.Add(context); else activeContexts.Remove(context);
+            }
+        }
+
+        // replacement is ignored when execute (PowerShell passes $null to a string parameter as "").
+        public void AddHotstring(int id, string abbrev, int options, bool execute, string replacement, int context)
+        {
+            lock (sync)
+            {
+                HotstringDef h = new HotstringDef();
+                h.Id = id; h.Abbrev = abbrev ?? ""; h.Options = options; h.Execute = execute;
+                h.Replacement = execute ? "" : (replacement ?? ""); h.Context = context;
+                hotstrings.Add(h);
+            }
+        }
+
+        // Characters that end a hotstring abbreviation (Enter translates to CR).
+        public string EndChars
+        {
+            get { lock (sync) return endChars; }
+            set { lock (sync) endChars = value ?? ""; }
+        }
+
+        public void ResetHotstrings()
+        {
+            lock (sync) buffer.Length = 0;
+        }
+
+        // Typing in a different window starts a fresh hotstring buffer.
+        public void NoteForeground(IntPtr hwnd)
+        {
+            lock (sync)
+            {
+                if (hwnd != lastForeground) buffer.Length = 0;
+                lastForeground = hwnd;
             }
         }
 
@@ -172,8 +221,116 @@ namespace Macropad
                 int nvk = NormalizeModifier(vk);
                 if (IsModifier(nvk)) modifierDown[nvk] = !up;
                 if (self) return r;
-                return up ? KeyUp(nvk, r) : KeyDown(nvk, r);
+                if (up) return KeyUp(nvk, r);
+                KeyDown(nvk, r);
+                // A key that fired or was suppressed by a hotkey never reaches the hotstring buffer.
+                if (!r.Suppress && r.Fired.Length == 0) ProcessHotstring(nvk, typed, r);
+                return r;
             }
+        }
+
+        private bool IsEndChar(char c)
+        {
+            return endChars.IndexOf(c) >= 0;
+        }
+
+        private void ProcessHotstring(int vk, string typed, HookResult r)
+        {
+            if (hotstrings.Count == 0) return;
+            bool ctrl = modifierDown[0xA2] || modifierDown[0xA3];
+            bool alt = modifierDown[0xA4] || modifierDown[0xA5];
+            bool win = modifierDown[0x5B] || modifierDown[0x5C];
+            if (ctrl || alt || win)
+            {
+                bool altGrOnly = modifierDown[0xA2] && modifierDown[0xA5] && !modifierDown[0xA3] && !modifierDown[0xA4] && !win;
+                if (!(altGrOnly && !string.IsNullOrEmpty(typed))) { buffer.Length = 0; return; }
+            }
+            switch (vk)
+            {
+                case 0x25: case 0x26: case 0x27: case 0x28: // arrows
+                case 0x24: case 0x23: case 0x21: case 0x22: // Home End PgUp PgDn
+                case 0x1B:                                  // Escape
+                    buffer.Length = 0;
+                    return;
+                case 0x08:                                  // Backspace
+                    if (buffer.Length > 0) buffer.Length -= 1;
+                    return;
+            }
+            if (string.IsNullOrEmpty(typed)) return;
+            buffer.Append(typed);
+            if (buffer.Length > 100) buffer.Remove(0, buffer.Length - 100);
+
+            string text = buffer.ToString();
+            HotstringDef match = null;
+            string typedAbbrev = null;
+            char endChar = '\0';
+            for (int pass = 0; pass < 2 && match == null; pass++)
+            {
+                foreach (HotstringDef h in hotstrings)
+                {
+                    bool specific = h.Context != 0;
+                    if (pass == 0 && !(specific && activeContexts.Contains(h.Context))) continue;
+                    if (pass == 1 && specific) continue;
+                    bool star = (h.Options & 1) != 0;
+                    bool inside = (h.Options & 2) != 0;
+                    bool caseSensitive = (h.Options & 4) != 0;
+                    string body = text;
+                    char end = '\0';
+                    if (!star)
+                    {
+                        end = text[text.Length - 1];
+                        if (!IsEndChar(end)) continue;
+                        body = text.Substring(0, text.Length - 1);
+                    }
+                    if (h.Abbrev.Length == 0 || body.Length < h.Abbrev.Length) continue;
+                    string tail = body.Substring(body.Length - h.Abbrev.Length);
+                    bool equal = caseSensitive ? tail == h.Abbrev : string.Equals(tail, h.Abbrev, StringComparison.OrdinalIgnoreCase);
+                    if (!equal) continue;
+                    int before = body.Length - h.Abbrev.Length - 1;
+                    if (!inside && before >= 0 && !IsEndChar(body[before])) continue;
+                    match = h; typedAbbrev = tail; endChar = end;
+                    break;
+                }
+            }
+            if (match == null) return;
+
+            bool mStar = (match.Options & 1) != 0;
+            bool noConform = (match.Options & (4 | 8)) != 0;
+            bool noBackspace = (match.Options & 16) != 0;
+            bool omitEnd = (match.Options & 32) != 0;
+
+            r.Suppress = true;
+            suppressedDown.Add(vk);
+            r.Backspaces = noBackspace ? 0 : (mStar ? match.Abbrev.Length - 1 : match.Abbrev.Length);
+            StringBuilder output = new StringBuilder();
+            if (noBackspace && mStar) output.Append(typed);
+            if (match.Execute) Fire(r, match.Id);
+            else output.Append(noConform ? match.Replacement : Conform(match.Replacement, typedAbbrev));
+            if (!mStar && !omitEnd) output.Append(endChar);
+            r.Text = output.Length > 0 ? output.ToString() : null;
+            buffer.Length = 0;
+        }
+
+        // All caps when the typed abbreviation's letters are all upper case; otherwise a capital
+        // first letter when the typed abbreviation starts with one.
+        private static string Conform(string replacement, string typedAbbrev)
+        {
+            if (string.IsNullOrEmpty(replacement)) return replacement;
+            bool hasLetter = false, allUpper = true;
+            foreach (char c in typedAbbrev)
+            {
+                if (!char.IsLetter(c)) continue;
+                hasLetter = true;
+                if (!char.IsUpper(c)) allUpper = false;
+            }
+            if (hasLetter && allUpper) return replacement.ToUpper();
+            foreach (char c in typedAbbrev)
+            {
+                if (!char.IsLetter(c)) continue;
+                if (char.IsUpper(c)) return char.ToUpper(replacement[0]) + replacement.Substring(1);
+                break;
+            }
+            return replacement;
         }
 
         // Decides one mouse event: buttons 0x01, 0x02, 0x04, 0x05, 0x06 and wheel pseudo-vks 0x9C-0x9F.
@@ -183,6 +340,8 @@ namespace Macropad
             {
                 HookResult r = new HookResult();
                 if (self) return r;
+                // A click moves the caret, so typed characters before it cannot complete a hotstring.
+                if (!up && vk >= 0x01 && vk <= 0x06) buffer.Length = 0;
                 if (vk >= 0x9C && vk <= 0x9F)
                 {
                     if (up) return r;
@@ -346,10 +505,21 @@ namespace Macropad
         private static extern uint GetCurrentThreadId();
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
+        [DllImport("user32.dll")]
+        private static extern int ToUnicodeEx(uint wVirtKey, uint wScanCode, byte[] lpKeyState, [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pwszBuff, int cchBuff, uint wFlags, IntPtr dwhkl);
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetKeyboardLayout(uint idThread);
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")]
+        private static extern short GetKeyState(int nVirtKey);
 
         // Installs both hooks on a new background thread with its own message loop.
         public bool Start()
         {
+            capsToggled = (GetKeyState(0x14) & 1) != 0;
             bool installed = false;
             using (ManualResetEvent ready = new ManualResetEvent(false))
             {
@@ -385,10 +555,31 @@ namespace Macropad
             return installed;
         }
 
-        // Called with the event's text (Task 21 fills this in); empty for now.
+        private void SetModifierState(byte[] state, int neutral, int left, int right)
+        {
+            if (modifierDown[left]) state[left] = 0x80;
+            if (modifierDown[right]) state[right] = 0x80;
+            if (modifierDown[left] || modifierDown[right]) state[neutral] = 0x80;
+        }
+
+        // The text the key produces in the foreground window's layout. Flag 0x4 leaves the kernel
+        // keyboard state alone, so dead keys keep working (Windows 10 1607+). Dead keys give "".
         private string TypedText(int vk, uint scanCode)
         {
-            return "";
+            byte[] state = new byte[256];
+            lock (sync)
+            {
+                SetModifierState(state, 0x10, 0xA0, 0xA1);
+                SetModifierState(state, 0x11, 0xA2, 0xA3);
+                SetModifierState(state, 0x12, 0xA4, 0xA5);
+                if (capsToggled) state[0x14] = 0x01;
+            }
+            uint pid;
+            IntPtr layout = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), out pid));
+            StringBuilder sb = new StringBuilder(8);
+            int n = ToUnicodeEx((uint)vk, scanCode, state, sb, 8, 0x4, layout);
+            if (n <= 0) return "";
+            return sb.ToString(0, Math.Min(n, sb.Length));
         }
 
         private IntPtr KeyboardCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -397,7 +588,20 @@ namespace Macropad
             KBDLLHOOKSTRUCT k = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
             bool up = (k.flags & LLKHF_UP) != 0;
             bool self = k.dwExtraInfo.ToInt64() == Interop.Signature;
-            string typed = (up || self) ? "" : TypedText((int)k.vkCode, k.scanCode);
+            if (k.vkCode == 0x14)
+            {
+                lock (sync)
+                {
+                    if (!up && !capsDown) capsToggled = !capsToggled;
+                    capsDown = !up;
+                }
+            }
+            string typed = "";
+            if (!up && !self)
+            {
+                NoteForeground(GetForegroundWindow());
+                typed = TypedText((int)k.vkCode, k.scanCode);
+            }
             HookResult r = ProcessKey((int)k.vkCode, up, self, typed);
             Deliver(r);
             return r.Suppress ? new IntPtr(1) : CallNextHookEx(keyboardHook, nCode, wParam, lParam);
@@ -470,10 +674,14 @@ namespace Macropad
                 for (int i = 0; i < r.Backspaces; i++) { keys.Add(Key(0x08, false)); keys.Add(Key(0x08, true)); }
                 if (r.Text != null)
                 {
+                    char previous = '\0';
                     foreach (char c in r.Text)
                     {
-                        if (c == '\r') continue;
-                        if (c == '\n') { keys.Add(Key(0x0D, false)); keys.Add(Key(0x0D, true)); continue; }
+                        char last = previous;
+                        previous = c;
+                        // CR, LF and CRLF each become one Enter.
+                        if (c == '\n' && last == '\r') continue;
+                        if (c == '\r' || c == '\n') { keys.Add(Key(0x0D, false)); keys.Add(Key(0x0D, true)); continue; }
                         if (c == '\t') { keys.Add(Key(0x09, false)); keys.Add(Key(0x09, true)); continue; }
                         KeyInput down = new KeyInput(); down.Char = c;
                         KeyInput upKey = new KeyInput(); upKey.Char = c; upKey.Up = true;

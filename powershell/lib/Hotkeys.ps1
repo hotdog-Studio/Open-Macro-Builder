@@ -1,4 +1,5 @@
-# AHK-style hotkeys for config.ps1 (define Get-MacropadHotkeys returning Hotkey definitions).
+# AHK-style hotkeys and hotstrings for config.ps1 (define Get-MacropadHotkeys returning Hotkey and
+# Hotstring definitions).
 # Fired hotkeys run through Invoke-EngineMacro, so the macro guard covers them and their errors
 # are reported like macro errors.
 
@@ -11,6 +12,26 @@ function Hotkey {
         Spec           = $Spec
         Parsed         = ConvertFrom-AhkHotkey $Spec
         Macro          = Macro $Action $Spec
+        IfWinActive    = $IfWinActive
+        IfWinNotActive = $IfWinNotActive
+    }
+}
+
+# AHK hotstring: ':options:abbreviation' and its replacement text. With the X option the
+# replacement is a function name or scriptblock that runs as a macro instead.
+function Hotstring {
+    param([Parameter(Mandatory)][string]$Spec, $Replacement, [string]$IfWinActive = '', [string]$IfWinNotActive = '')
+    if ($IfWinActive -and $IfWinNotActive) { throw 'Use either IfWinActive or IfWinNotActive, not both.' }
+    $parsed = ConvertFrom-AhkHotstring $Spec
+    $macro = $null
+    $text = $null
+    if ($parsed.Execute) { $macro = Macro $Replacement $Spec } else { $text = [string]$Replacement }
+    [pscustomobject]@{
+        Kind           = 'Hotstring'
+        Spec           = $Spec
+        Parsed         = $parsed
+        Replacement    = $text
+        Macro          = $macro
         IfWinActive    = $IfWinActive
         IfWinNotActive = $IfWinNotActive
     }
@@ -92,10 +113,14 @@ function New-InputHook {
     $hook = [Macropad.InputHook]::new()
     for ($i = 0; $i -lt $Definitions.Count; $i++) {
         $d = $Definitions[$i]
-        if ($d.Kind -ne 'Hotkey') { continue }
         $p = $d.Parsed
-        $flags = [int]$p.Wildcard + 2 * [int]$p.Passthrough + 4 * [int]$p.KeyUp
-        $hook.AddHotkey($i, $p.Vk, $p.Mods, $flags, $p.PrefixVk, (Get-HotkeyContextId $d $contexts))
+        $contextId = Get-HotkeyContextId $d $contexts
+        if ($d.Kind -eq 'Hotstring') {
+            $hook.AddHotstring($i, $p.Abbrev, $p.Options, $p.Execute, [string]$d.Replacement, $contextId)
+        } elseif ($d.Kind -eq 'Hotkey') {
+            $flags = [int]$p.Wildcard + 2 * [int]$p.Passthrough + 4 * [int]$p.KeyUp
+            $hook.AddHotkey($i, $p.Vk, $p.Mods, $flags, $p.PrefixVk, $contextId)
+        }
     }
 
     # The watcher keeps the contexts in step with the foreground window.

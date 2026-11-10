@@ -1,16 +1,17 @@
-// Open Macro Builder — Jenkins pipeline. A scripted
+// Open Macro Builder — Jenkins pipeline: a scripted
 // `node { try { stages } catch { } finally { notifyNtfy() } }`, catchError + `error` per test
 // stage so every report publishes before the build stops, SonarQube analysis + quality gate,
 // cleanup at the end.
 //
-// Shared controller: this job's globals are OMB_-prefixed so
-// nothing leaks between apps. Recognised globals, all optional:
+// Shared controller: this job's globals are OMB_-prefixed so nothing leaks between jobs.
+// Recognised globals, all optional:
+//   OMB_NTFY_URL           ntfy topic URL for build notifications (none are sent when unset)
 //   OMB_SONAR_PROJECT_KEY  overrides sonar.projectKey from sonar-project.properties
 //   OMB_WINDOWS_LABEL      label of a Windows agent with Windows PowerShell 5.1, Pester 5.5+ and
 //                          AutoHotkey v2. When set, 'Windows Tests' runs the Pester suite there;
 //                          when unset the stage is skipped with a log line: the AutoHotkey and
 //                          PowerShell versions need Win32 and WinForms, which the Linux agents lack.
-// Credentials: Secret text `ntfy-ci-token` (shared with the other jobs).
+// Credentials: Secret text `ntfy-ci-token`, the ntfy access token.
 //
 // STAGES, in order: Checkout → Validate config (scripts/validate-config.mjs: config.json's
 // structure, icons, and every action defined in both versions) → Script tests (node:test,
@@ -19,10 +20,14 @@
 // of the SonarQube analysis when it lands; nothing is deployed from here, the macropad runs on
 // the desktop it drives.
 
-// Push the build outcome to ntfy (topic `ci`). Missing credential → a log line, never a failed
-// build. Only failures/aborts and the first green after a failure notify, so a healthy pipeline
-// stays silent.
+// Push the build outcome to the ntfy topic in OMB_NTFY_URL. Missing URL or credential → a log
+// line, never a failed build. Only failures/aborts and the first green after a failure notify, so
+// a healthy pipeline stays silent.
 def notifyNtfy() {
+    if (!env.OMB_NTFY_URL) {
+        echo 'ntfy: the Jenkins global OMB_NTFY_URL is not set — build notification skipped'
+        return
+    }
     def result   = currentBuild.currentResult ?: 'SUCCESS'
     def previous = currentBuild.previousBuild?.result
     def fixed    = (result == 'SUCCESS' && previous != null && previous != 'SUCCESS')
@@ -33,7 +38,7 @@ def notifyNtfy() {
         withCredentials([string(credentialsId: 'ntfy-ci-token', variable: 'NTFY_TOKEN')]) {
             sh """curl -fsS -m 15 -H "Authorization: Bearer \$NTFY_TOKEN" -H "Title: ${title}" -H "Priority: ${priority}" \\
                   -H "Click: ${env.BUILD_URL}" -H "Tags: ${fixed ? 'white_check_mark' : 'x'}" \\
-                  -d "${env.BUILD_URL}console" https://ntfy.example.com/ci >/dev/null || true"""
+                  -d "${env.BUILD_URL}console" "\$OMB_NTFY_URL" >/dev/null || true"""
         }
     } catch (ignored) {
         echo 'ntfy: credential ntfy-ci-token not configured — build notification skipped'

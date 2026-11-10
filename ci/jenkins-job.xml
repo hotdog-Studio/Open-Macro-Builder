@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- The Open Macro Builder Jenkins job: a multibranch pipeline, checking out over
-     SSH with the same GitHub credential, scanning for new commits every 2 minutes (the GitHub
-     webhook does not reach the controller). ci/create-jenkins-job.sh creates or updates it. -->
+<!-- The Open Macro Builder Jenkins job: a multibranch pipeline that checks out over SSH and scans
+     for new commits every 2 minutes, so it needs no GitHub webhook. ci/create-jenkins-job.sh
+     creates or updates it, filling in @JENKINS_CREDENTIALS_ID@: the id of an SSH key credential
+     in Jenkins that can read the repository. -->
 <org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject plugin="workflow-multibranch">
   <actions/>
   <description>Open Macro Builder: config validation and script tests, the Pester suite on a Windows agent when OMB_WINDOWS_LABEL is set, then SonarQube analysis and the quality gate. Defined in ci/jenkins-job.xml in the repository.</description>
@@ -35,7 +36,7 @@
         <source class="jenkins.plugins.git.GitSCMSource" plugin="git">
           <id>open-macro-builder</id>
           <remote>git@github.com:hotdog-Studio/Open-Macro-Builder.git</remote>
-          <credentialsId>JENKINS-CREDENTIALS-ID</credentialsId>
+          <credentialsId>@JENKINS_CREDENTIALS_ID@</credentialsId>
           <traits>
             <jenkins.plugins.git.traits.BranchDiscoveryTrait/>
             <jenkins.plugins.git.traits.TagDiscoveryTrait/>

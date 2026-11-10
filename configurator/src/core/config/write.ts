@@ -16,25 +16,39 @@ const inlineValue = (v: unknown): string => (isObj(v) ? inline(Object.entries(v)
 /** A value of any shape, spread over lines with 2-space indents, to sit at `indent` spaces. */
 const pretty = (v: unknown, indent: number): string => JSON.stringify(v, null, 2).replaceAll('\n', '\n' + ' '.repeat(indent))
 
+/** The typed fields, then the extras whose names the typed fields have not already written. */
+function withExtra(typed: Array<[string, unknown]>, extra: Extra): Array<[string, unknown]> {
+  const written = new Set(typed.filter(([, v]) => v !== undefined).map(([k]) => k))
+  return [...typed, ...Object.entries(extra).filter(([k]) => !written.has(k))]
+}
+
 function keyText(k: PadKey): string {
-  return inline([
-    ['key', k.key],
-    ['row', k.row],
-    ['col', k.col],
-    ['width', k.width],
-    ['height', k.height],
-    ...Object.entries(k.extra),
-  ])
+  return inline(
+    withExtra(
+      [
+        ['key', k.key],
+        ['row', k.row],
+        ['col', k.col],
+        ['width', k.width],
+        ['height', k.height],
+      ],
+      k.extra,
+    ),
+  )
 }
 
 function macroText(m: Macro): string {
-  return inline([
-    ['action', m.action],
-    ['name', m.name],
-    ['description', m.description],
-    ['icon', m.icon],
-    ...Object.entries(m.extra),
-  ])
+  return inline(
+    withExtra(
+      [
+        ['action', m.action],
+        ['name', m.name],
+        ['description', m.description],
+        ['icon', m.icon],
+      ],
+      m.extra,
+    ),
+  )
 }
 
 /** The lines of a list, one entry per line at `indent` spaces; `[]` when there are none. */
@@ -44,9 +58,10 @@ function list(entries: string[], indent: number): string {
   return `[\n${entries.map((e) => pad + e).join(',\n')}\n${' '.repeat(indent)}]`
 }
 
-function extraFields(extra: Extra, indent: number): string[] {
+/** Extras as `"name": value` lines, leaving out the names in `written`. */
+function extraFields(extra: Extra, indent: number, written: string[] = []): string[] {
   return Object.entries(extra)
-    .filter(([, v]) => v !== undefined)
+    .filter(([k, v]) => v !== undefined && !written.includes(k))
     .map(([k, v]) => `${JSON.stringify(k)}: ${pretty(v, indent)}`)
 }
 
@@ -58,8 +73,12 @@ function layerText(ws: Workspace, layer: Layer, parked: boolean): string {
     while (entries.length > 0 && entries.at(-1) === 'null') entries.pop()
   }
   const fields = [`"title": ${JSON.stringify(layer.title)}`, `"icon": ${JSON.stringify(layer.icon)}`]
-  if (parked) fields.push('"disabled": true')
-  fields.push(`"macros": ${list(entries, 6)}`, ...extraFields(layer.extra, 6))
+  const written = ['title', 'icon', 'macros']
+  if (parked) {
+    fields.push('"disabled": true')
+    written.push('disabled')
+  }
+  fields.push(`"macros": ${list(entries, 6)}`, ...extraFields(layer.extra, 6, written))
   return `{\n${fields.map((f) => '      ' + f).join(',\n')}\n    }`
 }
 
@@ -79,7 +98,7 @@ export function writeConfig(ws: Workspace): string {
     ...ws.parked.map((l) => layerText(ws, l, true)),
   ]
   const start = defaultNumber(ws)
-  const rawList =(v: unknown) => (Array.isArray(v) ? list(v.map(inlineValue), 2) : pretty(v, 2))
+  const rawList = (v: unknown) => (Array.isArray(v) ? list(v.map(inlineValue), 2) : pretty(v, 2))
 
   const fields: Array<[string, string | undefined]> = [
     ['fn', keyText(ws.fn)],
@@ -94,9 +113,9 @@ export function writeConfig(ws: Workspace): string {
     ['hotkeys', ws.hotkeys === undefined ? undefined : rawList(ws.hotkeys)],
     ['hotstrings', ws.hotstrings === undefined ? undefined : rawList(ws.hotstrings)],
   ]
-  const lines = fields
-    .filter((f): f is [string, string] => f[1] !== undefined)
+  const present = fields.filter((f): f is [string, string] => f[1] !== undefined)
+  const lines = present
     .map(([k, v]) => `${JSON.stringify(k)}: ${v}`)
-    .concat(extraFields(ws.extra, 2))
+    .concat(extraFields(ws.extra, 2, present.map(([k]) => k)))
   return `{\n${lines.map((l) => '  ' + l).join(',\n')}\n}\n`
 }

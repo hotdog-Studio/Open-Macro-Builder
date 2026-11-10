@@ -140,6 +140,45 @@ describe('config.json', () => {
     expect(out).toContain('"hotkeys": [\n    { "key": "^a", "action": "X" }\n  ],\n  "hotstrings": []\n}\n')
   })
 
+  it('keeps a falsy disabled value and leaves that layer in its slot', () => {
+    const text = config({ keys: threeKeys.slice(0, 2), layers: [layer('A', { disabled: false }), layer('B')] })
+    const ws = parseConfig(text, 'config.json')
+    expect(ws.slots.k1.title).toBe('A')
+    expect(ws.slots.k2.title).toBe('B')
+    expect(ws.parked).toEqual([])
+    const out = writeConfig(ws)
+    expect(out.split('"disabled": false').length - 1).toBe(1)
+    expect(out.split('"disabled"').length - 1).toBe(1)
+  })
+
+  it('parks a layer whose disabled value is truthy', () => {
+    const ws = parseConfig(config({ layers: [layer('A', { disabled: 1 }), layer('B')] }), 'config.json')
+    expect(ws.parked.map((l) => l.title)).toEqual(['A'])
+    expect(ws.slots.k1.title).toBe('B')
+    const out = writeConfig(ws)
+    expect(out).toContain('"disabled": true')
+    expect(out.split('"disabled"').length - 1).toBe(1)
+  })
+
+  it('never writes a field name twice', () => {
+    const keys = [{ key: 'F13', row: '2' }, ...threeKeys.slice(1)]
+    const text = config({ keys, layers: [layer('A')], showLabels: 'yes' })
+    const ws = parseConfig(text, 'config.json')
+    expect(ws.keys[0].extra.row).toBe('2')
+    ws.keys[0].row = 3
+    ws.options.showLabels = false
+    const out = writeConfig(ws)
+    const line = out.split('\n').find((l) => l.includes('"F13"'))
+    expect(line).toContain('"row": 3')
+    expect(line).not.toContain('"row": "2"')
+    expect(out).not.toContain('"yes"')
+    expect(out.split('"showLabels"').length - 1).toBe(1)
+    expect(JSON.parse(out).showLabels).toBe(false)
+
+    // untouched wrong-typed values still survive
+    expect(JSON.parse(writeConfig(parseConfig(text, 'config.json'))).showLabels).toBe('yes')
+  })
+
   it('rejects text that is not JSON', () => {
     expect(() => parseConfig('{ "fn": , }', 'config.json')).toThrow(ConfigError)
     expect(() => parseConfig('{ "fn": , }', 'config.json')).toThrow(/config.json is not valid JSON/)

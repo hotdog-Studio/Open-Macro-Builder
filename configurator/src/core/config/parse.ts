@@ -47,8 +47,9 @@ function parseMacro(raw: Obj): Macro {
 
 function parseLayer(raw: Obj, id: string, keys: PadKey[], notices: string[]): { layer: Layer; disabled: boolean } {
   const rest = { ...raw }
-  const disabled = rest.disabled === true
-  delete rest.disabled
+  // Both runtimes skip a layer whose "disabled" is truthy. A falsy value stays an extra.
+  const disabled = Boolean(rest.disabled)
+  if (disabled) delete rest.disabled
   const title = takeText(rest, 'title')
   const icon = takeText(rest, 'icon')
   const list: unknown[] = Array.isArray(rest.macros) ? rest.macros : []

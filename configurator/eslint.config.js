@@ -13,6 +13,22 @@ export default tseslint.config(
     extends: [reactHooks.configs.flat.recommended],
   },
   {
+    // core stays pure: no Node, Electron, React or browser-only globals.
+    files: ['src/core/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: ['node:*', 'electron', 'react', 'react-dom'] },
+      ],
+      'no-restricted-globals': [
+        'error',
+        { name: 'window', message: 'core must not touch the browser window.' },
+        { name: 'document', message: 'core must not touch the DOM.' },
+      ],
+    },
+  },
+  {
     files: ['electron/**', 'scripts/**', '*.config.{js,ts}'],
     languageOptions: { globals: { ...globals.node } },
   },

@@ -64,6 +64,23 @@ Supported options are `*` (no end character needed), `?` (fire inside words), `C
 
 Both `Hotkey` and `Hotstring` accept `-IfWinActive` or `-IfWinNotActive` with a WinTitle (for example `'ahk_exe Code.exe'`), like AutoHotkey's `#HotIfWinActive`. A window-specific variant wins over a global one with the same keys.
 
+## AutoHotkey built-ins
+
+[docs/ahk-builtins.md](docs/ahk-builtins.md) maps every AutoHotkey built-in to its PowerShell equivalent: a port in this folder, something PowerShell or .NET already does, or a reason it is not ported. Commands can use the ports directly:
+
+| File | Ports |
+| --- | --- |
+| `lib/Send.ps1` | `Send-Ahk`, `Send-Text`, `Wait-Key`, `Test-KeyToggled`, `Set-LockKeyState` |
+| `lib/Input.ps1` | `Send-Chord`, `Send-Key`, `Send-Click`, `Test-KeyPressed` |
+| `lib/Pump.ps1` | `Wait-Pump` (use it instead of `Start-Sleep` in commands) |
+| `lib/WinTitle.ps1` | `Find-Window`, `Test-WindowActive`, `Get-WindowInfo` |
+| `lib/WindowOps.ps1` | window actions, waits, styles, controls and messages |
+| `lib/Hotkeys.ps1` | `Hotkey`, `Hotstring` |
+| `lib/Screen.ps1` | pixels, image search, the mouse and tooltips |
+| `lib/Sound.ps1` | volume and mute |
+
+Window functions take an AutoHotkey WinTitle such as `'ahk_exe chrome.exe'` or `'Untitled - Notepad ahk_class Notepad'`.
+
 ## Test
 
 From `macropad_ahk`:

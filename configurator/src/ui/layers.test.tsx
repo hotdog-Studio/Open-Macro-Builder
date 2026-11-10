@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '../core/config/model'
 import { SETTINGS_PATH } from '../core/settings'
@@ -228,5 +228,87 @@ describe('useAsset', () => {
     // Back to Pad shape: the Layers tab unmounts, and nothing else uses these files.
     await user.click(screen.getByRole('tab', { name: 'Pad shape' }))
     await waitFor(() => expect(new Set(revoked)).toEqual(new Set(live)))
+  })
+
+  describe('never returns a revoked URL', () => {
+    const A = 'img/media/layer.png'
+    const B = 'img/chrome/layer.png'
+    /** Every value the hook returned in a committed render, with the revoked set at that moment. */
+    let returned: { value: string | null; revokedThen: string[] }[] = []
+
+    function Follow() {
+      const [path, setPath] = useState<string | null>(A)
+      const url = useAsset(path)
+      useEffect(() => {
+        returned.push({ value: url, revokedThen: [...revoked] })
+      })
+      return (
+        <>
+          <button onClick={() => setPath(A)}>to A</button>
+          <button onClick={() => setPath(B)}>to B</button>
+          <button onClick={() => setPath(null)}>to none</button>
+          <output data-testid="followed">{url ?? 'none'}</output>
+        </>
+      )
+    }
+
+    const nothingRevokedWasReturned = () => {
+      for (const r of returned) if (r.value !== null) expect(r.revokedThen).not.toContain(r.value)
+    }
+    const followed = () => screen.getByTestId('followed').textContent ?? ''
+    const liveNow = (url: string) => expect(made.has(url) && !revoked.includes(url)).toBe(true)
+
+    beforeEach(() => {
+      returned = []
+    })
+
+    it('when the path goes away and comes back', async () => {
+      const { user } = await start(folderFromRepo(), <Follow />)
+      await waitFor(() => expect(followed()).toMatch(/^blob:/))
+      const first = followed()
+
+      await user.click(screen.getByRole('button', { name: 'to none' }))
+      expect(followed()).toBe('none')
+      expect(revoked).toContain(first)
+
+      await user.click(screen.getByRole('button', { name: 'to A' }))
+      // Until the new read lands there is nothing, not the URL that was revoked.
+      expect(followed()).not.toBe(first)
+      await waitFor(() => expect(followed()).toMatch(/^blob:/))
+      expect(followed()).not.toBe(first)
+      liveNow(followed())
+      nothingRevokedWasReturned()
+    })
+
+    it('when it moves to a file that is still loading and back', async () => {
+      const folder = folderFromRepo()
+      const real = folder.readBytes.bind(folder)
+      let release: () => void = () => {}
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      folder.readBytes = async (path: string) => {
+        if (path === B) await gate
+        return real(path)
+      }
+      const { user } = await start(folder, <Follow />)
+      await waitFor(() => expect(followed()).toMatch(/^blob:/))
+      const first = followed()
+
+      await user.click(screen.getByRole('button', { name: 'to B' }))
+      expect(followed()).toBe('none')
+      expect(revoked).toContain(first)
+      // B has not resolved when the path returns to A.
+      await user.click(screen.getByRole('button', { name: 'to A' }))
+      expect(followed()).not.toBe(first)
+      await waitFor(() => expect(followed()).toMatch(/^blob:/))
+      liveNow(followed())
+
+      release()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(followed()).toMatch(/^blob:/)
+      liveNow(followed())
+      nothingRevokedWasReturned()
+    })
   })
 })

@@ -4,9 +4,8 @@ import { useApp } from '../state/store'
 
 /** One file read from a folder, shared by every component that shows it. */
 interface Entry {
-  /** The object URL once the file has been read; null when it is missing or unreadable. */
+  /** The object URL once the file has been read; null while loading, when the file is missing, and once released. */
   url: string | null
-  done: boolean
   users: number
   ready: Promise<void>
 }
@@ -33,9 +32,8 @@ function acquire(folder: FolderAccess, path: string): Entry {
     found.users++
     return found
   }
-  const entry: Entry = { url: null, done: false, users: 1, ready: Promise.resolve() }
+  const entry: Entry = { url: null, users: 1, ready: Promise.resolve() }
   entry.ready = read(folder, path).then((bytes) => {
-    entry.done = true
     // Everyone let go while the file was loading: make nothing that would never be revoked.
     if (bytes && entry.users > 0) {
       entry.url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/png' }))
@@ -65,14 +63,16 @@ function release(folder: FolderAccess, path: string, entry: Entry): void {
 export function useAsset(path: string | null): string | null {
   const { state } = useApp()
   const folder = state.screen === 'edit' ? state.folder : null
-  const [loaded, setLoaded] = useState<{ folder: FolderAccess; path: string; url: string | null } | null>(null)
+  // The entry, not its URL: release() clears entry.url when it revokes it, so a render that still
+  // holds an entry from before the path went away sees null instead of a revoked URL.
+  const [loaded, setLoaded] = useState<{ folder: FolderAccess; path: string; entry: Entry } | null>(null)
 
   useEffect(() => {
     if (!folder || path === null) return
     const entry = acquire(folder, path)
     let live = true
     void entry.ready.then(() => {
-      if (live) setLoaded({ folder, path, url: entry.url })
+      if (live) setLoaded({ folder, path, entry })
     })
     return () => {
       live = false
@@ -80,5 +80,5 @@ export function useAsset(path: string | null): string | null {
     }
   }, [folder, path])
 
-  return loaded && loaded.folder === folder && loaded.path === path ? loaded.url : null
+  return loaded && loaded.folder === folder && loaded.path === path ? loaded.entry.url : null
 }

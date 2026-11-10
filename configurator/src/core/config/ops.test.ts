@@ -227,6 +227,48 @@ describe('pad edits', () => {
     expect(updateMacro(ws, 'L1', 'k4', { name: 'x' })).toBe(ws)
   })
 
+  describe('a layer with more macros than keys', () => {
+    const twoKeys = (macros: unknown[]) =>
+      parseConfig(
+        JSON.stringify({
+          fn: { key: 'ScrollLock' },
+          keys: [{ key: 'F1' }, { key: 'F2', col: 2 }],
+          layers: [{ title: 'Over', icon: 'x', macros }],
+        }),
+        'config.json',
+      )
+    const a = { action: 'A', name: 'A' }
+    const b = { action: 'B', name: 'B' }
+    const c = { action: 'C', name: 'C' }
+
+    it('adding a key takes the first macro past the last key', () => {
+      const ws = twoKeys([a, b, c])
+      const before = structuredClone(ws)
+      const { ws: out, id } = addKey(ws, 'F3')
+      const layer = out.slots.k1
+      expect(layer.macros[id]).toMatchObject(c)
+      expect(layer.overflowMacros).toEqual([])
+      expect(out.notices.at(-1)).toBe('Layer "Over" had a macro past the last key; it is now on F3.')
+      expect(ws).toEqual(before)
+      const back = parseConfig(writeConfig(out), 'config.json')
+      expect(back.slots.k1.macros[id]).toMatchObject(c)
+      expect(back.slots.k1.overflowMacros).toEqual([])
+    })
+
+    it('adding a key with a null first overflow entry leaves it empty', () => {
+      const out = addKey(twoKeys([a, b, null, c]), 'F3')
+      expect(out.ws.slots.k1.macros[out.id]).toBeUndefined()
+      expect(out.ws.slots.k1.overflowMacros).toEqual([c])
+      expect(out.ws.notices.at(-1)).not.toContain('had a macro past')
+    })
+
+    it('also moves the overflow of a parked layer', () => {
+      const parked = parkLayer(twoKeys([a, b, c]), 'k1')
+      const out = addKey(parked, 'F3')
+      expect(out.ws.parked[0].macros[out.id]).toMatchObject(c)
+    })
+  })
+
   it('sets options', () => {
     const out = setOptions(example(), { showLabels: false })
     expect(out.options.showLabels).toBe(false)

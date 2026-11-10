@@ -1,5 +1,6 @@
 import type { KeyId, Layer, Macro, Options, PadKey, Workspace } from './model'
 import { size } from './model'
+import { readMacro } from './parse'
 
 export type OpResult = { ok: true; ws: Workspace } | { ok: false; reason: string }
 
@@ -90,6 +91,28 @@ export function renameKey(ws: Workspace, id: KeyId, key: string): Workspace {
   return withKey(ws, id, (k) => ({ ...k, key }))
 }
 
+/**
+ * Both runtimes give macro N to key N, so once the pad has one more key, the first
+ * macro written past the old last key belongs to the new key. Move it there, so the
+ * editor shows what the saved file means.
+ */
+function takeOverflow(ws: Workspace, added: PadKey): Workspace {
+  const notices = [...ws.notices]
+  const take = (l: Layer): Layer => {
+    if (l.overflowMacros.length === 0) return l
+    const macro = readMacro(l.overflowMacros[0])
+    if (macro) notices.push(`Layer "${l.title}" had a macro past the last key; it is now on ${added.key}.`)
+    return {
+      ...l,
+      macros: macro ? { ...l.macros, [added.id]: macro } : l.macros,
+      overflowMacros: l.overflowMacros.slice(1),
+    }
+  }
+  const slots: Record<KeyId, Layer> = {}
+  for (const [k, l] of Object.entries(ws.slots)) slots[k] = take(l)
+  return { ...ws, slots, parked: ws.parked.map(take), notices }
+}
+
 export function addKey(ws: Workspace, key: string): { ws: Workspace; id: KeyId } {
   const highest = ws.keys.reduce((n, k) => Math.max(n, Number(/^k(\d+)$/.exec(k.id)?.[1] ?? 0)), 0)
   const id = `k${highest + 1}`
@@ -105,7 +128,7 @@ export function addKey(ws: Workspace, key: string): { ws: Workspace; id: KeyId }
     for (let col = 1; col <= width + 1; col++) {
       if (checkPlace(ws, id, row, col, 1, 1) === null) {
         const added: PadKey = { id, key, row, col, extra: {} }
-        return { ws: { ...ws, keys: [...ws.keys, added] }, id }
+        return { ws: takeOverflow({ ...ws, keys: [...ws.keys, added] }, added), id }
       }
     }
   }

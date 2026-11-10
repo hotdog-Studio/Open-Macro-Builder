@@ -45,6 +45,11 @@ function parseMacro(raw: Obj): Macro {
   return macro
 }
 
+/** Reads one entry of a layer's "macros" list: a macro object, or null when it is anything else. */
+export function readMacro(raw: unknown): Macro | null {
+  return isObj(raw) ? parseMacro(raw) : null
+}
+
 function parseLayer(raw: Obj, id: string, keys: PadKey[], notices: string[]): { layer: Layer; disabled: boolean } {
   const rest = { ...raw }
   // Both runtimes skip a layer whose "disabled" is truthy. A falsy value stays an extra.
@@ -56,7 +61,8 @@ function parseLayer(raw: Obj, id: string, keys: PadKey[], notices: string[]): { 
   delete rest.macros
   const macros: Record<KeyId, Macro> = {}
   list.slice(0, keys.length).forEach((m, j) => {
-    if (isObj(m)) macros[keys[j].id] = parseMacro(m)
+    const macro = readMacro(m)
+    if (macro) macros[keys[j].id] = macro
   })
   const overflowMacros = list.slice(keys.length)
   if (overflowMacros.length > 0) {

@@ -76,7 +76,7 @@ Command functions live in `ahk/commands/` and `powershell/commands/`, with the s
 - `qmk/`: the VIA/QMK layout of the EPOMAKER EK21 keypad this was built for.
 - `scripts/`: the config validator and its tests.
 - `docs/`: design plans.
-- `Jenkinsfile`, `sonar-project.properties`: CI.
+- `Jenkinsfile`, `sonar-project.properties`, `ci/`: CI and the Jenkins job definition.
 
 ## Tests and CI
 
@@ -86,6 +86,14 @@ powershell -NoProfile -File powershell\tests\run.ps1      # Pester suite (Window
 ```
 
 Jenkins validates `config.json` and runs the script tests on the Linux agent. It runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one, then sends everything to SonarQube and waits for the quality gate. The `Jenkinsfile` header lists the globals.
+
+The Jenkins job is a multibranch pipeline defined in `ci/jenkins-job.xml`. It checks out over SSH with an SSH key credential and scans for new commits every 2 minutes. To create it, or update it after editing the XML, run this with a Jenkins API token:
+
+```
+JENKINS_USER=<user> JENKINS_TOKEN=<api token> sh ci/create-jenkins-job.sh
+```
+
+The first analysis creates the SonarQube project `hotdog-Studio_open-macro-builder` if the Jenkins token may create projects. Otherwise, create it in SonarQube first.
 
 ## Showcase
 

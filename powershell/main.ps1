@@ -6,7 +6,7 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-foreach ($f in 'Native', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'Tray', 'Instance') {
+foreach ($f in 'Native', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'Tray', 'Instance', 'AhkSyntax') {
     . (Join-Path $PSScriptRoot "lib\$f.ps1")
 }
 foreach ($f in Get-ChildItem (Join-Path $PSScriptRoot 'commands') -Recurse -Filter *.ps1) { . $f.FullName }

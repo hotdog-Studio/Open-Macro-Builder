@@ -10,3 +10,12 @@ Describe 'Exit-SingleInstance' {
     AfterEach { Remove-Item $f -ErrorAction SilentlyContinue }
     It 'removes only its own pid file' { Set-Content $f '1'; Exit-SingleInstance $f; $f | Should -Exist; Set-Content $f "$PID"; Exit-SingleInstance $f; $f | Should -Not -Exist }
 }
+Describe 'Test-AhkMacropadRunning' {
+    It 'finds the AutoHotkey macropad by its script' {
+        Test-AhkMacropadRunning @([pscustomobject]@{ Name = 'AutoHotkey64.exe'; CommandLine = '"C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe" /ErrorStdOut "C:\Repo\macropad_ahk\ahk\main.ahk"' }) | Should -BeTrue
+    }
+    It 'ignores other AutoHotkey scripts' {
+        Test-AhkMacropadRunning @([pscustomobject]@{ Name = 'AutoHotkey64.exe'; CommandLine = '"C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe" "C:\scripts\other.ahk"' }) | Should -BeFalse
+    }
+    It 'is false with no processes' { Test-AhkMacropadRunning @() | Should -BeFalse }
+}

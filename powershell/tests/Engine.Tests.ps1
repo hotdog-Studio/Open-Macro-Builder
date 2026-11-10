@@ -78,7 +78,7 @@ Describe 'Register-LayoutHotkeys' {
     }
     It 'throws naming the Fn key when the hook cannot be installed' {
         $e = New-TestEngine
-        { Register-LayoutHotkeys (New-FakeWindow -HookResult $false) $e.Layout $e } | Should -Throw "Could not register hotkey 'ScrollLock'. Is the AutoHotkey macropad or another instance running?"
+        { Register-LayoutHotkeys (New-FakeWindow -HookResult $false) $e.Layout $e } | Should -Throw "Could not hook the Fn key 'ScrollLock'."
     }
     It 'throws naming the key when Register returns false' {
         $e = New-TestEngine

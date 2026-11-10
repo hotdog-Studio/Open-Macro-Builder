@@ -25,3 +25,17 @@ function Exit-SingleInstance {
     $text = Get-Content -LiteralPath $PidFile -Raw -ErrorAction SilentlyContinue
     if ($text -and $text.Trim() -eq "$PID") { Remove-Item -LiteralPath $PidFile -ErrorAction SilentlyContinue }
 }
+
+# Is the AutoHotkey macropad (ahk\main.ahk) running? Its keyboard hook swallows F13-F24 and
+# ScrollLock, and RegisterHotKey does not fail against a hook, so this version would start with
+# every key dead. $Processes is for tests; by default the running AutoHotkey processes are read.
+function Test-AhkMacropadRunning {
+    param([object[]]$Processes)
+    if (-not $PSBoundParameters.ContainsKey('Processes')) {
+        $Processes = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'AutoHotkey%'" -ErrorAction SilentlyContinue)
+    }
+    foreach ($p in @($Processes)) {
+        if ([string]$p.CommandLine -match '\\ahk\\main\.ahk"?\s*$') { return $true }
+    }
+    $false
+}

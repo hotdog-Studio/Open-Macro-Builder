@@ -68,3 +68,13 @@ Describe 'Macropad.HotkeyEventArgs' {
 Describe 'Macropad.OverlayForm' {
     It 'is a Form' { [Macropad.OverlayForm]::new() | Should -BeOfType [System.Windows.Forms.Form] }
 }
+Describe 'Macropad.KeyHook decisions' {
+    It 'posts one down per press, ignoring auto-repeat, and an up on release' {
+        $k = [Macropad.KeyHook]::new([IntPtr]::Zero, 0x91)
+        $k.Decide($false, 1000) | Should -Be 1; $k.Decide($false, 1030) | Should -Be 0; $k.Decide($true, 1100) | Should -Be 2
+    }
+    It 'treats a down long after the last one as a new press when the release was missed' {
+        $k = [Macropad.KeyHook]::new([IntPtr]::Zero, 0x91)
+        $k.Decide($false, 1000) | Should -Be 1; $k.Decide($false, 9000) | Should -Be 1
+    }
+}

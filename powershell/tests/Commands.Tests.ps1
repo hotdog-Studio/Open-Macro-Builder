@@ -1,6 +1,6 @@
 BeforeAll {
     $ps = Split-Path $PSScriptRoot -Parent
-    foreach ($f in 'Native','Interop','Pump','Assets','Input','Model','Overlay','Window','Engine') { . "$ps\lib\$f.ps1" }
+    foreach ($f in 'Native','Interop','Pump','Assets','Input','Model','Overlay','Window','Engine','AhkSyntax','WinTitle') { . "$ps\lib\$f.ps1" }
     Get-ChildItem "$ps\commands" -Recurse -Filter *.ps1 | ForEach-Object { . $_.FullName }
     $ahk = Join-Path (Split-Path $ps -Parent) 'ahk\commands'
     function Get-AhkFunctionNames([string[]]$Files) {
@@ -38,7 +38,6 @@ Describe 'core commands send the right chords' {
     It 'NextDesktop' { NextDesktop $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+LWin+Right' } }
     It 'PlayPause' { PlayPause $null; Should -Invoke Send-Key -ParameterFilter { $Name -eq 'Media_Play_Pause' } }
     It 'Shutdown' { Shutdown $null; Should -Invoke Start-Program -ParameterFilter { $Program -eq 'shutdown' -and $Arguments -eq '/s /t 1' } }
-    It 'OpenFileExplorer' { OpenFileExplorer $null; Should -Invoke ActivateOrOpen -ParameterFilter { $Exe -eq 'explorer.exe' } }
 }
 Describe 'Get-KeyNameFromKeys' {
     It 'maps WinForms key codes back to chord names' {
@@ -48,4 +47,25 @@ Describe 'Get-KeyNameFromKeys' {
         Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem5) | Should -Be '\'
     }
     It 'round-trips through Get-VirtualKey' { Get-VirtualKey (Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::PageDown)) | Should -Be 0x22 }
+}
+Describe 'File Explorer commands' {
+    BeforeEach { Mock Start-Program {}; Mock Set-ActiveWindow { $true }; Mock Wait-Pump {} }
+    It 'OpenFileExplorer activates an existing File Explorer window, not the taskbar' {
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5) } -ParameterFilter { $WinTitle -eq 'ahk_class CabinetWClass' }
+        OpenFileExplorer $null
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]5 }
+        Should -Invoke Start-Program -Times 0 -Exactly
+    }
+    It 'OpenFileExplorer opens File Explorer when none is open' {
+        Mock Find-Window { , [IntPtr[]]@() } -ParameterFilter { $WinTitle -eq 'ahk_class CabinetWClass' }
+        OpenFileExplorer $null
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' }
+    }
+    It 'ShareFileExplorer opens the share and activates the new window' {
+        $script:finds = 0
+        Mock Find-Window { $script:finds++; if ($script:finds -eq 1) { , [IntPtr[]]@([IntPtr]5) } else { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) } } -ParameterFilter { $WinTitle -eq 'ahk_class CabinetWClass' }
+        ShareFileExplorer $null
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' -and $Arguments -eq '\\fileserver\' }
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]7 }
+    }
 }

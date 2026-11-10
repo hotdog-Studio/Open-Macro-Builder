@@ -92,7 +92,7 @@ function Register-LayoutHotkeys {
     param($Window, $Layout, $Engine)
     $fnName = $Layout.Fn.Name
     if (-not $Window.HookFnKey([uint32](Get-VirtualKey $fnName))) {
-        throw "Could not register hotkey '$fnName'. Is the AutoHotkey macropad or another instance running?"
+        throw "Could not hook the Fn key '$fnName'."
     }
     $keys = @($Layout.Keys)
     for ($i = 0; $i -lt $keys.Count; $i++) {

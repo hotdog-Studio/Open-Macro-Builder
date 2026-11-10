@@ -52,3 +52,26 @@ function ReplaceMe {
     param($Macro)
     [void][System.Windows.Forms.MessageBox]::Show("Replace $($Macro.Name) with your own!", $Macro.Name)
 }
+
+# File Explorer windows only (class CabinetWClass). explorer.exe also owns the taskbar, the desktop
+# and helper windows, so matching by exe (as AHK's "ahk_exe explorer.exe" did) never found them.
+function Get-ExplorerWindows {
+    $windows = Find-Window 'ahk_class CabinetWClass' -All
+    , [IntPtr[]]@($windows)
+}
+
+# Opens File Explorer (at $Path when given) and activates the window it opens.
+function Open-ExplorerWindow {
+    param([string]$Path = '')
+    $before = Get-ExplorerWindows
+    Start-Program 'explorer' $Path
+    for ($i = 0; $i -lt 50; $i++) {
+        $now = Get-ExplorerWindows
+        $new = @($now | Where-Object { $before -notcontains $_ })
+        if ($new.Count -gt 0) {
+            [void](Set-ActiveWindow $new[0])
+            return
+        }
+        Wait-Pump 100
+    }
+}

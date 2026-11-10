@@ -93,3 +93,29 @@ Describe 'InputHook hotstrings' {
     }
     It 'fires execute hotstrings' { $h = New-StringHook ':X:go'; $r = Invoke-Typing $h 'go '; $r.Fired | Should -Be @(0); $r.Backspaces | Should -Be 2; $r.Text | Should -Be ' ' }
 }
+Describe 'InputHook resync and delivery' {
+    AfterEach { if ($h) { $h.Dispose() } }
+    It 'forgets a modifier whose release it never saw (Win+L, Ctrl+Alt+Del)' {
+        $h = New-Hook '#x'; [void](Dn $h 0x5B); $h.ResyncModifiers([int[]]@(), 0)
+        $r = Dn $h 0x58; $r.Fired.Count | Should -Be 0; $r.Suppress | Should -BeFalse
+    }
+    It 'keeps a modifier the system still reports down' {
+        $h = New-Hook '#x'; [void](Dn $h 0x5B); $h.ResyncModifiers([int[]]@(0x5B), 0)
+        (Dn $h 0x58).Fired | Should -Be @(0)
+    }
+    It 'injects a hotstring''s keys before running its macro' {
+        $h = [Macropad.InputHook]::new(); $script:log = [System.Collections.ArrayList]::new()
+        $h.Sender = [Action[Macropad.KeyInput[]]] { param($k) [void]$script:log.Add('inject') }
+        $h.FirePoster = [Action[int]] { param($id) [void]$script:log.Add("fire:$id") }
+        $r = [Macropad.HookResult]::new(); $r.Fired = [int[]]@(4); $r.Backspaces = 2; $r.Text = ' '
+        $h.Deliver($r); $h.DrainPending()
+        $script:log -join ',' | Should -Be 'inject,fire:4'
+    }
+    It 'posts a hotkey with nothing to inject at once' {
+        $h = [Macropad.InputHook]::new(); $script:log = [System.Collections.ArrayList]::new()
+        $h.FirePoster = [Action[int]] { param($id) [void]$script:log.Add("fire:$id") }
+        $r = [Macropad.HookResult]::new(); $r.Fired = [int[]]@(1)
+        $h.Deliver($r)
+        $script:log -join ',' | Should -Be 'fire:1'
+    }
+}

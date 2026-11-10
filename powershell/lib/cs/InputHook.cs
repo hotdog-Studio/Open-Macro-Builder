@@ -116,6 +116,36 @@ namespace Macropad
             }
         }
 
+        private static readonly int[] TrackedModifiers = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C };
+
+        // Brings the modifier model in line with what Windows reports as down. The hook never sees
+        // key-ups that happen on another desktop (Win+L, Ctrl+Alt+Del, UAC), so without this a
+        // modifier would stay "held" afterwards. exceptVk is the event being processed, whose state
+        // Windows has not updated yet; modifiers this hook swallowed keep the hook's view.
+        public void ResyncModifiers(int[] downVks, int exceptVk)
+        {
+            lock (sync)
+            {
+                HashSet<int> down = new HashSet<int>(downVks ?? new int[0]);
+                int except = NormalizeModifier(exceptVk);
+                foreach (int vk in TrackedModifiers)
+                {
+                    if (vk == except || suppressedDown.Contains(vk)) continue;
+                    modifierDown[vk] = down.Contains(vk);
+                }
+            }
+        }
+
+        private static int[] SystemModifiersDown()
+        {
+            List<int> down = new List<int>();
+            foreach (int vk in TrackedModifiers)
+            {
+                if ((GetAsyncKeyState(vk) & 0x8000) != 0) down.Add(vk);
+            }
+            return down.ToArray();
+        }
+
         // replacement is ignored when execute (PowerShell passes $null to a string parameter as "").
         public void AddHotstring(int id, string abbrev, int options, bool execute, string replacement, int context)
         {
@@ -515,6 +545,8 @@ namespace Macropad
         private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")]
         private static extern short GetKeyState(int nVirtKey);
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
 
         // Installs both hooks on a new background thread with its own message loop.
         public bool Start()
@@ -541,7 +573,7 @@ namespace Macropad
                     MSG msg;
                     while (GetMessage(out msg, IntPtr.Zero, 0, 0) > 0)
                     {
-                        if (msg.message == WM_APP_INJECT) DrainInjections();
+                        if (msg.message == WM_APP_INJECT) DrainPending();
                     }
                     UnhookWindowsHookEx(keyboardHook);
                     UnhookWindowsHookEx(mouseHook);
@@ -596,6 +628,7 @@ namespace Macropad
                     capsDown = !up;
                 }
             }
+            ResyncModifiers(SystemModifiersDown(), (int)k.vkCode);
             string typed = "";
             if (!up && !self)
             {
@@ -629,21 +662,40 @@ namespace Macropad
                 case 0x020E: vk = ((short)(m.mouseData >> 16)) > 0 ? 0x9D : 0x9C; break;
             }
             if (vk == 0) return CallNextHookEx(mouseHook, nCode, wParam, lParam);
+            ResyncModifiers(SystemModifiersDown(), 0);
             bool self = m.dwExtraInfo.ToInt64() == Interop.Signature;
             HookResult r = ProcessMouse(vk, up, self);
             Deliver(r);
             return r.Suppress ? new IntPtr(1) : CallNextHookEx(mouseHook, nCode, wParam, lParam);
         }
 
-        // Posts fired ids to the UI window; queues injection for the hook thread.
-        private void Deliver(HookResult r)
+        // Seams for tests: where injected keys and fired ids go (default: Inject.Send and PostFired).
+        public Action<KeyInput[]> Sender;
+        public Action<int> FirePoster;
+
+        private void SendKeys(KeyInput[] keys)
         {
-            foreach (int id in r.Fired) PostFired(id);
-            if (r.MaskMenu || r.ReinjectVk != 0 || r.Backspaces > 0 || r.Text != null)
+            if (Sender != null) Sender(keys); else Inject.Send(keys);
+        }
+
+        private void PostFiredId(int id)
+        {
+            if (FirePoster != null) FirePoster(id); else PostFired(id);
+        }
+
+        // Hands a decision on: fired ids go to the UI window, injections to the hook thread. When a
+        // result has both (an execute hotstring), its ids are posted only after its keys have been
+        // injected, so the macro can never type before the abbreviation is erased.
+        public void Deliver(HookResult r)
+        {
+            bool inject = r.MaskMenu || r.ReinjectVk != 0 || r.Backspaces > 0 || r.Text != null;
+            if (!inject)
             {
-                lock (injectQueue) injectQueue.Enqueue(r);
-                PostThreadMessage(threadId, WM_APP_INJECT, IntPtr.Zero, IntPtr.Zero);
+                foreach (int id in r.Fired) PostFiredId(id);
+                return;
             }
+            lock (injectQueue) injectQueue.Enqueue(r);
+            PostThreadMessage(threadId, WM_APP_INJECT, IntPtr.Zero, IntPtr.Zero);
         }
 
         private static KeyInput Key(int vk, bool up)
@@ -654,7 +706,7 @@ namespace Macropad
             return k;
         }
 
-        private void DrainInjections()
+        public void DrainPending()
         {
             while (true)
             {
@@ -688,7 +740,8 @@ namespace Macropad
                         keys.Add(down); keys.Add(upKey);
                     }
                 }
-                if (keys.Count > 0) Inject.Send(keys.ToArray());
+                if (keys.Count > 0) SendKeys(keys.ToArray());
+                foreach (int id in r.Fired) PostFiredId(id);
             }
         }
 

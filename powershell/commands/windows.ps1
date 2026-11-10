@@ -1,6 +1,11 @@
 # Windows shell commands and window management chords (ahk/commands/windows.ahk).
 
-function OpenFileExplorer { param($Macro) ActivateOrOpen 'explorer.exe' 'explorer' }
+function OpenFileExplorer {
+    param($Macro)
+    $windows = Get-ExplorerWindows
+    if ($windows.Count -gt 0) { [void](Set-ActiveWindow (Select-WindowToActivate $windows ([Macropad.Native]::GetForegroundWindow()))) }
+    else { Open-ExplorerWindow }
+}
 function OpenPowershell { param($Macro) ActivateOrOpen 'powershell.exe' 'powershell' }
 function OpenCommandPrompt { param($Macro) ActivateOrOpen 'cmd.exe' 'cmd' }
 function OpenTaskManager { param($Macro) ActivateOrOpen 'taskmgr.exe' 'taskmgr' }

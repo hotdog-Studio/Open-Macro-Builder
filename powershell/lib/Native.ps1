@@ -231,6 +231,24 @@ namespace Macropad
             return installed;
         }
 
+        private int lastDownTick;
+
+        // 0 = nothing to post, 1 = post a down, 2 = post an up. Auto-repeat downs post nothing.
+        // A down long after the last one is a new press even when its release was never seen:
+        // key-ups on another desktop (Win+L, UAC) never reach this hook.
+        public int Decide(bool up, int tick)
+        {
+            if (up)
+            {
+                down = false;
+                return 2;
+            }
+            bool fresh = !down || unchecked(tick - lastDownTick) > 1500;
+            down = true;
+            lastDownTick = tick;
+            return fresh ? 1 : 0;
+        }
+
         private IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0)
@@ -240,18 +258,13 @@ namespace Macropad
                 if (key.vkCode == vk && key.dwExtraInfo.ToInt64() != Native.MacropadSignature)
                 {
                     int message = wParam.ToInt32();
-                    if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN)
+                    bool isDown = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+                    bool isUp = message == WM_KEYUP || message == WM_SYSKEYUP;
+                    if (isDown || isUp)
                     {
-                        if (!down)
-                        {
-                            down = true;
-                            PostMessage(target, WM_HOOKKEY_DOWN, new IntPtr((int)vk), IntPtr.Zero);
-                        }
-                    }
-                    else if (message == WM_KEYUP || message == WM_SYSKEYUP)
-                    {
-                        down = false;
-                        PostMessage(target, WM_HOOKKEY_UP, new IntPtr((int)vk), IntPtr.Zero);
+                        int action = Decide(isUp, Environment.TickCount);
+                        if (action == 1) PostMessage(target, WM_HOOKKEY_DOWN, new IntPtr((int)vk), IntPtr.Zero);
+                        else if (action == 2) PostMessage(target, WM_HOOKKEY_UP, new IntPtr((int)vk), IntPtr.Zero);
                     }
                     return new IntPtr(1);
                 }

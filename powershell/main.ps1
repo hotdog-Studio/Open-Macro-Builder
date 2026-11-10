@@ -18,6 +18,9 @@ $hk = $null
 $global:tray = $null
 try {
     Enter-SingleInstance
+    if (Test-AhkMacropadRunning) {
+        throw 'The AutoHotkey macropad is running. Exit it (tray icon, Exit) before starting the PowerShell version: both cannot use the macro keys at once.'
+    }
     $layout = Get-MacropadConfig
     Test-LayoutActions $layout
     $global:overlay = New-Overlay $layout

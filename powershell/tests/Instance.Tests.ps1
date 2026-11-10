@@ -19,3 +19,18 @@ Describe 'Test-AhkMacropadRunning' {
     }
     It 'is false with no processes' { Test-AhkMacropadRunning @() | Should -BeFalse }
 }
+Describe 'Test-MacropadCommandLine' {
+    BeforeAll { $main = 'C:\Repo\macropad_ahk\powershell\main.ps1' }
+    It 'matches this macropad as launch.vbs starts it' {
+        Test-MacropadCommandLine "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$main`"" $main | Should -BeTrue
+        Test-MacropadCommandLine "powershell -file $($main.ToUpperInvariant())" $main | Should -BeTrue
+    }
+    It 'ignores an editor that has main.ps1 open' {
+        Test-MacropadCommandLine "`"C:\Program Files\Microsoft VS Code\Code.exe`" `"$main`"" $main | Should -BeFalse
+    }
+    It 'ignores another copy of main.ps1' { Test-MacropadCommandLine 'powershell.exe -File "D:\other\main.ps1"' $main | Should -BeFalse }
+    It 'defaults to the main.ps1 beside lib' {
+        $real = (Resolve-Path "$PSScriptRoot\..\main.ps1").Path
+        Test-MacropadCommandLine "powershell.exe -File `"$real`"" | Should -BeTrue
+    }
+}

@@ -1,5 +1,18 @@
 # Single instance: a new launch replaces the running macropad (like AHK #SingleInstance force).
 
+# Does a process command line run this macropad? Only "-File <this main.ps1>" counts, so an editor
+# with main.ps1 open, or a copy of the macropad elsewhere, is never taken for it. The pid file can
+# name a pid that Windows has since reused, so this check guards Stop-Process.
+function Test-MacropadCommandLine {
+    param([string]$CommandLine, [string]$MainPath)
+    if (-not $MainPath) {
+        $lib = Split-Path $MyInvocation.MyCommand.ScriptBlock.File -Parent
+        $MainPath = Join-Path (Split-Path $lib -Parent) 'main.ps1'
+    }
+    if (-not $CommandLine) { return $false }
+    $CommandLine -match ('(?i)(^|\s)-File\s+"?' + [regex]::Escape($MainPath) + '"?(\s|$)')
+}
+
 function Enter-SingleInstance {
     param([string]$PidFile = "$env:TEMP\LayeredMacropad.pid")
     if (Test-Path -LiteralPath $PidFile) {
@@ -7,7 +20,7 @@ function Enter-SingleInstance {
         $old = 0
         if ($text -and [int]::TryParse($text.Trim(), [ref]$old) -and $old -ne $PID) {
             $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $old" -ErrorAction SilentlyContinue
-            if ($proc -and $proc.CommandLine -match 'main\.ps1') {
+            if ($proc -and (Test-MacropadCommandLine $proc.CommandLine)) {
                 Stop-Process -Id $old -Force -ErrorAction SilentlyContinue
                 $deadline = [DateTime]::Now.AddSeconds(3)
                 while ((Get-Process -Id $old -ErrorAction SilentlyContinue) -and [DateTime]::Now -lt $deadline) {

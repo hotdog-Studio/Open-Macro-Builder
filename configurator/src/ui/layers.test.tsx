@@ -182,6 +182,14 @@ function Show({ path }: Readonly<{ path: string | null }>) {
   return <output data-testid={`asset-${path}`}>{url ?? 'none'}</output>
 }
 
+/** The distinct pictures the overlay preview shows; none of them is the Media layer.png the tests below read. */
+function previewPaths(): Set<string> {
+  const paths = Array.from(document.querySelectorAll('[aria-label="Overlay preview"] img[data-path]'))
+  const set = new Set(paths.map((i) => i.getAttribute('data-path') as string))
+  expect(set.has('img/media/layer.png')).toBe(false)
+  return set
+}
+
 describe('useAsset', () => {
   it('gives an object URL for a file in the folder, and shares it between users of the same path', async () => {
     await start(folderFromRepo(), (
@@ -196,8 +204,8 @@ describe('useAsset', () => {
       return out
     })
     expect(a).toBe(b)
-    // Twice on screen, one object URL made.
-    expect(made.size).toBe(1)
+    // Twice on screen, one object URL made (besides the pictures of the overlay preview).
+    await waitFor(() => expect(made.size).toBe(1 + previewPaths().size))
     expect(made.get(a)?.type).toBe('image/png')
   })
 
@@ -215,7 +223,7 @@ describe('useAsset', () => {
     expect(screen.getByTestId('asset-img/nope/layer.png').textContent).toBe('none')
     expect(screen.getByTestId('asset-null').textContent).toBe('none')
     expect(screen.getByTestId('asset-../outside.png').textContent).toBe('none')
-    expect(made.size).toBe(1)
+    await waitFor(() => expect(made.size).toBe(1 + previewPaths().size))
   })
 
   it('revokes the URLs it made when the component goes away', async () => {

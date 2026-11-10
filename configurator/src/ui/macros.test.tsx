@@ -66,6 +66,8 @@ async function start({ languages = ['ahk', 'ps'], config, files = {} }: Setup = 
 
 /** A key of the grid by its name; its name may carry a `not in …` note. */
 const key = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}( |$)`) })
+/** The pad in the middle panel; the overlay preview in the right panel shows the same names. */
+const grid = () => within(screen.getByRole('main'))
 const palette = () => screen.getByRole('region', { name: 'Commands' })
 const layerButton = (title: string) => screen.getByRole('button', { name: title })
 
@@ -73,14 +75,14 @@ describe('Macros tab', () => {
   it('layer buttons choose the layer shown on the grid', async () => {
     const { user } = await start()
     // The pad starts on the first layer, Media.
-    expect(screen.getByText('Prev')).toBeTruthy()
+    expect(grid().getByText('Prev')).toBeTruthy()
     expect(layerButton('Media').getAttribute('aria-pressed')).toBe('true')
     expect(layerButton('Chrome').getAttribute('aria-pressed')).toBe('false')
-    expect(screen.queryByText('YouTube')).toBeNull()
+    expect(grid().queryByText('YouTube')).toBeNull()
 
     await user.click(layerButton('Chrome'))
-    expect(screen.getByText('YouTube')).toBeTruthy()
-    expect(screen.queryByText('Prev')).toBeNull()
+    expect(grid().getByText('YouTube')).toBeTruthy()
+    expect(grid().queryByText('Prev')).toBeNull()
     expect(layerButton('Chrome').getAttribute('aria-pressed')).toBe('true')
     expect(seen.state.screen === 'edit' && seen.state.selectedLayer).toBe(ws().slots.k3.id)
   })
@@ -91,14 +93,14 @@ describe('Macros tab', () => {
     await user.click(screen.getByRole('button', { name: /^Programs/ }))
     await user.click(screen.getByRole('button', { name: 'Edit macros →' }))
     expect(layerButton('Programs').getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByText('Explorer')).toBeTruthy()
+    expect(grid().getByText('Explorer')).toBeTruthy()
   })
 
   it('shows each key name, and the macro name in the label strip', async () => {
     await start()
     expect(key('F13')).toBeTruthy()
-    expect(screen.getByText('Play')).toBeTruthy()
-    expect(screen.getByText('Vol +')).toBeTruthy()
+    expect(grid().getByText('Play')).toBeTruthy()
+    expect(grid().getByText('Vol +')).toBeTruthy()
   })
 
   it('search filters commands by name or description', async () => {
@@ -139,7 +141,7 @@ describe('Macros tab', () => {
     await user.clear(label)
     await user.type(label, 'Tube')
     expect(ws().slots.k3.macros.k1.name).toBe('Tube')
-    expect(screen.getByText('Tube')).toBeTruthy()
+    expect(grid().getByText('Tube')).toBeTruthy()
 
     const description = screen.getByLabelText('Description (tooltip)')
     await user.clear(description)
@@ -163,7 +165,7 @@ describe('Macros tab', () => {
     expect(ws().slots.k1.macros.k1.action).toBe('PreviousTrack')
     await user.click(screen.getByRole('button', { name: 'Clear key' }))
     expect(ws().slots.k1.macros).not.toHaveProperty('k1')
-    expect(screen.queryByText('Prev')).toBeNull()
+    expect(grid().queryByText('Prev')).toBeNull()
     expect(screen.getByText(/Nothing on this key/)).toBeTruthy()
   })
 
@@ -250,6 +252,6 @@ describe('Macros tab', () => {
     expect(macro.action).toBe('OpenYoutube')
     expect(macro.name).toBe('Youtube')
     expect(macro.description).toBe('Opens YouTube in Google Chrome.')
-    expect(screen.getByText('Youtube')).toBeTruthy()
+    expect(grid().getByText('Youtube')).toBeTruthy()
   })
 })

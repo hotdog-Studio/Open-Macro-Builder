@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { OverlayPreview } from './OverlayPreview'
 
 /** Shared classes, from the approved prototype. */
 export const STYLE = {
@@ -20,5 +21,10 @@ export function CentrePanel({ children }: Readonly<{ children?: ReactNode }>) {
 }
 
 export function RightPanel({ children }: Readonly<{ children?: ReactNode }>) {
-  return <aside className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">{children}</aside>
+  return (
+    <aside className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">
+      {children}
+      <OverlayPreview />
+    </aside>
+  )
 }

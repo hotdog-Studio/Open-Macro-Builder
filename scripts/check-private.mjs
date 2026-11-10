@@ -38,6 +38,9 @@ export function findIn(text, where, denylist) {
   return findings;
 }
 
+// Runs the git found on PATH: the same git that runs this script's hooks. SonarQube flags this as
+// security hotspot S4036; it is safe here because this is a local developer tool with no fixed
+// git location across Windows and Linux, and whoever controls PATH already controls the hooks.
 const git = (cwd, args, input) => execFileSync('git', args, { cwd, input, maxBuffer: 1 << 30 });
 
 /** Reads many blobs at once through git cat-file --batch: Map of id -> Buffer. */
@@ -80,8 +83,10 @@ export function checkHistory(cwd, revs, denylist) {
     const [hash, author, committer, message] = entry.replace(/^\n/, '').split('\0');
     if (!hash) continue;
     const where = `commit ${hash.slice(0, 7)}`;
-    findings.push(...findIn(`${author}\n${committer}`, `${where} author/committer`, denylist));
-    findings.push(...findIn(message ?? '', `${where} message`, denylist));
+    findings.push(
+      ...findIn(`${author}\n${committer}`, `${where} author/committer`, denylist),
+      ...findIn(message ?? '', `${where} message`, denylist),
+    );
   }
   return [...new Set(findings)];
 }
@@ -92,8 +97,10 @@ export function checkStaged(cwd, denylist) {
   const findings = [];
   const names = git(cwd, ['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z']).toString().split('\0').filter(Boolean);
   for (const name of names) {
-    findings.push(...findIn(name, `path ${name}`, denylist));
-    findings.push(...findIn(git(cwd, ['show', `:${name}`]).toString('utf8'), name, denylist));
+    findings.push(
+      ...findIn(name, `path ${name}`, denylist),
+      ...findIn(git(cwd, ['show', `:${name}`]).toString('utf8'), name, denylist),
+    );
   }
   return findings;
 }
@@ -111,25 +118,31 @@ export function prePushRevs(stdin) {
   return revs;
 }
 
-const self = fileURLToPath(import.meta.url);
-if (process.argv[1] && resolve(process.argv[1]) === self) {
-  const root = resolve(dirname(self), '..');
-  const denylist = readDenylist(process.env.OMB_DENYLIST ?? join(root, 'local', 'denylist.txt'));
-  const [mode = '--staged', ...rest] = process.argv.slice(2);
+/**
+ * The command line, run against the repository at root. Returns the exit code: 0 clean, 1 with
+ * findings, 2 for an unknown mode. stdin supplies the pre-push hook's lines.
+ */
+export function main(args, { root, env = process.env, stdin = () => readFileSync(0, 'utf8'), log = console.log, error = console.error }) {
+  const denylist = readDenylist(env.OMB_DENYLIST ?? join(root, 'local', 'denylist.txt'));
+  const [mode = '--staged', ...rest] = args;
   let findings;
   if (mode === '--staged') findings = checkStaged(root, denylist);
   else if (mode === '--history') findings = checkHistory(root, rest.length > 0 ? rest : ['--all'], denylist);
   else if (mode === '--pre-push') {
-    const revs = prePushRevs(readFileSync(0, 'utf8'));
+    const revs = prePushRevs(stdin());
     findings = revs.length > 0 ? checkHistory(root, revs, denylist) : [];
   } else {
-    console.error(`Unknown mode ${mode}: use --staged, --pre-push or --history [revs]`);
-    process.exit(2);
+    error(`Unknown mode ${mode}: use --staged, --pre-push or --history [revs]`);
+    return 2;
   }
-  if (denylist.length === 0) console.log('check-private: no local/denylist.txt, nothing checked');
-  if (findings.length > 0) {
-    console.error(`check-private: ${findings.length} finding(s) from local/denylist.txt`);
-    for (const f of findings) console.error(`  ${f}`);
-    process.exit(1);
-  }
+  if (denylist.length === 0) log('check-private: no local/denylist.txt, nothing checked');
+  if (findings.length === 0) return 0;
+  error(`check-private: ${findings.length} finding(s) from local/denylist.txt`);
+  for (const f of findings) error(`  ${f}`);
+  return 1;
+}
+
+const self = fileURLToPath(import.meta.url);
+if (process.argv[1] && resolve(process.argv[1]) === self) {
+  process.exitCode = main(process.argv.slice(2), { root: resolve(dirname(self), '..') });
 }

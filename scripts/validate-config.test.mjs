@@ -5,7 +5,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateConfig, commandNames, repoChecks, activeConfigPath } from './validate-config.mjs';
+import { validateConfig, commandNames, repoChecks, activeConfigPath, main } from './validate-config.mjs';
 
 // A throwaway repository root holding the given files.
 function tempRoot(files) {
@@ -130,4 +130,41 @@ test('finds command names in AutoHotkey and PowerShell files', () => {
   const ps = commandNames(join(root, 'powershell', 'commands'), '.ps1');
   assert.ok(ahk.has('openyoutube') && ps.has('openyoutube'));
   assert.ok(ps.has('get-explorerwindows'));
+});
+
+test('the command line validates a file and sets the exit code', () => {
+  const dir = tempRoot({ 'bad.json': '{ nope', 'empty.json': '{}' });
+  const out = [];
+  const err = [];
+  const io = { root, env: {}, log: (l) => out.push(l), error: (l) => err.push(l) };
+  try {
+    assert.equal(main([join(root, 'config.json')], io), 0);
+    assert.match(out[0], /config\.json: OK \(12 keys, \d+ layers/);
+    assert.equal(main([join(dir, 'bad.json')], io), 1);
+    assert.match(err.at(-1), /^Invalid JSON in /);
+    assert.equal(main([join(dir, 'empty.json')], io), 1);
+    assert.ok(err.some((l) => /empty\.json: \d+ problem/.test(l)), err.join('\n'));
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test('reports each kind of layout problem', () => {
+  const errors = validateConfig({
+    fn: { key: 'ScrollLock' },
+    keys: [{ key: 'F13' }],
+    layers: [5, { title: 'T', icon: 'i', macros: 'x' }, { title: 'T', icon: 'i', macros: [{ name: 'n' }, { action: 'a', name: 'n', icon: 'missing' }] }],
+    hotkeys: [{ hotkey: '^a' }],
+    hotstrings: [{ hotstring: 'btw' }, { hotstring: '::x' }],
+  }, { iconExists: (name) => name !== 'missing' });
+  for (const expected of [
+    'layers[0]: must be an object or null',
+    'layers[1].macros: must be a list',
+    'layers[2].macros[0]: needs "action" and "name"',
+    'layers[2].macros[1]: icon folder "missing" not found in img/',
+    'hotkeys[0]: needs "hotkey" and "action"',
+    'hotstrings[0]: needs a "hotstring" such as "::btw"',
+    'hotstrings[1]: needs a "replacement"',
+  ]) assert.ok(errors.includes(expected), `missing "${expected}" in:\n${errors.join('\n')}`);
+  assert.ok(validateConfig({ fn: { key: 'S' }, keys: [{ key: 'F13' }], layers: 'x' }).includes('layers: must be a list'));
 });

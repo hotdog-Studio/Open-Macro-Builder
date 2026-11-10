@@ -5,7 +5,15 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readDenylist, findIn, checkHistory, checkStaged, prePushRevs } from './check-private.mjs';
+import { readDenylist, findIn, checkHistory, checkStaged, prePushRevs, main } from './check-private.mjs';
+
+// Runs main() with captured output: { code, out, err }.
+function run(args, root, env, stdin = '') {
+  const out = [];
+  const err = [];
+  const code = main(args, { root, env, stdin: () => stdin, log: (l) => out.push(l), error: (l) => err.push(l) });
+  return { code, out, err };
+}
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd }).toString().trim();
 
@@ -70,4 +78,34 @@ test('turns pre-push lines into the commits being sent', () => {
   const zero = '0'.repeat(40);
   assert.deepEqual(prePushRevs(`refs/heads/a 111 refs/heads/a 222\nrefs/heads/b 333 refs/heads/b ${zero}\nrefs/heads/c ${zero} refs/heads/c 444\n`),
     ['111', '^222', '333']);
+});
+
+test('the command line reports findings with exit code 1 and a clean run with 0', () => {
+  const dir = repo({ 'a.txt': 'ssh secret-host\n' });
+  try {
+    writeFileSync(join(dir, 'deny.txt'), 'secret-host\n');
+    const env = { OMB_DENYLIST: join(dir, 'deny.txt') };
+    const found = run(['--history', 'HEAD'], dir, env);
+    assert.equal(found.code, 1);
+    assert.match(found.err[0], /^check-private: 1 finding/);
+    assert.equal(run(['--staged'], dir, env).code, 0);
+    const head = git(dir, 'rev-parse', 'HEAD');
+    assert.equal(run(['--pre-push'], dir, env, `refs/heads/main ${head} refs/heads/main ${'0'.repeat(40)}\n`).code, 1);
+    assert.equal(run(['--pre-push'], dir, env, '').code, 0);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test('the command line checks nothing without a deny-list and rejects unknown modes', () => {
+  const dir = repo({ 'a.txt': 'anything\n' });
+  try {
+    const env = { OMB_DENYLIST: join(dir, 'missing.txt') };
+    const none = run(['--history'], dir, env);
+    assert.equal(none.code, 0);
+    assert.deepEqual(none.out, ['check-private: no local/denylist.txt, nothing checked']);
+    assert.equal(run(['--bogus'], dir, env).code, 2);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
 });

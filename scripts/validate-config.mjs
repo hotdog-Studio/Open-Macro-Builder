@@ -23,106 +23,119 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
  */
 export function validateConfig(config, { iconExists = () => true, ahkActions = null, psActions = null } = {}) {
   if (!isObject(config)) return ['config: must be a JSON object'];
-  const errors = [];
-  const actions = [];
+  // Each check adds to errors; actions collects [action, where] pairs to look up at the end.
+  const ctx = { iconExists, errors: [], actions: [] };
 
-  const checkKey = (k, where) => {
-    if (!isObject(k) || typeof k.key !== 'string' || k.key === '') {
-      errors.push(`${where}: needs a "key" name`);
-      return;
-    }
-    for (const field of ['row', 'col', 'width', 'height']) {
-      if (k[field] !== undefined && !(Number.isInteger(k[field]) && k[field] >= 1)) {
-        errors.push(`${where}: "${field}" must be a whole number from 1`);
-      }
-    }
-  };
-
-  checkKey(config.fn, 'fn');
-  const keys = Array.isArray(config.keys) ? config.keys : [];
-  if (keys.length === 0) errors.push('keys: must be a non-empty list');
-  keys.forEach((k, i) => checkKey(k, `keys[${i}]`));
-
-  const layers = config.layers ?? [];
-  if (!Array.isArray(layers)) {
-    errors.push('layers: must be a list');
-  } else {
-    const used = layers.filter((l) => !(isObject(l) && l.disabled === true));
-    if (used.length > keys.length) errors.push(`layers: ${used.length} layers for ${keys.length} keys`);
-    layers.forEach((layer, i) => {
-      if (layer === null) return;
-      const where = `layers[${i}]`;
-      if (!isObject(layer)) {
-        errors.push(`${where}: must be an object or null`);
-        return;
-      }
-      if (typeof layer.title !== 'string') errors.push(`${where}: needs a "title"`);
-      if (typeof layer.icon !== 'string' || layer.icon === '') errors.push(`${where}: needs an "icon"`);
-      else if (!iconExists(layer.icon)) errors.push(`${where}: icon folder "${layer.icon}" not found in img/`);
-      const macros = layer.macros ?? [];
-      if (!Array.isArray(macros)) {
-        errors.push(`${where}.macros: must be a list`);
-        return;
-      }
-      if (macros.length > keys.length) errors.push(`${where}.macros: ${macros.length} macros for ${keys.length} keys`);
-      macros.forEach((macro, j) => {
-        if (macro === null) return;
-        const mw = `${where}.macros[${j}]`;
-        if (!isObject(macro) || typeof macro.action !== 'string' || typeof macro.name !== 'string') {
-          errors.push(`${mw}: needs "action" and "name"`);
-          return;
-        }
-        if (macro.icon !== undefined && macro.icon !== '' && !iconExists(macro.icon)) {
-          errors.push(`${mw}: icon folder "${macro.icon}" not found in img/`);
-        }
-        // A disabled layer is never loaded, so its actions need not exist.
-        if (layer.disabled !== true) actions.push([macro.action, mw]);
-      });
-    });
-  }
+  checkKey(config.fn, 'fn', ctx);
+  const keys = listOf(config.keys);
+  if (keys.length === 0) ctx.errors.push('keys: must be a non-empty list');
+  keys.forEach((k, i) => checkKey(k, `keys[${i}]`, ctx));
+  checkLayers(config.layers ?? [], keys.length, ctx);
 
   if (config.default !== undefined && !(Number.isInteger(config.default) && config.default >= 1)) {
-    errors.push('default: must be a whole number from 1');
+    ctx.errors.push('default: must be a whole number from 1');
   }
   if (config.iconAction !== undefined && !['Layer', 'Macro'].includes(config.iconAction)) {
-    errors.push('iconAction: must be "Layer" or "Macro"');
+    ctx.errors.push('iconAction: must be "Layer" or "Macro"');
   }
+  listOf(config.hotkeys).forEach((h, i) => checkHotkey(h, i, ctx));
+  listOf(config.hotstrings).forEach((s, i) => checkHotstring(s, i, ctx));
 
-  (Array.isArray(config.hotkeys) ? config.hotkeys : []).forEach((h, i) => {
-    if (h === null) return;
-    if (!isObject(h) || typeof h.hotkey !== 'string' || typeof h.action !== 'string') {
-      errors.push(`hotkeys[${i}]: needs "hotkey" and "action"`);
-      return;
-    }
-    actions.push([h.action, `hotkeys[${i}]`]);
-  });
-
-  (Array.isArray(config.hotstrings) ? config.hotstrings : []).forEach((s, i) => {
-    if (s === null) return;
-    const where = `hotstrings[${i}]`;
-    if (!isObject(s) || typeof s.hotstring !== 'string' || !/^:[^:]*:./.test(s.hotstring)) {
-      errors.push(`${where}: needs a "hotstring" such as "::btw"`);
-      return;
-    }
-    const options = s.hotstring.match(/^:([^:]*):/)[1];
-    const execute = /X(?!0)/i.test(options);
-    const hasAction = typeof s.action === 'string' && s.action !== '';
-    if (hasAction && !execute) errors.push(`${where}: '${s.hotstring}' has an action but no X option`);
-    else if (execute && !hasAction) errors.push(`${where}: '${s.hotstring}' has the X option but no action`);
-    else if (execute) actions.push([s.action, where]);
-    else if (typeof s.replacement !== 'string') errors.push(`${where}: needs a "replacement"`);
-  });
-
-  for (const [action, where] of actions) {
+  for (const [action, where] of ctx.actions) {
     const name = action.toLowerCase();
-    if (ahkActions && !ahkActions.has(name)) errors.push(`${where}: action "${action}" is not defined in ahk/commands`);
-    if (psActions && !psActions.has(name)) errors.push(`${where}: action "${action}" is not defined in powershell/commands`);
+    if (ahkActions && !ahkActions.has(name)) ctx.errors.push(`${where}: action "${action}" is not defined in ahk/commands`);
+    if (psActions && !psActions.has(name)) ctx.errors.push(`${where}: action "${action}" is not defined in powershell/commands`);
   }
-  return errors;
+  return ctx.errors;
+}
+
+const listOf = (v) => (Array.isArray(v) ? v : []);
+
+/** One key definition: the Fn key or a macro key. */
+function checkKey(k, where, { errors }) {
+  if (!isObject(k) || typeof k.key !== 'string' || k.key === '') {
+    errors.push(`${where}: needs a "key" name`);
+    return;
+  }
+  for (const field of ['row', 'col', 'width', 'height']) {
+    if (k[field] !== undefined && !(Number.isInteger(k[field]) && k[field] >= 1)) {
+      errors.push(`${where}: "${field}" must be a whole number from 1`);
+    }
+  }
+}
+
+/** The layers list: no more layers in use than keys, and each layer valid. */
+function checkLayers(layers, keyCount, ctx) {
+  if (!Array.isArray(layers)) {
+    ctx.errors.push('layers: must be a list');
+    return;
+  }
+  const used = layers.filter((l) => !(isObject(l) && l.disabled === true));
+  if (used.length > keyCount) ctx.errors.push(`layers: ${used.length} layers for ${keyCount} keys`);
+  layers.forEach((layer, i) => checkLayer(layer, `layers[${i}]`, keyCount, ctx));
+}
+
+/** One layer (null is an empty slot): title, icon and its macros. */
+function checkLayer(layer, where, keyCount, ctx) {
+  if (layer === null) return;
+  const { errors, iconExists } = ctx;
+  if (!isObject(layer)) {
+    errors.push(`${where}: must be an object or null`);
+    return;
+  }
+  if (typeof layer.title !== 'string') errors.push(`${where}: needs a "title"`);
+  if (typeof layer.icon !== 'string' || layer.icon === '') errors.push(`${where}: needs an "icon"`);
+  else if (!iconExists(layer.icon)) errors.push(`${where}: icon folder "${layer.icon}" not found in img/`);
+  const macros = layer.macros ?? [];
+  if (!Array.isArray(macros)) {
+    errors.push(`${where}.macros: must be a list`);
+    return;
+  }
+  if (macros.length > keyCount) errors.push(`${where}.macros: ${macros.length} macros for ${keyCount} keys`);
+  macros.forEach((macro, j) => checkMacro(macro, `${where}.macros[${j}]`, layer.disabled === true, ctx));
+}
+
+/** One macro slot (null is empty). A disabled layer is never loaded, so its actions need not exist. */
+function checkMacro(macro, where, layerDisabled, { errors, actions, iconExists }) {
+  if (macro === null) return;
+  if (!isObject(macro) || typeof macro.action !== 'string' || typeof macro.name !== 'string') {
+    errors.push(`${where}: needs "action" and "name"`);
+    return;
+  }
+  if (macro.icon !== undefined && macro.icon !== '' && !iconExists(macro.icon)) {
+    errors.push(`${where}: icon folder "${macro.icon}" not found in img/`);
+  }
+  if (!layerDisabled) actions.push([macro.action, where]);
+}
+
+function checkHotkey(h, i, { errors, actions }) {
+  if (h === null) return;
+  if (!isObject(h) || typeof h.hotkey !== 'string' || typeof h.action !== 'string') {
+    errors.push(`hotkeys[${i}]: needs "hotkey" and "action"`);
+    return;
+  }
+  actions.push([h.action, `hotkeys[${i}]`]);
+}
+
+/** One hotstring: an action needs the X option and the X option needs an action. */
+function checkHotstring(s, i, { errors, actions }) {
+  if (s === null) return;
+  const where = `hotstrings[${i}]`;
+  if (!isObject(s) || typeof s.hotstring !== 'string' || !/^:[^:]*:./.test(s.hotstring)) {
+    errors.push(`${where}: needs a "hotstring" such as "::btw"`);
+    return;
+  }
+  const options = s.hotstring.match(/^:([^:]*):/)[1];
+  const execute = /X(?!0)/i.test(options);
+  const hasAction = typeof s.action === 'string' && s.action !== '';
+  if (hasAction && !execute) errors.push(`${where}: '${s.hotstring}' has an action but no X option`);
+  else if (execute && !hasAction) errors.push(`${where}: '${s.hotstring}' has the X option but no action`);
+  else if (execute) actions.push([s.action, where]);
+  else if (typeof s.replacement !== 'string') errors.push(`${where}: needs a "replacement"`);
 }
 
 const AHK_FUNCTION = /^(\w+)\s*\(/gm;
-const PS_FUNCTION = /^\s*function\s+([\w-]+)/gim;
+const PS_FUNCTION = /^[ \t]*function[ \t]+([\w-]+)/gim;
 
 /** Lower-cased names of the functions defined in every <ext> file under dir. */
 export function commandNames(dir, ext) {
@@ -169,23 +182,31 @@ export function activeConfigPath(root, env = process.env) {
   return existsSync(local) ? local : join(root, 'config.json');
 }
 
-const self = fileURLToPath(import.meta.url);
-if (process.argv[1] && resolve(process.argv[1]) === self) {
-  const root = resolve(dirname(self), '..');
-  const file = resolve(process.argv[2] ?? activeConfigPath(root));
+/**
+ * The command line: validates args[0], or the active config, against the repository at root.
+ * Returns the exit code; report lines go to log (success) and error (problems).
+ */
+export function main(args, { root, env = process.env, log = console.log, error = console.error }) {
+  const file = resolve(args[0] ?? activeConfigPath(root, env));
   let config;
   try {
     config = JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, ''));
   } catch (e) {
-    console.error(`Invalid JSON in ${file}: ${e.message}`);
-    process.exit(1);
+    error(`Invalid JSON in ${file}: ${e.message}`);
+    return 1;
   }
   const errors = validateConfig(config, repoChecks(root));
   if (errors.length > 0) {
-    console.error(`${file}: ${errors.length} problem(s)`);
-    for (const e of errors) console.error(`  ${e}`);
-    process.exit(1);
+    error(`${file}: ${errors.length} problem(s)`);
+    for (const e of errors) error(`  ${e}`);
+    return 1;
   }
   const layers = (config.layers ?? []).filter((l) => l !== null && l.disabled !== true).length;
-  console.log(`${file}: OK (${config.keys.length} keys, ${layers} layers, every action defined in both versions)`);
+  log(`${file}: OK (${config.keys.length} keys, ${layers} layers, every action defined in both versions)`);
+  return 0;
+}
+
+const self = fileURLToPath(import.meta.url);
+if (process.argv[1] && resolve(process.argv[1]) === self) {
+  process.exitCode = main(process.argv.slice(2), { root: resolve(dirname(self), '..') });
 }

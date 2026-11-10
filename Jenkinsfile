@@ -78,8 +78,9 @@ node {
     }
 
     stage('Run Script Tests') {
-        // node:test specs for the scripts (the validator), junit for Jenkins, spec for the log.
-        runGated('mkdir -p results/node && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=results/node/test-results.xml "scripts/*.test.mjs"')
+        // node:test specs for the scripts: junit for Jenkins, spec for the log, lcov coverage for
+        // SonarQube (sonar.javascript.lcov.reportPaths).
+        runGated('mkdir -p results/node coverage && node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=results/node/test-results.xml --test-reporter=lcov --test-reporter-destination=coverage/lcov.info "scripts/*.test.mjs"')
     }
 
     stage('Report Script Tests') {

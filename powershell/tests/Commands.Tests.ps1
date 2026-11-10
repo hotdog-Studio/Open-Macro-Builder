@@ -15,6 +15,22 @@ Describe 'parity with ahk/commands' {
         $missing = $expected | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) }
         $missing | Should -BeNullOrEmpty
     }
+    It 'defines every custom AHK command function' {
+        $expected = Get-AhkFunctionNames 'custom\chrome.ahk','custom\programs.ahk','custom\server.ahk','custom\dev.ahk','custom\vscode.ahk','custom\vsstudio.ahk'
+        $missing = $expected | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) }
+        $missing | Should -BeNullOrEmpty
+    }
+}
+Describe 'custom commands send the right chords' {
+    BeforeEach { Mock Send-Chord {}; Mock Send-Key {}; Mock EnsureActiveOrOpen {}; Mock ActivateOrOpenChrome {} }
+    It 'VsCodeSplitPanel' { VsCodeSplitPanel $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+\' } }
+    It 'VsCodeRestartDebugging' { VsCodeRestartDebugging $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+Shift+F5' } }
+    It 'ChromeNewTab' {
+        ChromeNewTab $null
+        Should -Invoke EnsureActiveOrOpen -Times 1 -Exactly
+        Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+t' }
+    }
+    It 'OpenGmail2' { OpenGmail2 $null; Should -Invoke ActivateOrOpenChrome -ParameterFilter { $Url -eq 'https://mail.google.com/mail/u/0/#inbox' } }
 }
 Describe 'core commands send the right chords' {
     BeforeEach { Mock Send-Chord {}; Mock Send-Key {}; Mock Start-Program {}; Mock ActivateOrOpen {} }

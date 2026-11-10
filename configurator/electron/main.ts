@@ -2,9 +2,6 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
 
-/** The configurator folder: package.json, dist/ and dist-electron/ live here. */
-const appRoot = app.getAppPath()
-
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
@@ -36,13 +33,23 @@ function createWindow(): void {
   const dispose = registerIpc(win, join(app.getPath('userData'), 'omb-electron.json'))
   win.on('closed', dispose)
 
-  void win.loadFile(join(appRoot, 'dist', 'index.html'))
+  // The app path is the configurator folder: package.json, dist/ and dist-electron/ live there.
+  void win.loadFile(join(app.getAppPath(), 'dist', 'index.html'))
 }
 
-app.on('web-contents-created', (_event, contents) => {
-  contents.on('will-attach-webview', (event) => event.preventDefault())
-})
+function start(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', (event) => event.preventDefault())
+  })
+  app.on('window-all-closed', () => app.quit())
+  void app.whenReady().then(createWindow)
+}
 
-app.on('window-all-closed', () => app.quit())
-
-void app.whenReady().then(createWindow)
+// With ELECTRON_RUN_AS_NODE set, electron.exe runs this file as plain Node and
+// require('electron') gives no app.
+if (typeof app === 'undefined') {
+  console.error('Open Macro Builder must run inside Electron; unset ELECTRON_RUN_AS_NODE or use npm run electron.')
+  process.exit(1)
+} else {
+  start()
+}

@@ -17,14 +17,30 @@ export function newTextFile(path: string, text: string): TextFile {
   return { path, text, eol: '\n', bom: false, version: null }
 }
 
+export class EncodingError extends Error {
+  constructor(readonly path: string) {
+    super(`${path} is not UTF-8 text, so the configurator will not edit it.`)
+    this.name = 'EncodingError'
+  }
+}
+
+/** Reads a UTF-8 text file; throws EncodingError when the bytes are not valid UTF-8. */
 export async function readTextFile(folder: FolderAccess, path: string): Promise<TextFile | null> {
   const raw = await folder.readBytes(path)
   if (raw === null) return null
   const bom = BOM.every((byte, i) => raw[i] === byte)
-  const decoded = new TextDecoder().decode(bom ? raw.subarray(BOM.length) : raw)
+  let decoded: string
+  try {
+    // Exactly one leading BOM is stripped here; ignoreBOM stops the decoder stripping another.
+    decoded = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+      bom ? raw.subarray(BOM.length) : raw,
+    )
+  } catch {
+    throw new EncodingError(path)
+  }
   return {
     path,
-    text: decoded.replace(/\r\n/g, '\n'),
+    text: decoded.replaceAll('\r\n', '\n'),
     eol: decoded.includes('\r\n') ? '\r\n' : '\n',
     bom,
     version: await hashBytes(raw),
@@ -56,8 +72,8 @@ export async function writeTextFile(
   if (!opts.force && (await currentVersion(folder, file.path)) !== file.version) {
     throw new ConflictError(file.path)
   }
-  const lf = file.text.replace(/\r\n/g, '\n')
-  const body = new TextEncoder().encode(file.eol === '\r\n' ? lf.replace(/\n/g, '\r\n') : lf)
+  const lf = file.text.replaceAll('\r\n', '\n')
+  const body = new TextEncoder().encode(file.eol === '\r\n' ? lf.replaceAll('\n', '\r\n') : lf)
   const data = new Uint8Array((file.bom ? BOM.length : 0) + body.length)
   if (file.bom) data.set(BOM)
   data.set(body, file.bom ? BOM.length : 0)

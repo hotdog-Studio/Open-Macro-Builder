@@ -3,6 +3,7 @@ import { MemoryFolder } from './memory'
 import {
   ConflictError,
   currentVersion,
+  EncodingError,
   newTextFile,
   readTextFile,
   writeTextFile,
@@ -30,6 +31,27 @@ describe('text files', () => {
     expect(file!.bom).toBe(false)
     await writeTextFile(folder, file!)
     expect(await folder.readBytes('f.txt')).toEqual(bytes('x\ny'))
+  })
+
+  it('refuses a file that is not UTF-8', async () => {
+    const latin = new Uint8Array([0x66, 0x6f, 0xe9, 0x0a])
+    const folder = new MemoryFolder('demo', { 'f.txt': latin })
+    const err = await readTextFile(folder, 'f.txt').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(EncodingError)
+    expect((err as EncodingError).path).toBe('f.txt')
+    expect((err as EncodingError).message).toBe(
+      'f.txt is not UTF-8 text, so the configurator will not edit it.',
+    )
+    expect(await folder.readBytes('f.txt')).toEqual(latin)
+  })
+
+  it('keeps a second BOM', async () => {
+    const raw = new Uint8Array([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf, 0x61])
+    const folder = new MemoryFolder('demo', { 'f.txt': raw })
+    const file = (await readTextFile(folder, 'f.txt'))!
+    expect(file.bom).toBe(true)
+    await writeTextFile(folder, file)
+    expect(await folder.readBytes('f.txt')).toEqual(raw)
   })
 
   it('returns null for a missing file', async () => {

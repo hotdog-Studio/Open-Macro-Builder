@@ -40,3 +40,16 @@ Describe 'InputHook hotkeys' {
     It 're-sends an unused prefix on release' { $h = New-Hook 'a & b'; [void](Dn $h 0x41); (Up $h 0x41).ReinjectVk | Should -Be 0x41 }
     It 'fires a mouse wheel hotkey' { $h = New-Hook '^WheelUp'; [void](Dn $h 0xA2); $r = $h.ProcessMouse(0x9F, $false, $false); $r.Fired | Should -Be @(0); $r.Suppress | Should -BeTrue }
 }
+Describe 'InputHook contexts' {
+    AfterEach { if ($h) { $h.Dispose() } }
+    It 'prefers an active context variant over the global one' {
+        $h = [Macropad.InputHook]::new(); $p = ConvertFrom-AhkHotkey '^t'
+        $h.AddHotkey(0, $p.Vk, $p.Mods, 0, 0, 0); $h.AddHotkey(1, $p.Vk, $p.Mods, 0, 0, 1)
+        [void](Dn $h 0xA2); (Dn $h 0x54).Fired | Should -Be @(0); [void](Up $h 0x54)
+        $h.SetContextActive(1, $true); (Dn $h 0x54).Fired | Should -Be @(1)
+    }
+    It 'passes the key when its only variant is inactive' {
+        $h = [Macropad.InputHook]::new(); $p = ConvertFrom-AhkHotkey '^t'; $h.AddHotkey(0, $p.Vk, $p.Mods, 0, 0, 1)
+        [void](Dn $h 0xA2); $r = Dn $h 0x54; $r.Suppress | Should -BeFalse; $r.Fired.Count | Should -Be 0
+    }
+}

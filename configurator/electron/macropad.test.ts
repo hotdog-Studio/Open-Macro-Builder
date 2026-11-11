@@ -120,7 +120,7 @@ describe('relaunchCommand', () => {
 describe('relaunch', () => {
   it('starts it detached, visible and unwaited', () => {
     const child = { unref: vi.fn() }
-    const spawn = vi.fn((_file: string, _args: string[], _opts: object) => child)
+    const spawn = vi.fn<(file: string, args: string[], opts: object) => typeof child>(() => child)
     relaunch({ lang: 'ahk', exe: AHK_EXE }, 'D:\\omb', spawn as never)
     expect(spawn).toHaveBeenCalledWith(AHK_EXE, ['D:\\omb\\ahk\\main.ahk'], {
       detached: true,

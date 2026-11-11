@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog, Menu } from 'electron'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
 
@@ -19,6 +19,20 @@ function createWindow(): void {
   win.webContents.on('will-navigate', (event) => event.preventDefault())
   win.webContents.on('will-redirect', (event) => event.preventDefault())
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+  // The page asks before closing or reloading while it has unsaved edits (useUnsavedGuard);
+  // Electron shows no question of its own, so ask here. Leave lets the page go.
+  win.webContents.on('will-prevent-unload', (event) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Leave', 'Stay'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'You have unsaved changes.',
+      detail: 'Leave without saving?',
+    })
+    if (choice === 0) event.preventDefault()
+  })
 
   // Page problems show up where the app was started from.
   win.webContents.on('console-message', (event) => {
@@ -42,7 +56,11 @@ function start(): void {
     contents.on('will-attach-webview', (event) => event.preventDefault())
   })
   app.on('window-all-closed', () => app.quit())
-  void app.whenReady().then(createWindow)
+  void app.whenReady().then(() => {
+    // The installed app has no menu, so no Ctrl+R reload past unsaved edits and no DevTools.
+    if (app.isPackaged) Menu.setApplicationMenu(null)
+    createWindow()
+  })
 }
 
 // With ELECTRON_RUN_AS_NODE set, electron.exe runs this file as plain Node and

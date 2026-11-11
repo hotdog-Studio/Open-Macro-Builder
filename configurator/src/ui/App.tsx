@@ -7,6 +7,7 @@ import { MacrosTab } from './MacrosTab'
 import { OpenScreen } from './OpenScreen'
 import { SaveFlow } from './SaveFlow'
 import { ShapeTab } from './ShapeTab'
+import { useUnsavedGuard } from './useUnsavedGuard'
 
 function Editor() {
   const { state } = useEditor()
@@ -26,6 +27,7 @@ function Editor() {
 
 export function App() {
   const { state, actions } = useApp()
+  useUnsavedGuard(state.screen === 'edit' && state.dirty)
   // On start: reopen the folder remembered from last time, if any.
   useEffect(() => {
     void actions.restore()

@@ -310,6 +310,32 @@ describe('Save config.json', () => {
   })
 })
 
+describe('leaving the page', () => {
+  /** Whether a closing window, tab or reload would be asked to stay. */
+  const leaveIsStopped = () => {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  it('the unsaved-changes guard is active only while there are unsaved edits', async () => {
+    const { user } = await start()
+    expect(leaveIsStopped()).toBe(false)
+
+    await editLabel(user)
+    expect(leaveIsStopped()).toBe(true)
+
+    await user.click(saveButton())
+    await waitFor(() => expect(saveButton().disabled).toBe(true))
+    expect(leaveIsStopped()).toBe(false)
+
+    await editLabel(user, 'Again')
+    expect(leaveIsStopped()).toBe(true)
+    cleanup()
+    expect(leaveIsStopped()).toBe(false)
+  })
+})
+
 describe('outside changes', () => {
   it('regaining focus after an outside change shows the banner', async () => {
     const { user, folder } = await start()

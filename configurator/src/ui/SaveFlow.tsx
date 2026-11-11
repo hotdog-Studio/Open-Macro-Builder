@@ -1,4 +1,6 @@
 import { useEffect } from 'react'
+import type { Workspace } from '../core/config/model'
+import { dropOverflow } from '../core/config/ops'
 import { useEditor, type SaveDialog } from '../state/store'
 import { ConfirmDialog } from './ConfirmDialog'
 
@@ -13,6 +15,17 @@ function Messages({ items }: Readonly<{ items: string[] }>) {
   )
 }
 
+/** Each layer, slotted then parked, that has macros past the last key, as a line for the user. */
+function overflowLines(ws: Workspace): string[] {
+  const layers = [...ws.keys.map((k) => ws.slots[k.id]).filter(Boolean), ...ws.parked]
+  return layers
+    .filter((l) => l.overflowMacros.length > 0)
+    .map((l) => {
+      const n = l.overflowMacros.length
+      return `Layer "${l.title}": ${n} ${n === 1 ? 'macro' : 'macros'} past the last key`
+    })
+}
+
 /** The dialogs of a save. The side effects are in actions.save / reloadFromDisk. */
 function SaveDialogView({ dialog }: Readonly<{ dialog: SaveDialog }>) {
   const { state, dispatch, actions } = useEditor()
@@ -21,13 +34,29 @@ function SaveDialogView({ dialog }: Readonly<{ dialog: SaveDialog }>) {
   const ok = [{ label: 'OK', primary: true, onChoose: close }]
 
   switch (dialog.kind) {
-    case 'blocked':
+    case 'blocked': {
+      // Macros past the last key always block the save; dropping them is one edit, and the user saves again.
+      const overflow = overflowLines(state.ws)
+      const drop = {
+        label: 'Drop the macros past the last key',
+        onChoose: () => {
+          dispatch({ type: 'edit', ws: dropOverflow(state.ws) })
+          close()
+        },
+      }
       return (
-        <ConfirmDialog title="Can't save yet" choices={ok} onCancel={close}>
+        <ConfirmDialog title="Can't save yet" choices={overflow.length > 0 ? [drop, ...ok] : ok} onCancel={close}>
           <p className="mb-2">Fix these first. Nothing was written.</p>
           <Messages items={dialog.errors} />
+          {overflow.length > 0 && (
+            <>
+              <p className="mt-3 mb-2">These layers have more macros than keys:</p>
+              <Messages items={overflow} />
+            </>
+          )}
         </ConfirmDialog>
       )
+    }
     case 'saved': {
       // The after-save dialog: notes about the other language and, in Electron, Reload macropad.
       const choices = dialog.macropad

@@ -187,6 +187,36 @@ describe('Save config.json', () => {
     expect(saveButton().disabled).toBe(false)
   })
 
+  it('a layout with macros past the last key can be saved after dropping them', async () => {
+    // Two keys, and a Media layer with three macros: the third is past the last key.
+    const parsed = JSON.parse(EXAMPLE)
+    parsed.keys = parsed.keys.slice(0, 2)
+    parsed.layers = [{ ...parsed.layers[0], macros: parsed.layers[0].macros.slice(0, 3) }]
+    const config = JSON.stringify(parsed, null, 2) + '\n'
+    const { user, folder } = await start({ config })
+    expect(editor().banner?.text).toContain('Layer "Media" has more macros than keys.')
+    await editLabel(user)
+    await user.click(saveButton())
+
+    const dialog = await screen.findByRole('dialog', { name: "Can't save yet" })
+    expect(within(dialog).getByText('Layer "Media": 1 macro past the last key')).toBeTruthy()
+    expect(folder.text(CONFIG)).toBe(config)
+    await user.click(within(dialog).getByRole('button', { name: 'Drop the macros past the last key' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    // Dropping is an edit, not a save.
+    expect(folder.text(CONFIG)).toBe(config)
+    expect(ws().slots.k1.overflowMacros).toEqual([])
+    expect(ws().slots.k1.macros.k1.name).toBe('Back')
+
+    await user.click(saveButton())
+    await waitFor(() => expect(saveButton().disabled).toBe(true))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const written = JSON.parse(folder.text(CONFIG)!)
+    expect(written.layers[0].title).toBe('Media')
+    expect(written.layers[0].macros.length).toBeLessThanOrEqual(2)
+    expect(written.layers[0].macros[0].name).toBe('Back')
+  })
+
   it('warnings do not block the save', async () => {
     const config = exampleWith((c) => {
       c.layers[0].macros[3] = { action: 'ZzAhkOnly', name: 'Only AHK' }

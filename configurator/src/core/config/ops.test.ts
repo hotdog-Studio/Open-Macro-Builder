@@ -4,6 +4,7 @@ import type { Workspace } from './model'
 import {
   addKey,
   addLayer,
+  dropOverflow,
   findLayer,
   layerOnKey,
   macroLabel,
@@ -260,6 +261,24 @@ describe('pad edits', () => {
       expect(out.ws.slots.k1.macros[out.id]).toBeUndefined()
       expect(out.ws.slots.k1.overflowMacros).toEqual([c])
       expect(out.ws.notices.at(-1)).not.toContain('had a macro past')
+    })
+
+    it("dropOverflow clears every layer's extra macros", () => {
+      const ws = parkLayer(twoKeys([a, b, c]), 'k1')
+      // One slotted layer and one parked layer, both with macros past the last key.
+      const both: Workspace = { ...ws, slots: { k2: { ...ws.parked[0], id: 'L9', title: 'Slotted' } } }
+      const before = structuredClone(both)
+      const out = dropOverflow(both)
+      expect(out.slots.k2.overflowMacros).toEqual([])
+      expect(out.parked[0].overflowMacros).toEqual([])
+      expect(out.slots.k2.macros).toEqual(both.slots.k2.macros)
+      expect(out.parked[0].macros).toEqual(both.parked[0].macros)
+      expect(both).toEqual(before)
+      const back = JSON.parse(writeConfig(out))
+      // k1 has no layer, so the written list starts with a null.
+      const layers = back.layers.filter(Boolean)
+      expect(layers.map((l: { title: string }) => l.title)).toEqual(['Slotted', 'Over'])
+      for (const l of layers) expect(l.macros.length).toBeLessThanOrEqual(2)
     })
 
     it('also moves the overflow of a parked layer', () => {

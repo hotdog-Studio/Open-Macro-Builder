@@ -135,6 +135,17 @@ export function addKey(ws: Workspace, key: string): { ws: Workspace; id: KeyId }
   throw new Error('unreachable: the row below the grid is always free')
 }
 
+/**
+ * Clears the macros past the last key on every layer, slotted and parked. Both runtimes
+ * refuse a layer with more macros than keys, so a config holding them cannot be saved.
+ */
+export function dropOverflow(ws: Workspace): Workspace {
+  const drop = (l: Layer): Layer => (l.overflowMacros.length === 0 ? l : { ...l, overflowMacros: [] })
+  const slots: Record<KeyId, Layer> = {}
+  for (const [k, l] of Object.entries(ws.slots)) slots[k] = drop(l)
+  return { ...ws, slots, parked: ws.parked.map(drop) }
+}
+
 export interface RemovalImpact {
   layer: string | null
   macros: { layer: string; name: string }[]

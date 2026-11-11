@@ -66,7 +66,9 @@ function parseLayer(raw: Obj, id: string, keys: PadKey[], notices: string[]): { 
   })
   const overflowMacros = list.slice(keys.length)
   if (overflowMacros.length > 0) {
-    notices.push(`Layer "${title}" has more macros than keys; the extra ones are kept as they are.`)
+    notices.push(
+      `Layer "${title}" has more macros than keys. Saving needs the extra ones dropped (Save offers this) or more keys added.`,
+    )
   }
   return { layer: { id, title, icon, macros, overflowMacros, extra: rest }, disabled }
 }

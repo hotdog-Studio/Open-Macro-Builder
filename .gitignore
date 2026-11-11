@@ -15,6 +15,9 @@ coverage/
 # Backups left by local config edits
 *.bak
 
+# Half-written files the configurator's desktop app leaves if it stops mid-save
+*.omb-tmp
+
 # Configurator build output and dependencies
 node_modules/
 configurator/dist/

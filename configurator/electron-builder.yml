@@ -8,6 +8,8 @@ files:
   - dist/**
   - dist-electron/**
   - package.json
+  # Source maps carry the source and the build machine's paths; the app does not need them.
+  - '!**/*.map'
 asar: true
 win:
   # The repository's tray icon; it has a 256x256 image, which the installer needs.

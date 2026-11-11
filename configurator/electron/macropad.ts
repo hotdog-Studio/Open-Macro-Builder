@@ -76,10 +76,13 @@ export function relaunchCommand(found: FoundMacropad, root: string): { file: str
 
 type Spawn = typeof nodeSpawn
 
-/** Starts it detached and never waits for it. */
+/**
+ * Starts it detached and never waits for it. No windowsHide: AutoHotkey64.exe and wscript.exe
+ * are GUI programs, and hiding their first window could start the overlay hidden.
+ */
 export function relaunch(found: FoundMacropad, root: string, spawn: Spawn = nodeSpawn): void {
   const { file, args } = relaunchCommand(found, root)
-  const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true })
+  const child = spawn(file, args, { detached: true, stdio: 'ignore' })
   child.unref()
 }
 

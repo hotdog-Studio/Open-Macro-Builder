@@ -118,15 +118,16 @@ describe('relaunchCommand', () => {
 })
 
 describe('relaunch', () => {
-  it('starts it detached, hidden and unwaited', () => {
+  it('starts it detached, visible and unwaited', () => {
     const child = { unref: vi.fn() }
-    const spawn = vi.fn(() => child)
+    const spawn = vi.fn((_file: string, _args: string[], _opts: object) => child)
     relaunch({ lang: 'ahk', exe: AHK_EXE }, 'D:\\omb', spawn as never)
     expect(spawn).toHaveBeenCalledWith(AHK_EXE, ['D:\\omb\\ahk\\main.ahk'], {
       detached: true,
       stdio: 'ignore',
-      windowsHide: true,
     })
+    // AutoHotkey and wscript are GUI programs: windowsHide could start the overlay hidden.
+    expect('windowsHide' in spawn.mock.calls[0][2]).toBe(false)
     expect(child.unref).toHaveBeenCalledTimes(1)
   })
 })

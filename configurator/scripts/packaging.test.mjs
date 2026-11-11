@@ -12,7 +12,7 @@ const packageJson = () => JSON.parse(readFileSync(here('package.json'), 'utf8'))
 describe('Windows packaging', () => {
   it('packs only the built app', () => {
     const { files } = builderConfig()
-    expect(files).toEqual(['dist/**', 'dist-electron/**', 'package.json'])
+    expect(files).toEqual(['dist/**', 'dist-electron/**', 'package.json', '!**/*.map'])
     expect(files.some((entry) => entry.includes('local'))).toBe(false)
   })
 

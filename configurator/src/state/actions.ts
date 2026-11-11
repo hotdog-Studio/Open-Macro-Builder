@@ -68,7 +68,7 @@ interface Held {
   configFile: TextFile
 }
 
-const PERSONAL_CONFIG ='local/config.json'
+const PERSONAL_CONFIG = 'local/config.json'
 const EXAMPLE_CONFIG = 'config.json'
 
 /** What the open screen shows for an error while opening a folder. */

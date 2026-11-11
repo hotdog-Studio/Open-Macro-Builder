@@ -266,8 +266,10 @@ function MacroDetails({ layer, keyId, keyName }: Readonly<{ layer: Layer; keyId:
       <div className="mt-1.5 flex gap-3 text-[11px]">
         {LANG_IDS.map((l) => {
           const ok = names[l].has(lower)
+          // Missing from a language you do not run is information only (amber); from one you run, a problem (red).
+          const missing = state.settings.languages.includes(l) ? 'text-red-400' : 'text-amber-400'
           return (
-            <span key={l} className={ok ? 'text-emerald-400' : 'text-red-400'}>
+            <span key={l} className={ok ? 'text-emerald-400' : missing}>
               {`${LANGUAGES[l].label} ${ok ? '✓' : '✗'}`}
             </span>
           )

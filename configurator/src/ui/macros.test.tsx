@@ -184,6 +184,23 @@ describe('Macros tab', () => {
     expect(screen.getByText('PowerShell ✗')).toBeTruthy()
   })
 
+  it('a command missing from a language you do not run is shown amber, not red', async () => {
+    const { user } = await start({
+      languages: ['ahk'],
+      files: { 'ahk/commands/custom/zz_only.ahk': 'ZzAhkOnly(Macro)\n{\n}\n' },
+      config: (c) => {
+        c.layers[0].macros[3] = { action: 'ZzAhkOnly', name: 'Only AHK' }
+      },
+    })
+    await user.click(key('F16'))
+    expect(screen.getByText('AutoHotkey ✓').className).toContain('text-emerald-400')
+    // Information only: you do not run PowerShell.
+    expect(screen.getByText('PowerShell ✗').className).toContain('text-amber-400')
+    // Once you run PowerShell, the missing command is a problem.
+    await user.click(screen.getByRole('checkbox', { name: 'PowerShell' }))
+    await waitFor(() => expect(screen.getByText('PowerShell ✗').className).toContain('text-red-400'))
+  })
+
   it('a command missing in a language you run is marked', async () => {
     const { user } = await start({
       languages: ['ahk'],

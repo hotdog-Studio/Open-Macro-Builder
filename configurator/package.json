@@ -1,7 +1,7 @@
 {
   "name": "open-macro-builder-configurator",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint .",
+    "dist": "npm run build && node scripts/build-electron.mjs && electron-builder --win nsis portable --x64",
     "electron": "npm run build && node scripts/build-electron.mjs && node scripts/run-electron.mjs"
   },
   "dependencies": {
@@ -31,6 +32,7 @@
     "@vitejs/plugin-react": "^6.3.0",
     "@vitest/coverage-v8": "^5.1.0",
     "electron": "^45.3.0",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",

@@ -109,6 +109,13 @@ Open the address it prints in Chrome or Edge, press **Open folder** and pick thi
 
 For a desktop app instead of a browser tab, run `npm run electron`. It can also reload the running macropad after you save.
 
+To build the desktop app for Windows, run `npm run dist` in `configurator/`. It writes two files into `configurator/release/`, which git ignores:
+
+- `Open Macro Builder Setup 0.1.0.exe`: an installer that lets you choose the install folder.
+- `Open Macro Builder 0.1.0 portable.exe`: one file you can run from anywhere, with no install.
+
+The app is unsigned, so Windows SmartScreen asks for confirmation on the first run: choose **More info**, then **Run anyway**. The packaged app opens any Open Macro Builder folder you pick, exactly as `npm run electron` does.
+
 ## Repository layout
 
 - `config.json`: the example layout.

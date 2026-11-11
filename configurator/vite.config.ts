@@ -20,7 +20,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**', 'electron/**'],
-      reporter: ['text', 'lcov'],
+      // projectRoot makes the SF: lines repo-root-relative (configurator/src/...), which is how
+      // SonarQube, whose project root is the repo root, finds the files.
+      reporter: ['text', ['lcov', { projectRoot: '..' }]],
       reportsDirectory: '../coverage/configurator',
     },
   },

@@ -1,0 +1,21 @@
+# Builds the Windows installer and the portable exe: `npm run dist` writes both into release/.
+# The package holds only the built app. Nothing from local/ (personal data), src/ or test/ goes in.
+appId: studio.hotdog.openmacrobuilder
+productName: Open Macro Builder
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+asar: true
+win:
+  # The repository's tray icon; it has a 256x256 image, which the installer needs.
+  icon: ../img/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: "${productName} Setup ${version}.${ext}"
+portable:
+  artifactName: "${productName} ${version} portable.${ext}"

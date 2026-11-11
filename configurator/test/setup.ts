@@ -8,6 +8,11 @@
 if (typeof document !== 'undefined') {
   const { configure } = await import('@testing-library/dom')
   configure({ asyncUtilTimeout: 5000 })
+
+  // CodeMirror measures text with Range geometry, which jsdom does not implement.
+  const range = Range.prototype
+  range.getClientRects ??= () => [] as unknown as DOMRectList
+  range.getBoundingClientRect ??= () => new DOMRect()
 }
 
 export {}

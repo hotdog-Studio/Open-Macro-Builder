@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { memoryFolderFromRepo } from '../../../test/repo'
 import { MemoryFolder } from '../folder/memory'
-import { commandCatalog, definedNames, scanCommands } from './index'
+import { commandCatalog, commandFileNotices, definedNames, scanCommands } from './index'
 
 describe('personal files', () => {
   it('skips the include hub and pairs the two languages by file name', async () => {
@@ -43,6 +43,32 @@ describe('personal files', () => {
       ahk: { path: 'local/ahk/a.ahk', line: 4 },
       ps: { path: 'local/powershell/commands/a.ps1', line: 2 },
     })
+  })
+})
+
+describe('a file that is not UTF-8', () => {
+  it('a command file that is not UTF-8 is scanned but marked not editable', async () => {
+    // "Café" in Windows-1252: 0xE9 is not valid UTF-8.
+    const latin = new Uint8Array([
+      ...new TextEncoder().encode('; Caf'),
+      0xe9,
+      ...new TextEncoder().encode('\nLatinCmd(Macro) {\n}\n'),
+    ])
+    const folder = new MemoryFolder('mixed', {
+      'ahk/commands/latin.ahk': latin,
+      'ahk/commands/plain.ahk': 'PlainCmd(Macro) {\n}\n',
+    })
+    const files = await scanCommands(folder)
+    expect(files.map((f) => [f.file.path, f.editable])).toEqual([
+      ['ahk/commands/latin.ahk', false],
+      ['ahk/commands/plain.ahk', true],
+    ])
+    expect(files[0].file.text).toBe('; Caf�\nLatinCmd(Macro) {\n}\n')
+    expect(definedNames(files, 'ahk').has('latincmd')).toBe(true)
+    expect(commandCatalog(files).map((e) => e.name)).toEqual(['LatinCmd', 'PlainCmd'])
+    expect(commandFileNotices(files)).toEqual([
+      'ahk/commands/latin.ahk is not UTF-8 text; its commands are listed, but the configurator will not edit it.',
+    ])
   })
 })
 

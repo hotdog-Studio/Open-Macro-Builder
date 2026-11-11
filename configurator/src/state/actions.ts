@@ -11,7 +11,15 @@ import {
   type TextFile,
 } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import { commandCatalog, definedNames, LANG_IDS, LANGUAGES, scanCommands, type LangId } from '../core/languages'
+import {
+  commandCatalog,
+  commandFileNotices,
+  definedNames,
+  LANG_IDS,
+  LANGUAGES,
+  scanCommands,
+  type LangId,
+} from '../core/languages'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
@@ -82,8 +90,10 @@ const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 async function readSession(folder: FolderAccess, configPath: string): Promise<Session> {
   const configFile = await readTextFile(folder, configPath)
   if (!configFile) throw new ConfigError(`${configPath} is missing.`)
-  const ws = parseConfig(configFile.text, configPath)
+  const parsed = parseConfig(configFile.text, configPath)
   const commandFiles = await scanCommands(folder)
+  // A command file that is not UTF-8 is listed but never edited; the load notices say so.
+  const ws = { ...parsed, notices: [...parsed.notices, ...commandFileNotices(commandFiles)] }
   const iconSets = await listIconSets(folder)
   return { folder, configFile, saved: ws, ws, catalog: commandCatalog(commandFiles), commandFiles, iconSets }
 }

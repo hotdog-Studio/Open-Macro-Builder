@@ -1,6 +1,6 @@
 import { functionNames } from '../../../../scripts/validate-config-core.mjs'
 import type { FolderAccess } from '../folder/types'
-import { readTextFile, type TextFile } from '../folder/textFile'
+import { readTextFileLenient, type TextFile } from '../folder/textFile'
 import { ahk } from './ahk'
 import { ps } from './ps'
 import { isCommand, type FunctionInfo, type LangId, type Language } from './types'
@@ -15,6 +15,11 @@ export interface CommandFile {
   pair: string
   file: TextFile
   functions: FunctionInfo[]
+  /**
+   * False for a file that is not UTF-8: its text was decoded leniently, so its commands
+   * can be listed, but writing it back would damage it. An editor must leave it alone.
+   */
+  editable: boolean
 }
 
 export interface CatalogEntry {
@@ -39,8 +44,8 @@ const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 /**
  * Reads every command file of the opened folder: the owner's personal files first
- * ('yours', skipping include hubs), then the shared library. Throws EncodingError
- * for a command file that is not UTF-8.
+ * ('yours', skipping include hubs), then the shared library. A file that is not UTF-8
+ * is still scanned (command names are ASCII), but marked not editable.
  */
 export async function scanCommands(folder: FolderAccess): Promise<CommandFile[]> {
   const found: CommandFile[] = []
@@ -52,14 +57,15 @@ export async function scanCommands(folder: FolderAccess): Promise<CommandFile[]>
       const ignored = new Set(lang.ignore.map((p) => p.toLowerCase()))
       for (const path of await listFiles(folder, dir, lang.ext)) {
         if (ignored.has(path.toLowerCase())) continue
-        const file = await readTextFile(folder, path)
-        if (!file) continue
+        const read = await readTextFileLenient(folder, path)
+        if (!read) continue
         found.push({
           lang: lang.id,
           group,
           pair: path.slice(dir.length + 1, path.length - lang.ext.length),
-          file,
-          functions: lang.findFunctions(file.text),
+          file: read.file,
+          functions: lang.findFunctions(read.file.text),
+          editable: read.utf8,
         })
       }
     }
@@ -72,6 +78,13 @@ export async function scanCommands(folder: FolderAccess): Promise<CommandFile[]>
       ALL.indexOf(BY_ID[a.lang]) - ALL.indexOf(BY_ID[b.lang]) ||
       compare(a.file.path, b.file.path),
   )
+}
+
+/** A load notice for each command file that is not UTF-8. */
+export function commandFileNotices(files: CommandFile[]): string[] {
+  return files
+    .filter((f) => !f.editable)
+    .map((f) => `${f.file.path} is not UTF-8 text; its commands are listed, but the configurator will not edit it.`)
 }
 
 /**

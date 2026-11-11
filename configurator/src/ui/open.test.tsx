@@ -13,7 +13,8 @@ import { App } from './App'
 afterEach(cleanup)
 
 const EXAMPLE = readRepoText('config.json')
-const KEY_NAMES = ['F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19', 'F20', 'F21', 'F22', 'F23', 'F24']
+const NOT_UTF8 = 'ahk/commands/broken.ahk is not UTF-8 text; its commands are listed, but the configurator will not edit it.'
+const KEY_NAMES =['F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19', 'F20', 'F21', 'F22', 'F23', 'F24']
 
 /** The example repository: config.json, the AutoHotkey entry point, both command libraries and the icons. */
 function repoFolder(): MemoryFolder {
@@ -102,17 +103,28 @@ describe('opening a folder', () => {
     expect(await snapshot(folder)).toEqual(before)
   })
 
-  it('does not copy the example into local/ when a command file is not UTF-8', async () => {
+  it('copies the example into local/ even when a command file is not UTF-8', async () => {
     const folder = repoFolder()
     await folder.writeBytes('ahk/commands/broken.ahk', new Uint8Array([0x4f, 0x6b, 0xe9, 0x0a]))
+    await folder.writeBytes(SETTINGS_PATH, new TextEncoder().encode('{ "languages": ["ahk"] }\n'))
+    const user = await openFolder(fakePlatform(folder))
+    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/ (recommended)' }))
+    await screen.findByRole('list', { name: 'Keys' })
+    expect(screen.getByText(NOT_UTF8)).toBeTruthy()
+    expect(await folder.readBytes('local/config.json')).toEqual(await folder.readBytes('config.json'))
+  })
+
+  it('does not copy a config.json that is not UTF-8 into local/', async () => {
+    const folder = repoFolder()
+    const latin = EXAMPLE.replace('"name": "Prev"', '"name": "Préc"')
+    // The example with one é in Windows-1252: every other character is ASCII.
+    await folder.writeBytes('config.json', Uint8Array.from(latin, (c) => c.charCodeAt(0)))
     await folder.writeBytes(SETTINGS_PATH, new TextEncoder().encode('{ "languages": ["ahk"] }\n'))
     const before = await snapshot(folder)
     const user = await openFolder(fakePlatform(folder))
     await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/ (recommended)' }))
-    expect(
-      await screen.findByText('ahk/commands/broken.ahk is not UTF-8 text, so the configurator will not edit it.'),
-    ).toBeTruthy()
-    expect(await folder.readBytes('local/config.json')).toBeNull()
+    expect(await screen.findByText('config.json is not UTF-8 text, so the configurator will not edit it.')).toBeTruthy()
+    expect(screen.queryByRole('list', { name: 'Keys' })).toBeNull()
     expect(await snapshot(folder)).toEqual(before)
   })
 
@@ -168,14 +180,17 @@ describe('opening a folder', () => {
     expect(await snapshot(folder)).toEqual(before)
   })
 
-  it('shows a command file that is not UTF-8 and does not open the folder', async () => {
+  it('a folder with a non-UTF-8 command file opens and shows the notice', async () => {
     const folder = await readyFolder()
-    await folder.writeBytes('ahk/commands/broken.ahk', new Uint8Array([0x4f, 0x6b, 0xe9, 0x0a]))
-    await openFolder(fakePlatform(folder))
-    expect(
-      await screen.findByText('ahk/commands/broken.ahk is not UTF-8 text, so the configurator will not edit it.'),
-    ).toBeTruthy()
-    expect(screen.queryByRole('list', { name: 'Keys' })).toBeNull()
+    // "; Café" in Windows-1252, then a command.
+    const latin = '; Café\nZzLatin(Macro)\n{\n}\n'
+    await folder.writeBytes('ahk/commands/broken.ahk', Uint8Array.from(latin, (c) => c.charCodeAt(0)))
+    const user = await openFolder(fakePlatform(folder))
+    await screen.findByRole('list', { name: 'Keys' })
+    expect(screen.getByText(NOT_UTF8)).toBeTruthy()
+    // Its commands are listed all the same.
+    await user.click(screen.getByRole('tab', { name: 'Macros' }))
+    expect(within(screen.getByRole('region', { name: 'Commands' })).getByText('ZzLatin')).toBeTruthy()
   })
 
   it('shows load notices', async () => {

@@ -22,7 +22,10 @@ export type SaveResult = 'saved' | 'blocked' | 'conflict'
 export interface AppActions {
   /** On start: reopens the remembered folder, or offers Reopen <name>, or says it is gone. */
   restore(): Promise<void>
-  /** The Open folder button. */
+  /**
+   * The Open folder button, on the open screen and in the editor's header. A cancelled
+   * picker changes nothing; the header asks before discarding edits.
+   */
   openFolder(): Promise<void>
   /** The Reopen <name> button; must run straight from the click (browsers want a user gesture). */
   reopen(): Promise<void>
@@ -303,10 +306,18 @@ export function createActions(
       try {
         folder = await platform.openFolder()
       } catch (e) {
-        showOpen(openError(e))
+        // From the header: the open folder and its edits stay, with the reason in the banner.
+        if (getState().screen === 'edit') {
+          dispatch({ type: 'banner', banner: { text: openError(e), kind: 'error' } })
+        } else showOpen(openError(e))
         return
       }
-      if (folder) await load(folder)
+      // Cancelled: whatever is open stays as it is.
+      if (!folder) return
+      // The previous folder is let go first: in Electron its access now reads the new folder,
+      // so it must not be saved or rechecked while the new one loads.
+      forget()
+      await load(folder)
     },
 
     async reopen() {

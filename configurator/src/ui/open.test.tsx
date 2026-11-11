@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { FolderAccess } from '../core/folder/types'
@@ -221,6 +221,107 @@ describe('the header', () => {
     // The Pad shape tab's text has gone and the Layers tab's is there.
     expect(screen.queryByText('Overlay options')).toBeNull()
     expect(screen.getByText('What each key selects while Fn is held.')).toBeTruthy()
+  })
+})
+
+describe('opening another folder from the header', () => {
+  /** A platform whose picker gives each of `picks` in turn, and whose watch counts its stops. */
+  function picking(picks: (FolderAccess | null)[]) {
+    const seen = { picks: 0, watches: [] as string[][], stops: 0 }
+    const platform = fakePlatform(null, {
+      openFolder: async () => picks[seen.picks++] ?? null,
+      watch: (paths) => {
+        seen.watches.push(paths)
+        return () => {
+          seen.stops++
+        }
+      },
+    })
+    return { seen, platform }
+  }
+  /** A second folder whose first key is F1, so the tabs show which folder is open. */
+  const otherFolder = () => readyFolder(EXAMPLE.replace('"key": "F13"', '"key": "F1"'))
+  const keyNames = () =>
+    within(screen.getByRole('list', { name: 'Keys' }))
+      .getAllByRole('button', { name: /^F\d+ \d×\d$/ })
+      .map((b) => /^(\S+) /.exec(b.textContent ?? '')?.[1])
+  const saveButton = () => screen.getByRole('button', { name: 'Save config.json' }) as HTMLButtonElement
+  const labels = () => screen.getByRole('checkbox', { name: 'Show labels above keys' }) as HTMLInputElement
+
+  it('the header can open another folder', async () => {
+    const { seen, platform } = picking([await readyFolder(), await otherFolder()])
+    const user = await openFolder(platform)
+    await screen.findByRole('list', { name: 'Keys' })
+    expect(keyNames()[0]).toBe('F13')
+    expect(seen.stops).toBe(0)
+
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    // Nothing to lose, so no question.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(keyNames()[0]).toBe('F1'))
+    expect(seen.picks).toBe(2)
+    // The first folder's watch stopped; the second folder's config is watched.
+    expect(seen.watches).toEqual([['local/config.json'], ['local/config.json']])
+    expect(seen.stops).toBe(1)
+  })
+
+  it('opening another folder asks before discarding edits', async () => {
+    const { seen, platform } = picking([await readyFolder(), await otherFolder()])
+    const user = await openFolder(platform)
+    await screen.findByRole('list', { name: 'Keys' })
+    await user.click(labels())
+    expect(saveButton().disabled).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    let dialog = screen.getByRole('dialog', { name: 'Discard unsaved changes?' })
+    expect(within(dialog).getByText('local/config.json')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(seen.picks).toBe(1)
+    expect(keyNames()[0]).toBe('F13')
+    expect(saveButton().disabled).toBe(false)
+    expect(labels().checked).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    dialog = screen.getByRole('dialog', { name: 'Discard unsaved changes?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Discard and open' }))
+    await waitFor(() => expect(keyNames()[0]).toBe('F1'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('cancelling the picker keeps the current folder', async () => {
+    const { seen, platform } = picking([await readyFolder(), null])
+    const user = await openFolder(platform)
+    await screen.findByRole('list', { name: 'Keys' })
+    await user.click(labels())
+
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    await user.click(screen.getByRole('button', { name: 'Discard and open' }))
+    await waitFor(() => expect(seen.picks).toBe(2))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(keyNames()[0]).toBe('F13')
+    // The edit is still there, unsaved, and the config is still watched.
+    expect(labels().checked).toBe(false)
+    expect(saveButton().disabled).toBe(false)
+    expect(seen.stops).toBe(0)
+  })
+
+  it('a picker that fails keeps the current folder and says why', async () => {
+    let picks = 0
+    const folder = await readyFolder()
+    const user = await openFolder(
+      fakePlatform(null, {
+        openFolder: async () => {
+          if (picks++ === 0) return folder
+          throw new Error('The picker is busy.')
+        },
+      }),
+    )
+    await screen.findByRole('list', { name: 'Keys' })
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('The picker is busy.')
+    expect(keyNames()[0]).toBe('F13')
   })
 })
 

@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { LANG_IDS, LANGUAGES, type LangId } from '../core/languages'
 import { useEditor, type Tab } from '../state/store'
+import { ConfirmDialog } from './ConfirmDialog'
 
 const TABS: [Tab, string][] = [
   ['shape', 'Pad shape'],
@@ -10,6 +12,13 @@ const TABS: [Tab, string][] = [
 export function Header() {
   const { state, dispatch, actions } = useEditor()
   const running = state.settings.languages
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  // Runs straight from a click: the browser's folder picker needs a user gesture.
+  const openFolder = () => {
+    setConfirmOpen(false)
+    void actions.openFolder()
+  }
 
   const toggle = (lang: LangId, on: boolean) => {
     const next = LANG_IDS.filter((l) => (l === lang ? on : running.includes(l)))
@@ -57,6 +66,13 @@ export function Header() {
       </fieldset>
       <button
         type="button"
+        className="mr-2 rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-200 hover:bg-zinc-800"
+        onClick={() => (state.dirty ? setConfirmOpen(true) : openFolder())}
+      >
+        Open folder
+      </button>
+      <button
+        type="button"
         disabled={!state.dirty}
         title={state.dirty ? 'You have unsaved changes' : undefined}
         className="flex items-center gap-1.5 rounded-md bg-sky-600 px-3 py-1.5 font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -65,6 +81,18 @@ export function Header() {
         {state.dirty && <span data-dot aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-300" />}
         Save config.json
       </button>
+      {confirmOpen && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          onCancel={() => setConfirmOpen(false)}
+          choices={[{ label: 'Discard and open', danger: true, onChoose: openFolder }]}
+        >
+          <p>
+            Your changes to <code className="font-mono">{state.configFile.path}</code> have not been saved. Opening
+            another folder discards them.
+          </p>
+        </ConfirmDialog>
+      )}
     </header>
   )
 }

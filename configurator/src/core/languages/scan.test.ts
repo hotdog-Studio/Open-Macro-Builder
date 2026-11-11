@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { memoryFolderFromRepo } from '../../../test/repo'
 import { MemoryFolder } from '../folder/memory'
-import { commandCatalog, commandFileNotices, definedNames, scanCommands } from './index'
+import {
+  commandCatalog,
+  commandFileAt,
+  commandFileNotices,
+  commandFilePath,
+  definedNames,
+  mergeRescan,
+  readCommandFile,
+  scanCommands,
+  sortCommandFiles,
+  withCommandFile,
+} from './index'
+import type { CommandFile } from './index'
 
 describe('personal files', () => {
   it('skips the include hub and pairs the two languages by file name', async () => {
@@ -91,6 +103,117 @@ describe('shared library', () => {
     expect(definedNames(files, 'ahk').has('activateoropen')).toBe(true)
     expect(definedNames(files, 'ps').has('activateoropen')).toBe(true)
     expect(definedNames(files, 'ahk').has('chromenewtab')).toBe(true)
+  })
+})
+
+describe('single command files', () => {
+  it('commandFileAt maps the four command folders', () => {
+    expect(commandFileAt('local/ahk/x.ahk')).toEqual({ lang: 'ahk', group: 'yours', pair: 'x' })
+    expect(commandFileAt('ahk/commands/custom/chrome.ahk')).toEqual({
+      lang: 'ahk',
+      group: 'shared',
+      pair: 'custom/chrome',
+    })
+    expect(commandFileAt('local/powershell/commands/y.ps1')).toEqual({ lang: 'ps', group: 'yours', pair: 'y' })
+    expect(commandFileAt('powershell/commands/z.ps1')).toEqual({ lang: 'ps', group: 'shared', pair: 'z' })
+    expect(commandFileAt('local/ahk/commands.ahk')).toBeNull()
+    expect(commandFileAt('ahk/config.ahk')).toBeNull()
+    expect(commandFileAt('powershell/commands/a.txt')).toBeNull()
+  })
+
+  it('commandFilePath is the inverse of commandFileAt', () => {
+    expect(commandFilePath('ahk', 'yours', 'x')).toBe('local/ahk/x.ahk')
+    expect(commandFilePath('ps', 'shared', 'custom/chrome')).toBe('powershell/commands/custom/chrome.ps1')
+  })
+
+  it('readCommandFile reads one file as scanCommands would', async () => {
+    const folder = memoryFolderFromRepo(['ahk/commands', 'powershell/commands'])
+    const scanned = await scanCommands(folder)
+    const path = 'ahk/commands/custom/chrome.ahk'
+    expect(await readCommandFile(folder, path)).toEqual(scanned.find((f) => f.file.path === path))
+  })
+
+  it('readCommandFile gives null for a missing file and for a path that is not a command file', async () => {
+    const folder = new MemoryFolder('mine', {
+      'local/ahk/commands.ahk': '#Include x.ahk\n',
+      'ahk/config.ahk': 'x := 1\n',
+    })
+    expect(await readCommandFile(folder, 'local/ahk/gone.ahk')).toBeNull()
+    expect(await readCommandFile(folder, 'local/ahk/commands.ahk')).toBeNull()
+    expect(await readCommandFile(folder, 'ahk/config.ahk')).toBeNull()
+  })
+})
+
+describe('keeping the list in step', () => {
+  const entry = async (path: string, text: string, version?: string): Promise<CommandFile> => {
+    const cf = (await readCommandFile(new MemoryFolder('m', { [path]: text }), path))!
+    return version === undefined ? cf : { ...cf, file: { ...cf.file, version } }
+  }
+
+  it('sortCommandFiles puts yours first, then pair, then AutoHotkey before PowerShell', async () => {
+    const files = [
+      await entry('powershell/commands/a.ps1', ''),
+      await entry('ahk/commands/a.ahk', ''),
+      await entry('local/powershell/commands/z.ps1', ''),
+      await entry('local/ahk/z.ahk', ''),
+    ]
+    expect(sortCommandFiles(files).map((f) => f.file.path)).toEqual([
+      'local/ahk/z.ahk',
+      'local/powershell/commands/z.ps1',
+      'ahk/commands/a.ahk',
+      'powershell/commands/a.ps1',
+    ])
+  })
+
+  it('withCommandFile replaces, inserts in order and removes', async () => {
+    const a = await entry('local/ahk/a.ahk', 'A(Macro) {\n}\n')
+    const c = await entry('local/ahk/c.ahk', 'C(Macro) {\n}\n')
+    const b = await entry('local/ahk/b.ahk', 'B(Macro) {\n}\n')
+    const start = [a, c]
+
+    const inserted = withCommandFile(start, b.file.path, b)
+    expect(inserted.map((f) => f.pair)).toEqual(['a', 'b', 'c'])
+    expect(start.map((f) => f.pair)).toEqual(['a', 'c'])
+
+    const a2 = await entry('local/ahk/a.ahk', 'A2(Macro) {\n}\n')
+    const replaced = withCommandFile(inserted, a.file.path, a2)
+    expect(replaced.map((f) => f.pair)).toEqual(['a', 'b', 'c'])
+    expect(replaced[0].functions.map((f) => f.name)).toEqual(['A2'])
+
+    const removed = withCommandFile(replaced, b.file.path, null)
+    expect(removed.map((f) => f.pair)).toEqual(['a', 'c'])
+    expect(replaced).toHaveLength(3)
+  })
+
+  it('mergeRescan keeps files with unsaved edits and reports their outside changes', async () => {
+    const heldA = await entry('local/ahk/a.ahk', 'A(Macro) {\n}\n', 'v1')
+    const heldB = await entry('local/ahk/b.ahk', 'B(Macro) {\n}\n', 'v1')
+    const freshA = await entry('local/ahk/a.ahk', 'A(Macro) {\n}\n; edited\n', 'v2')
+    const freshB = await entry('local/ahk/b.ahk', 'B(Macro) {\n}\n; edited\n', 'v2')
+    const freshC = await entry('local/ahk/c.ahk', 'C(Macro) {\n}\n', 'v1')
+
+    const merged = mergeRescan([heldA, heldB], [freshA, freshB, freshC], new Set([heldA.file.path]))
+    expect(merged.files).toHaveLength(3)
+    expect(merged.files[0]).toBe(heldA)
+    expect(merged.files[1]).toBe(freshB)
+    expect(merged.files[2]).toBe(freshC)
+    expect(merged.changed).toEqual([{ path: 'local/ahk/a.ahk', version: 'v2' }])
+  })
+
+  it('mergeRescan does not report a kept file whose version is unchanged', async () => {
+    const held = await entry('local/ahk/a.ahk', 'A(Macro) {\n}\n', 'v1')
+    const fresh = await entry('local/ahk/a.ahk', 'A(Macro) {\n}\n', 'v1')
+    const merged = mergeRescan([held], [fresh], new Set([held.file.path]))
+    expect(merged.files).toEqual([held])
+    expect(merged.changed).toEqual([])
+  })
+
+  it('mergeRescan reports a kept file deleted on disk with a null version', async () => {
+    const held = await entry('local/ahk/a.ahk', 'A(Macro) {\n}\n', 'v1')
+    const gone = await entry('local/ahk/b.ahk', 'B(Macro) {\n}\n', 'v1')
+    const merged = mergeRescan([held, gone], [], new Set([held.file.path]))
+    expect(merged.files).toEqual([held])
+    expect(merged.changed).toEqual([{ path: 'local/ahk/a.ahk', version: null }])
   })
 })
 

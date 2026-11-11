@@ -12,6 +12,11 @@ export default defineConfig({
     fs: { allow: ['..'] },
   },
   test: {
+    setupFiles: ['./test/setup.ts'],
+    // The UI tests render the whole app and press real keys through user-event. The slowest
+    // (save.test.tsx's first test: two edit-and-save rounds) takes about 3.6 s on an idle machine
+    // with coverage on, so the 5 s default left no margin on a loaded CI agent.
+    testTimeout: 20000,
     coverage: {
       provider: 'v8',
       include: ['src/**', 'electron/**'],

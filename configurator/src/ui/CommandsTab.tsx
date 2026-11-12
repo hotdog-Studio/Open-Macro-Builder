@@ -19,11 +19,11 @@ function Dot({ label, tone }: Readonly<{ label: string; tone: string }>) {
 
 const UnsavedDot = () => <Dot label="unsaved changes" tone="bg-amber-300" />
 
-/** True when the pair's file in one of `langs` has a draft. */
-function hasDraft(pair: CommandPair, drafts: Record<string, string>, langs: LangId[] = LANG_IDS): boolean {
+/** True when the pair's file in one of `langs` has a key in `byPath` (a draft, an outside change). */
+function pairHas(pair: CommandPair, byPath: Record<string, unknown>, langs: LangId[] = LANG_IDS): boolean {
   return langs.some((l) => {
     const file = pair.files[l]
-    return file !== undefined && file.file.path in drafts
+    return file !== undefined && file.file.path in byPath
   })
 }
 
@@ -53,7 +53,8 @@ function PairList({ title, pairs, shown }: Readonly<{ title: string; pairs: Comm
               <span className="flex items-center gap-1.5">
                 <span className="truncate font-mono text-[12px]">{p.pair}</span>
                 {languagesDiffer(p) && <Dot label="languages differ" tone="bg-red-400" />}
-                {hasDraft(p, state.commands.drafts) && <UnsavedDot />}
+                {pairHas(p, state.commands.drafts) && <UnsavedDot />}
+                {pairHas(p, state.commands.outside) && <Dot label="changed on disk" tone="bg-orange-500" />}
               </span>
               <span className="text-[10px] text-zinc-500">{counts(p)}</span>
             </button>
@@ -89,7 +90,7 @@ function LanguageButtons({ pair }: Readonly<{ pair: CommandPair }>) {
           onClick={() => dispatch({ type: 'commands-show', lang: l })}
         >
           {LANGUAGES[l].label}
-          {hasDraft(pair, drafts, [l]) && <UnsavedDot />}
+          {pairHas(pair, drafts, [l]) && <UnsavedDot />}
         </button>
       ))}
     </div>
@@ -98,8 +99,8 @@ function LanguageButtons({ pair }: Readonly<{ pair: CommandPair }>) {
 
 /** The toolbar's file controls and the editor of one command file. */
 function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFile }>) {
-  const { state, actions } = useEditor()
-  const { drafts, saved, jump } = state.commands
+  const { state, dispatch, actions } = useEditor()
+  const { drafts, saved, jump, outside } = state.commands
   const [confirmReload, setConfirmReload] = useState(false)
   const path = file.file.path
   const name = fileName(path)
@@ -109,12 +110,14 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
     setConfirmReload(false)
     void actions.reloadCommandFile(path)
   }
+  /** Reload from disk, in the toolbar and the banner: asks first when there are unsaved changes. */
+  const askReload = () => (draft === undefined ? reload() : setConfirmReload(true))
   return (
     <>
       <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
         <LanguageButtons pair={pair} />
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-400">{path}</span>
-        <button type="button" className={STYLE.button} onClick={() => (draft === undefined ? reload() : setConfirmReload(true))}>
+        <button type="button" className={STYLE.button} onClick={askReload}>
           Reload from disk
         </button>
         {file.editable && (
@@ -128,6 +131,25 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
           </button>
         )}
       </div>
+      {outside[path] && !outside[path].dismissed && (
+        <div role="alert" className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-amber-200">
+          <p className="flex-1">{`${name} changed on disk.`}</p>
+          <button
+            type="button"
+            className="rounded-md border border-amber-500/40 px-2 py-0.5 text-[12px] hover:bg-amber-500/20"
+            onClick={askReload}
+          >
+            Reload from disk
+          </button>
+          <button
+            type="button"
+            className="rounded-md px-2 text-[12px] opacity-80 hover:opacity-100"
+            onClick={() => dispatch({ type: 'command-dismiss', path })}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {!file.editable && (
         <p className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-amber-200">{new EncodingError(path).message}</p>
       )}

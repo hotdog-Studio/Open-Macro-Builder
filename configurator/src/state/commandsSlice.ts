@@ -42,6 +42,13 @@ export type CommandAction =
   | { type: 'command-saved'; file: CommandFile }
   /** A reload of one file; null when it is gone. */
   | { type: 'command-file'; path: string; file: CommandFile | null }
+  /**
+   * A recheck of the folder: the command files as the actions merged them (files with unsaved
+   * edits keep theirs), and the kept files whose version on disk differs (null: the file is gone).
+   */
+  | { type: 'command-files'; files: CommandFile[]; changed: { path: string; version: string | null }[] }
+  /** Hides the changed-on-disk banner of a file until it changes again. */
+  | { type: 'command-dismiss'; path: string }
   | { type: 'command-dialog'; dialog: CommandDialog | null }
   | { type: 'jump'; path: string; line: number }
 
@@ -148,6 +155,25 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
           dialog: c.dialog?.path === action.path ? null : c.dialog,
         },
       }
+    case 'command-files': {
+      // Only the files that still differ keep an entry; the same outside version again keeps its banner as it is.
+      const outside: CommandsView['outside'] = {}
+      for (const { path, version } of action.changed) {
+        const was = c.outside[path]
+        outside[path] = was?.version === version ? was : { version, dismissed: false }
+      }
+      return {
+        ...state,
+        commandFiles: action.files,
+        catalog: commandCatalog(action.files),
+        commands: { ...c, outside },
+      }
+    }
+    case 'command-dismiss': {
+      const was = c.outside[action.path]
+      if (!was) return state
+      return { ...state, commands: { ...c, outside: { ...c.outside, [action.path]: { ...was, dismissed: true } } } }
+    }
     case 'command-dialog':
       return { ...state, commands: { ...c, dialog: action.dialog } }
     case 'jump':

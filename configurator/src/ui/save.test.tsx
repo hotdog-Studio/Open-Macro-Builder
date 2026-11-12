@@ -359,7 +359,8 @@ describe('outside changes', () => {
   it('a platform watch event shows the banner', async () => {
     const { watch, platform } = watching()
     const { folder } = await start({ platform })
-    expect(watch.paths).toEqual([[CONFIG]])
+    // config.json first, then every command file.
+    expect(watch.paths.map((paths) => paths[0])).toEqual([CONFIG])
 
     await watch.fire()
     expect(screen.queryByText(CHANGED)).toBeNull()
@@ -416,7 +417,7 @@ describe('outside changes', () => {
     expect(screen.queryByText(CHANGED)).toBeNull()
     expect(await bytesOf(folder, CONFIG)).toBe(bytes(OUTSIDE))
     // The reload watches the file again and stops the old watch.
-    expect(watch.paths).toEqual([[CONFIG], [CONFIG]])
+    expect(watch.paths.map((paths) => paths[0])).toEqual([CONFIG, CONFIG])
     expect(watch.stops).toBe(1)
 
     // The reloaded version is the one later saves and rechecks compare with.

@@ -181,6 +181,8 @@ function editReducer(state: EditCore, action: Action): EditCore {
     case 'draft':
     case 'command-saved':
     case 'command-file':
+    case 'command-files':
+    case 'command-dismiss':
     case 'command-dialog':
     case 'jump':
       return commandsReducer(state, action)

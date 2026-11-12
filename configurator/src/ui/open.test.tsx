@@ -276,7 +276,7 @@ describe('opening another folder from the header', () => {
     await waitFor(() => expect(keyNames()[0]).toBe('F1'))
     expect(seen.picks).toBe(2)
     // The first folder's watch stopped; the second folder's config is watched.
-    expect(seen.watches).toEqual([['local/config.json'], ['local/config.json']])
+    expect(seen.watches.map((paths) => paths[0])).toEqual(['local/config.json', 'local/config.json'])
     expect(seen.stops).toBe(1)
   })
 

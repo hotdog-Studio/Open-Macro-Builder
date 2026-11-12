@@ -77,6 +77,13 @@ export interface AppActions {
   saveCommandFile(path: string, opts?: { force?: boolean }): Promise<SaveResult>
   /** Reads one command file again, after a save of it finishes; its draft is dropped. */
   reloadCommandFile(path: string): Promise<void>
+  /**
+   * Scans the command files again, once no command file is being saved. Files without unsaved
+   * edits take what is on disk (new files appear, deleted ones go); files with unsaved edits keep
+   * them, and a changed-on-disk banner when the disk differs. Dropped when a save, a reload or a
+   * folder change came first.
+   */
+  recheckCommands(): Promise<void>
 }
 
 /** The config file as the app last read or wrote it, with its folder. */
@@ -102,6 +109,13 @@ function checkContext(state: EditState): CheckContext {
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** True when both lists hold the same command file paths, in any order. */
+function samePaths(a: CommandFile[], b: CommandFile[]): boolean {
+  if (a.length !== b.length) return false
+  const paths = new Set(a.map((f) => f.file.path))
+  return b.every((f) => paths.has(f.file.path))
+}
 
 /** Reads the config, the command files and the icon sets of an opened folder. */
 async function readSession(folder: FolderAccess, configPath: string): Promise<Session> {
@@ -149,11 +163,13 @@ export function createActions(
     files: {
       get: () => commandFiles,
       set: (next) => {
+        const before = commandFiles
         commandFiles = next
+        if (!samePaths(before, next)) watchFiles()
       },
     },
   })
-  /** Stops the platform's watch of the held config file. */
+  /** Stops the platform's watch of the held config file and command files. */
   let stopWatch: (() => void) | null = null
   /** The save in progress; rechecks and reloads wait for it. */
   let saving: Promise<SaveResult> | null = null
@@ -171,14 +187,28 @@ export function createActions(
   }
 
   /**
-   * Holds the config file and the command files, and watches the config file, replacing the
-   * previous watch. The command drafts stay: a new folder or load calls forget() first.
+   * Watches the held config file and every held command file, replacing the previous watch (one
+   * watch list per window). An event for the config file rechecks it; any other rechecks the
+   * command files.
+   */
+  function watchFiles(): void {
+    stopWatch?.()
+    stopWatch = null
+    if (!held) return
+    const configPath = held.configFile.path
+    const paths = [configPath, ...commandFiles.map((f) => f.file.path)]
+    stopWatch =
+      platform.watch?.(paths, (path) => (path === configPath ? actions.recheck() : actions.recheckCommands())) ?? null
+  }
+
+  /**
+   * Holds the config file and the command files, and watches them, replacing the previous
+   * watch. The command drafts stay: a new folder or load calls forget() first.
    */
   function hold(folder: FolderAccess, configFile: TextFile, files: CommandFile[]): void {
-    stopWatch?.()
     held = { folder, configFile }
     commandFiles = files
-    stopWatch = platform.watch?.([configFile.path], () => actions.recheck()) ?? null
+    watchFiles()
   }
 
   const showOpen = (message: string | null, reopen: string | null = null) => {
@@ -470,6 +500,7 @@ export function createActions(
     editCommand: commands.editCommand,
     saveCommandFile: commands.saveCommandFile,
     reloadCommandFile: commands.reloadCommandFile,
+    recheckCommands: commands.recheckCommands,
 
     async recheck() {
       await saveDone()

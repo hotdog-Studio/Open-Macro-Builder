@@ -1,7 +1,14 @@
 import { hashBytes } from '../core/folder/hash'
 import { ConflictError, writeTextFile, type TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import { LANGUAGES, readCommandFile, withCommandFile, type CommandFile } from '../core/languages'
+import {
+  LANGUAGES,
+  mergeRescan,
+  readCommandFile,
+  scanCommands,
+  withCommandFile,
+  type CommandFile,
+} from '../core/languages'
 import type { Platform } from '../platform/types'
 import type { AppActions, SaveResult } from './actions'
 import type { Action, AppState } from './store'
@@ -19,7 +26,10 @@ export interface CommandDeps {
   files: { get(): CommandFile[]; set(next: CommandFile[]): void }
 }
 
-export type CommandActions = Pick<AppActions, 'editCommand' | 'saveCommandFile' | 'reloadCommandFile'> & {
+export type CommandActions = Pick<
+  AppActions,
+  'editCommand' | 'saveCommandFile' | 'reloadCommandFile' | 'recheckCommands'
+> & {
   /** Resolves once no command file is being saved, however the saves ended. */
   settled(): Promise<void>
   /** The paths with unsaved edits, as of the last edit (React may not have committed it yet). */
@@ -43,6 +53,40 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
 
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
   const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
+
+  async function settled(): Promise<void> {
+    await Promise.all([...saves.values()].map((s) => s.catch(() => undefined)))
+  }
+
+  async function recheckCommands(): Promise<void> {
+    // The app's own write is never an outside change: the recheck starts once it has landed.
+    await settled()
+    const folder = deps.folder()
+    if (!folder) return
+    const snapshot = files.get()
+    let fresh: CommandFile[]
+    try {
+      fresh = await scanCommands(folder)
+    } catch {
+      // Unreadable for now (a locked file, a lost permission); a save or reload says why.
+      return
+    }
+    // The folder was closed or replaced, or a save or reload holds a newer entry or is still
+    // writing one: that one decides, and the next recheck sees the rest.
+    if (deps.folder() !== folder || files.get() !== snapshot || saves.size > 0) return
+    const { files: merged, changed } = mergeRescan(snapshot, fresh, new Set(drafts.keys()))
+    // A file whose bytes did not change keeps the entry the app holds, so nothing that holds
+    // that entry (a reload reading it, a later recheck) sees it as replaced.
+    const held = new Map(snapshot.map((f) => [f.file.path, f]))
+    const next = merged.map((f) => {
+      const was = held.get(f.file.path)
+      return was?.file.version === f.file.version ? was : f
+    })
+    const same = next.length === snapshot.length && next.every((f, i) => f === snapshot[i])
+    const list = same ? snapshot : next
+    if (!same) files.set(list)
+    dispatch({ type: 'command-files', files: list, changed })
+  }
 
   async function trySave(path: string, force: boolean): Promise<SaveResult> {
     const folder = deps.folder()
@@ -124,9 +168,9 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       dispatch({ type: 'command-file', path, file })
     },
 
-    async settled() {
-      await Promise.all([...saves.values()].map((s) => s.catch(() => undefined)))
-    },
+    recheckCommands,
+
+    settled,
 
     draftPaths: () => [...drafts.keys()],
 

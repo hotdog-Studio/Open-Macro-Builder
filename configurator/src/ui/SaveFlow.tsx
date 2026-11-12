@@ -149,12 +149,18 @@ function OutsideChangeBanner() {
   )
 }
 
-/** Save dialogs and the outside-change banner; rechecks config.json when the window regains focus. */
+/**
+ * Save dialogs and the outside-change banner; rechecks config.json and the command files when the
+ * window regains focus.
+ */
 export function SaveFlow() {
   const { state, actions } = useEditor()
 
   useEffect(() => {
-    const onFocus = () => void actions.recheck()
+    const onFocus = () => {
+      void actions.recheck()
+      void actions.recheckCommands()
+    }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [actions])

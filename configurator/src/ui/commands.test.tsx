@@ -48,10 +48,12 @@ interface Setup {
   languages?: LangId[]
   /** Extra files for the folder, as text or raw bytes. */
   files?: Record<string, string | Uint8Array>
+  /** Extra platform members, such as watch. */
+  platform?: Partial<Platform>
 }
 
 /** Opens the folder and shows the Commands tab. */
-async function start({ languages = ['ahk', 'ps'], files = {} }: Setup = {}) {
+async function start({ languages = ['ahk', 'ps'], files = {}, platform: extra = {} }: Setup = {}) {
   const folder: MemoryFolder = memoryFolderFromRepo([
     'config.json',
     'ahk/main.ahk',
@@ -65,7 +67,7 @@ async function start({ languages = ['ahk', 'ps'], files = {} }: Setup = {}) {
   for (const [path, content] of Object.entries(files)) {
     await folder.writeBytes(path, typeof content === 'string' ? enc.encode(content) : content)
   }
-  const platform: Platform = { kind: 'browser', openFolder: async () => folder, restoreFolder: async () => null }
+  const platform: Platform = { kind: 'browser', openFolder: async () => folder, restoreFolder: async () => null, ...extra }
   render(
     <AppProvider platform={platform}>
       <App />
@@ -590,5 +592,341 @@ describe('Commands tab', () => {
     // The other language is one click away.
     await b.user.click(langButton('AutoHotkey'))
     expect(text()).toBe('Odd(Macro)\n{\n}\n')
+  })
+})
+
+describe('outside changes', () => {
+  const CHANGED = 'chrome.ahk changed on disk.'
+  /** The Commands tab's banner for chrome.ahk, if it shows. */
+  const queryBanner = () => (screen.queryByText(CHANGED)?.closest('[role]') ?? null) as HTMLElement | null
+  const chromeDot = () => within(pairButton('custom/chrome')).queryByLabelText('changed on disk')
+  /** Runs a recheck of the command files and waits for it. */
+  const recheckCommands = () =>
+    act(async () => {
+      await seen.actions.recheckCommands()
+    })
+  /** Lets every promise chain that waits on nothing run to its end. */
+  const drain = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+
+  it('shows an outside edit of a file without unsaved changes', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const count = repoCount(CHROME_AHK, 'ahk')
+    const theirs = `; theirs${eol}${original}${eol}Theirs(Macro)${eol}{${eol}}${eol}`
+    await folder.writeBytes(CHROME_AHK, enc.encode(theirs))
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(text()).toBe(theirs.replaceAll('\r\n', '\n')))
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
+    expect(saveButton('chrome.ahk').disabled).toBe(true)
+    // The palette stays current.
+    expect(pairButton('custom/chrome').textContent).toContain(`AHK ${count + 1}`)
+
+    // The new version is the one the next save checks against.
+    typeAt(0, ';')
+    await save(user, 'chrome.ahk')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(folder.text(CHROME_AHK)).toBe(`;${theirs}`)
+  })
+
+  it('keeps unsaved edits when the file changes on disk and says so', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const lf = original.replaceAll('\r\n', '\n')
+    typeAt(0, '; mine\n')
+    const outside = enc.encode(`; theirs${eol}${original}`)
+    await folder.writeBytes(CHROME_AHK, outside)
+
+    fireEvent.focus(window)
+    expect(await screen.findByText(CHANGED)).toBeTruthy()
+    expect(queryBanner()!.getAttribute('role')).toBe('alert')
+    expect(text()).toBe(`; mine\n${lf}`)
+    expect(saveButton('chrome.ahk').disabled).toBe(false)
+    expect(chromeDot()).toBeTruthy()
+    expect(within(pairButton('custom/ssh')).queryByLabelText('changed on disk')).toBeNull()
+
+    // The edit is still checked against the version it was made on.
+    await user.click(saveButton('chrome.ahk'))
+    const conflict = await screen.findByRole('dialog', { name: 'chrome.ahk changed on disk since you opened it.' })
+    expect(await bytesOf(folder, CHROME_AHK)).toEqual(Array.from(outside))
+    await user.click(within(conflict).getByRole('button', { name: 'Cancel' }))
+    expect(queryBanner()).toBeTruthy()
+
+    // The banner's Reload from disk asks first, like the toolbar's.
+    await user.click(within(queryBanner()!).getByRole('button', { name: 'Reload from disk' }))
+    let confirm = screen.getByRole('dialog', { name: 'Discard your changes to chrome.ahk?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    expect(text()).toBe(`; mine\n${lf}`)
+    await user.click(within(queryBanner()!).getByRole('button', { name: 'Reload from disk' }))
+    confirm = screen.getByRole('dialog', { name: 'Discard your changes to chrome.ahk?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Discard and reload' }))
+    await waitFor(() => expect(text()).toBe(`; theirs\n${lf}`))
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
+    expect(saveButton('chrome.ahk').disabled).toBe(true)
+  })
+
+  it('a dismissed banner returns only for a newer change', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    typeAt(0, '; mine\n')
+    await folder.writeBytes(CHROME_AHK, enc.encode(`; theirs${eol}${original}`))
+    await recheckCommands()
+    await user.click(within(queryBanner()!).getByRole('button', { name: 'Dismiss' }))
+    expect(queryBanner()).toBeNull()
+    // The file still differs from the disk.
+    expect(chromeDot()).toBeTruthy()
+
+    await recheckCommands()
+    fireEvent.focus(window)
+    await drain()
+    expect(queryBanner()).toBeNull()
+
+    await folder.writeBytes(CHROME_AHK, enc.encode(`; newer${eol}${original}`))
+    await recheckCommands()
+    expect(queryBanner()).toBeTruthy()
+    expect(text().startsWith('; mine\n')).toBe(true)
+  })
+
+  it('lists a command file created outside the app', async () => {
+    const { folder } = await start()
+    expect(within(fileList()).queryByText('fresh')).toBeNull()
+    await folder.writeBytes('local/ahk/fresh.ahk', enc.encode('Fresh(Macro)\n{\n}\n'))
+    fireEvent.focus(window)
+    expect(await within(fileList()).findByText('fresh')).toBeTruthy()
+    expect(pairButton('fresh').textContent).toContain('AHK 1 · PS —')
+  })
+
+  it('drops a file deleted outside the app that has no unsaved changes', async () => {
+    const { user, folder } = await start({ files: MINE })
+    await user.click(pairButton('custom/chrome'))
+    const lf = folder.text(CHROME_AHK)!.replaceAll('\r\n', '\n')
+    typeAt(0, '; mine\n')
+    await folder.remove('local/ahk/mine.ahk')
+    await folder.remove('local/powershell/commands/mine.ps1')
+    await folder.remove(CHROME_AHK)
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(within(fileList()).queryByText('mine')).toBeNull())
+    // A deleted file with unsaved edits stays, edits and all, and says so.
+    expect(text()).toBe(`; mine\n${lf}`)
+    expect(queryBanner()).toBeTruthy()
+    expect(chromeDot()).toBeTruthy()
+  })
+
+  it('watches command files in Electron', async () => {
+    const watch = { paths: [] as string[][], stops: 0, onChange: null as ((path: string) => void) | null }
+    /** Fires the last watch for `path` and waits for the recheck it starts. */
+    const fire = (path: string) =>
+      act(async () => {
+        await (watch.onChange?.(path) as unknown as Promise<void>)
+      })
+    const platform: Partial<Platform> = {
+      watch: (paths, onChange) => {
+        watch.paths.push(paths)
+        watch.onChange = onChange
+        return () => {
+          watch.stops++
+        }
+      },
+    }
+    const { user, folder } = await start({ platform })
+    expect(watch.paths).toHaveLength(1)
+    expect(watch.paths[0]).toContain(CONFIG)
+    expect(watch.paths[0]).toContain(CHROME_AHK)
+    expect(watch.paths[0]).toContain(CHROME_PS)
+
+    await user.click(pairButton('custom/chrome'))
+    await folder.writeBytes(CHROME_AHK, enc.encode('Changed(Macro)\n{\n}\n'))
+    await fire(CHROME_AHK)
+    expect(text()).toBe('Changed(Macro)\n{\n}\n')
+    // The same files: the watch stays as it is.
+    expect(watch.paths).toHaveLength(1)
+    expect(watch.stops).toBe(0)
+
+    // config.json's own event rechecks config.json.
+    await folder.writeBytes(CONFIG, enc.encode(EXAMPLE.replace('"title": "Media"', '"title": "Music"')))
+    await fire(CONFIG)
+    expect(screen.getByText('config.json changed on disk.')).toBeTruthy()
+
+    // A file created outside is watched once a recheck finds it.
+    await folder.writeBytes('local/ahk/fresh.ahk', enc.encode('Fresh(Macro)\n{\n}\n'))
+    fireEvent.focus(window)
+    await waitFor(() => expect(watch.paths).toHaveLength(2))
+    expect(watch.paths[1]).toContain('local/ahk/fresh.ahk')
+    expect(watch.paths[1]).toContain(CONFIG)
+    expect(watch.stops).toBe(1)
+  })
+
+  it('never mistakes its own save for an outside change', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    typeAt(0, '; mine\n')
+    const click = user.click(saveButton('chrome.ahk'))
+    fireEvent.focus(window)
+    await click
+    await waitFor(() => expect(saveButton('chrome.ahk').disabled).toBe(true))
+    await drain()
+    await recheckCommands()
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
+
+    // A save still writing when the window gains focus: the recheck waits for it.
+    const write = folder.writeBytes.bind(folder)
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    folder.writeBytes = async (path, data) => {
+      await write(path, data)
+      if (path === CHROME_AHK) await gate
+    }
+    typeAt(0, ';')
+    let saving: Promise<string> | undefined
+    act(() => {
+      saving = seen.actions.saveCommandFile(CHROME_AHK)
+    })
+    fireEvent.focus(window)
+    // A recheck that did not wait would have seen the new bytes on disk by now.
+    await drain()
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
+    await act(async () => {
+      release()
+      expect(await saving).toBe('saved')
+    })
+    await drain()
+    await recheckCommands()
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
+    expect(saveButton('chrome.ahk').disabled).toBe(true)
+
+    // A save that starts while a recheck is scanning, and is still writing when the scan ends.
+    const read = folder.readBytes.bind(folder)
+    let reached = () => {}
+    const atScanGate = new Promise<void>((resolve) => (reached = resolve))
+    let releaseScan = () => {}
+    const scanGate = new Promise<void>((resolve) => (releaseScan = resolve))
+    let armed = true
+    folder.readBytes = async (path) => {
+      // automation.ahk is read before chrome.ahk, so the scan reads chrome.ahk after the write.
+      if (armed && path === 'ahk/commands/custom/automation.ahk') {
+        armed = false
+        reached()
+        await scanGate
+      }
+      return read(path)
+    }
+    let releaseWrite = () => {}
+    const writeGate = new Promise<void>((resolve) => (releaseWrite = resolve))
+    folder.writeBytes = async (path, data) => {
+      await write(path, data)
+      if (path === CHROME_AHK) await writeGate
+    }
+    let recheck: Promise<void> | undefined
+    await act(async () => {
+      recheck = seen.actions.recheckCommands()
+      await atScanGate
+    })
+    typeAt(0, ';')
+    act(() => {
+      saving = seen.actions.saveCommandFile(CHROME_AHK)
+    })
+    await act(async () => {
+      releaseScan()
+      await recheck
+    })
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
+    await act(async () => {
+      releaseWrite()
+      expect(await saving).toBe('saved')
+    })
+    expect(queryBanner()).toBeNull()
+    expect(saveButton('chrome.ahk').disabled).toBe(true)
+  })
+
+  it('a recheck that starts during a save waits for it, then picks up other outside edits', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const write = folder.writeBytes.bind(folder)
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    folder.writeBytes = async (path, data) => {
+      await write(path, data)
+      if (path === CHROME_AHK) await gate
+    }
+    typeAt(0, '; mine\n')
+    let saving: Promise<string> | undefined
+    act(() => {
+      saving = seen.actions.saveCommandFile(CHROME_AHK)
+    })
+    await write(SSH_AHK, enc.encode('Ssh(Macro)\n{\n}\n'))
+    fireEvent.focus(window)
+    await drain()
+    await act(async () => {
+      release()
+      expect(await saving).toBe('saved')
+    })
+    await drain()
+    expect(queryBanner()).toBeNull()
+    await user.click(pairButton('custom/ssh'))
+    await user.click(langButton('AutoHotkey'))
+    expect(text()).toBe('Ssh(Macro)\n{\n}\n')
+  })
+
+  it('a save that lands during a recheck keeps the saved version', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const lf = original.replaceAll('\r\n', '\n')
+    typeAt(0, '; mine\n')
+
+    // The recheck's scan pauses on a file it reads after chrome.ahk.
+    const read = folder.readBytes.bind(folder)
+    let armed = true
+    let reached = () => {}
+    const atGate = new Promise<void>((resolve) => (reached = resolve))
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    folder.readBytes = async (path) => {
+      const bytes = await read(path)
+      if (armed && path === 'ahk/commands/custom/examples.ahk') {
+        armed = false
+        reached()
+        await gate
+      }
+      return bytes
+    }
+    let recheck: Promise<void> | undefined
+    await act(async () => {
+      recheck = seen.actions.recheckCommands()
+      await atGate
+    })
+    // The scan already holds chrome.ahk as it was; now the save writes it.
+    await act(async () => {
+      expect(await seen.actions.saveCommandFile(CHROME_AHK)).toBe('saved')
+    })
+    await act(async () => {
+      release()
+      await recheck
+    })
+
+    expect(text()).toBe(`; mine\n${lf}`)
+    expect(saveButton('chrome.ahk').disabled).toBe(true)
+    expect(queryBanner()).toBeNull()
+    typeAt(0, ';')
+    await save(user, 'chrome.ahk')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(folder.text(CHROME_AHK)).toBe(`;; mine${eol}${original}`)
   })
 })

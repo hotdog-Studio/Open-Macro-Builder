@@ -11,6 +11,7 @@ export type PairTexts = Partial<Record<LangId, string>>
 /** A same-named function that is not a command because of its parameter. */
 export interface ParamMismatch {
   lang: LangId
+  /** The name as that language's own file spells it. */
   name: string
   line: number
   param: string
@@ -54,7 +55,7 @@ export function paramMismatches(texts: PairTexts): ParamMismatch[] {
       const fn = LANGUAGES[lang]
         .findFunctions(text)
         .find((f) => f.name.toLowerCase() === lower && f.params.length === 1 && !isCommand(f))
-      if (fn) found.push({ lang, name: entry.name, line: fn.line, param: fn.params[0] })
+      if (fn) found.push({ lang, name: fn.name, line: fn.line, param: fn.params[0] })
     }
   }
   return found

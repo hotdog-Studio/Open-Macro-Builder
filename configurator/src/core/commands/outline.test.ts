@@ -45,6 +45,11 @@ describe('paramMismatches', () => {
     expect(paramMismatches(texts)).toEqual([{ lang: 'ps', name: 'Foo', line: 1, param: 'amacrorgs' }])
   })
 
+  it('reports the spelling the language file itself uses', () => {
+    const texts = { ahk: 'Foo(Macro)\n{\n}\n', ps: 'function foo { param($x) }\n' }
+    expect(paramMismatches(texts)).toEqual([{ lang: 'ps', name: 'foo', line: 1, param: 'x' }])
+  })
+
   it('ignores a same-named helper with two parameters', () => {
     const texts = { ahk: 'Foo(Macro)\n{\n}\n', ps: 'function Foo { param($a, $b) }\n' }
     expect(paramMismatches(texts)).toEqual([])

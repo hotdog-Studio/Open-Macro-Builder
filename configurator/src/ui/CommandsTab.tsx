@@ -308,7 +308,7 @@ function Outline({ pair }: Readonly<{ pair: CommandPair }>) {
     const file = pair.files[m.lang]
     const current = texts[m.lang]
     if (!file || current === undefined) return
-    const fn = LANGUAGES[m.lang].findFunctions(current).find((f) => f.line === m.line && f.name === m.name)
+    const fn = LANGUAGES[m.lang].findFunctions(current).find((f) => f.line === m.line)
     if (!fn) return
     actions.editCommand(file.file.path, LANGUAGES[m.lang].renameParam(current, fn, 'Macro'), file.file.version)
     dispatch({ type: 'commands-show', lang: m.lang })

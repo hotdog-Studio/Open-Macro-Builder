@@ -1124,6 +1124,20 @@ describe('outline', () => {
     expect(text().startsWith('; one\n; two\n')).toBe(true)
   })
 
+  it('renames the parameter of a function spelled in another case than the other language', async () => {
+    const { user } = await start({
+      files: { [AHK]: 'Foo(Macro)\n{\n}\n', [PS]: 'function foo { param($amacrorgs) $amacrorgs }\n' },
+    })
+    expect(
+      within(outline()).getByText(
+        'PowerShell defines foo with the parameter "amacrorgs" instead of "Macro", so it does not count as a command.',
+      ),
+    ).toBeTruthy()
+    await user.click(within(outline()).getByRole('button', { name: 'Rename the parameter to Macro' }))
+    expect(editor().commands.drafts[PS]).toBe('function foo { param($Macro) $Macro }\n')
+    expect(saveButton('mine.ps1').disabled).toBe(false)
+  })
+
   it('offers to rename a misspelled parameter', async () => {
     const original = 'function Foo { param($amacrorgs) $amacrorgs }\n'
     const { user, folder } = await start({ files: { [AHK]: 'Foo(Macro)\n{\n}\n', [PS]: original } })

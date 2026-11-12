@@ -18,11 +18,14 @@ import {
   LANG_IDS,
   LANGUAGES,
   scanCommands,
+  type CommandFile,
   type LangId,
 } from '../core/languages'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
+import { createCommandActions } from './commandActions'
+import { mergeReloaded } from './commandsSlice'
 import type { Action, AppState, EditState, SaveDialog, Session } from './store'
 
 export type SaveResult = 'saved' | 'blocked' | 'conflict'
@@ -60,6 +63,14 @@ export interface AppActions {
   recheck(): Promise<void>
   /** Electron: restarts the running macropad from the after-save dialog; the dialog then shows what happened. */
   reloadMacropad(): Promise<void>
+  /**
+   * Saves the draft of one command file, checked against the version the app holds. 'blocked'
+   * without a draft, for a file that is not editable, or when the write failed; 'conflict' when
+   * the file changed on disk. `force` is Overwrite anyway: the disk's bytes go to <path>.bak first.
+   */
+  saveCommandFile(path: string, opts?: { force?: boolean }): Promise<SaveResult>
+  /** Reads one command file again, after a save of it finishes; its draft is dropped. */
+  reloadCommandFile(path: string): Promise<void>
 }
 
 /** The config file as the app last read or wrote it, with its folder. */
@@ -118,6 +129,11 @@ export function createActions(
    * an outside change. A new object for every load and save.
    */
   let held: Held | null = null
+  /**
+   * The command files as the app last read or wrote them, kept here for the same reason as
+   * `held`: a save's version check must never use a version React has not committed yet.
+   */
+  let commandFiles: CommandFile[] = []
   /** Stops the platform's watch of the held config file. */
   let stopWatch: (() => void) | null = null
   /** The save in progress; rechecks and reloads wait for it. */
@@ -131,12 +147,14 @@ export function createActions(
     stopWatch?.()
     stopWatch = null
     held = null
+    commandFiles = []
   }
 
-  /** Holds the config file and watches it, replacing the previous watch. */
-  function hold(folder: FolderAccess, configFile: TextFile): void {
+  /** Holds the config file and the command files, and watches the config file, replacing the previous watch. */
+  function hold(folder: FolderAccess, configFile: TextFile, files: CommandFile[]): void {
     forget()
     held = { folder, configFile }
+    commandFiles = files
     stopWatch = platform.watch?.([configFile.path], () => actions.recheck()) ?? null
   }
 
@@ -148,8 +166,21 @@ export function createActions(
   /** The editor opens on a loaded session. */
   function opened(session: Session, settings: Settings): void {
     dispatch({ type: 'loaded', session, settings })
-    hold(session.folder, session.configFile)
+    hold(session.folder, session.configFile, session.commandFiles)
   }
+
+  const commands = createCommandActions({
+    platform,
+    dispatch,
+    getState,
+    folder: () => held?.folder ?? null,
+    files: {
+      get: () => commandFiles,
+      set: (next) => {
+        commandFiles = next
+      },
+    },
+  })
 
   /** Counts the dialogs the save flow shows, so a slow macropad lookup can tell it was overtaken. */
   let dialogs = 0
@@ -401,14 +432,19 @@ export function createActions(
 
     async reloadFromDisk() {
       await saveDone()
+      await commands.settled()
       const file = held
       if (getState().screen !== 'edit' || !file) return
       const token = ++loads
       try {
         const session = await readSession(file.folder, file.configFile.path)
         if (token !== loads || held !== file) return
+        // Command files with unsaved edits keep the version they were edited on, as the reducer does.
+        const state = getState()
+        const drafts = state.screen === 'edit' ? state.commands.drafts : {}
+        const files = mergeReloaded(commandFiles, session.commandFiles, drafts)
         dispatch({ type: 'reloaded', session })
-        hold(session.folder, session.configFile)
+        hold(session.folder, session.configFile, files)
       } catch (e) {
         // The edits stay: a disk version that cannot be opened is no reason to lose them.
         if (token !== loads || held !== file) return
@@ -418,6 +454,9 @@ export function createActions(
     },
 
     reloadMacropad,
+
+    saveCommandFile: commands.saveCommandFile,
+    reloadCommandFile: commands.reloadCommandFile,
 
     async recheck() {
       await saveDone()

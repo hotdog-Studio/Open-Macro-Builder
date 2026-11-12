@@ -3,12 +3,13 @@ import type { KeyId, Workspace } from '../core/config/model'
 import { writeConfig } from '../core/config/write'
 import type { TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import type { CatalogEntry, CommandFile, LangId } from '../core/languages'
+import { commandCatalog, type CatalogEntry, type CommandFile, type LangId } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
 import { createActions, type AppActions } from './actions'
+import { commandsReducer, initialCommands, mergeReloaded, type CommandAction, type CommandsView } from './commandsSlice'
 
-export type Tab = 'shape' | 'layers' | 'macros'
+export type Tab = 'shape' | 'layers' | 'macros' | 'commands'
 
 export interface Banner {
   text: string
@@ -82,6 +83,7 @@ export interface EditCore extends Session {
   banner: Banner | null
   saveDialog: SaveDialog | null
   outsideChange: OutsideChange | null
+  commands: CommandsView
 }
 
 /** The editor as components see it. */
@@ -110,12 +112,13 @@ export type Action =
   | { type: 'settings'; settings: Settings }
   /** A save wrote `configFile`; `saved` is the workspace it holds. */
   | { type: 'saved'; configFile: TextFile; saved: Workspace }
-  /** Reload from disk: a fresh session, edits dropped; settings and tab stay. */
+  /** Reload from disk: a fresh session, edits to config.json dropped; settings, tab and command drafts stay. */
   | { type: 'reloaded'; session: Session }
   | { type: 'save-dialog'; dialog: SaveDialog | null }
   /** A recheck of the config file: `changed` when the disk holds another version than the app. */
   | { type: 'disk'; changed: boolean; version: string | null }
   | { type: 'dismiss-disk' }
+  | CommandAction
 
 export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
 
@@ -131,6 +134,7 @@ function loadedState(session: Session, settings: Settings): EditCore {
     banner: notices.length > 0 ? { text: notices.join('\n'), kind: 'info' } : null,
     saveDialog: null,
     outsideChange: null,
+    commands: initialCommands(settings),
   }
 }
 
@@ -161,14 +165,25 @@ function editReducer(state: EditCore, action: Action): EditCore {
     case 'saved':
       // The disk now holds what the app wrote, so an outside-change banner is out of date.
       return { ...state, configFile: action.configFile, saved: action.saved, outsideChange: null }
-    case 'reloaded':
-      return { ...loadedState(action.session, state.settings), tab: state.tab }
+    case 'reloaded': {
+      // The command files with unsaved edits keep them, and the version they were made on.
+      const commandFiles = mergeReloaded(state.commandFiles, action.session.commandFiles, state.commands.drafts)
+      const session = { ...action.session, commandFiles, catalog: commandCatalog(commandFiles) }
+      return { ...loadedState(session, state.settings), tab: state.tab, commands: state.commands }
+    }
     case 'save-dialog':
       return { ...state, saveDialog: action.dialog }
     case 'disk':
       return diskReducer(state, action.changed, action.version)
     case 'dismiss-disk':
       return state.outsideChange ? { ...state, outsideChange: { ...state.outsideChange, dismissed: true } } : state
+    case 'commands-show':
+    case 'draft':
+    case 'command-saved':
+    case 'command-file':
+    case 'command-dialog':
+    case 'jump':
+      return commandsReducer(state, action)
     default:
       return state
   }

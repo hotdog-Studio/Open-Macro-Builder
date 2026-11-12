@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useApp, useEditor } from '../state/store'
 import { Banner } from './Banner'
+import { CommandsTab } from './CommandsTab'
 import { Header } from './Header'
 import { LayersTab } from './LayersTab'
 import { MacrosTab } from './MacrosTab'
@@ -20,6 +21,7 @@ function Editor() {
         {state.tab === 'shape' && <ShapeTab />}
         {state.tab === 'layers' && <LayersTab />}
         {state.tab === 'macros' && <MacrosTab />}
+        {state.tab === 'commands' && <CommandsTab />}
       </div>
     </div>
   )
@@ -27,7 +29,7 @@ function Editor() {
 
 export function App() {
   const { state, actions } = useApp()
-  useUnsavedGuard(state.screen === 'edit' && state.dirty)
+  useUnsavedGuard(state.screen === 'edit' && (state.dirty || Object.keys(state.commands.drafts).length > 0))
   // On start: reopen the folder remembered from last time, if any.
   useEffect(() => {
     void actions.restore()

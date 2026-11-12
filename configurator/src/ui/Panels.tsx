@@ -20,11 +20,12 @@ export function CentrePanel({ children }: Readonly<{ children?: ReactNode }>) {
   return <main className="flex min-w-0 flex-1 flex-col items-center gap-3 overflow-auto p-5">{children}</main>
 }
 
-export function RightPanel({ children }: Readonly<{ children?: ReactNode }>) {
+/** `preview` adds the overlay preview under the details (the Commands tab has none). */
+export function RightPanel({ children, preview = true }: Readonly<{ children?: ReactNode; preview?: boolean }>) {
   return (
     <aside className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">
       {children}
-      <OverlayPreview />
+      {preview && <OverlayPreview />}
     </aside>
   )
 }

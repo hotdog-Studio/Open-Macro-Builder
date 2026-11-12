@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { LANG_IDS, LANGUAGES, type LangId } from '../core/languages'
 import { useEditor, type Tab } from '../state/store'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -7,12 +7,18 @@ const TABS: [Tab, string][] = [
   ['shape', 'Pad shape'],
   ['layers', 'Layers'],
   ['macros', 'Macros'],
+  ['commands', 'Commands'],
 ]
 
 export function Header() {
   const { state, dispatch, actions } = useEditor()
   const running = state.settings.languages
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // config.json first, then each command file with unsaved edits, in list order.
+  const unsaved = [
+    ...(state.dirty ? [state.configFile.path] : []),
+    ...state.commandFiles.map((f) => f.file.path).filter((path) => path in state.commands.drafts),
+  ]
 
   // Runs straight from a click: the browser's folder picker needs a user gesture.
   const openFolder = () => {
@@ -67,7 +73,7 @@ export function Header() {
       <button
         type="button"
         className="mr-2 rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-200 hover:bg-zinc-800"
-        onClick={() => (state.dirty ? setConfirmOpen(true) : openFolder())}
+        onClick={() => (unsaved.length > 0 ? setConfirmOpen(true) : openFolder())}
       >
         Open folder
       </button>
@@ -88,8 +94,14 @@ export function Header() {
           choices={[{ label: 'Discard and open', danger: true, onChoose: openFolder }]}
         >
           <p>
-            Your changes to <code className="font-mono">{state.configFile.path}</code> have not been saved. Opening
-            another folder discards them.
+            Your changes to{' '}
+            {unsaved.map((path, i) => (
+              <Fragment key={path}>
+                {i > 0 && ', '}
+                <code className="font-mono">{path}</code>
+              </Fragment>
+            ))}{' '}
+            have not been saved. Opening another folder discards them.
           </p>
         </ConfirmDialog>
       )}

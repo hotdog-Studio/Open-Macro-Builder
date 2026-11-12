@@ -265,9 +265,22 @@ describe('include listings', () => {
     )
   })
 
+  it('tells whether an include file loads a path, as removeListing matches it', () => {
+    const hub = '#Include *i Mine.AHK ; mine\n; #Include other.ahk\n#Include "sub/two.ahk"\n'
+    expect(ahk.isListed(hub, 'local/ahk/mine.ahk')).toBe(true)
+    expect(ahk.isListed(hub, 'local/ahk/sub/two.ahk')).toBe(true)
+    // A commented-out line loads nothing.
+    expect(ahk.isListed(hub, 'local/ahk/other.ahk')).toBe(false)
+    expect(ahk.isListed('', 'local/ahk/mine.ahk')).toBe(false)
+    expect(ahk.isListed(CONFIG_AHK, 'ahk/commands/custom/chrome.ahk')).toBe(true)
+    expect(ahk.isListed(CONFIG_AHK, 'ahk/commands/custom/new.ahk')).toBe(false)
+    expect(ahk.isListed(ahk.addListing(CONFIG_AHK, 'ahk/commands/custom/new.ahk'), 'ahk/commands/custom/new.ahk')).toBe(true)
+  })
+
   it('lists nothing for PowerShell', () => {
     expect(ps.addListing('x', 'local/powershell/commands/mine.ps1')).toBe('x')
     expect(ps.removeListing('x', 'local/powershell/commands/mine.ps1')).toBe('x')
+    expect(ps.isListed('', 'local/powershell/commands/mine.ps1')).toBe(true)
   })
 })
 

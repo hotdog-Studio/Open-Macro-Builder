@@ -1546,13 +1546,16 @@ describe('after a save', () => {
     const { state } = editorView()
     return state.doc.lineAt(state.selection.main.head).number
   }
+  const HUB = 'local/ahk/commands.ahk'
+  /** MINE, with mine.ahk listed in the hub, so AutoHotkey loads it. */
+  const LISTED = { ...MINE, [HUB]: '#Requires AutoHotkey v2.0\n#Include mine.ahk\n' }
 
   it('checks the syntax after saving and lists the problems', async () => {
     const answers: ((report: SyntaxReport) => void)[] = []
     const checkSyntax = vi.fn<NonNullable<Platform['checkSyntax']>>(
       () => new Promise<SyntaxReport>((resolve) => answers.push(resolve)),
     )
-    const { user } = await start({ files: MINE, platform: { kind: 'electron', checkSyntax } })
+    const { user } = await start({ files: LISTED, platform: { kind: 'electron', checkSyntax } })
     await user.click(pairButton('mine'))
     typeAt(0, '; x\n')
     await save(user, 'mine.ahk')
@@ -1608,7 +1611,7 @@ describe('after a save', () => {
   it('offers Reload macropad after saving a command file when one is running', async () => {
     const reloadMacropad = vi.fn(async (): Promise<LangId | null> => 'ahk')
     const { user } = await start({
-      files: MINE,
+      files: LISTED,
       platform: {
         kind: 'electron',
         findMacropad: async () => 'ahk',
@@ -1635,7 +1638,7 @@ describe('after a save', () => {
     const reloadMacropad = vi.fn(async (): Promise<LangId | null> => 'ahk')
     let report: SyntaxReport = { ok: false, problems: [{ path: AHK, line: 1, message: 'Missing "}"' }] }
     const { user } = await start({
-      files: MINE,
+      files: LISTED,
       platform: { kind: 'electron', findMacropad: async () => 'ahk', reloadMacropad, checkSyntax: async () => report },
     })
     await user.click(pairButton('mine'))
@@ -1659,7 +1662,7 @@ describe('after a save', () => {
 
   it('offers Reload macropad when there is no syntax check', async () => {
     const { user } = await start({
-      files: MINE,
+      files: LISTED,
       platform: { kind: 'electron', findMacropad: async () => 'ahk', reloadMacropad: async () => 'ahk' },
     })
     await user.click(pairButton('mine'))
@@ -1670,12 +1673,57 @@ describe('after a save', () => {
   })
 
   it('the browser says the desktop app can check syntax', async () => {
-    const { user } = await start({ files: MINE })
+    const { user } = await start({ files: LISTED })
     await user.click(pairButton('mine'))
     typeAt(0, '; x\n')
     await save(user, 'mine.ahk')
     expect(screen.getByText('The desktop app can also check the syntax when you save.')).toBeTruthy()
     expect(screen.queryByText('Checking syntax…')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Reload macropad' })).toBeNull()
+  })
+
+  describe('a file AutoHotkey does not load', () => {
+    const X = 'local/ahk/x.ahk'
+    const NOTE = `x.ahk is not included by ${HUB}, so AutoHotkey does not load it.`
+    const files = { [X]: 'X(Macro)\n{\n}\n', [HUB]: '#Requires AutoHotkey v2.0\n#Include other.ahk\n' }
+
+    it('says so after the save, in the browser too', async () => {
+      const { user, folder } = await start({ files })
+      await user.click(pairButton('x'))
+      typeAt(0, '; x\n')
+      await save(user, 'x.ahk')
+      // The save itself went through.
+      expect(folder.text(X)).toBe('; x\nX(Macro)\n{\n}\n')
+      expect(screen.getByText('Saved x.ahk.')).toBeTruthy()
+      expect(await screen.findByText(NOTE)).toBeTruthy()
+      expect(screen.queryByText('The desktop app can also check the syntax when you save.')).toBeNull()
+    })
+
+    it('says so instead of No syntax errors found, without a hub at all', async () => {
+      const { user } = await start({
+        files: { [X]: files[X] },
+        platform: { kind: 'electron', checkSyntax: async () => ({ ok: true }) },
+      })
+      await user.click(pairButton('x'))
+      typeAt(0, '; x\n')
+      await save(user, 'x.ahk')
+      expect(await screen.findByText(NOTE)).toBeTruthy()
+      expect(screen.queryByText('No syntax errors found.')).toBeNull()
+    })
+
+    it('reads the hub fresh after the save: a listed file has no note', async () => {
+      const { user, folder } = await start({
+        files,
+        platform: { kind: 'electron', checkSyntax: async () => ({ ok: true }) },
+      })
+      await user.click(pairButton('x'))
+      typeAt(0, '; x\n')
+      // Another program lists the file after the folder was read.
+      await folder.writeBytes(HUB, enc.encode('#Requires AutoHotkey v2.0\n#Include other.ahk\n#Include X.AHK\n'))
+      await save(user, 'x.ahk')
+      // The check's answer comes with the hub's, so once it shows, the hub has been read.
+      expect(await screen.findByText('No syntax errors found.')).toBeTruthy()
+      expect(screen.queryByText(NOTE)).toBeNull()
+    })
   })
 })

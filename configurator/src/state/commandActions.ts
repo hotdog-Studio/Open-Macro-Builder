@@ -5,6 +5,7 @@ import {
   currentVersion,
   newTextFile,
   readTextFile,
+  readTextFileLenient,
   writeTextFile,
   type TextFile,
 } from '../core/folder/textFile'
@@ -192,14 +193,33 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
   }
 
   /**
-   * After save number `n` of `path`: its syntax check and the macropad lookup, in the background, so
-   * neither holds up or fails the save. The reducer drops a result once another save, an edit, a
-   * reload or a delete of the file came first.
+   * The include file that should list `path` but does not, read fresh; null when it lists it, when
+   * nothing needs to, or when it cannot be read (the save already went through; this is only a note).
+   */
+  async function unlistedIn(folder: FolderAccess | null, lang: LangId, path: string): Promise<string | null> {
+    const language = LANGUAGES[lang]
+    const listPath = language.listedIn(path)
+    if (!folder || listPath === null) return null
+    try {
+      const include = await readTextFileLenient(folder, listPath)
+      return include !== null && language.isListed(include.file.text, path) ? null : listPath
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * After save number `n` of `path`: its syntax check, whether its include file loads it, and the
+   * macropad lookup, in the background, so none holds up or fails the save. The check and the
+   * include file are reported together, so the check never says a file is fine before the note that
+   * it is not loaded. The reducer drops a result once another save, an edit, a reload or a delete of
+   * the file came first.
    */
   function checkSaved(path: string, lang: LangId, n: number): void {
     const report = (result: Partial<Omit<AfterSave, 'n'>>) => dispatch({ type: 'command-after-save', path, n, result })
-    void syntaxReport(lang, path).then((check) => {
-      if (check) report({ check })
+    void Promise.all([syntaxReport(lang, path), unlistedIn(deps.folder(), lang, path)]).then(([check, unlisted]) => {
+      if (check) report({ check, unlisted })
+      else if (unlisted) report({ unlisted })
     })
     void deps.macropad.find().then((macropad) => {
       if (macropad) report({ macropad })

@@ -174,14 +174,21 @@ function addSharedInclude(lines: string[], path: string, eol: string): string {
   return out.join('')
 }
 
+/** Whether a line of the include file loads `path`, matched as removeListing matches it. */
+function isListed(includeText: string, path: string): boolean {
+  const at = listedIn(path)
+  if (at === null) return true
+  const target = path.toLowerCase()
+  return linesOf(includeText).some((l) => includeTarget(l, dirOf(at)) === target)
+}
+
 function addListing(includeText: string | null, path: string): string {
   const at = listedIn(path)
   if (at === null) return includeText ?? ''
   if (at === HUB && includeText === null) return `${HUB_HEADER}#Include ${below(HUB_DIR, path)}\n`
   const text = includeText ?? ''
   const lines = linesOf(text)
-  const target = path.toLowerCase()
-  if (lines.some((l) => includeTarget(l, dirOf(at)) === target)) return text
+  if (isListed(text, path)) return text
   const eol = text.includes('\r\n') ? '\r\n' : '\n'
   if (at === CONFIG) return addSharedInclude(lines, path, eol)
   // The hub: appended, keeping the file's habit of ending with a newline or not.
@@ -223,6 +230,7 @@ export const ahk: Language = {
     )
   },
   listedIn,
+  isListed,
   addListing,
   removeListing,
 }

@@ -92,6 +92,7 @@ export const ps: Language = {
   },
   // PowerShell loads every file in its command folders: no include file lists them.
   listedIn: () => null,
+  isListed: () => true,
   addListing: (includeText) => includeText ?? '',
   removeListing: (includeText) => includeText,
 }

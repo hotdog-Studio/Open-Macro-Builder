@@ -25,6 +25,12 @@ export interface AfterSave {
   macropad: LangId | null
   /** What came of pressing Reload macropad. */
   note: string | null
+  /**
+   * The include file that should load the saved file but does not, read fresh after the save; null
+   * when it does, or where nothing needs to. The runtime does not load the file, and the syntax
+   * check never reads it.
+   */
+  unlisted: string | null
 }
 
 /** The Commands tab as the reducer keeps it. */
@@ -175,7 +181,7 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
           drafts,
           // The disk now holds what the app wrote.
           outside: without(c.outside, path),
-          saved: { ...c.saved, [path]: { n: action.n, check: action.check, macropad: null, note: null } },
+          saved: { ...c.saved, [path]: { n: action.n, check: action.check, macropad: null, note: null, unlisted: null } },
         },
       }
     }

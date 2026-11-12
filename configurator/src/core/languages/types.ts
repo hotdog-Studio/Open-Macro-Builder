@@ -32,6 +32,8 @@ export interface Language {
   starterCommand(name: string, description: string): string
   /** The include file that must list the command file at `path`; null when the runtime loads every file itself. */
   listedIn(path: string): string | null
+  /** Whether the include file's text has a line that loads `path`; always true where listedIn is null. */
+  isListed(includeText: string, path: string): boolean
   /**
    * The include file's text with a line that loads `path` (null: the include file does not exist
    * yet). Unchanged when `path` is already listed. Throws when there is no place for the line.

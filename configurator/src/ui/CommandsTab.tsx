@@ -188,10 +188,20 @@ function CheckResult({ pair, saved, check }: Readonly<{ pair: CommandPair; saved
 }
 
 /** The status line under the editor after a save: Saved, Reload macropad, and the syntax check. */
-function SaveStatus({ pair, path, after }: Readonly<{ pair: CommandPair; path: string; after: AfterSave }>) {
+function SaveStatus({
+  pair,
+  path,
+  label,
+  after,
+}: Readonly<{ pair: CommandPair; path: string; label: string; after: AfterSave }>) {
   const { actions } = useEditor()
+  const { check, unlisted } = after
+  const report = typeof check === 'object' && check !== null && 'ok' in check ? check : null
   // The check found problems: reloading now may stop the macropad, so the button says so.
-  const problems = typeof after.check === 'object' && after.check !== null && 'ok' in after.check && !after.check.ok
+  const problems = report?.ok === false
+  // A file the runtime does not load is never read by the check, so "No syntax errors found." (or
+  // the browser's offer of a check) would mislead; the note takes its place.
+  const quiet = unlisted !== null && (check === null || report?.ok === true)
   return (
     <div className="space-y-1 border-t border-zinc-800 px-4 py-1.5 text-[12px]">
       <div className="flex items-center gap-3">
@@ -206,7 +216,10 @@ function SaveStatus({ pair, path, after }: Readonly<{ pair: CommandPair; path: s
         {after.note && <p className="text-zinc-300">{after.note}</p>}
       </div>
       <div aria-live="polite">
-        <CheckResult pair={pair} saved={path} check={after.check} />
+        {unlisted && (
+          <p className="text-amber-200">{`${fileName(path)} is not included by ${unlisted}, so ${label} does not load it.`}</p>
+        )}
+        {!quiet && <CheckResult pair={pair} saved={path} check={check} />}
       </div>
     </div>
   )
@@ -287,7 +300,7 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
           onSave={() => void actions.saveCommandFile(path)}
         />
       </div>
-      {saved[path] && <SaveStatus pair={pair} path={path} after={saved[path]} />}
+      {saved[path] && <SaveStatus pair={pair} path={path} label={label} after={saved[path]} />}
       {confirmReload && (
         <ConfirmDialog
           title={`Discard your changes to ${name}?`}

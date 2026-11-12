@@ -116,10 +116,15 @@ export function listProcesses(): Promise<ProcInfo[]> {
   })
 }
 
-/** AutoHotkey v2 in the places its installer uses. */
-export function autoHotkeyInstalled(env: NodeJS.ProcessEnv): boolean {
+/** AutoHotkey v2 in the first of the places its installer uses where it exists; null when in none. */
+export function findAutoHotkey(env: NodeJS.ProcessEnv): string | null {
   const candidates: string[] = []
   if (env.ProgramFiles) candidates.push(join(env.ProgramFiles, 'AutoHotkey', 'v2', 'AutoHotkey64.exe'))
   if (env.LOCALAPPDATA) candidates.push(join(env.LOCALAPPDATA, 'Programs', 'AutoHotkey', 'v2', 'AutoHotkey64.exe'))
-  return candidates.some((file) => existsSync(file))
+  return candidates.find((file) => existsSync(file)) ?? null
+}
+
+/** AutoHotkey v2 in the places its installer uses. */
+export function autoHotkeyInstalled(env: NodeJS.ProcessEnv): boolean {
+  return findAutoHotkey(env) !== null
 }

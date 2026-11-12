@@ -1,9 +1,11 @@
 import { dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { realpathSync } from 'node:fs'
 import { CHANNELS } from './channels'
-import { autoHotkeyInstalled, findMacropad, listProcesses, relaunch, type FoundMacropad } from './macropad'
-import { NodeFolder } from './nodeFolder'
+import type { LangId } from '../src/core/languages'
+import { autoHotkeyInstalled, findAutoHotkey, findMacropad, listProcesses, relaunch, type FoundMacropad } from './macropad'
+import { NodeFolder, resolveInside } from './nodeFolder'
 import { forgetLastFolder, restoreLastFolder, saveLastFolder } from './store'
+import { checkSyntax } from './syntax'
 import { watchFiles } from './watch'
 
 function text(value: unknown): string {
@@ -14,6 +16,11 @@ function text(value: unknown): string {
 function texts(value: unknown): string[] {
   if (!Array.isArray(value)) throw new TypeError('Expected a list of paths')
   return value.map(text)
+}
+
+function lang(value: unknown): LangId {
+  if (value !== 'ahk' && value !== 'ps') throw new TypeError('Expected a language')
+  return value
 }
 
 function bytes(value: unknown): Uint8Array {
@@ -107,6 +114,20 @@ export function registerIpc(win: BrowserWindow, storeFile: string): () => void {
     if (!running) return null
     relaunch(running.found, running.root)
     return running.found.lang
+  })
+  handle(CHANNELS.checkSyntax, async (which, rel) => {
+    const language = lang(which)
+    const path = text(rel)
+    const { root } = opened()
+    // Confined to the opened folder before anything runs (checkSyntax resolves it again).
+    resolveInside(root, path)
+    let ahkExe: string | null | undefined
+    if (language === 'ahk') {
+      // The AutoHotkey the macropad runs on, else the installed one.
+      const running = await runningMacropad().catch(() => null)
+      ahkExe = running?.found.lang === 'ahk' ? running.found.exe : findAutoHotkey(process.env)
+    }
+    return checkSyntax(language, root, path, { ahkExe })
   })
   handle(CHANNELS.installedLanguages, () => {
     if (process.platform !== 'win32') return []

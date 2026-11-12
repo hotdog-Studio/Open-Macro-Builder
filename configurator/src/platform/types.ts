@@ -8,6 +8,16 @@ export type Restore =
   | { lost: string }
   | null
 
+/** One problem a syntax check found; path is folder-relative with /, or as the checker printed it. */
+export interface SyntaxProblem {
+  path: string | null
+  line: number | null
+  message: string
+}
+
+/** What a syntax check found, or why it did not run. */
+export type SyntaxReport = { ok: true } | { ok: false; problems: SyntaxProblem[] } | { skipped: string }
+
 export interface Platform {
   kind: 'browser' | 'electron'
   /** Resolves to null when the user cancels. */
@@ -24,4 +34,6 @@ export interface Platform {
   findMacropad?(): Promise<LangId | null>
   reloadMacropad?(): Promise<LangId | null>
   installedLanguages?(): Promise<LangId[]>
+  /** Checks the syntax of a saved command file; `path` is relative to the opened folder. */
+  checkSyntax?(lang: LangId, path: string): Promise<SyntaxReport>
 }

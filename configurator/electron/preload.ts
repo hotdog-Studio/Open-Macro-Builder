@@ -21,6 +21,7 @@ const bridge: OmbBridge = {
   findMacropad: () => ipcRenderer.invoke(CHANNELS.findMacropad),
   reloadMacropad: () => ipcRenderer.invoke(CHANNELS.reloadMacropad),
   installedLanguages: () => ipcRenderer.invoke(CHANNELS.installedLanguages),
+  checkSyntax: (lang, rel) => ipcRenderer.invoke(CHANNELS.checkSyntax, lang, rel),
 }
 
 contextBridge.exposeInMainWorld('omb', bridge)

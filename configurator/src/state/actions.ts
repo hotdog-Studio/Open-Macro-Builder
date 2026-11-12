@@ -16,7 +16,6 @@ import {
   commandFileNotices,
   definedNames,
   LANG_IDS,
-  LANGUAGES,
   scanCommands,
   type CommandFile,
   type LangId,
@@ -26,6 +25,7 @@ import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
 import { createCommandActions } from './commandActions'
 import { mergeAfterRead } from './commandsSlice'
+import { createMacropadActions } from './macropad'
 import type { Action, AppState, EditState, SaveDialog, Session } from './store'
 
 export type SaveResult = 'saved' | 'blocked' | 'conflict'
@@ -63,6 +63,11 @@ export interface AppActions {
   recheck(): Promise<void>
   /** Electron: restarts the running macropad from the after-save dialog; the dialog then shows what happened. */
   reloadMacropad(): Promise<void>
+  /**
+   * Electron: Reload macropad in a command file's status line, after a save of `path`; the status
+   * line then shows what happened, as long as it still shows that save.
+   */
+  reloadMacropadFor(path: string): Promise<void>
   /**
    * Every edit the user makes to a command file: records the draft here first, so saves and
    * reloads see it before React commits it, then dispatches 'draft'. Ignored for a file that is
@@ -168,9 +173,12 @@ export function createActions(
    * `held`: a save's version check must never use a version React has not committed yet.
    */
   let commandFiles: CommandFile[] = []
+  /** Finds and reloads the running macropad, for config.json's save and the command files'. */
+  const macropad = createMacropadActions(platform)
   /** Saves and reloads command files; keeps its own copy of the drafts, ahead of React's commit too. */
   const commands = createCommandActions({
     platform,
+    macropad,
     dispatch,
     getState,
     folder: () => held?.folder ?? null,
@@ -250,14 +258,10 @@ export function createActions(
    * holds up the save, and gives up when another save or dialog came first.
    */
   async function offerReload(mine: Held, warnings: string[], shown: number): Promise<void> {
-    if (!platform.findMacropad) return
-    let macropad: LangId | null
-    try {
-      macropad = await platform.findMacropad()
-    } catch {
-      return // Not finding it only means no Reload button; the save itself succeeded.
+    const running = await macropad.find()
+    if (running && held === mine && dialogs === shown) {
+      showDialog({ kind: 'saved', warnings, macropad: running, note: null })
     }
-    if (macropad && held === mine && dialogs === shown) showDialog({ kind: 'saved', warnings, macropad, note: null })
   }
 
   async function trySave(force: boolean): Promise<SaveResult> {
@@ -301,8 +305,6 @@ export function createActions(
     return 'saved'
   }
 
-  let reloading = false
-
   /** The after-save dialog when it is open. */
   const openSavedDialog = () => {
     const state = getState()
@@ -311,19 +313,10 @@ export function createActions(
 
   async function reloadMacropad(): Promise<void> {
     const dialog = openSavedDialog()
-    if (reloading || !dialog?.macropad || !platform.reloadMacropad) return
-    reloading = true
-    let note: string
-    try {
-      const lang = await platform.reloadMacropad()
-      note = lang ? `Reloaded the ${LANGUAGES[lang].label} macropad.` : 'No running macropad was found to reload.'
-    } catch (e) {
-      note = `The macropad was not reloaded: ${messageOf(e)}`
-    } finally {
-      reloading = false
-    }
+    if (!dialog?.macropad) return
+    const note = await macropad.reload()
     // Only if the dialog is still the one that offered the reload.
-    if (openSavedDialog() === dialog) showDialog({ ...dialog, macropad: null, note })
+    if (note !== null && openSavedDialog() === dialog) showDialog({ ...dialog, macropad: null, note })
   }
 
   /** Settings to use without asking, or null when the user has to choose. */
@@ -510,6 +503,7 @@ export function createActions(
     },
 
     reloadMacropad,
+    reloadMacropadFor: commands.reloadMacropadFor,
 
     editCommand: commands.editCommand,
     saveCommandFile: commands.saveCommandFile,

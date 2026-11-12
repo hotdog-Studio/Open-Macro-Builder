@@ -2,6 +2,7 @@ import { commandPairs, type CommandPair } from '../core/commands/pairs'
 import { commandCatalog, mergeRescan, withCommandFile, type CommandFile, type LangId } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { TextFile } from '../core/folder/textFile'
+import type { SyntaxReport } from '../platform/types'
 import type { EditCore } from './store'
 
 /** The dialog of a command file save that is open, if any. */
@@ -13,8 +14,17 @@ export type CommandDialog =
 
 /** What came of the last save of a file. */
 export interface AfterSave {
-  /** Counts the saves of the file, so a later save is told apart from an earlier one. */
+  /**
+   * Numbers the save, uniquely across saves, so a background result of an earlier save is told
+   * apart from this one's and dropped.
+   */
   n: number
+  /** The syntax check: running, its report, or null where there is none (the browser). */
+  check: 'running' | SyntaxReport | null
+  /** The running macropad that Reload macropad would restart (Electron only). */
+  macropad: LangId | null
+  /** What came of pressing Reload macropad. */
+  note: string | null
 }
 
 /** The Commands tab as the reducer keeps it. */
@@ -42,9 +52,14 @@ export type CommandAction =
    * draft was started on (the actions keep it from the draft's first edit).
    */
   | { type: 'draft'; path: string; text: string; base: string | null }
-  /** A save wrote `file`. */
-  | { type: 'command-saved'; file: CommandFile }
-  /** A reload of one file; null when it is gone. */
+  /** Save number `n` wrote `file`; `check` is 'running' when a syntax check started for it. */
+  | { type: 'command-saved'; file: CommandFile; n: number; check: 'running' | null }
+  /**
+   * A background result of save number `n` of `path` (its syntax check, the running macropad, a
+   * reload's note). Applied only while that save is still the last one shown for the path.
+   */
+  | { type: 'command-after-save'; path: string; n: number; result: Partial<Omit<AfterSave, 'n'>> }
+  /** A reload of one file, which also ends what its last save reported; null when it is gone. */
   | { type: 'command-file'; path: string; file: CommandFile | null }
   /**
    * A recheck of the folder: the command files as the actions merged them (files with unsaved
@@ -160,9 +175,15 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
           drafts,
           // The disk now holds what the app wrote.
           outside: without(c.outside, path),
-          saved: { ...c.saved, [path]: { n: (c.saved[path]?.n ?? 0) + 1 } },
+          saved: { ...c.saved, [path]: { n: action.n, check: action.check, macropad: null, note: null } },
         },
       }
+    }
+    case 'command-after-save': {
+      const was = c.saved[action.path]
+      // A later save, an edit, a reload or a delete of the file came first: that one decides.
+      if (was?.n !== action.n) return state
+      return { ...state, commands: { ...c, saved: { ...c.saved, [action.path]: { ...was, ...action.result } } } }
     }
     case 'command-file':
       return {
@@ -173,8 +194,8 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
           drafts: without(c.drafts, action.path),
           outside: without(c.outside, action.path),
           dialog: c.dialog?.path === action.path ? null : c.dialog,
-          // A file that is gone no longer has a last save to report.
-          saved: action.file ? c.saved : without(c.saved, action.path),
+          // The file now holds what the disk holds, or is gone: its last save no longer reports on it.
+          saved: without(c.saved, action.path),
         },
       }
     case 'command-files': {

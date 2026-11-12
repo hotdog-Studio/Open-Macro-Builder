@@ -1,7 +1,7 @@
 import { normalizePath } from '../core/folder/path'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
 import type { LangId } from '../core/languages'
-import type { Platform } from './types'
+import type { Platform, SyntaxReport } from './types'
 
 /**
  * What the Electron preload exposes as `window.omb`. Paths are relative to the
@@ -23,6 +23,7 @@ export interface OmbBridge {
   findMacropad(): Promise<LangId | null>
   reloadMacropad(): Promise<LangId | null>
   installedLanguages(): Promise<LangId[]>
+  checkSyntax(lang: LangId, rel: string): Promise<SyntaxReport>
 }
 
 /**
@@ -89,5 +90,7 @@ export function createElectronPlatform(bridge: OmbBridge): Platform {
     findMacropad: () => bridge.findMacropad(),
     reloadMacropad: () => bridge.reloadMacropad(),
     installedLanguages: () => bridge.installedLanguages(),
+    // Normalised here too, so a bad path fails before it reaches the main process.
+    checkSyntax: async (lang, path) => bridge.checkSyntax(lang, normalizePath(path)),
   }
 }

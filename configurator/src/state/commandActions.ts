@@ -21,13 +21,16 @@ import {
   type LangId,
   type Language,
 } from '../core/languages'
-import type { Platform } from '../platform/types'
+import type { Platform, SyntaxReport } from '../platform/types'
 import type { AppActions, SaveResult } from './actions'
-import { draftDone } from './commandsSlice'
+import { draftDone, type AfterSave } from './commandsSlice'
+import type { MacropadActions } from './macropad'
 import type { Action, AppState } from './store'
 
 export interface CommandDeps {
   platform: Platform
+  /** Finds and reloads the running macropad, as config.json's save does. */
+  macropad: MacropadActions
   dispatch: (a: Action) => void
   getState: () => AppState
   /** The open folder; null once closed or replaced. */
@@ -48,6 +51,7 @@ export type CommandActions = Pick<
   | 'createCommandFiles'
   | 'createMissingFile'
   | 'deleteCommandFile'
+  | 'reloadMacropadFor'
 > & {
   /** Resolves once no command file is being saved, however the saves ended. */
   settled(): Promise<void>
@@ -128,6 +132,9 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
    */
   const written = new Map<string, { from: string | null; to: string | null; entry: CommandFile }>()
 
+  /** Numbers the saves, so a background result of one save is never taken for another's. */
+  let saveCount = 0
+
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
   const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
 
@@ -171,6 +178,32 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const list = same ? snapshot : next
     if (!same) files.set(list)
     dispatch({ type: 'command-files', files: list, changed })
+  }
+
+  /** The platform's syntax check of a saved file; null without one. A check that fails says why. */
+  async function syntaxReport(lang: LangId, path: string): Promise<SyntaxReport | null> {
+    const { platform } = deps
+    if (!platform.checkSyntax) return null
+    try {
+      return await platform.checkSyntax(lang, path)
+    } catch (e) {
+      return { skipped: messageOf(e) }
+    }
+  }
+
+  /**
+   * After save number `n` of `path`: its syntax check and the macropad lookup, in the background, so
+   * neither holds up or fails the save. The reducer drops a result once another save, an edit, a
+   * reload or a delete of the file came first.
+   */
+  function checkSaved(path: string, lang: LangId, n: number): void {
+    const report = (result: Partial<Omit<AfterSave, 'n'>>) => dispatch({ type: 'command-after-save', path, n, result })
+    void syntaxReport(lang, path).then((check) => {
+      if (check) report({ check })
+    })
+    void deps.macropad.find().then((macropad) => {
+      if (macropad) report({ macropad })
+    })
   }
 
   /** The base of an edit that starts a draft: the written version when it was made on a save's text. */
@@ -228,7 +261,9 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const after = drafts.get(path)
     if (after?.text === saved.text) drafts.delete(path)
     else if (after) drafts.set(path, { text: after.text, base: saved.version })
-    dispatch({ type: 'command-saved', file })
+    const n = ++saveCount
+    dispatch({ type: 'command-saved', file, n, check: deps.platform.checkSyntax ? 'running' : null })
+    checkSaved(path, held.lang, n)
     return 'saved'
   }
 
@@ -378,6 +413,15 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       written.delete(path)
       dispatch({ type: 'command-file', path, file: null })
       return null
+    },
+
+    async reloadMacropadFor(path) {
+      const state = deps.getState()
+      const last = state.screen === 'edit' ? state.commands.saved[path] : undefined
+      if (!last?.macropad) return
+      const note = await deps.macropad.reload()
+      // Shown only while the status line still shows that save.
+      if (note !== null) dispatch({ type: 'command-after-save', path, n: last.n, result: { macropad: null, note } })
     },
 
     settled,

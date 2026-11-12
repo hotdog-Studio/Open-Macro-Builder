@@ -10,6 +10,7 @@ export const CHANNELS = {
   findMacropad: 'omb:find-macropad',
   reloadMacropad: 'omb:reload-macropad',
   installedLanguages: 'omb:installed-languages',
+  checkSyntax: 'omb:check-syntax',
   /** Main to page: a watched file changed. */
   changed: 'omb:changed',
 } as const

@@ -41,6 +41,10 @@ function fakeBridge(opts: { open?: string | null; restore?: string | null | { lo
     findMacropad: async () => null,
     reloadMacropad: async () => null,
     installedLanguages: async () => [],
+    checkSyntax: async (lang, rel) => {
+      calls.push(`check ${lang} ${rel}`)
+      return { ok: false, problems: [{ path: rel, line: 3, message: 'Missing "}"' }] }
+    },
   }
   const emit = (rel: string) => listeners.forEach((cb) => cb(rel))
   return { bridge, disk, calls, watched, listeners, emit }
@@ -116,5 +120,18 @@ describe('createElectronPlatform', () => {
     expect(await platform.findMacropad!()).toBeNull()
     expect(await platform.reloadMacropad!()).toBeNull()
     expect(await platform.installedLanguages!()).toEqual([])
+  })
+
+  it('checkSyntax goes through the bridge', async () => {
+    const { bridge, calls } = fakeBridge()
+    const platform = createElectronPlatform(bridge)
+    expect(await platform.checkSyntax!('ps', 'local\\powershell\\commands\\mine.ps1')).toEqual({
+      ok: false,
+      problems: [{ path: 'local/powershell/commands/mine.ps1', line: 3, message: 'Missing "}"' }],
+    })
+    expect(calls).toEqual(['check ps local/powershell/commands/mine.ps1'])
+    // A path outside the folder never reaches the main process.
+    await expect(platform.checkSyntax!('ahk', '../x.ahk')).rejects.toBeInstanceOf(PathError)
+    expect(calls).toHaveLength(1)
   })
 })

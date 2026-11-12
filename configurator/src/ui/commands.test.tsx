@@ -8,7 +8,7 @@ import { renameKey } from '../core/config/ops'
 import type { MemoryFolder } from '../core/folder/memory'
 import { isCommand, LANGUAGES, type LangId } from '../core/languages'
 import { SETTINGS_PATH } from '../core/settings'
-import type { Platform } from '../platform/types'
+import type { Platform, SyntaxReport } from '../platform/types'
 import { AppProvider, useApp } from '../state/store'
 import { editorView, replaceAll, typeAt, undo } from '../../test/codeEditor'
 import { memoryFolderFromRepo, readRepoText } from '../../test/repo'
@@ -1519,5 +1519,108 @@ describe('new command', () => {
     // No PowerShell file for the pair either.
     await user.click(langButton('PowerShell'))
     expect(newCommandButton().disabled).toBe(true)
+  })
+})
+
+describe('after a save', () => {
+  const AHK = 'local/ahk/mine.ahk'
+  const PS = 'local/powershell/commands/mine.ps1'
+  const cursorLine = () => {
+    const { state } = editorView()
+    return state.doc.lineAt(state.selection.main.head).number
+  }
+
+  it('checks the syntax after saving and lists the problems', async () => {
+    const answers: ((report: SyntaxReport) => void)[] = []
+    const checkSyntax = vi.fn<NonNullable<Platform['checkSyntax']>>(
+      () => new Promise<SyntaxReport>((resolve) => answers.push(resolve)),
+    )
+    const { user } = await start({ files: MINE, platform: { kind: 'electron', checkSyntax } })
+    await user.click(pairButton('mine'))
+    typeAt(0, '; x\n')
+    await save(user, 'mine.ahk')
+    expect(checkSyntax).toHaveBeenCalledWith('ahk', AHK)
+    expect(screen.getByText('Saved mine.ahk.')).toBeTruthy()
+    expect(screen.getByText('Checking syntax…')).toBeTruthy()
+
+    // A later save wins: the first check's answer comes too late and is dropped.
+    typeAt(0, ';')
+    expect(screen.queryByText('Checking syntax…')).toBeNull()
+    await save(user, 'mine.ahk')
+    expect(checkSyntax).toHaveBeenCalledTimes(2)
+    await act(async () => answers[0]({ ok: true }))
+    expect(screen.queryByText('No syntax errors found.')).toBeNull()
+    expect(screen.getByText('Checking syntax…')).toBeTruthy()
+
+    await act(async () =>
+      answers[1]({
+        ok: false,
+        problems: [
+          { path: AHK, line: 3, message: 'Missing "}"' },
+          { path: 'ahk/main.ahk', line: 7, message: 'Unexpected "{"' },
+          { path: null, line: null, message: 'Something odd' },
+        ],
+      }),
+    )
+    expect(screen.queryByText('Checking syntax…')).toBeNull()
+    // Only a problem in a file of the shown pair is a button.
+    expect(screen.getByText('ahk/main.ahk Line 7: Unexpected "{"').closest('button')).toBeNull()
+    expect(screen.getByText('Something odd').closest('button')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Line 3: Missing "}"' }))
+    expect(cursorLine()).toBe(3)
+
+    // A problem in the pair's other file shows that file first, then jumps.
+    await user.click(langButton('PowerShell'))
+    typeAt(0, '# x\n')
+    await save(user, 'mine.ps1')
+    expect(checkSyntax).toHaveBeenLastCalledWith('ps', PS)
+    await act(async () => answers[2]({ ok: false, problems: [{ path: AHK, line: 2, message: 'Missing "{"' }] }))
+    await user.click(screen.getByRole('button', { name: `${AHK} Line 2: Missing "{"` }))
+    expect(langButton('AutoHotkey').getAttribute('aria-pressed')).toBe('true')
+    expect(cursorLine()).toBe(2)
+
+    // A check that fails says why instead.
+    checkSyntax.mockImplementationOnce(async () => {
+      throw new Error('The bridge went away')
+    })
+    typeAt(0, ';')
+    await save(user, 'mine.ahk')
+    expect(await screen.findByText('The bridge went away')).toBeTruthy()
+  })
+
+  it('offers Reload macropad after saving a command file when one is running', async () => {
+    const reloadMacropad = vi.fn(async (): Promise<LangId | null> => 'ahk')
+    const { user } = await start({
+      files: MINE,
+      platform: {
+        kind: 'electron',
+        findMacropad: async () => 'ahk',
+        reloadMacropad,
+        checkSyntax: async () => ({ ok: true }),
+      },
+    })
+    await user.click(pairButton('mine'))
+    typeAt(0, '; x\n')
+    await save(user, 'mine.ahk')
+    const reload = await screen.findByRole('button', { name: 'Reload macropad' })
+    expect(await screen.findByText('No syntax errors found.')).toBeTruthy()
+    expect(reloadMacropad).not.toHaveBeenCalled()
+    // No dialog: the offer sits in the status line under the editor.
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await user.click(reload)
+    expect(reloadMacropad).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Reloaded the AutoHotkey macropad.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reload macropad' })).toBeNull()
+  })
+
+  it('the browser says the desktop app can check syntax', async () => {
+    const { user } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    typeAt(0, '; x\n')
+    await save(user, 'mine.ahk')
+    expect(screen.getByText('The desktop app can also check the syntax when you save.')).toBeTruthy()
+    expect(screen.queryByText('Checking syntax…')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reload macropad' })).toBeNull()
   })
 })

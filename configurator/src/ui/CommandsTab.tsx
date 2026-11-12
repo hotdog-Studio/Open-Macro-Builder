@@ -5,7 +5,8 @@ import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '.
 import { keysUsing } from '../core/commands/usage'
 import { EncodingError } from '../core/folder/textFile'
 import { definedNames, isCommand, LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
-import { shownPair, type CommandDialog } from '../state/commandsSlice'
+import type { SyntaxProblem } from '../platform/types'
+import { shownPair, type AfterSave, type CommandDialog } from '../state/commandsSlice'
 import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -145,6 +146,70 @@ function DeleteDialog({ file, onClose }: Readonly<{ file: CommandFile; onClose: 
   )
 }
 
+/**
+ * One problem the syntax check found: `Line <n>: <message>`, after its path when it is in another
+ * file than the one saved. A problem in a file of the shown pair is a button that jumps to it.
+ */
+function ProblemRow({ pair, saved, problem }: Readonly<{ pair: CommandPair; saved: string; problem: SyntaxProblem }>) {
+  const { dispatch } = useEditor()
+  const { path, line, message } = problem
+  const where = path !== null && path !== saved ? `${path} ` : ''
+  const label = line === null ? `${where}${message}` : `${where}Line ${line}: ${message}`
+  const lang = LANG_IDS.find((l) => path !== null && pair.files[l]?.file.path === path)
+  if (path === null || line === null || lang === undefined) return <li>{label}</li>
+  const jump = () => {
+    // Showing another file clears a pending jump, so the language comes first.
+    dispatch({ type: 'commands-show', lang })
+    dispatch({ type: 'jump', path, line })
+  }
+  return (
+    <li>
+      <button type="button" className="text-left underline-offset-2 hover:underline" onClick={jump}>
+        {label}
+      </button>
+    </li>
+  )
+}
+
+/** What the syntax check of the last save says: running, its problems, why it did not run, or the browser's note. */
+function CheckResult({ pair, saved, check }: Readonly<{ pair: CommandPair; saved: string; check: AfterSave['check'] }>) {
+  if (check === null) return <p className="text-zinc-400">The desktop app can also check the syntax when you save.</p>
+  if (check === 'running') return <p className="text-zinc-400">Checking syntax…</p>
+  if ('skipped' in check) return <p className="text-amber-200">{check.skipped}</p>
+  if (check.ok) return <p className="text-emerald-300">No syntax errors found.</p>
+  return (
+    <ul aria-label="Syntax errors" className="max-h-32 space-y-0.5 overflow-auto whitespace-pre-wrap text-red-300">
+      {check.problems.map((problem, i) => (
+        // Two problems can read the same, so the place in the list tells them apart.
+        <ProblemRow key={`${i}\0${problem.path}\0${problem.line}`} pair={pair} saved={saved} problem={problem} />
+      ))}
+    </ul>
+  )
+}
+
+/** The status line under the editor after a save: Saved, Reload macropad, and the syntax check. */
+function SaveStatus({ pair, path, after }: Readonly<{ pair: CommandPair; path: string; after: AfterSave }>) {
+  const { actions } = useEditor()
+  return (
+    <div className="space-y-1 border-t border-zinc-800 px-4 py-1.5 text-[12px]">
+      <div className="flex items-center gap-3">
+        <p role="status" className="text-emerald-300">
+          {`Saved ${fileName(path)}.`}
+        </p>
+        {after.macropad && (
+          <button type="button" className={STYLE.button} onClick={() => void actions.reloadMacropadFor(path)}>
+            Reload macropad
+          </button>
+        )}
+        {after.note && <p className="text-zinc-300">{after.note}</p>}
+      </div>
+      <div aria-live="polite">
+        <CheckResult pair={pair} saved={path} check={after.check} />
+      </div>
+    </div>
+  )
+}
+
 /** The toolbar's file controls and the editor of one command file. */
 function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFile }>) {
   const { state, dispatch, actions } = useEditor()
@@ -220,11 +285,7 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
           onSave={() => void actions.saveCommandFile(path)}
         />
       </div>
-      {saved[path] && (
-        <p role="status" className="border-t border-zinc-800 px-4 py-1.5 text-[12px] text-emerald-300">
-          {`Saved ${name}.`}
-        </p>
-      )}
+      {saved[path] && <SaveStatus pair={pair} path={path} after={saved[path]} />}
       {confirmReload && (
         <ConfirmDialog
           title={`Discard your changes to ${name}?`}

@@ -180,6 +180,7 @@ function editReducer(state: EditCore, action: Action): EditCore {
     case 'commands-show':
     case 'draft':
     case 'command-saved':
+    case 'command-after-save':
     case 'command-file':
     case 'command-files':
     case 'command-dismiss':

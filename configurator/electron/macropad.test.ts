@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   autoHotkeyInstalled,
+  findAutoHotkey,
   findMacropad,
   parseProcessList,
   PROCESS_QUERY,
@@ -151,6 +152,18 @@ describe('autoHotkeyInstalled', () => {
     expect(autoHotkeyInstalled({ ProgramFiles: pf })).toBe(true)
     const local = tree('Programs', 'AutoHotkey', 'v2', 'AutoHotkey64.exe')
     expect(autoHotkeyInstalled({ LOCALAPPDATA: local })).toBe(true)
+  })
+
+  it('findAutoHotkey returns the first candidate that exists', () => {
+    const pf = tree('AutoHotkey', 'v2', 'AutoHotkey64.exe')
+    const local = tree('Programs', 'AutoHotkey', 'v2', 'AutoHotkey64.exe')
+    expect(findAutoHotkey({ ProgramFiles: pf, LOCALAPPDATA: local })).toBe(join(pf, 'AutoHotkey', 'v2', 'AutoHotkey64.exe'))
+    const empty = mkdtempSync(join(tmpdir(), 'omb-ahk-'))
+    made.push(empty)
+    expect(findAutoHotkey({ ProgramFiles: empty, LOCALAPPDATA: local })).toBe(
+      join(local, 'Programs', 'AutoHotkey', 'v2', 'AutoHotkey64.exe'),
+    )
+    expect(findAutoHotkey({ ProgramFiles: empty })).toBeNull()
   })
 
   it('is false when it is not there', () => {

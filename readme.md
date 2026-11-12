@@ -97,7 +97,7 @@ node scripts/check-private.mjs --history          # check every commit
 
 ## Configurator
 
-A visual editor for `config.json`: the pad shape, the layers and the macros. It edits `local/config.json` when that exists, else the example `config.json`. It ignores `OMB_CONFIG`.
+A visual editor for `config.json` (the pad shape, the layers and the macros) and for the command files in both languages. It edits `local/config.json` when that exists, else the example `config.json`. It ignores `OMB_CONFIG`.
 
 ```
 cd configurator
@@ -107,7 +107,7 @@ npm run dev
 
 Open the address it prints in Chrome or Edge, press **Open folder** and pick this repository. Firefox and Safari can't open folders, so they can't run it.
 
-For a desktop app instead of a browser tab, run `npm run electron`. It can also reload the running macropad after you save.
+For a desktop app instead of a browser tab, run `npm run electron`. It can also reload the running macropad after you save. The desktop app also checks a command file's syntax when you save it.
 
 To build the desktop app for Windows, run `npm run dist` in `configurator/`. It writes two files into `configurator/release/`, which git ignores:
 

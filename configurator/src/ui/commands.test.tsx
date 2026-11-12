@@ -917,6 +917,71 @@ describe('outside changes', () => {
     expect(text()).toBe(`${lf}xy`)
   })
 
+  it('an edit right after a save is based on what was written', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const lf = original.replaceAll('\r\n', '\n')
+    const preSave = editor().commandFiles.find((f) => f.file.path === CHROME_AHK)!.file.version
+    typeAt(0, '; mine\n')
+
+    await act(async () => {
+      expect(await seen.actions.saveCommandFile(CHROME_AHK)).toBe('saved')
+      // React has not committed the save, so the keystroke carries the version from before it.
+      seen.actions.editCommand(CHROME_AHK, `; mine\n${lf}k`, preSave)
+    })
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
+
+    await save(user, 'chrome.ahk')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(queryBanner()).toBeNull()
+    expect(folder.text(CHROME_AHK)).toBe(`; mine${eol}${original}k`)
+  })
+
+  it('an edit carrying the version from before a save still counts as stale after a quiet replace', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const lf = original.replaceAll('\r\n', '\n')
+    const preSave = editor().commandFiles.find((f) => f.file.path === CHROME_AHK)!.file.version
+    typeAt(0, '; mine\n')
+    await save(user, 'chrome.ahk')
+    const outside = enc.encode(`; theirs${eol}${original}`)
+    await folder.writeBytes(CHROME_AHK, outside)
+
+    await act(async () => {
+      await seen.actions.recheckCommands()
+      seen.actions.editCommand(CHROME_AHK, `; mine\n${lf}k`, preSave)
+    })
+    expect(queryBanner()).toBeTruthy()
+    await user.click(saveButton('chrome.ahk'))
+    expect(await screen.findByRole('dialog', { name: 'chrome.ahk changed on disk since you opened it.' })).toBeTruthy()
+    expect(await bytesOf(folder, CHROME_AHK)).toEqual(Array.from(outside))
+  })
+
+  it('an edit after the file went back to its version from before a save is made on that version', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const before = (await folder.readBytes(CHROME_AHK))!
+    const lf = folder.text(CHROME_AHK)!.replaceAll('\r\n', '\n')
+    typeAt(0, '; mine\n')
+    await save(user, 'chrome.ahk')
+    // Another program puts back the bytes from before the save; the recheck shows them quietly.
+    await folder.writeBytes(CHROME_AHK, before)
+    await recheckCommands()
+    expect(text()).toBe(lf)
+
+    // The editor now reports the version from before the save, and that is what the edit is made on.
+    typeAt(0, ';')
+    expect(queryBanner()).toBeNull()
+    await save(user, 'chrome.ahk')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(folder.text(CHROME_AHK)!.replaceAll('\r\n', '\n')).toBe(`;${lf}`)
+  })
+
   it('a save that lands during a recheck keeps the saved version', async () => {
     const { user, folder } = await start()
     await user.click(pairButton('custom/chrome'))

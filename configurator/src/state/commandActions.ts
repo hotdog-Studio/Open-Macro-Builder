@@ -52,6 +52,12 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
    * of the text the first edit was made on; a save checks the disk against it.
    */
   const drafts = new Map<string, { text: string; base: string | null }>()
+  /**
+   * After a save, by path: an edit that still carries the version from before the save (React has
+   * not committed the save yet) is made on the text just written. Holds only while the written
+   * entry is the one held; any other replacement of the entry ends it.
+   */
+  const written = new Map<string, { from: string | null; to: string | null; entry: CommandFile }>()
 
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
   const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
@@ -98,6 +104,18 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     dispatch({ type: 'command-files', files: list, changed })
   }
 
+  /** The base of an edit that starts a draft: the written version when it was made on a save's text. */
+  function afterSave(path: string, held: CommandFile, base: string | null): string | null {
+    const save = written.get(path)
+    if (!save) return base
+    // The entry was replaced since the save (a reload, a recheck, config.json's reload): no longer.
+    if (save.entry !== held) {
+      written.delete(path)
+      return base
+    }
+    return base === save.from ? save.to : base
+  }
+
   async function trySave(path: string, force: boolean): Promise<SaveResult> {
     const folder = deps.folder()
     const held = entry(path)
@@ -106,7 +124,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     if (!draft) return 'blocked'
     /** False once the folder was closed or replaced, or the file was reloaded, meanwhile. */
     const current = () => deps.folder() === folder && entry(path) === held
-    let written: TextFile
+    let saved: TextFile
     try {
       // The version the draft was made on, which is not the one held when the edit raced a
       // quiet replace: that edit must not land on the newer text unseen.
@@ -120,7 +138,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       }
       // Refuses with ConflictError, writing nothing, when the disk is not that version: the
       // draft's, or after Overwrite anyway the one just copied to .bak.
-      written = await writeTextFile(folder, { ...held.file, text: draft.text, version })
+      saved = await writeTextFile(folder, { ...held.file, text: draft.text, version })
     } catch (e) {
       if (!current()) return 'blocked'
       if (e instanceof ConflictError) {
@@ -132,13 +150,15 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     }
     // The write happened, but the editor moved on to another folder or version of the file.
     if (!current()) return 'saved'
-    const file: CommandFile = { ...held, file: written, functions: LANGUAGES[held.lang].findFunctions(written.text) }
+    const file: CommandFile = { ...held, file: saved, functions: LANGUAGES[held.lang].findFunctions(saved.text) }
     files.set(withCommandFile(files.get(), path, file))
+    // The editor reports the held version until React commits this save.
+    written.set(path, { from: held.file.version, to: saved.version, entry: file })
     // The user may have typed during the write: only a draft equal to what was written is done.
     // Typing that goes on is now made on what was written.
     const after = drafts.get(path)
-    if (after?.text === written.text) drafts.delete(path)
-    else if (after) drafts.set(path, { text: after.text, base: written.version })
+    if (after?.text === saved.text) drafts.delete(path)
+    else if (after) drafts.set(path, { text: after.text, base: saved.version })
     dispatch({ type: 'command-saved', file })
     return 'saved'
   }
@@ -149,7 +169,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       // A file that is gone or not UTF-8 is never edited.
       if (!held?.editable) return
       // A draft keeps the version it was started on; later edits never move it.
-      const start = drafts.get(path)?.base ?? base
+      const start = drafts.get(path)?.base ?? afterSave(path, held, base)
       // The reducer applies the same rule (draftDone) with the same base, so both keep the same drafts.
       if (draftDone(held.file, text, start)) drafts.delete(path)
       else drafts.set(path, { text, base: start })
@@ -183,6 +203,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       if (deps.folder() !== folder || entry(path) !== held || saves.has(path)) return
       files.set(withCommandFile(files.get(), path, file))
       drafts.delete(path)
+      written.delete(path)
       dispatch({ type: 'command-file', path, file })
     },
 
@@ -194,6 +215,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
 
     clearDrafts() {
       drafts.clear()
+      written.clear()
     },
   }
 }

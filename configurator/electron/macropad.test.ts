@@ -103,6 +103,26 @@ describe('findMacropad', () => {
     const procs = [ps('powershell.exe'), ahk('D:\\omb')]
     expect(findMacropad(procs, 'D:\\omb')?.lang).toBe('ahk')
   })
+
+  it('never takes the syntax check for the macropad', () => {
+    // The check runs `AutoHotkey64.exe /ErrorStdOut=UTF-8 /Validate <root>\ahk\main.ahk` (syntax.ts).
+    const checker: ProcInfo = {
+      name: 'AutoHotkey64.exe',
+      pid: 30,
+      exe: AHK_EXE,
+      commandLine: `"${AHK_EXE}" /ErrorStdOut=UTF-8 /Validate "D:\\omb\\ahk\\main.ahk"`,
+    }
+    const lower = { ...checker, commandLine: `"${AHK_EXE}" /validate D:\\omb\\ahk\\main.ahk` }
+    expect(findMacropad([checker], 'D:\\omb')).toBeNull()
+    expect(findMacropad([lower], 'D:\\omb')).toBeNull()
+
+    const p = ps('powershell.exe -NoProfile -File "D:\\omb\\powershell\\main.ps1"')
+    expect(findMacropad([checker, p], 'D:\\omb')).toEqual({ lang: 'ps', exe: p.exe })
+
+    const realExe = 'C:\\Users\\me\\AppData\\Local\\Programs\\AutoHotkey\\v2\\AutoHotkey64.exe'
+    const real: ProcInfo = { ...ahk('D:\\omb'), exe: realExe, commandLine: `"${realExe}" "D:\\omb\\ahk\\main.ahk"` }
+    expect(findMacropad([checker, real], 'D:\\omb')).toEqual({ lang: 'ahk', exe: realExe })
+  })
 })
 
 describe('relaunchCommand', () => {

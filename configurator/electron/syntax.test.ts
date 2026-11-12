@@ -41,13 +41,22 @@ describe('parseAhkErrors', () => {
   })
 
   it('joins a Specifically line to its message', () => {
-    const output =
-      'D:\\omb\\local\\ahk\\mine.ahk (5) : ==> Call to nonexistent function.\n     Specifically: Foo()\n' +
-      'D:\\omb\\local\\ahk\\mine.ahk (9) : ==> Missing ")"\n'
+    // As AutoHotkey 2.0.19 writes it to stderr: LF line endings, the Specifically line indented.
+    const output = 'D:\\omb\\local\\ahk\\sub.ahk (3) : ==> Missing ")"\n     Specifically: if (x { MsgBox "hi" }\n'
     expect(parseAhkErrors(output, ROOT)).toEqual([
-      { path: 'local/ahk/mine.ahk', line: 5, message: 'Call to nonexistent function. Specifically: Foo()' },
-      { path: 'local/ahk/mine.ahk', line: 9, message: 'Missing ")"' },
+      { path: 'local/ahk/sub.ahk', line: 3, message: 'Missing ")" Specifically: if (x { MsgBox "hi" }' },
     ])
+  })
+
+  it('needs the long-path root, since AutoHotkey reports long paths', () => {
+    // Even when started through an 8.3 short path; the IPC handler passes a realpath'd root.
+    const line = 'C:\\Users\\someone\\Repo\\omb\\ahk\\main.ahk (3) : ==> Missing ")"\n'
+    expect(parseAhkErrors(line, 'C:\\Users\\someone\\Repo\\omb')).toEqual([
+      { path: 'ahk/main.ahk', line: 3, message: 'Missing ")"' },
+    ])
+    expect(parseAhkErrors(line, 'C:\\Users\\SOMEON~1\\Repo\\omb')[0].path).toBe(
+      'C:\\Users\\someone\\Repo\\omb\\ahk\\main.ahk',
+    )
   })
 
   it('keeps output it cannot parse as one problem', () => {
@@ -95,7 +104,8 @@ describe('checkSyntax', () => {
 
   it('reports what AutoHotkey found, or no errors', async () => {
     const failed = Object.assign(new Error('Command failed'), { code: 2 })
-    const exec = fakeExec({ error: failed, stdout: 'D:\\omb\\ahk\\main.ahk (3) : ==> Missing "}"\n' })
+    // AutoHotkey writes the error to stderr and exits with 2; stdout stays empty.
+    const exec = fakeExec({ error: failed, stderr: 'D:\\omb\\ahk\\main.ahk (3) : ==> Missing "}"\n' })
     const report = await checkSyntax('ahk', ROOT, 'local/ahk/mine.ahk', { ...win, ahkExe: AHK_EXE, exec: exec as never })
     expect(report).toEqual({ ok: false, problems: [{ path: 'ahk/main.ahk', line: 3, message: 'Missing "}"' }] })
     expect(exec).toHaveBeenCalledTimes(1)

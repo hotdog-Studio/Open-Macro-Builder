@@ -41,6 +41,12 @@ function escapeRegExp(text: string): string {
 }
 
 /**
+ * AutoHotkey's /Validate switch, as its own argument, in a line that went through comparable():
+ * lower case, and its slash turned into a backslash.
+ */
+const VALIDATE = /(^|\s)\\validate(\s|$)/
+
+/**
  * Which macropad runs from `root`? Like Instance.ps1, only the macropad's own script counts:
  * an editor with main.ahk open, or a copy somewhere else, is not it. Pass a root that went
  * through realpath, so 8.3 short names match the long names in the command lines.
@@ -56,7 +62,11 @@ export function findMacropad(procs: ProcInfo[], root: string): FoundMacropad | n
     if (!p.commandLine) continue
     const line = comparable(p.commandLine)
     const name = p.name.toLowerCase()
-    if (name.startsWith('autohotkey') && p.exe && ahkLine.test(line)) return { lang: 'ahk', exe: p.exe }
+    const match = ahkLine.exec(line)
+    if (!name.startsWith('autohotkey') || !p.exe || !match) continue
+    // The syntax check (syntax.ts) loads main.ahk with /Validate and never runs it: not the macropad.
+    if (VALIDATE.test(line.slice(0, match.index))) continue
+    return { lang: 'ahk', exe: p.exe }
   }
   for (const p of procs) {
     if (!p.commandLine) continue

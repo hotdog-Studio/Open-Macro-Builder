@@ -118,9 +118,12 @@ export function registerIpc(win: BrowserWindow, storeFile: string): () => void {
   handle(CHANNELS.checkSyntax, async (which, rel) => {
     const language = lang(which)
     const path = text(rel)
-    const { root } = opened()
+    const opener = opened().root
     // Confined to the opened folder before anything runs (checkSyntax resolves it again).
-    resolveInside(root, path)
+    resolveInside(opener, path)
+    // AutoHotkey reports long paths even when started through an 8.3 short one, so the check gets
+    // the realpath of the folder; otherwise parseAhkErrors could not make its paths folder-relative.
+    const root = realpathSync.native(opener)
     let ahkExe: string | null | undefined
     if (language === 'ahk') {
       // The AutoHotkey the macropad runs on, else the installed one.

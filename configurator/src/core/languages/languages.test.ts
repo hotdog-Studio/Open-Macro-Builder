@@ -291,3 +291,30 @@ describe('starter command', () => {
     expect(LANGUAGES.ps.starterCommand('Foo', '')).toBe('function Foo {\n    param($Macro)\n}')
   })
 })
+
+describe('starter command description', () => {
+  it('keeps a */ inside the AutoHotkey comment', () => {
+    const text = appendBlock('', LANGUAGES.ahk.starterCommand('Foo', 'fast */ copy'))
+    expect(text).toBe('/**\n * fast * / copy\n * @param {Macro} Macro - The macro object.\n */\nFoo(Macro)\n{\n}\n')
+    const fns = LANGUAGES.ahk.findFunctions(text)
+    expect(fns).toEqual([{ name: 'Foo', line: 5, params: ['Macro'], description: 'fast * / copy' }])
+    expect(isCommand(fns[0])).toBe(true)
+  })
+
+  it('makes a one-line comment of a description with line breaks, and trims it', () => {
+    for (const id of LANG_IDS) {
+      const block = LANGUAGES[id].starterCommand('Foo', '  one\r\ntwo \n\n three\t four  ')
+      expect(block).toContain('one two three four')
+      expect(block).not.toContain('\r')
+      const fns = LANGUAGES[id].findFunctions(appendBlock('', block))
+      expect(fns).toHaveLength(1)
+      expect(fns[0]).toMatchObject({ name: 'Foo', description: 'one two three four' })
+      expect(isCommand(fns[0])).toBe(true)
+    }
+  })
+
+  it('leaves out the description line when nothing but whitespace is left', () => {
+    expect(LANGUAGES.ahk.starterCommand('Foo', ' \n ')).toBe(LANGUAGES.ahk.starterCommand('Foo', ''))
+    expect(LANGUAGES.ps.starterCommand('Foo', ' \n ')).toBe(LANGUAGES.ps.starterCommand('Foo', ''))
+  })
+})

@@ -62,3 +62,6 @@ export function rewriteBody(
     .map((line, i) => (i + 1 >= fn.line && i + 1 <= end ? rewrite(line, i + 1 === fn.line) : line))
     .join('\n')
 }
+
+/** A description as one line: every whitespace run, line breaks included, becomes one space. */
+export const oneLine = (description: string): string => description.replace(/\s+/g, ' ').trim()

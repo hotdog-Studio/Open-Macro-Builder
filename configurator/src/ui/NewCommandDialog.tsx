@@ -29,7 +29,7 @@ function NewCommandDialog({ file, onClose }: Readonly<{ file: CommandFile; onClo
     const language = LANGUAGES[file.lang]
     const path = file.file.path
     const current = state.commands.drafts[path] ?? file.file.text
-    const next = appendBlock(current, language.starterCommand(name, description.trim()))
+    const next = appendBlock(current, language.starterCommand(name, description))
     actions.editCommand(path, next, file.file.version)
     const added = language.findFunctions(next).filter((fn) => fn.name.toLowerCase() === name.toLowerCase())
     const line = added.at(-1)?.line

@@ -1,4 +1,4 @@
-import { rewriteBody, type FunctionInfo, type Language } from './types'
+import { oneLine, rewriteBody, type FunctionInfo, type Language } from './types'
 
 const DEFINITION = /^(\w+)\(([^)]*)\)\s*\{?\s*$/
 const PARAM_NAME = /^[&*]?(\w+)/
@@ -213,10 +213,15 @@ export const ahk: Language = {
   findFunctions,
   renameParam,
   starterFile: (pair) => `#Requires AutoHotkey v2.0\n\n; ${pair} commands.\n`,
-  starterCommand: (name, description) =>
-    '/**\n' +
-    (description === '' ? '' : ` * ${description}\n`) +
-    ` * @param {Macro} Macro - The macro object.\n */\n${name}(Macro)\n{\n}`,
+  starterCommand(name, description) {
+    // A `*/` in the description would close the doc comment early.
+    const line = oneLine(description).replaceAll('*/', '* /')
+    return (
+      '/**\n' +
+      (line === '' ? '' : ` * ${line}\n`) +
+      ` * @param {Macro} Macro - The macro object.\n */\n${name}(Macro)\n{\n}`
+    )
+  },
   listedIn,
   addListing,
   removeListing,

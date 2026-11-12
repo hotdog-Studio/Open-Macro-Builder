@@ -1249,7 +1249,7 @@ describe('new and deleted files', () => {
     await user.click(within(again).getByRole('button', { name: 'Create' }))
     expect(
       await within(again).findByText(
-        'ahk/config.ahk has no Custom Commands section. Add "#Include commands\\…" there by hand.',
+        'ahk/config.ahk has no Custom Commands section. Add "#Include commands\\custom\\other.ahk" there by hand.',
       ),
     ).toBeTruthy()
     expect(await folder.readBytes('ahk/commands/custom/other.ahk')).toBeNull()

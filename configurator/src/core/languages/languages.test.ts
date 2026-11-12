@@ -234,7 +234,7 @@ describe('include listings', () => {
   it('refuses a config.ahk without Custom Commands', () => {
     const text = '#Requires AutoHotkey v2.0\n; ****** Commands ******\n#Include commands\\helper.ahk\n'
     expect(() => ahk.addListing(text, 'ahk/commands/custom/new.ahk')).toThrow(
-      'ahk/config.ahk has no Custom Commands section. Add "#Include commands\\…" there by hand.',
+      'ahk/config.ahk has no Custom Commands section. Add "#Include commands\\custom\\new.ahk" there by hand.',
     )
   })
 

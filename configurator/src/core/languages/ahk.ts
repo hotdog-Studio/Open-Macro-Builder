@@ -159,15 +159,13 @@ const below = (dir: string, path: string) => path.slice(dir.length + 1).replaceA
 
 /** config.ahk: the line goes after the last shared include of Custom Commands, else right after its header. */
 function addSharedInclude(lines: string[], path: string, eol: string): string {
+  const line = '#Include commands\\' + below(SHARED_DIR, path)
   const header = lines.findIndex((l) => CUSTOM_HEADER.test(l))
-  if (header === -1) {
-    throw new Error(String.raw`ahk/config.ahk has no Custom Commands section. Add "#Include commands\…" there by hand.`)
-  }
+  if (header === -1) throw new Error(`ahk/config.ahk has no Custom Commands section. Add "${line}" there by hand.`)
   let after = header
   for (let i = header + 1; i < lines.length && !SECTION_HEADER.test(lines[i]); i++) {
     if (SHARED_INCLUDE.test(lines[i])) after = i
   }
-  const line = '#Include commands\\' + below(SHARED_DIR, path)
   const out = [...lines]
   const prev = out[after]
   const prevEnd = endOf(prev)

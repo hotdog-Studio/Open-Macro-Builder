@@ -609,11 +609,36 @@ describe('outside changes', () => {
     act(async () => {
       await seen.actions.recheckCommands()
     })
-  /** Lets every promise chain that waits on nothing run to its end. */
-  const drain = () =>
-    act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    })
+  /**
+   * Records every recheck the app starts from now on (a focus or a watch event calls these same
+   * actions), so a test can wait for each to end instead of waiting some time and hoping.
+   */
+  function trackRechecks() {
+    const started: Promise<void>[] = []
+    const { actions } = seen
+    const commands = actions.recheckCommands
+    const config = actions.recheck
+    actions.recheckCommands = () => {
+      const run = commands()
+      started.push(run)
+      return run
+    }
+    actions.recheck = () => {
+      const run = config()
+      started.push(run)
+      return run
+    }
+    return {
+      started,
+      /** How many rechecks have started. */
+      count: () => started.length,
+      /** Waits until every recheck started so far has finished. */
+      done: () =>
+        act(async () => {
+          await Promise.all(started)
+        }),
+    }
+  }
 
   it('shows an outside edit of a file without unsaved changes', async () => {
     const { user, folder } = await start()
@@ -709,8 +734,11 @@ describe('outside changes', () => {
     expect(chromeDot()).toBeTruthy()
 
     await recheckCommands()
+    const rechecks = trackRechecks()
     fireEvent.focus(window)
-    await drain()
+    // The focus rechecks config.json and the command files.
+    expect(rechecks.count()).toBe(2)
+    await rechecks.done()
     expect(queryBanner()).toBeNull()
 
     await folder.writeBytes(CHROME_AHK, enc.encode(`; newer${eol}${original}`))
@@ -793,11 +821,15 @@ describe('outside changes', () => {
     const { user, folder } = await start()
     await user.click(pairButton('custom/chrome'))
     typeAt(0, '; mine\n')
+    let rechecks = trackRechecks()
     const click = user.click(saveButton('chrome.ahk'))
     fireEvent.focus(window)
     await click
     await waitFor(() => expect(saveButton('chrome.ahk').disabled).toBe(true))
-    await drain()
+    expect(rechecks.count()).toBe(2)
+    await rechecks.done()
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
     await recheckCommands()
     expect(queryBanner()).toBeNull()
     expect(chromeDot()).toBeNull()
@@ -815,16 +847,31 @@ describe('outside changes', () => {
     act(() => {
       saving = seen.actions.saveCommandFile(CHROME_AHK)
     })
+    // Resolves once something waits on the save: the recheck, as it should. Nothing else does here.
+    const pending = saving!
+    let waitedOn = () => {}
+    const recheckWaits = new Promise<void>((resolve) => (waitedOn = resolve))
+    pending.then = ((...args: Parameters<Promise<string>['then']>) => {
+      waitedOn()
+      return Promise.prototype.then.apply(pending, args)
+    }) as Promise<string>['then']
+    rechecks = trackRechecks()
     fireEvent.focus(window)
-    // A recheck that did not wait would have seen the new bytes on disk by now.
-    await drain()
+    expect(rechecks.count()).toBe(2)
+    // Ends either way: the recheck waits on the save, or it did not wait and has run to its end,
+    // having seen the save's new bytes on disk while the editor still holds the old version.
+    await act(async () => {
+      await Promise.race([recheckWaits, Promise.all(rechecks.started)])
+    })
     expect(queryBanner()).toBeNull()
     expect(chromeDot()).toBeNull()
     await act(async () => {
       release()
       expect(await saving).toBe('saved')
     })
-    await drain()
+    await rechecks.done()
+    expect(queryBanner()).toBeNull()
+    expect(chromeDot()).toBeNull()
     await recheckCommands()
     expect(queryBanner()).toBeNull()
     expect(chromeDot()).toBeNull()
@@ -891,13 +938,14 @@ describe('outside changes', () => {
       saving = seen.actions.saveCommandFile(CHROME_AHK)
     })
     await write(SSH_AHK, enc.encode('Ssh(Macro)\n{\n}\n'))
+    const rechecks = trackRechecks()
     fireEvent.focus(window)
-    await drain()
+    expect(rechecks.count()).toBe(2)
     await act(async () => {
       release()
       expect(await saving).toBe('saved')
     })
-    await drain()
+    await rechecks.done()
     expect(queryBanner()).toBeNull()
     await user.click(pairButton('custom/ssh'))
     await user.click(langButton('AutoHotkey'))

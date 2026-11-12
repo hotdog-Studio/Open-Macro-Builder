@@ -158,7 +158,9 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
           docKey={path}
           lang={file.lang}
           value={draft ?? file.file.text}
-          onChange={(text) => actions.editCommand(path, text)}
+          // The version whose text the editor holds: the editor takes a new value only after
+          // React commits it, so a keystroke before then is made on this version's text.
+          onChange={(text) => actions.editCommand(path, text, file.file.version)}
           label={`${label} code`}
           readOnly={!file.editable}
           jump={jump?.path === path ? { line: jump.line, n: jump.n } : null}

@@ -1,6 +1,7 @@
 import { commandPairs, type CommandPair } from '../core/commands/pairs'
 import { commandCatalog, mergeRescan, withCommandFile, type CommandFile, type LangId } from '../core/languages'
 import type { Settings } from '../core/settings'
+import type { TextFile } from '../core/folder/textFile'
 import type { EditCore } from './store'
 
 /** The dialog of a command file save that is open, if any. */
@@ -36,8 +37,11 @@ export interface CommandsView {
 export type CommandAction =
   /** Leaves out a field to keep it. */
   | { type: 'commands-show'; pair?: string; lang?: LangId }
-  /** The user's text for a file; also hides its last save. */
-  | { type: 'draft'; path: string; text: string }
+  /**
+   * The user's text for a file; also hides its last save. `base` is the version of the text the
+   * draft was started on (the actions keep it from the draft's first edit).
+   */
+  | { type: 'draft'; path: string; text: string; base: string | null }
   /** A save wrote `file`. */
   | { type: 'command-saved'; file: CommandFile }
   /** A reload of one file; null when it is gone. */
@@ -62,6 +66,15 @@ export function initialCommands(settings: Settings): CommandsView {
     dialog: null,
     saved: {},
   }
+}
+
+/**
+ * True when an edit leaves nothing to save: its text is the held file's and it was made on the
+ * held version. A draft made on an older version stays even when its text matches, so its save
+ * is checked against the version it was made on. The actions and the reducer both use this rule.
+ */
+export function draftDone(held: TextFile, text: string, base: string | null): boolean {
+  return text === held.text && base === held.version
 }
 
 /** A copy of `record` without `key`. */
@@ -124,9 +137,14 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
       const file = state.commandFiles.find((f) => f.file.path === action.path)
       // A file that is gone or not UTF-8 is never edited.
       if (!file?.editable) return state
-      const drafts =
-        action.text === file.file.text ? without(c.drafts, action.path) : { ...c.drafts, [action.path]: action.text }
-      return { ...state, commands: { ...c, drafts, saved: without(c.saved, action.path) } }
+      const done = draftDone(file.file, action.text, action.base)
+      const drafts = done ? without(c.drafts, action.path) : { ...c.drafts, [action.path]: action.text }
+      // An edit made on an older version than the one held (it raced a quiet replace): the file
+      // differs from what the edit was made on, so it is marked changed on disk.
+      const version = file.file.version
+      const stale = !done && action.base !== version && c.outside[action.path]?.version !== version
+      const outside = stale ? { ...c.outside, [action.path]: { version, dismissed: false } } : c.outside
+      return { ...state, commands: { ...c, drafts, outside, saved: without(c.saved, action.path) } }
     }
     case 'command-saved': {
       const path = action.file.file.path

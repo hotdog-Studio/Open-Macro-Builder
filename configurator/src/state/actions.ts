@@ -66,9 +66,11 @@ export interface AppActions {
   /**
    * Every edit the user makes to a command file: records the draft here first, so saves and
    * reloads see it before React commits it, then dispatches 'draft'. Ignored for a file that is
-   * gone or not editable.
+   * gone or not editable. `base` is the version of the text the editor showed; a draft keeps the
+   * base of its first edit, and its save checks the disk against that version. A draft started
+   * on an older version than the one held marks the file changed on disk.
    */
-  editCommand(path: string, text: string): void
+  editCommand(path: string, text: string, base: string | null): void
   /**
    * Saves the draft of one command file, checked against the version the app holds. 'blocked'
    * without a draft, for a file that is not editable, or when the write failed; 'conflict' when

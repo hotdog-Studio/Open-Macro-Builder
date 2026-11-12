@@ -11,6 +11,7 @@ import {
 } from '../core/languages'
 import type { Platform } from '../platform/types'
 import type { AppActions, SaveResult } from './actions'
+import { draftDone } from './commandsSlice'
 import type { Action, AppState } from './store'
 
 export interface CommandDeps {
@@ -46,10 +47,11 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
   /** The save in progress for each path. */
   const saves = new Map<string, Promise<SaveResult>>()
   /**
-   * The drafts, path to text, kept in step with the reducer's `commands.drafts` but ahead of
-   * React's commit, so a save or a reload never misses an edit made just before it.
+   * The drafts by path, kept in step with the reducer's `commands.drafts` but ahead of React's
+   * commit, so a save or a reload never misses an edit made just before it. `base` is the version
+   * of the text the first edit was made on; a save checks the disk against it.
    */
-  const drafts = new Map<string, string>()
+  const drafts = new Map<string, { text: string; base: string | null }>()
 
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
   const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
@@ -74,10 +76,18 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     // The folder was closed or replaced, or a save or reload holds a newer entry or is still
     // writing one: that one decides, and the next recheck sees the rest.
     if (deps.folder() !== folder || files.get() !== snapshot || saves.size > 0) return
-    const { files: merged, changed } = mergeRescan(snapshot, fresh, new Set(drafts.keys()))
+    const { files: merged } = mergeRescan(snapshot, fresh, new Set(drafts.keys()))
+    const held = new Map(snapshot.map((f) => [f.file.path, f]))
+    // A file with unsaved edits differs from the disk when the disk is not the version its draft
+    // was made on (usually the version held; an older one when the edit raced a quiet replace).
+    const onDisk = new Map(fresh.map((f) => [f.file.path, f.file.version]))
+    const changed: { path: string; version: string | null }[] = []
+    for (const [path, draft] of drafts) {
+      const version = onDisk.get(path) ?? null
+      if (held.has(path) && version !== draft.base) changed.push({ path, version })
+    }
     // A file whose bytes did not change keeps the entry the app holds, so nothing that holds
     // that entry (a reload reading it, a later recheck) sees it as replaced.
-    const held = new Map(snapshot.map((f) => [f.file.path, f]))
     const next = merged.map((f) => {
       const was = held.get(f.file.path)
       return was?.file.version === f.file.version ? was : f
@@ -93,12 +103,14 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const held = entry(path)
     if (!folder || !held?.editable) return 'blocked'
     const draft = drafts.get(path)
-    if (draft === undefined) return 'blocked'
+    if (!draft) return 'blocked'
     /** False once the folder was closed or replaced, or the file was reloaded, meanwhile. */
     const current = () => deps.folder() === folder && entry(path) === held
     let written: TextFile
     try {
-      let version = held.file.version
+      // The version the draft was made on, which is not the one held when the edit raced a
+      // quiet replace: that edit must not land on the newer text unseen.
+      let version = draft.base
       if (force) {
         // Overwrite anyway: the outside edit being replaced is kept beside the file, and only that
         // edit is replaced. A failed copy stops the save.
@@ -106,9 +118,9 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
         version = onDisk === null ? null : await hashBytes(onDisk)
         if (onDisk !== null) await folder.writeBytes(`${path}.bak`, onDisk)
       }
-      // Refuses with ConflictError, writing nothing, when the disk is not that version: the one
-      // held, or after Overwrite anyway the one just copied to .bak.
-      written = await writeTextFile(folder, { ...held.file, text: draft, version })
+      // Refuses with ConflictError, writing nothing, when the disk is not that version: the
+      // draft's, or after Overwrite anyway the one just copied to .bak.
+      written = await writeTextFile(folder, { ...held.file, text: draft.text, version })
     } catch (e) {
       if (!current()) return 'blocked'
       if (e instanceof ConflictError) {
@@ -123,19 +135,25 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const file: CommandFile = { ...held, file: written, functions: LANGUAGES[held.lang].findFunctions(written.text) }
     files.set(withCommandFile(files.get(), path, file))
     // The user may have typed during the write: only a draft equal to what was written is done.
-    if (drafts.get(path) === written.text) drafts.delete(path)
+    // Typing that goes on is now made on what was written.
+    const after = drafts.get(path)
+    if (after?.text === written.text) drafts.delete(path)
+    else if (after) drafts.set(path, { text: after.text, base: written.version })
     dispatch({ type: 'command-saved', file })
     return 'saved'
   }
 
   return {
-    editCommand(path, text) {
+    editCommand(path, text, base) {
       const held = entry(path)
       // A file that is gone or not UTF-8 is never edited.
       if (!held?.editable) return
-      if (text === held.file.text) drafts.delete(path)
-      else drafts.set(path, text)
-      dispatch({ type: 'draft', path, text })
+      // A draft keeps the version it was started on; later edits never move it.
+      const start = drafts.get(path)?.base ?? base
+      // The reducer applies the same rule (draftDone) with the same base, so both keep the same drafts.
+      if (draftDone(held.file, text, start)) drafts.delete(path)
+      else drafts.set(path, { text, base: start })
+      dispatch({ type: 'draft', path, text, base: start })
     },
 
     saveCommandFile(path, { force = false } = {}) {

@@ -203,6 +203,10 @@ describe('Commands tab', () => {
     // The later typing is still unsaved.
     expect(text()).toBe(`;; one\n${original.replaceAll('\r\n', '\n')}`)
     expect(saveButton('chrome.ahk').disabled).toBe(false)
+    // It is now made on what was written, so its own save goes through.
+    await save(user, 'chrome.ahk')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(folder.text(CHROME_AHK)).toBe(`;; one${eol}${original}`)
   })
 
   it('keeps CRLF and BOM when saving', async () => {
@@ -405,7 +409,7 @@ describe('Commands tab', () => {
     expect(screen.queryByRole('button', { name: 'Save latin.ahk' })).toBeNull()
 
     // Even a draft sent by hand is refused, and so is a save.
-    act(() => seen.dispatch({ type: 'draft', path, text: 'x' }))
+    act(() => seen.dispatch({ type: 'draft', path, text: 'x', base: null }))
     expect(editor().commands.drafts).toEqual({})
     let result: string | undefined
     await act(async () => {
@@ -881,6 +885,36 @@ describe('outside changes', () => {
     await user.click(pairButton('custom/ssh'))
     await user.click(langButton('AutoHotkey'))
     expect(text()).toBe('Ssh(Macro)\n{\n}\n')
+  })
+
+  it('an edit made on text a recheck just replaced saves against its own version', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const lf = original.replaceAll('\r\n', '\n')
+    const oldVersion = editor().commandFiles.find((f) => f.file.path === CHROME_AHK)!.file.version
+    const outside = enc.encode(`; theirs${eol}${original}`)
+    await folder.writeBytes(CHROME_AHK, outside)
+
+    await act(async () => {
+      await seen.actions.recheckCommands()
+      // React has not committed the new text yet, so the keystroke lands on the old one.
+      seen.actions.editCommand(CHROME_AHK, `${lf}x`, oldVersion)
+    })
+    expect(text()).toBe(`${lf}x`)
+    expect(queryBanner()).toBeTruthy()
+    expect(chromeDot()).toBeTruthy()
+    // A later recheck still sees the disk differ from the version the edit was made on.
+    await recheckCommands()
+    expect(queryBanner()).toBeTruthy()
+    // Typing on after the commit carries the newer version, but the draft keeps its first one.
+    typeAt(docEnd(), 'y')
+
+    await user.click(saveButton('chrome.ahk'))
+    expect(await screen.findByRole('dialog', { name: 'chrome.ahk changed on disk since you opened it.' })).toBeTruthy()
+    expect(await bytesOf(folder, CHROME_AHK)).toEqual(Array.from(outside))
+    expect(text()).toBe(`${lf}xy`)
   })
 
   it('a save that lands during a recheck keeps the saved version', async () => {

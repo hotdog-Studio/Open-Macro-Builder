@@ -1631,6 +1631,44 @@ describe('after a save', () => {
     expect(screen.queryByRole('button', { name: 'Reload macropad' })).toBeNull()
   })
 
+  it('offers Reload anyway after a save whose syntax check found problems', async () => {
+    const reloadMacropad = vi.fn(async (): Promise<LangId | null> => 'ahk')
+    let report: SyntaxReport = { ok: false, problems: [{ path: AHK, line: 1, message: 'Missing "}"' }] }
+    const { user } = await start({
+      files: MINE,
+      platform: { kind: 'electron', findMacropad: async () => 'ahk', reloadMacropad, checkSyntax: async () => report },
+    })
+    await user.click(pairButton('mine'))
+    typeAt(0, '; x\n')
+    await save(user, 'mine.ahk')
+    await screen.findByRole('button', { name: 'Line 1: Missing "}"' })
+    const reload = await screen.findByRole('button', { name: 'Reload anyway' })
+    expect(screen.queryByRole('button', { name: 'Reload macropad' })).toBeNull()
+    await user.click(reload)
+    expect(reloadMacropad).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Reloaded the AutoHotkey macropad.')).toBeTruthy()
+
+    // A check that did not run reports no problems, so the button reads as usual.
+    report = { skipped: 'AutoHotkey is not installed.' }
+    typeAt(0, ';')
+    await save(user, 'mine.ahk')
+    await screen.findByText('AutoHotkey is not installed.')
+    expect(await screen.findByRole('button', { name: 'Reload macropad' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reload anyway' })).toBeNull()
+  })
+
+  it('offers Reload macropad when there is no syntax check', async () => {
+    const { user } = await start({
+      files: MINE,
+      platform: { kind: 'electron', findMacropad: async () => 'ahk', reloadMacropad: async () => 'ahk' },
+    })
+    await user.click(pairButton('mine'))
+    typeAt(0, '; x\n')
+    await save(user, 'mine.ahk')
+    expect(await screen.findByRole('button', { name: 'Reload macropad' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reload anyway' })).toBeNull()
+  })
+
   it('the browser says the desktop app can check syntax', async () => {
     const { user } = await start({ files: MINE })
     await user.click(pairButton('mine'))

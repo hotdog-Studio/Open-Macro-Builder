@@ -190,6 +190,8 @@ function CheckResult({ pair, saved, check }: Readonly<{ pair: CommandPair; saved
 /** The status line under the editor after a save: Saved, Reload macropad, and the syntax check. */
 function SaveStatus({ pair, path, after }: Readonly<{ pair: CommandPair; path: string; after: AfterSave }>) {
   const { actions } = useEditor()
+  // The check found problems: reloading now may stop the macropad, so the button says so.
+  const problems = typeof after.check === 'object' && after.check !== null && 'ok' in after.check && !after.check.ok
   return (
     <div className="space-y-1 border-t border-zinc-800 px-4 py-1.5 text-[12px]">
       <div className="flex items-center gap-3">
@@ -198,7 +200,7 @@ function SaveStatus({ pair, path, after }: Readonly<{ pair: CommandPair; path: s
         </p>
         {after.macropad && (
           <button type="button" className={STYLE.button} onClick={() => void actions.reloadMacropadFor(path)}>
-            Reload macropad
+            {problems ? 'Reload anyway' : 'Reload macropad'}
           </button>
         )}
         {after.note && <p className="text-zinc-300">{after.note}</p>}

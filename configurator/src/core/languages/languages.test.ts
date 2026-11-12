@@ -110,3 +110,65 @@ describe('language table', () => {
     expect(isCommand(f([]))).toBe(false)
   })
 })
+
+describe('renameParam', () => {
+  it('in AutoHotkey renames the definition and its uses only', () => {
+    const text = [
+      'Foo(amacrorgs)',
+      '{',
+      '    Run(AMacroRgs.name, amacrorgsX)',
+      '    return amacrorgs',
+      '}',
+      'Other(amacrorgs) {',
+      '    amacrorgs := 1',
+      '}',
+    ].join('\n')
+    const [foo] = LANGUAGES.ahk.findFunctions(text)
+    expect(LANGUAGES.ahk.renameParam(text, foo, 'Macro')).toBe(
+      [
+        'Foo(Macro)',
+        '{',
+        '    Run(Macro.name, amacrorgsX)',
+        '    return Macro',
+        '}',
+        'Other(amacrorgs) {',
+        '    amacrorgs := 1',
+        '}',
+      ].join('\n'),
+    )
+  })
+
+  it('in AutoHotkey leaves the function name alone and keeps CRLF', () => {
+    const text = 'Macro2(x) {\r\n    return x\r\n}\r\n'
+    const [fn] = LANGUAGES.ahk.findFunctions(text)
+    expect(LANGUAGES.ahk.renameParam(text, fn, 'Macro')).toBe('Macro2(Macro) {\r\n    return Macro\r\n}\r\n')
+  })
+
+  it('in PowerShell renames $name uses up to the next function', () => {
+    const text = [
+      'function First { param($x) $x }',
+      'function Foo {',
+      '    param([string]$amacrorgs)',
+      '    Write-Host $AMacroRgs "amacrorgs" $amacrorgsMore',
+      '}',
+      'function Next { param($amacrorgs) $amacrorgs }',
+    ].join('\n')
+    const foo = LANGUAGES.ps.findFunctions(text)[1]
+    expect(LANGUAGES.ps.renameParam(text, foo, 'Macro')).toBe(
+      [
+        'function First { param($x) $x }',
+        'function Foo {',
+        '    param([string]$Macro)',
+        '    Write-Host $Macro "amacrorgs" $amacrorgsMore',
+        '}',
+        'function Next { param($amacrorgs) $amacrorgs }',
+      ].join('\n'),
+    )
+  })
+
+  it('in PowerShell renames to the end of the file when no function follows', () => {
+    const text = 'function Foo { param($a) $a }\n'
+    const [fn] = LANGUAGES.ps.findFunctions(text)
+    expect(LANGUAGES.ps.renameParam(text, fn, 'Macro')).toBe('function Foo { param($Macro) $Macro }\n')
+  })
+})

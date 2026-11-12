@@ -1,4 +1,4 @@
-import type { FunctionInfo, Language } from './types'
+import { rewriteBody, type FunctionInfo, type Language } from './types'
 
 const DEFINITION = /^(\w+)\(([^)]*)\)\s*\{?\s*$/
 const PARAM_NAME = /^[&*]?(\w+)/
@@ -72,6 +72,19 @@ function findFunctions(text: string): FunctionInfo[] {
   return found
 }
 
+function renameParam(text: string, fn: FunctionInfo, to: string): string {
+  const from = fn.params[0]
+  if (from === undefined) return text
+  const word = new RegExp(String.raw`\b${from}\b`, 'gi')
+  const rename = (part: string) => part.replace(word, () => to)
+  return rewriteBody(text, fn, findFunctions(text), (line, isDefinition) => {
+    if (!isDefinition) return rename(line)
+    // The function's own name comes before the parenthesis and stays as it is.
+    const open = line.indexOf('(')
+    return line.slice(0, open) + rename(line.slice(open))
+  })
+}
+
 export const ahk: Language = {
   id: 'ahk',
   label: 'AutoHotkey',
@@ -81,4 +94,5 @@ export const ahk: Language = {
   personalDir: 'local/ahk',
   ignore: ['local/ahk/commands.ahk'],
   findFunctions,
+  renameParam,
 }

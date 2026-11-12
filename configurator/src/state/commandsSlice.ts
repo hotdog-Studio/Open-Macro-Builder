@@ -55,6 +55,8 @@ export type CommandAction =
   | { type: 'command-dismiss'; path: string }
   | { type: 'command-dialog'; dialog: CommandDialog | null }
   | { type: 'jump'; path: string; line: number }
+  /** Shows the Commands tab on one language of a pair and jumps to a line of that file, in one step. */
+  | { type: 'open-command'; pair: string; lang: LangId; line: number }
 
 export function initialCommands(settings: Settings): CommandsView {
   return {
@@ -196,5 +198,10 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
       return { ...state, commands: { ...c, dialog: action.dialog } }
     case 'jump':
       return { ...state, commands: { ...c, jump: { path: action.path, line: action.line, n: (c.jump?.n ?? 0) + 1 } } }
+    case 'open-command': {
+      const path = shownPath(state.commandFiles, action.pair, action.lang)
+      const jump = path === undefined ? null : { path, line: action.line, n: (c.jump?.n ?? 0) + 1 }
+      return { ...state, tab: 'commands', commands: { ...c, pair: action.pair, lang: action.lang, jump } }
+    }
   }
 }

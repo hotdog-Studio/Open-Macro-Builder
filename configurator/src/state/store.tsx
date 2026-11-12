@@ -185,6 +185,7 @@ function editReducer(state: EditCore, action: Action): EditCore {
     case 'command-dismiss':
     case 'command-dialog':
     case 'jump':
+    case 'open-command':
       return commandsReducer(state, action)
     default:
       return state

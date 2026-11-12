@@ -1029,3 +1029,122 @@ describe('outside changes', () => {
     expect(folder.text(CHROME_AHK)).toBe(`;; mine${eol}${original}`)
   })
 })
+
+describe('outline', () => {
+  const outline = () => screen.getByRole('region', { name: 'Commands in this file' })
+  const entry = (name: string) => within(outline()).getByText(name, { exact: true }).closest('button')!
+  const cursorLine = () => {
+    const { state } = editorView()
+    return state.doc.lineAt(state.selection.main.head).number
+  }
+  const AHK = 'local/ahk/mine.ahk'
+  const PS = 'local/powershell/commands/mine.ps1'
+  const PAIR = {
+    [AHK]: 'Mine(Macro)\n{\n}\nBoth(Macro)\n{\n}\n',
+    [PS]: 'function Both { param($Macro) }\nfunction PsOnly {\n    param($Macro)\n}\n',
+  }
+
+  it('clicking a command in the outline jumps to its line', async () => {
+    const { user } = await start({ files: PAIR })
+    expect(within(outline()).getByRole('heading', { name: 'Commands in this file' })).toBeTruthy()
+    expect(within(outline()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Mine AHK ✓ PS ✗',
+      'Both AHK ✓ PS ✓',
+      'PsOnly AHK ✗ PS ✓',
+    ])
+    await user.click(entry('Both'))
+    expect(cursorLine()).toBe(4)
+    expect(langButton('AutoHotkey').getAttribute('aria-pressed')).toBe('true')
+
+    // PowerShell is the only language with PsOnly, so the tab switches to it.
+    await user.click(entry('PsOnly'))
+    expect(langButton('PowerShell').getAttribute('aria-pressed')).toBe('true')
+    expect(text()).toBe(PAIR[PS])
+    expect(cursorLine()).toBe(2)
+    expect(editor().commands.jump).toMatchObject({ path: PS, line: 2 })
+
+    // A real file: the line is the one findFunctions gives.
+    await user.click(pairButton('custom/chrome'))
+    await user.click(langButton('AutoHotkey'))
+    const line = LANGUAGES.ahk.findFunctions(readRepoText(CHROME_AHK)).find((f) => f.name === 'OpenYoutube')!.line
+    await user.click(entry('OpenYoutube'))
+    expect(cursorLine()).toBe(line)
+  })
+
+  it('colours a gap red in a language you run and amber in another', async () => {
+    await start({ files: PAIR, languages: ['ahk'] })
+    expect(within(entry('PsOnly')).getByText('AHK ✗').className).toContain('red')
+    expect(within(entry('Mine')).getByText('PS ✗').className).toContain('amber')
+    expect(within(entry('Both')).getByText('PS ✓').className).toContain('emerald')
+  })
+
+  it('follows unsaved text', async () => {
+    await start({ files: PAIR })
+    typeAt(docEnd(), 'Typed(Macro)\n{\n}\n')
+    expect(entry('Typed').textContent).toBe('Typed AHK ✓ PS ✗')
+  })
+
+  it('shows which keys use a command', async () => {
+    const { user } = await start({ files: PAIR })
+    const config = JSON.parse(EXAMPLE) as {
+      keys: { key: string }[]
+      layers: { title: string; macros: ({ action: string } | null)[] }[]
+    }
+    const chrome = LANGUAGES.ahk.findFunctions(readRepoText(CHROME_AHK)).filter(isCommand)
+    const names = new Set(chrome.map((f) => f.name))
+    const layer = config.layers.find((l) => l.macros.some((m) => m && names.has(m.action)))!
+    const at = layer.macros.findIndex((m) => m && names.has(m.action))
+    const command = layer.macros[at]!.action
+
+    await user.click(pairButton('custom/chrome'))
+    await user.click(entry(command))
+    const details = within(outline())
+    expect(details.getByText('Used by')).toBeTruthy()
+    expect(details.getByText(`${layer.title} · ${config.keys[at].key}`)).toBeTruthy()
+    expect(details.getByText(`AutoHotkey: line ${chrome.find((f) => f.name === command)!.line}`)).toBeTruthy()
+    expect(details.getByText(/^PowerShell: line \d+$/)).toBeTruthy()
+
+    // A command nothing uses.
+    await user.click(pairButton('mine'))
+    await user.click(entry('PsOnly'))
+    expect(within(outline()).getByText('Not used in the current layout.')).toBeTruthy()
+    expect(within(outline()).getByText('AutoHotkey: missing')).toBeTruthy()
+    expect(within(outline()).getByText('PowerShell: line 2')).toBeTruthy()
+  })
+
+  it('Open in Commands from the Macros tab counts the lines of unsaved text', async () => {
+    const { user } = await start()
+    await user.click(pairButton('media'))
+    typeAt(0, '; one\n; two\n')
+    const original = LANGUAGES.ahk.findFunctions(readRepoText('ahk/commands/media.ahk')).find((f) => f.name === 'PreviousTrack')!
+    await user.click(screen.getByRole('tab', { name: 'Macros' }))
+    await user.click(screen.getByRole('button', { name: /^F13( |$)/ }))
+    await user.click(screen.getByRole('button', { name: 'Open in Commands' }))
+    expect(cursorLine()).toBe(original.line + 2)
+    expect(text().startsWith('; one\n; two\n')).toBe(true)
+  })
+
+  it('offers to rename a misspelled parameter', async () => {
+    const original = 'function Foo { param($amacrorgs) $amacrorgs }\n'
+    const { user, folder } = await start({ files: { [AHK]: 'Foo(Macro)\n{\n}\n', [PS]: original } })
+    expect(
+      within(outline()).getByText(
+        'PowerShell defines Foo with the parameter "amacrorgs" instead of "Macro", so it does not count as a command.',
+      ),
+    ).toBeTruthy()
+    expect(within(entry('Foo')).getByText('PS ✗')).toBeTruthy()
+
+    await user.click(within(outline()).getByRole('button', { name: 'Rename the parameter to Macro' }))
+    expect(langButton('PowerShell').getAttribute('aria-pressed')).toBe('true')
+    expect(editor().commands.drafts[PS]).toBe('function Foo { param($Macro) $Macro }\n')
+    expect(text()).toBe('function Foo { param($Macro) $Macro }\n')
+    expect(saveButton('mine.ps1').disabled).toBe(false)
+    // It does not save, and the note is gone now that the outline follows the draft.
+    expect(folder.text(PS)).toBe(original)
+    expect(within(outline()).queryByRole('button', { name: 'Rename the parameter to Macro' })).toBeNull()
+    expect(within(entry('Foo')).getByText('PS ✓')).toBeTruthy()
+
+    await save(user, 'mine.ps1')
+    expect(folder.text(PS)).toBe('function Foo { param($Macro) $Macro }\n')
+  })
+})

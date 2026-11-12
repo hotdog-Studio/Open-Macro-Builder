@@ -1,4 +1,4 @@
-import type { FunctionInfo, Language } from './types'
+import { rewriteBody, type FunctionInfo, type Language } from './types'
 
 const DEFINITION = /^\s*function\s+([\w-]+)/i
 const PARAM_START = /param\s*\(/i
@@ -68,6 +68,13 @@ function findFunctions(text: string): FunctionInfo[] {
   return found
 }
 
+function renameParam(text: string, fn: FunctionInfo, to: string): string {
+  const from = fn.params[0]
+  if (from === undefined) return text
+  const variable = new RegExp(String.raw`\$${from}\b`, 'gi')
+  return rewriteBody(text, fn, findFunctions(text), (line) => line.replace(variable, () => `$${to}`))
+}
+
 export const ps: Language = {
   id: 'ps',
   label: 'PowerShell',
@@ -77,4 +84,5 @@ export const ps: Language = {
   personalDir: 'local/powershell/commands',
   ignore: [],
   findFunctions,
+  renameParam,
 }

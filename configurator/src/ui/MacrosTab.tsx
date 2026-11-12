@@ -2,7 +2,7 @@ import { DragOverlay, useDndContext, useDraggable } from '@dnd-kit/core'
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { Layer, PadKey, Workspace } from '../core/config/model'
 import { findLayer, setMacro, updateMacro } from '../core/config/ops'
-import { definedNames, LANG_IDS, LANGUAGES, type CatalogEntry, type LangId } from '../core/languages'
+import { definedNames, isCommand, LANG_IDS, LANGUAGES, type CatalogEntry, type LangId } from '../core/languages'
 import { useEditor } from '../state/store'
 import { LayerIcon } from './LayersTab'
 import { PadDnd, PadGrid } from './PadGrid'
@@ -238,6 +238,30 @@ function IconChoice({
   )
 }
 
+/**
+ * Where Open in Commands goes: the first language you run that defines the command, else any that
+ * does, at its line. The editor shows a draft when there is one, so the line is read from that.
+ * Null when no file defines it.
+ */
+function whereToOpen(
+  catalog: CatalogEntry[],
+  drafts: Record<string, string>,
+  command: string,
+  running: LangId[],
+): { pair: string; lang: LangId; line: number } | null {
+  const lower = command.toLowerCase()
+  const entry = catalog.find((e) => e.name.toLowerCase() === lower)
+  const lang = [...running, ...LANG_IDS].find((l) => entry?.in[l])
+  const at = lang && entry?.in[lang]
+  if (!entry || !lang || !at) return null
+  const draft = drafts[at.path]
+  const inDraft =
+    draft === undefined
+      ? undefined
+      : LANGUAGES[lang].findFunctions(draft).find((f) => isCommand(f) && f.name.toLowerCase() === lower)
+  return { pair: `${entry.group}:${entry.pair}`, lang, line: inDraft?.line ?? at.line }
+}
+
 function MacroDetails({ layer, keyId, keyName }: Readonly<{ layer: Layer; keyId: string; keyName: string }>) {
   const { state, dispatch } = useEditor()
   const { ws, iconSets } = state
@@ -254,6 +278,7 @@ function MacroDetails({ layer, keyId, keyName }: Readonly<{ layer: Layer; keyId:
     )
   }
   const lower = macro.action.toLowerCase()
+  const opening = whereToOpen(state.catalog, state.commands.drafts, macro.action,state.settings.languages)
   return (
     <>
       <h3 className={STYLE.heading}>
@@ -275,6 +300,15 @@ function MacroDetails({ layer, keyId, keyName }: Readonly<{ layer: Layer; keyId:
           )
         })}
       </div>
+      {opening && (
+        <button
+          type="button"
+          className={`${STYLE.button} mt-2`}
+          onClick={() => dispatch({ type: 'open-command', ...opening })}
+        >
+          Open in Commands
+        </button>
+      )}
       <label htmlFor={ids[1]} className={STYLE.label}>
         Label (shown on the overlay)
       </label>

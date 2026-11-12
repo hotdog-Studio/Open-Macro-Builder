@@ -5,9 +5,10 @@ import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '../core/config/model'
 import { SETTINGS_PATH } from '../core/settings'
-import type { LangId } from '../core/languages'
+import { LANGUAGES, type LangId } from '../core/languages'
 import type { Platform } from '../platform/types'
 import { AppProvider, useApp } from '../state/store'
+import { editorView } from '../../test/codeEditor'
 import { memoryFolderFromRepo, readRepoText } from '../../test/repo'
 import { App } from './App'
 import { applyDrop, commandDescription } from './dnd'
@@ -270,5 +271,45 @@ describe('Macros tab', () => {
     expect(macro.name).toBe('Youtube')
     expect(macro.description).toBe('Opens YouTube in Google Chrome.')
     expect(grid().getByText('Youtube')).toBeTruthy()
+  })
+})
+
+describe('Open in Commands', () => {
+  const lineOf = (lang: 'ahk' | 'ps', path: string) =>
+    LANGUAGES[lang].findFunctions(readRepoText(path)).find((f) => f.name === 'PreviousTrack')!.line
+  const cursorLine = () => {
+    const { state } = editorView()
+    return state.doc.lineAt(state.selection.main.head).number
+  }
+
+  it("shows the command's file and line", async () => {
+    const { user } = await start()
+    await user.click(key('F13'))
+    const path = 'ahk/commands/media.ahk'
+    await user.click(screen.getByRole('button', { name: 'Open in Commands' }))
+
+    expect(screen.getByRole('tab', { name: 'Commands' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('button', { name: 'AutoHotkey' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(screen.getByRole('toolbar')).getByText(path)).toBeTruthy()
+    expect(cursorLine()).toBe(lineOf('ahk', path))
+  })
+
+  it('opens the PowerShell file when that is the language you run', async () => {
+    const { user } = await start({ languages: ['ps'] })
+    await user.click(key('F13'))
+    await user.click(screen.getByRole('button', { name: 'Open in Commands' }))
+    const path = 'powershell/commands/media.ps1'
+    expect(within(screen.getByRole('toolbar')).getByText(path)).toBeTruthy()
+    expect(cursorLine()).toBe(lineOf('ps', path))
+  })
+
+  it('is not offered for a command that no file defines', async () => {
+    const { user } = await start({
+      config: (c) => {
+        ;(c.layers[0].macros[0] as { action: string }).action = 'NoSuchCommand'
+      },
+    })
+    await user.click(key('F13'))
+    expect(screen.queryByRole('button', { name: 'Open in Commands' })).toBeNull()
   })
 })

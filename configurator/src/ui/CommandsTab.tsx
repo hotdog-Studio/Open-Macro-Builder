@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
+import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
+import { keysUsing } from '../core/commands/usage'
 import { EncodingError } from '../core/folder/textFile'
 import { LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
 import { shownPair, type CommandDialog } from '../state/commandsSlice'
 import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
 import { ConfirmDialog } from './ConfirmDialog'
-import { LeftPanel, STYLE } from './Panels'
+import { LeftPanel, RightPanel, STYLE } from './Panels'
 
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
@@ -233,6 +235,127 @@ function CommandDialogView({ dialog }: Readonly<{ dialog: CommandDialog }>) {
   )
 }
 
+/** Mark of one language in an outline entry: green when it has the command, else a gap. */
+function LangMark({ lang, has }: Readonly<{ lang: LangId; has: boolean }>) {
+  const { settings } = useEditor().state
+  // A gap in a language you run is a problem (red); in another it is information only (amber).
+  const gap = settings.languages.includes(lang) ? 'text-red-400' : 'text-amber-400'
+  return <span className={has ? 'text-emerald-400' : gap}>{`${LANGUAGES[lang].short} ${has ? '✓' : '✗'}`}</span>
+}
+
+/** Where the selected command sits in each language, and which keys use it. */
+function EntryDetails({ entry }: Readonly<{ entry: OutlineEntry }>) {
+  const { ws } = useEditor().state
+  const uses = keysUsing(ws, entry.name)
+  const description = LANG_IDS.map((l) => entry.in[l]?.description).find(Boolean)
+  return (
+    <div className="mt-4 border-t border-zinc-800 pt-3">
+      {description && <p className="mb-1 text-zinc-300">{description}</p>}
+      {LANG_IDS.map((l) => {
+        const at = entry.in[l]
+        const where = at ? 'line ' + at.line : 'missing'
+        return (
+          <p key={l} className="text-[11px] text-zinc-400">
+            {`${LANGUAGES[l].label}: ${where}`}
+          </p>
+        )
+      })}
+      <h4 className={`${STYLE.heading} mt-3`}>Used by</h4>
+      {uses.length === 0 ? (
+        <p className="text-zinc-500">Not used in the current layout.</p>
+      ) : (
+        <ul className="space-y-0.5 text-[11px] text-zinc-300">
+          {uses.map((u) => (
+            <li key={`${u.parked}\0${u.layer}\0${u.key}`}>{`${u.layer} · ${u.key}${u.parked ? ' (parked)' : ''}`}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** The right panel: every command of the shown pair with its gaps, and the details of one. */
+function Outline({ pair }: Readonly<{ pair: CommandPair }>) {
+  const { state, dispatch, actions } = useEditor()
+  const { lang, drafts } = state.commands
+  const [selected, setSelected] = useState<string | null>(null)
+  // The text the editors hold, so the outline follows typing.
+  const texts = useMemo(() => {
+    const out: PairTexts = {}
+    for (const l of LANG_IDS) {
+      const file = pair.files[l]
+      if (file) out[l] = drafts[file.file.path] ?? file.file.text
+    }
+    return out
+  }, [pair, drafts])
+  const outline = useMemo(() => pairOutline(texts), [texts])
+  const mismatches = useMemo(() => paramMismatches(texts), [texts])
+  const chosen = outline.find((e) => e.name.toLowerCase() === selected)
+
+  const open = (entry: OutlineEntry) => {
+    setSelected(entry.name.toLowerCase())
+    const has = LANG_IDS.filter((l) => entry.in[l])
+    const target = entry.in[lang] ? lang : (has.find((l) => state.settings.languages.includes(l)) ?? has[0])
+    const at = entry.in[target]
+    const file = pair.files[target]
+    if (!at || !file) return
+    // Showing another file clears a pending jump, so the language comes first.
+    if (target !== lang) dispatch({ type: 'commands-show', lang: target })
+    dispatch({ type: 'jump', path: file.file.path, line: at.line })
+  }
+
+  const rename = (m: ParamMismatch) => {
+    const file = pair.files[m.lang]
+    const current = texts[m.lang]
+    if (!file || current === undefined) return
+    const fn = LANGUAGES[m.lang].findFunctions(current).find((f) => f.line === m.line && f.name === m.name)
+    if (!fn) return
+    actions.editCommand(file.file.path, LANGUAGES[m.lang].renameParam(current, fn, 'Macro'), file.file.version)
+    dispatch({ type: 'commands-show', lang: m.lang })
+  }
+
+  return (
+    <section aria-label="Commands in this file">
+      <h3 className={STYLE.heading}>Commands in this file</h3>
+      <ul className="space-y-0.5">
+        {outline.map((e) => (
+          <li key={e.name.toLowerCase()}>
+            <button
+              type="button"
+              aria-current={e === chosen || undefined}
+              className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left ${
+                e === chosen ? 'bg-zinc-700' : 'hover:bg-zinc-800'
+              }`}
+              onClick={() => open(e)}
+            >
+              <span className="truncate font-mono text-[12px] text-zinc-200">{e.name}</span>{' '}
+              <span className="flex shrink-0 gap-2 text-[10px]">
+                {LANG_IDS.map((l, i) => (
+                  <Fragment key={l}>
+                    {i > 0 && ' '}
+                    <LangMark lang={l} has={e.in[l] !== undefined} />
+                  </Fragment>
+                ))}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {mismatches.map((m) => (
+        <div key={`${m.lang}:${m.name}`} className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-amber-200">
+          <p>{`${LANGUAGES[m.lang].label} defines ${m.name} with the parameter "${m.param}" instead of "Macro", so it does not count as a command.`}</p>
+          {pair.files[m.lang]?.editable && (
+            <button type="button" className={`${STYLE.button} mt-2`} onClick={() => rename(m)}>
+              Rename the parameter to Macro
+            </button>
+          )}
+        </div>
+      ))}
+      {chosen && <EntryDetails entry={chosen} />}
+    </section>
+  )
+}
+
 /** The Commands tab: each command file pair, and an editor for one language of the chosen pair. */
 export function CommandsTab() {
   const { state } = useEditor()
@@ -261,6 +384,7 @@ export function CommandsTab() {
         )}
         {!pair && <p className="p-5 text-zinc-500">There are no command files yet.</p>}
       </main>
+      <RightPanel preview={false}>{pair && <Outline key={pair.key} pair={pair} />}</RightPanel>
       {dialog && <CommandDialogView dialog={dialog} />}
     </>
   )

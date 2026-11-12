@@ -264,6 +264,32 @@ describe('Save config.json', () => {
     expect(await bytesOf(folder, BAK)).toBe(bytes(OUTSIDE))
   })
 
+  it('Overwrite anyway refuses when the file changes again after the copy to .bak', async () => {
+    const { user, folder } = await start()
+    await editLabel(user)
+    await folder.writeBytes(CONFIG, enc.encode(OUTSIDE))
+    const newer = EXAMPLE.replace('"title": "Media"', '"title": "Tunes"')
+    const write = folder.writeBytes.bind(folder)
+    folder.writeBytes = async (path, data) => {
+      await write(path, data)
+      // Another program writes the file again right after the copy.
+      if (path === BAK) await write(CONFIG, enc.encode(newer))
+    }
+
+    await user.click(saveButton())
+    await user.click(
+      within(await screen.findByRole('dialog', { name: CONFLICT })).getByRole('button', { name: 'Overwrite anyway' }),
+    )
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Overwrite anyway?' })).getByRole('button', { name: 'Overwrite anyway' }),
+    )
+    // The newer edit is not in the .bak, so it is not overwritten: the conflict dialog comes back.
+    expect(await screen.findByRole('dialog', { name: CONFLICT })).toBeTruthy()
+    expect(await bytesOf(folder, CONFIG)).toBe(bytes(newer))
+    expect(await bytesOf(folder, BAK)).toBe(bytes(OUTSIDE))
+    expect(editor().dirty).toBe(true)
+  })
+
   it('Cancel on the overwrite confirmation writes nothing', async () => {
     const { user, folder } = await start()
     await editLabel(user)

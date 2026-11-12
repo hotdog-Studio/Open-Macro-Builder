@@ -283,8 +283,10 @@ export function createActions(
       if (!force && version !== configFile.version) throw new ConflictError(configFile.path)
       // The file being replaced; after Overwrite anyway, that is the outside edit.
       if (onDisk !== null) await folder.writeBytes(`${configFile.path}.bak`, onDisk)
-      // writeTextFile checks the version again, in case the file changed since the read above.
-      written = await writeTextFile(folder, { ...configFile, text: writeConfig(ws) }, { force })
+      // Written over the version just copied to the .bak, never by force: writeTextFile refuses
+      // with ConflictError when the file changed since the read above, so an edit that lands after
+      // the copy is neither overwritten nor lost.
+      written = await writeTextFile(folder, { ...configFile, text: writeConfig(ws), version })
     } catch (e) {
       // The folder was closed or reloaded meanwhile: nobody to tell.
       if (held !== file) return 'blocked'

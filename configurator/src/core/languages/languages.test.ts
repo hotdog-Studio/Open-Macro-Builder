@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readRepoText } from '../../../test/repo'
+import { appendBlock } from '../commands/newCommand'
 import { LANGUAGES, LANG_IDS, isCommand } from './index'
 
 describe('AutoHotkey findFunctions', () => {
@@ -267,5 +268,26 @@ describe('include listings', () => {
   it('lists nothing for PowerShell', () => {
     expect(ps.addListing('x', 'local/powershell/commands/mine.ps1')).toBe('x')
     expect(ps.removeListing('x', 'local/powershell/commands/mine.ps1')).toBe('x')
+  })
+})
+
+describe('starter command', () => {
+  it('a starter command is found as a command with its description', () => {
+    for (const id of LANG_IDS) {
+      const text = appendBlock('', LANGUAGES[id].starterCommand('Foo', 'Does foo'))
+      const fns = LANGUAGES[id].findFunctions(text)
+      expect(fns).toHaveLength(1)
+      expect(fns[0]).toMatchObject({ name: 'Foo', description: 'Does foo' })
+      expect(isCommand(fns[0])).toBe(true)
+    }
+  })
+
+  it('has the documented text, and leaves out an empty description', () => {
+    expect(LANGUAGES.ahk.starterCommand('Foo', 'Does foo')).toBe(
+      '/**\n * Does foo\n * @param {Macro} Macro - The macro object.\n */\nFoo(Macro)\n{\n}',
+    )
+    expect(LANGUAGES.ahk.starterCommand('Foo', '')).toBe('/**\n * @param {Macro} Macro - The macro object.\n */\nFoo(Macro)\n{\n}')
+    expect(LANGUAGES.ps.starterCommand('Foo', 'Does foo')).toBe('# Does foo\nfunction Foo {\n    param($Macro)\n}')
+    expect(LANGUAGES.ps.starterCommand('Foo', '')).toBe('function Foo {\n    param($Macro)\n}')
   })
 })

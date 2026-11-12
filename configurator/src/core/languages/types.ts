@@ -28,6 +28,8 @@ export interface Language {
   renameParam(text: string, fn: FunctionInfo, to: string): string
   /** The text of a new command file of the pair. */
   starterFile(pair: string): string
+  /** A new command with the Macro parameter, without a trailing newline; an empty description leaves out its line. */
+  starterCommand(name: string, description: string): string
   /** The include file that must list the command file at `path`; null when the runtime loads every file itself. */
   listedIn(path: string): string | null
   /**

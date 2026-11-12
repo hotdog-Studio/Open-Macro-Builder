@@ -86,6 +86,8 @@ export const ps: Language = {
   findFunctions,
   renameParam,
   starterFile: (pair) => `# ${pair} commands.\n`,
+  starterCommand: (name, description) =>
+    (description === '' ? '' : `# ${description}\n`) + `function ${name} {\n    param($Macro)\n}`,
   // PowerShell loads every file in its command folders: no include file lists them.
   listedIn: () => null,
   addListing: (includeText) => includeText ?? '',

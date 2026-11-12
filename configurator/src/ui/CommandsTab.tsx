@@ -9,6 +9,7 @@ import { shownPair, type CommandDialog } from '../state/commandsSlice'
 import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
 import { ConfirmDialog } from './ConfirmDialog'
+import { NewCommandButton } from './NewCommandDialog'
 import { LeftPanel, RightPanel, STYLE } from './Panels'
 
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
@@ -165,6 +166,7 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
       <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
         <LanguageButtons pair={pair} />
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-400">{path}</span>
+        <NewCommandButton file={file} />
         <button type="button" className={STYLE.button} onClick={() => setConfirmDelete(true)}>
           Delete this file
         </button>
@@ -245,6 +247,8 @@ function MissingFile({ pair }: Readonly<{ pair: CommandPair }>) {
     <>
       <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
         <LanguageButtons pair={pair} />
+        <span className="flex-1" />
+        <NewCommandButton file={undefined} />
       </div>
       <div className="p-5">
         <p className="text-zinc-400">{missingText(pair, lang, state.settings.languages)}</p>

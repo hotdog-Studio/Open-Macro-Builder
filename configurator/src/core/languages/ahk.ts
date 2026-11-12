@@ -213,6 +213,10 @@ export const ahk: Language = {
   findFunctions,
   renameParam,
   starterFile: (pair) => `#Requires AutoHotkey v2.0\n\n; ${pair} commands.\n`,
+  starterCommand: (name, description) =>
+    '/**\n' +
+    (description === '' ? '' : ` * ${description}\n`) +
+    ` * @param {Macro} Macro - The macro object.\n */\n${name}(Macro)\n{\n}`,
   listedIn,
   addListing,
   removeListing,

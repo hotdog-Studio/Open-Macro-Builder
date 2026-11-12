@@ -1435,3 +1435,89 @@ describe('new and deleted files', () => {
     expect(await folder.readBytes(HUB)).toBeNull()
   })
 })
+
+describe('new command', () => {
+  const cursorLine = () => {
+    const { state } = editorView()
+    return state.doc.lineAt(state.selection.main.head).number
+  }
+  const newCommandButton = () => screen.getByRole('button', { name: 'New command' }) as HTMLButtonElement
+  const MINE_AHK = MINE['local/ahk/mine.ahk']
+
+  /** Opens the dialog and fills it. */
+  async function fill(user: User, name: string, description = '') {
+    await user.click(newCommandButton())
+    const dialog = screen.getByRole('dialog', { name: 'New command' })
+    if (name !== '') await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), name)
+    if (description !== '') await user.type(within(dialog).getByRole('textbox', { name: 'Description' }), description)
+    return dialog
+  }
+
+  it('adds a starter command and jumps to it', async () => {
+    const { user, folder } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    expect(saveButton('mine.ahk').disabled).toBe(true)
+    const dialog = await fill(user, 'Fresh', 'Does fresh')
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+
+    const added = `${MINE_AHK}\n/**\n * Does fresh\n * @param {Macro} Macro - The macro object.\n */\nFresh(Macro)\n{\n}\n`
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(text()).toBe(added)
+    expect(saveButton('mine.ahk').disabled).toBe(false)
+    expect(editor().commands.drafts['local/ahk/mine.ahk']).toBe(added)
+    expect(cursorLine()).toBe(9)
+    // Nothing is written until the user saves.
+    expect(folder.text('local/ahk/mine.ahk')).toBe(MINE_AHK)
+
+    await save(user, 'mine.ahk')
+    expect(folder.text('local/ahk/mine.ahk')).toBe(added)
+    await user.click(screen.getByRole('tab', { name: 'Macros' }))
+    const palette = screen.getByRole('region', { name: 'Commands' })
+    expect(palette.querySelector('[data-command="Fresh"]')).not.toBeNull()
+  })
+
+  it('adds a PowerShell starter to the PowerShell file', async () => {
+    const { user } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    await user.click(langButton('PowerShell'))
+    await user.click(within(await fill(user, 'Fresh')).getByRole('button', { name: 'Add' }))
+    expect(text()).toBe(`${MINE['local/powershell/commands/mine.ps1']}\nfunction Fresh {\n    param($Macro)\n}\n`)
+    expect(cursorLine()).toBe(5)
+  })
+
+  it('refuses a bad or taken name and adds nothing', async () => {
+    const { user } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    const dialog = await fill(user, 'my-command')
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    expect(within(dialog).getByText('A command name starts with a letter or _ and uses only letters, digits and _.')).toBeTruthy()
+
+    const name = within(dialog).getByRole('textbox', { name: 'Name' })
+    await user.clear(name)
+    await user.type(name, 'MINE')
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    expect(within(dialog).getByText('MINE is already defined in AutoHotkey (local/ahk/mine.ahk).')).toBeTruthy()
+    expect(text()).toBe(MINE_AHK)
+    expect(editor().commands.drafts).toEqual({})
+  })
+
+  it('counts a name added to a draft of another file', async () => {
+    const { user } = await start({ files: { ...MINE, 'local/ahk/other.ahk': 'Other(Macro)\n{\n}\n' } })
+    await user.click(pairButton('other'))
+    await user.click(within(await fill(user, 'Fresh')).getByRole('button', { name: 'Add' }))
+    await user.click(pairButton('mine'))
+    const dialog = await fill(user, 'fresh')
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    expect(within(dialog).getByText('fresh is already defined in AutoHotkey (local/ahk/other.ahk).')).toBeTruthy()
+  })
+
+  it('is disabled without an editable file in the shown language', async () => {
+    const raw = new Uint8Array([...enc.encode('L(Macro)\n{\n; caf'), 0xe9, ...enc.encode('\n}\n')])
+    const { user } = await start({ files: { 'local/ahk/latin.ahk': raw } })
+    await user.click(pairButton('latin'))
+    expect(newCommandButton().disabled).toBe(true)
+    // No PowerShell file for the pair either.
+    await user.click(langButton('PowerShell'))
+    expect(newCommandButton().disabled).toBe(true)
+  })
+})

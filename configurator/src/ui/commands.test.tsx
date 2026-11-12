@@ -1342,6 +1342,76 @@ describe('new and deleted files', () => {
     expect(folder.text(HUB)).toBe('#Include mine.ahk\n')
   })
 
+  describe('when a file cannot be deleted', () => {
+    const MINE_AHK = 'local/ahk/mine.ahk'
+    // CRLF, and the line in the middle: putting it back must give these exact bytes again.
+    const hub = '#Requires AutoHotkey v2.0\r\n#Include mine.ahk\r\n#Include other.ahk\r\n'
+    const files = { ...MINE, [HUB]: hub, 'local/ahk/other.ahk': 'Other(Macro)\n{\n}\n' }
+
+    async function deleteMine(user: User) {
+      await user.click(pairButton('mine'))
+      await user.click(screen.getByRole('button', { name: 'Delete this file' }))
+      await user.click(within(screen.getByRole('dialog', { name: 'Delete mine.ahk?' })).getByRole('button', { name: 'Delete' }))
+    }
+
+    /** The file is still there, listed and shown as a normal file. */
+    function stillListed() {
+      expect(pairButton('mine').textContent).toContain('AHK 1 · PS 1')
+      expect(editor().commandFiles.some((f) => f.file.path === MINE_AHK)).toBe(true)
+      expect(text()).toBe(MINE[MINE_AHK])
+    }
+
+    it('puts the include line back', async () => {
+      const { user, folder } = await start({ files })
+      const before = await bytesOf(folder, HUB)
+      folder.remove = async () => {
+        throw new Error('the file is locked')
+      }
+      await deleteMine(user)
+      expect(await screen.findByText(`${MINE_AHK} was not deleted: the file is locked`)).toBeTruthy()
+      expect(await bytesOf(folder, HUB)).toEqual(before)
+      expect(folder.text(MINE_AHK)).toBe(MINE[MINE_AHK])
+      stillListed()
+    })
+
+    it('says so when the include line cannot be put back', async () => {
+      const { user, folder } = await start({ files })
+      folder.remove = async () => {
+        folder.writeBytes = async () => {
+          throw new Error('the disk is read-only')
+        }
+        throw new Error('the file is locked')
+      }
+      await deleteMine(user)
+      expect(
+        await screen.findByText(`${MINE_AHK} was not deleted, and ${HUB} no longer includes it: the file is locked`),
+      ).toBeTruthy()
+      expect(folder.text(HUB)).toBe('#Requires AutoHotkey v2.0\r\n#Include other.ahk\r\n')
+      expect(folder.text(MINE_AHK)).toBe(MINE[MINE_AHK])
+      stillListed()
+    })
+  })
+
+  it('says when a new file was made but its include line was not', async () => {
+    const { user, folder } = await start({ files: MINE })
+    const write = folder.writeBytes.bind(folder)
+    folder.writeBytes = async (path, data) => {
+      if (path === HUB) throw new Error('the hub is locked')
+      return write(path, data)
+    }
+    const dialog = await newFile(user, 'new')
+    await user.click(within(dialog).getByRole('checkbox', { name: 'PowerShell' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+    expect(
+      await within(dialog).findByText(`local/ahk/new.ahk was created, but ${HUB} was not updated: the hub is locked`),
+    ).toBeTruthy()
+    expect(folder.text('local/ahk/new.ahk')).toBe(AHK_STARTER('new'))
+    expect(await folder.readBytes(HUB)).toBeNull()
+    // The file exists, so it is listed and shown.
+    expect(pairButton('new').getAttribute('aria-current')).toBe('true')
+    expect(editor().commandFiles.some((f) => f.file.path === 'local/ahk/new.ahk')).toBe(true)
+  })
+
   it('refuses a name that already exists', async () => {
     const { user, folder } = await start({ files: MINE })
     let dialog = await newFile(user, '')

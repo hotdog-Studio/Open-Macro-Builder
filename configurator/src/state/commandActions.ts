@@ -70,12 +70,44 @@ async function addInclude(folder: FolderAccess, lang: Language, listPath: string
   else if (text !== include.text) await writeTextFile(folder, { ...include, text })
 }
 
+/** What removeInclude changed: the include file before and after; null when it changed nothing. */
+interface Removed {
+  before: TextFile
+  after: TextFile
+}
+
 /** Removes the lines that load `path` from its include file, read and written as addInclude does. */
-async function removeInclude(folder: FolderAccess, lang: Language, listPath: string, path: string): Promise<void> {
+async function removeInclude(
+  folder: FolderAccess,
+  lang: Language,
+  listPath: string,
+  path: string,
+): Promise<Removed | null> {
   const include = await readTextFile(folder, listPath)
-  if (include === null) return
+  if (include === null) return null
   const text = lang.removeListing(include.text, path)
-  if (text !== include.text) await writeTextFile(folder, { ...include, text })
+  if (text === include.text) return null
+  return { before: include, after: await writeTextFile(folder, { ...include, text }) }
+}
+
+/**
+ * Puts back what removeInclude removed. Read fresh and written with the version just read: when
+ * nothing else touched the include file since, it gets its exact text back (the line where it was);
+ * otherwise the line is added again as addInclude adds it.
+ */
+async function restoreInclude(
+  folder: FolderAccess,
+  lang: Language,
+  listPath: string,
+  path: string,
+  removed: Removed,
+): Promise<void> {
+  const include = await readTextFile(folder, listPath)
+  if (include !== null && include.version === removed.after.version) {
+    await writeTextFile(folder, { ...include, text: removed.before.text })
+  } else {
+    await addInclude(folder, lang, listPath, path)
+  }
 }
 
 /** Saving and reloading one command file at a time. */
@@ -325,13 +357,20 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       if (!folder || !held) return null
       const lang = LANGUAGES[held.lang]
       const listPath = lang.listedIn(path)
+      let removed: Removed | null = null
       try {
         if ((await currentVersion(folder, path)) !== held.file.version) return `${path} changed on disk; reload it first.`
         // The include line goes first: AutoHotkey does not start when it includes a missing file.
-        if (listPath) await removeInclude(folder, lang, listPath, path)
+        if (listPath) removed = await removeInclude(folder, lang, listPath, path)
         await folder.remove(path)
       } catch (e) {
-        return `${path} was not deleted: ${messageOf(e)}`
+        const why = `${path} was not deleted: ${messageOf(e)}`
+        // The file stays (it is still listed and held), so its include line goes back, or the user is told it is gone.
+        if (!listPath || !removed) return why
+        return restoreInclude(folder, lang, listPath, path, removed).then(
+          () => why,
+          () => `${path} was not deleted, and ${listPath} no longer includes it: ${messageOf(e)}`,
+        )
       }
       if (deps.folder() !== folder) return null
       files.set(withCommandFile(files.get(), path, null))

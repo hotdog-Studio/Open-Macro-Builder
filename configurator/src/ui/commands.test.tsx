@@ -267,6 +267,61 @@ describe('Commands tab', () => {
     expect(folder.text(CHROME_AHK)).toBe(`;; mine${eol}${original}`)
   })
 
+  it('Overwrite anyway refuses when the file changes again after the copy to .bak', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    typeAt(0, '; mine\n')
+    const outside = enc.encode(`; theirs${eol}${original}`)
+    const newer = enc.encode(`; newer${eol}${original}`)
+    await folder.writeBytes(CHROME_AHK, outside)
+    const write = folder.writeBytes.bind(folder)
+    folder.writeBytes = async (path, data) => {
+      await write(path, data)
+      // Another program writes the file again right after the copy.
+      if (path === `${CHROME_AHK}.bak`) await write(CHROME_AHK, newer)
+    }
+
+    await user.click(saveButton('chrome.ahk'))
+    const conflict = 'chrome.ahk changed on disk since you opened it.'
+    await user.click(within(await screen.findByRole('dialog', { name: conflict })).getByRole('button', { name: 'Overwrite anyway' }))
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Overwrite anyway?' })).getByRole('button', { name: 'Overwrite anyway' }),
+    )
+    // The newer edit is not in the .bak, so it is not overwritten: the conflict dialog comes back.
+    expect(await screen.findByRole('dialog', { name: conflict })).toBeTruthy()
+    expect(await bytesOf(folder, CHROME_AHK)).toEqual(Array.from(newer))
+    expect(await bytesOf(folder, `${CHROME_AHK}.bak`)).toEqual(Array.from(outside))
+    expect(saveButton('chrome.ahk').disabled).toBe(false)
+  })
+
+  it('Overwrite anyway writes nothing when the .bak cannot be written', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    typeAt(0, '; mine\n')
+    const outside = enc.encode(`; theirs${eol}${original}`)
+    await folder.writeBytes(CHROME_AHK, outside)
+    const write = folder.writeBytes.bind(folder)
+    folder.writeBytes = async (path, data) => {
+      if (path === `${CHROME_AHK}.bak`) throw new Error('Access is denied.')
+      return write(path, data)
+    }
+
+    await user.click(saveButton('chrome.ahk'))
+    const conflict = 'chrome.ahk changed on disk since you opened it.'
+    await user.click(within(await screen.findByRole('dialog', { name: conflict })).getByRole('button', { name: 'Overwrite anyway' }))
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Overwrite anyway?' })).getByRole('button', { name: 'Overwrite anyway' }),
+    )
+    expect((await screen.findByRole('alert')).textContent).toContain(`${CHROME_AHK} was not saved: Access is denied.`)
+    expect(await bytesOf(folder, CHROME_AHK)).toEqual(Array.from(outside))
+    expect(await folder.readBytes(`${CHROME_AHK}.bak`)).toBeNull()
+    expect(saveButton('chrome.ahk').disabled).toBe(false)
+  })
+
   it('Reload from disk asks before dropping unsaved changes', async () => {
     const { user, folder } = await start()
     await user.click(pairButton('custom/chrome'))
@@ -420,6 +475,67 @@ describe('Commands tab', () => {
     await user.click(saveButton('chrome.ahk'))
     expect(await screen.findByRole('dialog', { name: 'chrome.ahk changed on disk since you opened it.' })).toBeTruthy()
     expect(await bytesOf(folder, CHROME_AHK)).toEqual(Array.from(outside))
+  })
+
+  it('a command save that lands during a config.json reload keeps the saved version', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const lf = original.replaceAll('\r\n', '\n')
+    typeAt(0, '; mine\n')
+
+    // The reload's scan pauses on a file it reads after chrome.ahk.
+    const read = folder.readBytes.bind(folder)
+    let armed = true
+    let reached = () => {}
+    const atGate = new Promise<void>((resolve) => (reached = resolve))
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    folder.readBytes = async (path) => {
+      const bytes = await read(path)
+      if (armed && path === 'ahk/commands/custom/examples.ahk') {
+        armed = false
+        reached()
+        await gate
+      }
+      return bytes
+    }
+    let reload: Promise<void> | undefined
+    await act(async () => {
+      reload = seen.actions.reloadFromDisk()
+      await atGate
+    })
+    // The scan already holds chrome.ahk as it was; now the save writes it.
+    await act(async () => {
+      expect(await seen.actions.saveCommandFile(CHROME_AHK)).toBe('saved')
+    })
+    await act(async () => {
+      release()
+      await reload
+    })
+
+    expect(text()).toBe(`; mine\n${lf}`)
+    expect(saveButton('chrome.ahk').disabled).toBe(true)
+    typeAt(0, ';')
+    await save(user, 'chrome.ahk')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(folder.text(CHROME_AHK)).toBe(`;; mine${eol}${original}`)
+  })
+
+  it('choosing the file already shown keeps a pending jump', async () => {
+    const { user } = await start()
+    const path = 'ahk/commands/custom/automation.ahk'
+    // The first pair is shown without being chosen.
+    expect(pairButton('custom/automation').getAttribute('aria-current')).toBe('true')
+    act(() => seen.dispatch({ type: 'jump', path, line: 3 }))
+    await user.click(pairButton('custom/automation'))
+    await user.click(langButton('AutoHotkey'))
+    expect(editor().commands.jump).toEqual({ path, line: 3, n: 1 })
+
+    // Another file drops it, so coming back does not jump again.
+    await user.click(langButton('PowerShell'))
+    expect(editor().commands.jump).toBeNull()
   })
 
   it('asks before opening another folder with unsaved command edits', async () => {

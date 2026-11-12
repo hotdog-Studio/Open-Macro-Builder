@@ -1,3 +1,4 @@
+import { commandPairs, type CommandPair } from '../core/commands/pairs'
 import { commandCatalog, mergeRescan, withCommandFile, type CommandFile, type LangId } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { EditCore } from './store'
@@ -71,11 +72,34 @@ function withFile(state: EditCore, path: string, file: CommandFile | null): Pick
 }
 
 /**
- * The command files after Reload from disk of config.json: files with unsaved edits keep
- * the entry they were edited on, every other file takes the fresh one.
+ * The command files after a read of the whole folder (config.json's Reload from disk). `before`
+ * is the app's copy when the read started and `now` its copy after it. A file with unsaved edits
+ * keeps the entry it was edited on. So does a file the app saved, reloaded, created or removed
+ * during the read, because the read may have seen it as it was before. Every other file takes
+ * its fresh entry.
  */
-export function mergeReloaded(held: CommandFile[], fresh: CommandFile[], draftPaths: string[]): CommandFile[] {
-  return mergeRescan(held, fresh, new Set(draftPaths)).files
+export function mergeAfterRead(
+  before: CommandFile[],
+  now: CommandFile[],
+  fresh: CommandFile[],
+  draftPaths: string[],
+): CommandFile[] {
+  const was = new Map(before.map((f) => [f.file.path, f]))
+  const is = new Map(now.map((f) => [f.file.path, f]))
+  const touched = [...new Set([...was.keys(), ...is.keys()])].filter((path) => was.get(path) !== is.get(path))
+  const gone = new Set(touched.filter((path) => !is.has(path)))
+  const kept = fresh.filter((f) => !gone.has(f.file.path))
+  return mergeRescan(now, kept, new Set([...draftPaths, ...touched])).files
+}
+
+/** The pair the tab shows: the chosen one, else the first. */
+export function shownPair(pairs: CommandPair[], key: string | null): CommandPair | undefined {
+  return pairs.find((p) => p.key === key) ?? pairs[0]
+}
+
+/** The path of the file the tab shows, if the chosen language has one. */
+function shownPath(files: CommandFile[], key: string | null, lang: LangId): string | undefined {
+  return shownPair(commandPairs(files), key)?.files[lang]?.file.path
 }
 
 export function commandsReducer(state: EditCore, action: CommandAction): EditCore {
@@ -85,7 +109,8 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
       const pair = action.pair ?? c.pair
       const lang = action.lang ?? c.lang
       // A jump belongs to the file it was made for; another file must not take it up later.
-      const jump = pair === c.pair && lang === c.lang ? c.jump : null
+      const same = shownPath(state.commandFiles, pair, lang) === shownPath(state.commandFiles, c.pair, c.lang)
+      const jump = same ? c.jump : null
       return { ...state, commands: { ...c, pair, lang, jump } }
     }
     case 'draft': {

@@ -3,11 +3,11 @@ import type { KeyId, Workspace } from '../core/config/model'
 import { writeConfig } from '../core/config/write'
 import type { TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import { commandCatalog, type CatalogEntry, type CommandFile, type LangId } from '../core/languages'
+import type { CatalogEntry, CommandFile, LangId } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
 import { createActions, type AppActions } from './actions'
-import { commandsReducer, initialCommands, mergeReloaded, type CommandAction, type CommandsView } from './commandsSlice'
+import { commandsReducer, initialCommands, type CommandAction, type CommandsView } from './commandsSlice'
 
 export type Tab = 'shape' | 'layers' | 'macros' | 'commands'
 
@@ -112,7 +112,10 @@ export type Action =
   | { type: 'settings'; settings: Settings }
   /** A save wrote `configFile`; `saved` is the workspace it holds. */
   | { type: 'saved'; configFile: TextFile; saved: Workspace }
-  /** Reload from disk: a fresh session, edits to config.json dropped; settings, tab and command drafts stay. */
+  /**
+   * Reload from disk: a fresh session, edits to config.json dropped; settings, tab and command
+   * drafts stay. Its command files are already merged with the ones holding drafts (mergeAfterRead).
+   */
   | { type: 'reloaded'; session: Session }
   | { type: 'save-dialog'; dialog: SaveDialog | null }
   /** A recheck of the config file: `changed` when the disk holds another version than the app. */
@@ -165,12 +168,9 @@ function editReducer(state: EditCore, action: Action): EditCore {
     case 'saved':
       // The disk now holds what the app wrote, so an outside-change banner is out of date.
       return { ...state, configFile: action.configFile, saved: action.saved, outsideChange: null }
-    case 'reloaded': {
-      // The command files with unsaved edits keep them, and the version they were made on.
-      const commandFiles = mergeReloaded(state.commandFiles, action.session.commandFiles, Object.keys(state.commands.drafts))
-      const session = { ...action.session, commandFiles, catalog: commandCatalog(commandFiles) }
-      return { ...loadedState(session, state.settings), tab: state.tab, commands: state.commands }
-    }
+    case 'reloaded':
+      // The session carries the command files as the actions merged them, so both hold the same list.
+      return { ...loadedState(action.session, state.settings), tab: state.tab, commands: state.commands }
     case 'save-dialog':
       return { ...state, saveDialog: action.dialog }
     case 'disk':

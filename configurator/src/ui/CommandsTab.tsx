@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
 import { EncodingError } from '../core/folder/textFile'
 import { LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
-import type { CommandDialog } from '../state/commandsSlice'
+import { shownPair, type CommandDialog } from '../state/commandsSlice'
 import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -215,7 +215,7 @@ export function CommandsTab() {
   const { commandFiles, settings } = state
   const { lang, dialog } = state.commands
   const pairs = useMemo(() => commandPairs(commandFiles), [commandFiles])
-  const pair = pairs.find((p) => p.key === state.commands.pair) ?? pairs[0]
+  const pair = shownPair(pairs, state.commands.pair)
   const file = pair?.files[lang]
   return (
     <>

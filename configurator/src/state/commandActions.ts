@@ -1,3 +1,4 @@
+import { hashBytes } from '../core/folder/hash'
 import { ConflictError, writeTextFile, type TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
 import { LANGUAGES, readCommandFile, withCommandFile, type CommandFile } from '../core/languages'
@@ -53,13 +54,17 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const current = () => deps.folder() === folder && entry(path) === held
     let written: TextFile
     try {
+      let version = held.file.version
       if (force) {
-        // Overwrite anyway: the outside edit being replaced is kept beside the file.
+        // Overwrite anyway: the outside edit being replaced is kept beside the file, and only that
+        // edit is replaced. A failed copy stops the save.
         const onDisk = await folder.readBytes(path)
+        version = onDisk === null ? null : await hashBytes(onDisk)
         if (onDisk !== null) await folder.writeBytes(`${path}.bak`, onDisk)
       }
-      // Refuses with ConflictError, writing nothing, when the disk is not the version held.
-      written = await writeTextFile(folder, { ...held.file, text: draft }, { force })
+      // Refuses with ConflictError, writing nothing, when the disk is not that version: the one
+      // held, or after Overwrite anyway the one just copied to .bak.
+      written = await writeTextFile(folder, { ...held.file, text: draft, version })
     } catch (e) {
       if (!current()) return 'blocked'
       if (e instanceof ConflictError) {

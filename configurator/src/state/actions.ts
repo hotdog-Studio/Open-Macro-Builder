@@ -25,7 +25,7 @@ import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
 import { createCommandActions } from './commandActions'
-import { mergeReloaded } from './commandsSlice'
+import { mergeAfterRead } from './commandsSlice'
 import type { Action, AppState, EditState, SaveDialog, Session } from './store'
 
 export type SaveResult = 'saved' | 'blocked' | 'conflict'
@@ -447,11 +447,14 @@ export function createActions(
       const file = held
       if (getState().screen !== 'edit' || !file) return
       const token = ++loads
+      // Command files the app saves or reloads during the read keep the app's entry (mergeAfterRead).
+      const before = commandFiles
       try {
-        const session = await readSession(file.folder, file.configFile.path)
+        const read = await readSession(file.folder, file.configFile.path)
         if (token !== loads || held !== file) return
-        // Command files with unsaved edits keep the version they were edited on, as the reducer does.
-        const files = mergeReloaded(commandFiles, session.commandFiles, commands.draftPaths())
+        // Command files with unsaved edits keep the version they were edited on.
+        const files = mergeAfterRead(before, commandFiles, read.commandFiles, commands.draftPaths())
+        const session = { ...read, commandFiles: files, catalog: commandCatalog(files) }
         dispatch({ type: 'reloaded', session })
         hold(session.folder, session.configFile, files)
       } catch (e) {

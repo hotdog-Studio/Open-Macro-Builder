@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { editorView, replaceAll, typeAt, undo } from '../../../test/codeEditor'
 import { CodeEditor } from './CodeEditor'
@@ -65,6 +65,31 @@ describe('CodeEditor', () => {
     again({ value: 'reloaded' })
     expect(editorView()).toBe(view)
     expect(text()).toBe('reloaded')
+  })
+
+  it('a new value starts a fresh undo history', () => {
+    const { onChange, again } = start({ value: 'one\ntwo' })
+    typeAt(3, 'X')
+    onChange.mockClear()
+    again({ value: 'reloaded' })
+    // Neither the replace nor the edit before it can be undone: the disk no longer has that text.
+    undo()
+    expect(text()).toBe('reloaded')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('a new value keeps the cursor where it still fits', () => {
+    const { again } = start({ value: 'one\ntwo\nthree' })
+    act(() => editorView().dispatch({ selection: { anchor: 5 } }))
+    again({ value: 'one\ntwo\nthree!' })
+    expect(editorView().state.selection.main.head).toBe(5)
+    again({ value: 'ab' })
+    expect(editorView().state.selection.main.head).toBe(2)
+    // The language, the label and read-only carry over to the new state.
+    expect(editorView().contentDOM.getAttribute('aria-label')).toBe('AutoHotkey code')
+    again({ value: 'ab', readOnly: true })
+    again({ value: 'cd', readOnly: true })
+    expect(editorView().state.readOnly).toBe(true)
   })
 
   it('undo reverts a user edit under the same key', () => {

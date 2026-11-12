@@ -639,6 +639,23 @@ describe('outside changes', () => {
     expect(folder.text(CHROME_AHK)).toBe(`;${theirs}`)
   })
 
+  it('undo cannot bring back text the disk no longer has', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const theirs = `; theirs${eol}${original}`
+    await folder.writeBytes(CHROME_AHK, enc.encode(theirs))
+    await recheckCommands()
+    expect(text()).toBe(theirs.replaceAll('\r\n', '\n'))
+
+    undo()
+    expect(text()).toBe(theirs.replaceAll('\r\n', '\n'))
+    expect(saveButton('chrome.ahk').disabled).toBe(true)
+    expect(editor().commands.drafts).toEqual({})
+    expect(folder.text(CHROME_AHK)).toBe(theirs)
+  })
+
   it('keeps unsaved edits when the file changes on disk and says so', async () => {
     const { user, folder } = await start()
     await user.click(pairButton('custom/chrome'))

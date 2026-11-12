@@ -1,9 +1,10 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { checkNewFile } from '../core/commands/files'
 import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
 import { keysUsing } from '../core/commands/usage'
 import { EncodingError } from '../core/folder/textFile'
-import { LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
+import { definedNames, isCommand, LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
 import { shownPair, type CommandDialog } from '../state/commandsSlice'
 import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
@@ -99,11 +100,56 @@ function LanguageButtons({ pair }: Readonly<{ pair: CommandPair }>) {
   )
 }
 
+/** Delete this file's confirmation: the keys that stop working once the file's commands are gone. */
+function DeleteDialog({ file, onClose }: Readonly<{ file: CommandFile; onClose: () => void }>) {
+  const { state, dispatch, actions } = useEditor()
+  const path = file.file.path
+  const label = LANGUAGES[file.lang].label
+  const uses = useMemo(() => {
+    // Only the commands no other file of the language defines stop working.
+    const others = definedNames(
+      state.commandFiles.filter((f) => f.file.path !== path),
+      file.lang,
+    )
+    return file.functions
+      .filter((fn) => isCommand(fn) && !others.has(fn.name.toLowerCase()))
+      .flatMap((fn) => keysUsing(state.ws, fn.name).map((u) => ({ ...u, name: fn.name })))
+  }, [state.commandFiles, state.ws, file, path])
+  const remove = async () => {
+    onClose()
+    const error = await actions.deleteCommandFile(path)
+    if (error) dispatch({ type: 'banner', banner: { text: error, kind: 'error' } })
+  }
+  return (
+    <ConfirmDialog
+      title={`Delete ${fileName(path)}?`}
+      onCancel={onClose}
+      choices={[{ label: 'Delete', danger: true, onChoose: () => void remove() }]}
+    >
+      {uses.length === 0 ? (
+        <p>No key in the current layout uses its commands.</p>
+      ) : (
+        <>
+          <p>{`These keys would stop working in ${label}:`}</p>
+          <ul className="mt-2 space-y-0.5">
+            {uses.map((u) => (
+              <li key={`${u.parked}\0${u.layer}\0${u.key}\0${u.name}`}>
+                {`${u.layer} · ${u.key} (${u.name}${u.parked ? ', parked' : ''})`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </ConfirmDialog>
+  )
+}
+
 /** The toolbar's file controls and the editor of one command file. */
 function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFile }>) {
   const { state, dispatch, actions } = useEditor()
   const { drafts, saved, jump, outside } = state.commands
   const [confirmReload, setConfirmReload] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const path = file.file.path
   const name = fileName(path)
   const draft = drafts[path]
@@ -119,6 +165,9 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
       <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
         <LanguageButtons pair={pair} />
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-400">{path}</span>
+        <button type="button" className={STYLE.button} onClick={() => setConfirmDelete(true)}>
+          Delete this file
+        </button>
         <button type="button" className={STYLE.button} onClick={askReload}>
           Reload from disk
         </button>
@@ -181,7 +230,116 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
           choices={[{ label: 'Discard and reload', danger: true, onChoose: reload }]}
         />
       )}
+      {confirmDelete && <DeleteDialog file={file} onClose={() => setConfirmDelete(false)} />}
     </>
+  )
+}
+
+/** What the centre shows when the chosen language has no file for the pair. */
+function MissingFile({ pair }: Readonly<{ pair: CommandPair }>) {
+  const { state, actions } = useEditor()
+  const { lang } = state.commands
+  const [error, setError] = useState<string | null>(null)
+  const create = async () => setError(await actions.createMissingFile(pair.key, lang))
+  return (
+    <>
+      <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
+        <LanguageButtons pair={pair} />
+      </div>
+      <div className="p-5">
+        <p className="text-zinc-400">{missingText(pair, lang, state.settings.languages)}</p>
+        <button type="button" className={`${STYLE.button} mt-3`} onClick={() => void create()}>
+          Create an empty file
+        </button>
+        {error && (
+          <p role="alert" className="mt-2 text-red-300">
+            {error}
+          </p>
+        )}
+      </div>
+    </>
+  )
+}
+
+/** New file: a name, yours or shared, and the languages to make it in. */
+function NewFileDialog({ onClose }: Readonly<{ onClose: () => void }>) {
+  const { state, actions } = useEditor()
+  const [name, setName] = useState('')
+  const [group, setGroup] = useState<'yours' | 'shared'>('yours')
+  const [langs, setLangs] = useState<LangId[]>(() => LANG_IDS.filter((l) => state.settings.languages.includes(l)))
+  const [error, setError] = useState<string | null>(null)
+  const nameField = useRef<HTMLInputElement>(null)
+  // After the dialog's own focus, so typing goes straight into the name.
+  useEffect(() => nameField.current?.focus(), [])
+
+  /** True while the files are being made, so a second click does not make them again. */
+  const busy = useRef(false)
+  const create = async () => {
+    if (busy.current) return
+    busy.current = true
+    const why = checkNewFile(state.commandFiles, name, group, langs) ?? (await actions.createCommandFiles({ group, name, langs }))
+    busy.current = false
+    if (why) setError(why)
+    else onClose()
+  }
+  const toggle = (l: LangId, on: boolean) => setLangs((was) => LANG_IDS.filter((x) => (x === l ? on : was.includes(x))))
+  const radio = (value: 'yours' | 'shared', label: string) => (
+    <label className="flex items-center gap-2">
+      <input
+        type="radio"
+        name="new-file-group"
+        className="accent-sky-500"
+        checked={group === value}
+        onChange={() => setGroup(value)}
+      />
+      {label}
+    </label>
+  )
+  return (
+    <ConfirmDialog
+      title="New command file"
+      onCancel={onClose}
+      choices={[{ label: 'Create', primary: true, onChoose: () => void create() }]}
+    >
+      <label className={STYLE.label} htmlFor="new-file-name">
+        Name
+      </label>
+      <input
+        id="new-file-name"
+        ref={nameField}
+        className={STYLE.input}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void create()
+        }}
+      />
+      <div className="mt-3 space-y-1">
+        {radio('yours', 'Yours (local/, not committed)')}
+        {radio('shared', 'Shared (committed to git)')}
+      </div>
+      {group === 'shared' && (
+        <p className={STYLE.note}>Shared files are committed to git. Keep personal details out of them.</p>
+      )}
+      <div className="mt-3 flex gap-4">
+        {LANG_IDS.map((l) => (
+          <label key={l} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="accent-sky-500"
+              checked={langs.includes(l)}
+              onChange={(e) => toggle(l, e.target.checked)}
+            />
+            {LANGUAGES[l].label}
+          </label>
+        ))}
+      </div>
+      {error && (
+        <p role="alert" className="mt-3 text-red-300">
+          {error}
+        </p>
+      )}
+    </ConfirmDialog>
   )
 }
 
@@ -359,8 +517,9 @@ function Outline({ pair }: Readonly<{ pair: CommandPair }>) {
 /** The Commands tab: each command file pair, and an editor for one language of the chosen pair. */
 export function CommandsTab() {
   const { state } = useEditor()
-  const { commandFiles, settings } = state
+  const { commandFiles } = state
   const { lang, dialog } = state.commands
+  const [newFile, setNewFile] = useState(false)
   const pairs = useMemo(() => commandPairs(commandFiles), [commandFiles])
   const pair = shownPair(pairs, state.commands.pair)
   const file = pair?.files[lang]
@@ -371,21 +530,18 @@ export function CommandsTab() {
           <PairList title="Yours" pairs={pairs.filter((p) => p.group === 'yours')} shown={pair?.key} />
           <PairList title="Shared" pairs={pairs.filter((p) => p.group === 'shared')} shown={pair?.key} />
         </nav>
+        <button type="button" className={STYLE.button} onClick={() => setNewFile(true)}>
+          New file
+        </button>
       </LeftPanel>
       <main className="flex min-w-0 flex-1 flex-col">
         {pair && file && <FileView key={file.file.path} pair={pair} file={file} />}
-        {pair && !file && (
-          <>
-            <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
-              <LanguageButtons pair={pair} />
-            </div>
-            <p className="p-5 text-zinc-400">{missingText(pair, lang, settings.languages)}</p>
-          </>
-        )}
+        {pair && !file && <MissingFile key={`${pair.key}\0${lang}`} pair={pair} />}
         {!pair && <p className="p-5 text-zinc-500">There are no command files yet.</p>}
       </main>
       <RightPanel preview={false}>{pair && <Outline key={pair.key} pair={pair} />}</RightPanel>
       {dialog && <CommandDialogView dialog={dialog} />}
+      {newFile && <NewFileDialog onClose={() => setNewFile(false)} />}
     </>
   )
 }

@@ -86,6 +86,18 @@ export interface AppActions {
    * folder change came first.
    */
   recheckCommands(): Promise<void>
+  /**
+   * New file: a starter file in each chosen language, then (AutoHotkey) the include line that
+   * loads it; shows the new pair. Resolves to the first error message, or null when done.
+   */
+  createCommandFiles(req: { group: 'yours' | 'shared'; name: string; langs: LangId[] }): Promise<string | null>
+  /** Create an empty file: the missing language of a pair, as New file makes it. */
+  createMissingFile(pairKey: string, lang: LangId): Promise<string | null>
+  /**
+   * Delete this file: its include line first, then the file, so AutoHotkey never includes a
+   * missing file; its unsaved edits go too. Refused when the file changed on disk.
+   */
+  deleteCommandFile(path: string): Promise<string | null>
 }
 
 /** The config file as the app last read or wrote it, with its folder. */
@@ -503,6 +515,9 @@ export function createActions(
     saveCommandFile: commands.saveCommandFile,
     reloadCommandFile: commands.reloadCommandFile,
     recheckCommands: commands.recheckCommands,
+    createCommandFiles: commands.createCommandFiles,
+    createMissingFile: commands.createMissingFile,
+    deleteCommandFile: commands.deleteCommandFile,
 
     async recheck() {
       await saveDone()

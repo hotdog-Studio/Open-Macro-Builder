@@ -85,4 +85,9 @@ export const ps: Language = {
   ignore: [],
   findFunctions,
   renameParam,
+  starterFile: (pair) => `# ${pair} commands.\n`,
+  // PowerShell loads every file in its command folders: no include file lists them.
+  listedIn: () => null,
+  addListing: (includeText) => includeText ?? '',
+  removeListing: (includeText) => includeText,
 }

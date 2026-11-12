@@ -1162,3 +1162,206 @@ describe('outline', () => {
     expect(folder.text(PS)).toBe('function Foo { param($Macro) $Macro }\n')
   })
 })
+
+describe('new and deleted files', () => {
+  const HUB = 'local/ahk/commands.ahk'
+  const HUB_HEADER =
+    '#Requires AutoHotkey v2.0\n' +
+    '; Your own AutoHotkey commands. ahk\\config.ahk includes this file when it exists. The local folder\n' +
+    '; is ignored by git, so nothing here is ever committed.\n'
+  const AHK_STARTER = (pair: string) => `#Requires AutoHotkey v2.0\n\n; ${pair} commands.\n`
+  const PS_STARTER = (pair: string) => `# ${pair} commands.\n`
+  const newFileDialog = () => screen.getByRole('dialog', { name: 'New command file' })
+
+  /** The example config changed by `change`, as a hand-edited file would be. */
+  function exampleWith(change: (c: { layers: { title: string; macros: unknown[] }[] }) => void): string {
+    const parsed = JSON.parse(EXAMPLE)
+    change(parsed)
+    return JSON.stringify(parsed, null, 2) + '\n'
+  }
+
+  /** Opens New file and types the name. */
+  async function newFile(user: User, name: string) {
+    await user.click(screen.getByRole('button', { name: 'New file' }))
+    const dialog = newFileDialog()
+    if (name !== '') await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), name)
+    return dialog
+  }
+
+  it('creates a personal file pair and lists it in the hub', async () => {
+    const watched: string[][] = []
+    const { user, folder } = await start({
+      files: MINE,
+      platform: {
+        watch: (paths) => {
+          watched.push(paths)
+          return () => undefined
+        },
+      },
+    })
+    const dialog = await newFile(user, 'new')
+    expect((within(dialog).getByRole('radio', { name: 'Yours (local/, not committed)' }) as HTMLInputElement).checked).toBe(true)
+    expect((within(dialog).getByRole('checkbox', { name: 'AutoHotkey' }) as HTMLInputElement).checked).toBe(true)
+    expect((within(dialog).getByRole('checkbox', { name: 'PowerShell' }) as HTMLInputElement).checked).toBe(true)
+    expect(within(dialog).queryByText(/committed to git\. Keep/)).toBeNull()
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(folder.text('local/ahk/new.ahk')).toBe(AHK_STARTER('new'))
+    expect(folder.text('local/powershell/commands/new.ps1')).toBe(PS_STARTER('new'))
+    expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
+    expect(pairButton('new').getAttribute('aria-current')).toBe('true')
+    expect(pairButton('new').textContent).toContain('AHK 0 · PS 0')
+    expect(text()).toBe(AHK_STARTER('new'))
+    // The closure copy holds the new files too: they are watched.
+    expect(watched.at(-1)).toEqual(expect.arrayContaining(['local/ahk/new.ahk', 'local/powershell/commands/new.ps1']))
+
+    // The new file saves against the version just written.
+    typeAt(docEnd(), 'New(Macro)\n{\n}\n')
+    await save(user, 'new.ahk')
+    expect(folder.text('local/ahk/new.ahk')).toBe(`${AHK_STARTER('new')}New(Macro)\n{\n}\n`)
+  })
+
+  it('creates a shared file in Custom Commands and says it will be committed', async () => {
+    const { user, folder } = await start({ languages: ['ahk'] })
+    const config = folder.text('ahk/config.ahk')!
+    const dialog = await newFile(user, 'new')
+    expect((within(dialog).getByRole('checkbox', { name: 'AutoHotkey' }) as HTMLInputElement).checked).toBe(true)
+    expect((within(dialog).getByRole('checkbox', { name: 'PowerShell' }) as HTMLInputElement).checked).toBe(false)
+    await user.click(within(dialog).getByRole('radio', { name: 'Shared (committed to git)' }))
+    expect(within(dialog).getByText('Shared files are committed to git. Keep personal details out of them.')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(folder.text('ahk/commands/custom/new.ahk')).toBe(AHK_STARTER('custom/new'))
+    expect(await folder.readBytes('powershell/commands/custom/new.ps1')).toBeNull()
+    const eol = eolOf(folder, 'ahk/config.ahk')
+    const automation = `#Include commands\\custom\\automation.ahk${eol}`
+    expect(folder.text('ahk/config.ahk')).toBe(config.replace(automation, `${automation}#Include commands\\custom\\new.ahk${eol}`))
+    expect(await folder.readBytes(HUB)).toBeNull()
+    expect(pairButton('custom/new').getAttribute('aria-current')).toBe('true')
+
+    // A config.ahk without its Custom Commands section: nothing is written at all.
+    const bare = '#Requires AutoHotkey v2.0\n#Include commands\\helper.ahk\n'
+    await folder.writeBytes('ahk/config.ahk', enc.encode(bare))
+    const again = await newFile(user, 'other')
+    await user.click(within(again).getByRole('radio', { name: 'Shared (committed to git)' }))
+    await user.click(within(again).getByRole('button', { name: 'Create' }))
+    expect(
+      await within(again).findByText(
+        'ahk/config.ahk has no Custom Commands section. Add "#Include commands\\…" there by hand.',
+      ),
+    ).toBeTruthy()
+    expect(await folder.readBytes('ahk/commands/custom/other.ahk')).toBeNull()
+    expect(folder.text('ahk/config.ahk')).toBe(bare)
+  })
+
+  it('Create an empty file adds the missing language', async () => {
+    const { user, folder } = await start({
+      files: { 'local/ahk/odd.ahk': 'Odd(Macro)\n{\n}\n', 'local/powershell/commands/solo.ps1': 'function Solo { param($Macro) }\n' },
+    })
+    await user.click(pairButton('odd'))
+    await user.click(langButton('PowerShell'))
+    await user.click(screen.getByRole('button', { name: 'Create an empty file' }))
+    await waitFor(() => expect(text()).toBe(PS_STARTER('odd')))
+    expect(folder.text('local/powershell/commands/odd.ps1')).toBe(PS_STARTER('odd'))
+    expect(langButton('PowerShell').getAttribute('aria-pressed')).toBe('true')
+    // PowerShell loads every file in its folders: no include file changes.
+    expect(await folder.readBytes(HUB)).toBeNull()
+
+    // AutoHotkey needs the include line too.
+    await folder.writeBytes(HUB, enc.encode('#Requires AutoHotkey v2.0\r\n#Include odd.ahk\r\n'))
+    await user.click(pairButton('solo'))
+    await user.click(langButton('AutoHotkey'))
+    await user.click(screen.getByRole('button', { name: 'Create an empty file' }))
+    await waitFor(() => expect(text()).toBe(AHK_STARTER('solo')))
+    expect(folder.text('local/ahk/solo.ahk')).toBe(AHK_STARTER('solo'))
+    expect(folder.text(HUB)).toBe('#Requires AutoHotkey v2.0\r\n#Include odd.ahk\r\n#Include solo.ahk\r\n')
+    expect(pairButton('solo').textContent).toContain('AHK 0 · PS 1')
+  })
+
+  it('deletes a file and its include line after naming the keys that use it', async () => {
+    const config = exampleWith((c) => {
+      c.layers[0].macros[3] = { action: 'MyCmd', name: 'Mine' }
+    })
+    const hub = '#Requires AutoHotkey v2.0\n; Mine.\n#Include mine.ahk\n#Include other.ahk\n'
+    const { user, folder } = await start({
+      files: {
+        [CONFIG]: config,
+        [HUB]: hub,
+        'local/ahk/mine.ahk': 'MyCmd(Macro)\n{\n}\nVolumeUp(Macro)\n{\n}\n',
+        'local/powershell/commands/mine.ps1': 'function MyCmd { param($Macro) }\n',
+        'local/ahk/other.ahk': 'Other(Macro)\n{\n}\n',
+      },
+    })
+    const layer = (JSON.parse(config) as { layers: { title: string }[] }).layers[0].title
+    const key = (JSON.parse(config) as { keys: { key: string }[] }).keys[3].key
+
+    // A file whose commands no key uses.
+    await user.click(pairButton('other'))
+    await user.click(screen.getByRole('button', { name: 'Delete this file' }))
+    let dialog = screen.getByRole('dialog', { name: 'Delete other.ahk?' })
+    expect(within(dialog).getByText('No key in the current layout uses its commands.')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(folder.text('local/ahk/other.ahk')).toBe('Other(Macro)\n{\n}\n')
+
+    // MyCmd is only in mine.ahk; VolumeUp is also in the shared media.ahk, so it is not named.
+    await user.click(pairButton('mine'))
+    typeAt(0, '; unsaved\n')
+    await user.click(screen.getByRole('button', { name: 'Delete this file' }))
+    dialog = screen.getByRole('dialog', { name: 'Delete mine.ahk?' })
+    expect(within(dialog).getByText('These keys would stop working in AutoHotkey:')).toBeTruthy()
+    expect(within(dialog).getAllByRole('listitem').map((li) => li.textContent)).toEqual([`${layer} · ${key} (MyCmd)`])
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(folder.text('local/ahk/mine.ahk')).toBeNull())
+    expect(folder.text(HUB)).toBe('#Requires AutoHotkey v2.0\n; Mine.\n#Include other.ahk\n')
+    expect(folder.text('local/powershell/commands/mine.ps1')).toBe('function MyCmd { param($Macro) }\n')
+    await waitFor(() => expect(pairButton('mine').textContent).toContain('AHK — · PS 1'))
+    expect(editor().commandFiles.some((f) => f.file.path === 'local/ahk/mine.ahk')).toBe(false)
+    expect(editor().commands.drafts).toEqual({})
+    expect(screen.getByRole('button', { name: 'Create an empty file' })).toBeTruthy()
+
+    // Made again, the file starts clean: the old draft is gone.
+    await user.click(screen.getByRole('button', { name: 'Create an empty file' }))
+    await waitFor(() => expect(text()).toBe(AHK_STARTER('mine')))
+    expect(folder.text(HUB)).toBe('#Requires AutoHotkey v2.0\n; Mine.\n#Include other.ahk\n#Include mine.ahk\n')
+    typeAt(0, '; x\n')
+    expect(screen.queryByRole('alert')).toBeNull()
+    await save(user, 'mine.ahk')
+    expect(folder.text('local/ahk/mine.ahk')).toBe(`; x\n${AHK_STARTER('mine')}`)
+  })
+
+  it('refuses to delete a file that changed on disk', async () => {
+    const { user, folder } = await start({ files: { ...MINE, [HUB]: '#Include mine.ahk\n' } })
+    await folder.writeBytes('local/ahk/mine.ahk', enc.encode('Changed(Macro)\n{\n}\n'))
+    await user.click(screen.getByRole('button', { name: 'Delete this file' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Delete mine.ahk?' })).getByRole('button', { name: 'Delete' }))
+    expect(await screen.findByText('local/ahk/mine.ahk changed on disk; reload it first.')).toBeTruthy()
+    expect(folder.text('local/ahk/mine.ahk')).toBe('Changed(Macro)\n{\n}\n')
+    expect(folder.text(HUB)).toBe('#Include mine.ahk\n')
+  })
+
+  it('refuses a name that already exists', async () => {
+    const { user, folder } = await start({ files: MINE })
+    let dialog = await newFile(user, '')
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+    expect(within(dialog).getByText('Enter a name.')).toBeTruthy()
+
+    await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'mine')
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+    expect(within(dialog).getByText('local/ahk/mine.ahk already exists.')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(folder.text('local/ahk/mine.ahk')).toBe(MINE['local/ahk/mine.ahk'])
+    expect(await folder.readBytes(HUB)).toBeNull()
+
+    // A file that appeared on disk since the folder was read.
+    await folder.writeBytes('local/ahk/late.ahk', enc.encode('; mine\n'))
+    dialog = await newFile(user, 'late')
+    await user.click(within(dialog).getByRole('checkbox', { name: 'PowerShell' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+    expect(await within(dialog).findByText('local/ahk/late.ahk already exists.')).toBeTruthy()
+    expect(folder.text('local/ahk/late.ahk')).toBe('; mine\n')
+    expect(await folder.readBytes(HUB)).toBeNull()
+  })
+})

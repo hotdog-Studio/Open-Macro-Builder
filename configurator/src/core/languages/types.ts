@@ -26,6 +26,17 @@ export interface Language {
    * the file). Nothing else changes.
    */
   renameParam(text: string, fn: FunctionInfo, to: string): string
+  /** The text of a new command file of the pair. */
+  starterFile(pair: string): string
+  /** The include file that must list the command file at `path`; null when the runtime loads every file itself. */
+  listedIn(path: string): string | null
+  /**
+   * The include file's text with a line that loads `path` (null: the include file does not exist
+   * yet). Unchanged when `path` is already listed. Throws when there is no place for the line.
+   */
+  addListing(includeText: string | null, path: string): string
+  /** The include file's text without the lines that load `path`; every other byte stays. */
+  removeListing(includeText: string, path: string): string
 }
 
 /** A command takes exactly one parameter, named Macro in any case. */

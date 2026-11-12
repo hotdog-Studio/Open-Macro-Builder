@@ -173,6 +173,8 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
           drafts: without(c.drafts, action.path),
           outside: without(c.outside, action.path),
           dialog: c.dialog?.path === action.path ? null : c.dialog,
+          // A file that is gone no longer has a last save to report.
+          saved: action.file ? c.saved : without(c.saved, action.path),
         },
       }
     case 'command-files': {

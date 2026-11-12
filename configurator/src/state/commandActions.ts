@@ -1,13 +1,25 @@
+import { checkNewFile, newFilePath } from '../core/commands/files'
 import { hashBytes } from '../core/folder/hash'
-import { ConflictError, writeTextFile, type TextFile } from '../core/folder/textFile'
+import {
+  ConflictError,
+  currentVersion,
+  newTextFile,
+  readTextFile,
+  writeTextFile,
+  type TextFile,
+} from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
 import {
+  commandFileAt,
+  commandFilePath,
   LANGUAGES,
   mergeRescan,
   readCommandFile,
   scanCommands,
   withCommandFile,
   type CommandFile,
+  type LangId,
+  type Language,
 } from '../core/languages'
 import type { Platform } from '../platform/types'
 import type { AppActions, SaveResult } from './actions'
@@ -29,7 +41,13 @@ export interface CommandDeps {
 
 export type CommandActions = Pick<
   AppActions,
-  'editCommand' | 'saveCommandFile' | 'reloadCommandFile' | 'recheckCommands'
+  | 'editCommand'
+  | 'saveCommandFile'
+  | 'reloadCommandFile'
+  | 'recheckCommands'
+  | 'createCommandFiles'
+  | 'createMissingFile'
+  | 'deleteCommandFile'
 > & {
   /** Resolves once no command file is being saved, however the saves ended. */
   settled(): Promise<void>
@@ -40,6 +58,25 @@ export type CommandActions = Pick<
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/**
+ * Adds the line that loads `path` to its include file (made when missing). Include files are read
+ * right before the edit and written with the version just read, so they never hold stale text.
+ */
+async function addInclude(folder: FolderAccess, lang: Language, listPath: string, path: string): Promise<void> {
+  const include = await readTextFile(folder, listPath)
+  const text = lang.addListing(include?.text ?? null, path)
+  if (include === null) await writeTextFile(folder, newTextFile(listPath, text))
+  else if (text !== include.text) await writeTextFile(folder, { ...include, text })
+}
+
+/** Removes the lines that load `path` from its include file, read and written as addInclude does. */
+async function removeInclude(folder: FolderAccess, lang: Language, listPath: string, path: string): Promise<void> {
+  const include = await readTextFile(folder, listPath)
+  if (include === null) return
+  const text = lang.removeListing(include.text, path)
+  if (text !== include.text) await writeTextFile(folder, { ...include, text })
+}
 
 /** Saving and reloading one command file at a time. */
 export function createCommandActions(deps: CommandDeps): CommandActions {
@@ -163,6 +200,47 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     return 'saved'
   }
 
+  /**
+   * Makes the command file at `path`: its starter text, then the include line that loads it. The
+   * include line is worked out before anything is written, so a file it cannot be added to writes
+   * nothing. Once written, the file joins the list even when its include line failed. Resolves to
+   * null when done, else why not.
+   */
+  async function createFile(path: string): Promise<string | null> {
+    const folder = deps.folder()
+    const at = commandFileAt(path)
+    if (!folder || !at) return null
+    const lang = LANGUAGES[at.lang]
+    const listPath = lang.listedIn(path)
+    try {
+      if (listPath) lang.addListing((await readTextFile(folder, listPath))?.text ?? null, path)
+      if ((await folder.readBytes(path)) !== null) return `${path} already exists.`
+    } catch (e) {
+      return messageOf(e)
+    }
+    let made: TextFile
+    try {
+      // Version null: a file that appeared since the check is never replaced.
+      made = await writeTextFile(folder, newTextFile(path, lang.starterFile(at.pair)))
+    } catch (e) {
+      return e instanceof ConflictError ? `${path} already exists.` : `${path} was not created: ${messageOf(e)}`
+    }
+    const error =
+      listPath === null
+        ? null
+        : await addInclude(folder, lang, listPath, path).then(
+            () => null,
+            (e: unknown) => `${path} was created, but ${listPath} was not updated: ${messageOf(e)}`,
+          )
+    if (deps.folder() !== folder) return error
+    const file: CommandFile = { ...at, file: made, functions: lang.findFunctions(made.text), editable: true }
+    files.set(withCommandFile(files.get(), path, file))
+    drafts.delete(path)
+    written.delete(path)
+    dispatch({ type: 'command-file', path, file })
+    return error
+  }
+
   return {
     editCommand(path, text, base) {
       const held = entry(path)
@@ -208,6 +286,60 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     },
 
     recheckCommands,
+
+    async createCommandFiles({ group, name, langs }) {
+      const why = checkNewFile(files.get(), name, group, langs)
+      if (why) return why
+      let error: string | null = null
+      const made: LangId[] = []
+      for (const lang of langs) {
+        const path = newFilePath(lang, group, name)
+        // One language at a time; a failed one does not stop the next.
+        const failed = await createFile(path)
+        error ??= failed
+        if (entry(path)) made.push(lang)
+      }
+      if (made.length > 0) {
+        const at = commandFileAt(newFilePath(made[0], group, name))!
+        const state = deps.getState()
+        const lang = state.screen === 'edit' && made.includes(state.commands.lang) ? state.commands.lang : made[0]
+        dispatch({ type: 'commands-show', pair: `${at.group}:${at.pair}`, lang })
+      }
+      return error
+    },
+
+    async createMissingFile(pairKey, lang) {
+      const colon = pairKey.indexOf(':')
+      const group = pairKey.slice(0, colon)
+      if (group !== 'yours' && group !== 'shared') return null
+      const path = commandFilePath(lang, group, pairKey.slice(colon + 1))
+      const error = await createFile(path)
+      if (entry(path)) dispatch({ type: 'commands-show', pair: pairKey, lang })
+      return error
+    },
+
+    async deleteCommandFile(path) {
+      await saves.get(path)?.catch(() => undefined)
+      const folder = deps.folder()
+      const held = entry(path)
+      if (!folder || !held) return null
+      const lang = LANGUAGES[held.lang]
+      const listPath = lang.listedIn(path)
+      try {
+        if ((await currentVersion(folder, path)) !== held.file.version) return `${path} changed on disk; reload it first.`
+        // The include line goes first: AutoHotkey does not start when it includes a missing file.
+        if (listPath) await removeInclude(folder, lang, listPath, path)
+        await folder.remove(path)
+      } catch (e) {
+        return `${path} was not deleted: ${messageOf(e)}`
+      }
+      if (deps.folder() !== folder) return null
+      files.set(withCommandFile(files.get(), path, null))
+      drafts.delete(path)
+      written.delete(path)
+      dispatch({ type: 'command-file', path, file: null })
+      return null
+    },
 
     settled,
 

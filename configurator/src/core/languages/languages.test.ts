@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readRepoText } from '../../../test/repo'
 import { LANGUAGES, LANG_IDS, isCommand } from './index'
 
 describe('AutoHotkey findFunctions', () => {
@@ -170,5 +171,101 @@ describe('renameParam', () => {
     const text = 'function Foo { param($a) $a }\n'
     const [fn] = LANGUAGES.ps.findFunctions(text)
     expect(LANGUAGES.ps.renameParam(text, fn, 'Macro')).toBe('function Foo { param($Macro) $Macro }\n')
+  })
+})
+
+describe('include listings', () => {
+  const { ahk, ps } = LANGUAGES
+  const CONFIG_AHK = readRepoText('ahk/config.ahk')
+  const HUB_HEADER = [
+    '#Requires AutoHotkey v2.0',
+    '; Your own AutoHotkey commands. ahk\\config.ahk includes this file when it exists. The local folder',
+    '; is ignored by git, so nothing here is ever committed.',
+    '',
+  ].join('\n')
+
+  it('gives each language its starter text and include file', () => {
+    expect(ahk.starterFile('new')).toBe('#Requires AutoHotkey v2.0\n\n; new commands.\n')
+    expect(ps.starterFile('new')).toBe('# new commands.\n')
+    expect(ahk.listedIn('local/ahk/mine.ahk')).toBe('local/ahk/commands.ahk')
+    expect(ahk.listedIn('local/ahk/sub/mine.ahk')).toBe('local/ahk/commands.ahk')
+    expect(ahk.listedIn('ahk/commands/custom/new.ahk')).toBe('ahk/config.ahk')
+    expect(ps.listedIn('local/powershell/commands/mine.ps1')).toBeNull()
+    expect(ps.listedIn('powershell/commands/custom/new.ps1')).toBeNull()
+  })
+
+  it('adds a shared include in Custom Commands', () => {
+    const next = ahk.addListing(CONFIG_AHK, 'ahk/commands/custom/new.ahk')
+    const before = CONFIG_AHK.split('\n')
+    const at = before.indexOf('#Include commands\\custom\\automation.ahk')
+    expect(at).toBeGreaterThan(0)
+    expect(next.split('\n')).toEqual([...before.slice(0, at + 1), '#Include commands\\custom\\new.ahk', ...before.slice(at + 1)])
+    // A path already listed leaves the text unchanged.
+    expect(ahk.addListing(next, 'ahk/commands/custom/new.ahk')).toBe(next)
+    expect(ahk.addListing(CONFIG_AHK, 'ahk/commands/custom/chrome.ahk')).toBe(CONFIG_AHK)
+  })
+
+  it('removeListing undoes addListing byte for byte', () => {
+    const cases: [string, string][] = [
+      [CONFIG_AHK, 'ahk/commands/custom/new.ahk'],
+      [CONFIG_AHK.replaceAll('\n', '\r\n'), 'ahk/commands/custom/new.ahk'],
+      [HUB_HEADER + '#Include other.ahk\n', 'local/ahk/mine.ahk'],
+      [HUB_HEADER + '#Include other.ahk', 'local/ahk/mine.ahk'],
+      ['; mine\r\n#Include other.ahk\r\n', 'local/ahk/mine.ahk'],
+      ['', 'local/ahk/mine.ahk'],
+    ]
+    for (const [text, path] of cases) {
+      const added = ahk.addListing(text, path)
+      expect(added).not.toBe(text)
+      expect(ahk.removeListing(added, path)).toBe(text)
+    }
+  })
+
+  it('starts a missing hub', () => {
+    expect(ahk.addListing(null, 'local/ahk/mine.ahk')).toBe(HUB_HEADER + '#Include mine.ahk\n')
+    expect(ahk.addListing(null, 'local/ahk/sub/mine.ahk')).toBe(HUB_HEADER + '#Include sub\\mine.ahk\n')
+  })
+
+  it('keeps a hub without a final newline that way', () => {
+    expect(ahk.addListing('#Include a.ahk', 'local/ahk/mine.ahk')).toBe('#Include a.ahk\n#Include mine.ahk')
+    expect(ahk.addListing('#Include a.ahk\n', 'local/ahk/mine.ahk')).toBe('#Include a.ahk\n#Include mine.ahk\n')
+  })
+
+  it('refuses a config.ahk without Custom Commands', () => {
+    const text = '#Requires AutoHotkey v2.0\n; ****** Commands ******\n#Include commands\\helper.ahk\n'
+    expect(() => ahk.addListing(text, 'ahk/commands/custom/new.ahk')).toThrow(
+      'ahk/config.ahk has no Custom Commands section. Add "#Include commands\\…" there by hand.',
+    )
+  })
+
+  it('goes directly after the Custom Commands header when the section lists nothing yet', () => {
+    const text = '; *** Custom Commands ***\n; Notes.\n\n; **** Macros ****\n#Include commands\\x.ahk\n'
+    expect(ahk.addListing(text, 'ahk/commands/custom/new.ahk')).toBe(
+      '; *** Custom Commands ***\n#Include commands\\custom\\new.ahk\n; Notes.\n\n; **** Macros ****\n#Include commands\\x.ahk\n',
+    )
+  })
+
+  it('removes an include written with *i, quotes or forward slashes', () => {
+    const hub = [
+      '#Requires AutoHotkey v2.0',
+      '#Include *i mine.ahk',
+      '#include "Mine.AHK"',
+      "  #Include 'sub/../mine.ahk'",
+      '#Include other.ahk',
+      '; #Include mine.ahk is a comment',
+      '',
+    ].join('\n')
+    expect(ahk.removeListing(hub, 'local/ahk/mine.ahk')).toBe(
+      '#Requires AutoHotkey v2.0\n#Include other.ahk\n; #Include mine.ahk is a comment\n',
+    )
+    const config = '; *** Custom Commands ***\r\n#Include *i commands/custom/New.ahk\r\n#Include *i ..\\local\\ahk\\commands.ahk\r\n'
+    expect(ahk.removeListing(config, 'ahk/commands/custom/new.ahk')).toBe(
+      '; *** Custom Commands ***\r\n#Include *i ..\\local\\ahk\\commands.ahk\r\n',
+    )
+  })
+
+  it('lists nothing for PowerShell', () => {
+    expect(ps.addListing('x', 'local/powershell/commands/mine.ps1')).toBe('x')
+    expect(ps.removeListing('x', 'local/powershell/commands/mine.ps1')).toBe('x')
   })
 })

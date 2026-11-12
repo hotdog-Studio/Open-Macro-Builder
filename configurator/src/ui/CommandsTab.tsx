@@ -98,7 +98,7 @@ function LanguageButtons({ pair }: Readonly<{ pair: CommandPair }>) {
 
 /** The toolbar's file controls and the editor of one command file. */
 function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFile }>) {
-  const { state, dispatch, actions } = useEditor()
+  const { state, actions } = useEditor()
   const { drafts, saved, jump } = state.commands
   const [confirmReload, setConfirmReload] = useState(false)
   const path = file.file.path
@@ -136,7 +136,7 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
           docKey={path}
           lang={file.lang}
           value={draft ?? file.file.text}
-          onChange={(text) => dispatch({ type: 'draft', path, text })}
+          onChange={(text) => actions.editCommand(path, text)}
           label={`${label} code`}
           readOnly={!file.editable}
           jump={jump?.path === path ? { line: jump.line, n: jump.n } : null}

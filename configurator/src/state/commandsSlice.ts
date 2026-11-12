@@ -74,8 +74,8 @@ function withFile(state: EditCore, path: string, file: CommandFile | null): Pick
  * The command files after Reload from disk of config.json: files with unsaved edits keep
  * the entry they were edited on, every other file takes the fresh one.
  */
-export function mergeReloaded(held: CommandFile[], fresh: CommandFile[], drafts: Record<string, string>): CommandFile[] {
-  return mergeRescan(held, fresh, new Set(Object.keys(drafts))).files
+export function mergeReloaded(held: CommandFile[], fresh: CommandFile[], draftPaths: string[]): CommandFile[] {
+  return mergeRescan(held, fresh, new Set(draftPaths)).files
 }
 
 export function commandsReducer(state: EditCore, action: CommandAction): EditCore {

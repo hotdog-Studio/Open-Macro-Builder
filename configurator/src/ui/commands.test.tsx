@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Transaction } from '@codemirror/state'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renameKey } from '../core/config/ops'
@@ -399,6 +400,26 @@ describe('Commands tab', () => {
 
     await user.click(pairButton('custom/ssh'))
     expect(text()).toBe('Ssh(Macro)\n{\n}\n')
+  })
+
+  it('a config.json reload in the same tick as an edit still checks the edit against its version', async () => {
+    const { user, folder } = await start()
+    await user.click(pairButton('custom/chrome'))
+    const eol = eolOf(folder, CHROME_AHK)
+    const original = folder.text(CHROME_AHK)!
+    const outside = enc.encode(`; theirs${eol}${original}`)
+    await folder.writeBytes(CHROME_AHK, outside)
+    const view = editorView()
+    await act(async () => {
+      // The user types, and the reload reads the folder before React commits the edit.
+      view.dispatch({ changes: { from: 0, insert: '; mine\n' }, annotations: Transaction.userEvent.of('input.type') })
+      await seen.actions.reloadFromDisk()
+    })
+    expect(text()).toBe(`; mine\n${original.replaceAll('\r\n', '\n')}`)
+
+    await user.click(saveButton('chrome.ahk'))
+    expect(await screen.findByRole('dialog', { name: 'chrome.ahk changed on disk since you opened it.' })).toBeTruthy()
+    expect(await bytesOf(folder, CHROME_AHK)).toEqual(Array.from(outside))
   })
 
   it('asks before opening another folder with unsaved command edits', async () => {

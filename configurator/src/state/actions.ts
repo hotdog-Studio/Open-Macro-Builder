@@ -64,6 +64,12 @@ export interface AppActions {
   /** Electron: restarts the running macropad from the after-save dialog; the dialog then shows what happened. */
   reloadMacropad(): Promise<void>
   /**
+   * Every edit the user makes to a command file: records the draft here first, so saves and
+   * reloads see it before React commits it, then dispatches 'draft'. Ignored for a file that is
+   * gone or not editable.
+   */
+  editCommand(path: string, text: string): void
+  /**
    * Saves the draft of one command file, checked against the version the app holds. 'blocked'
    * without a draft, for a file that is not editable, or when the write failed; 'conflict' when
    * the file changed on disk. `force` is Overwrite anyway: the disk's bytes go to <path>.bak first.
@@ -134,6 +140,19 @@ export function createActions(
    * `held`: a save's version check must never use a version React has not committed yet.
    */
   let commandFiles: CommandFile[] = []
+  /** Saves and reloads command files; keeps its own copy of the drafts, ahead of React's commit too. */
+  const commands = createCommandActions({
+    platform,
+    dispatch,
+    getState,
+    folder: () => held?.folder ?? null,
+    files: {
+      get: () => commandFiles,
+      set: (next) => {
+        commandFiles = next
+      },
+    },
+  })
   /** Stops the platform's watch of the held config file. */
   let stopWatch: (() => void) | null = null
   /** The save in progress; rechecks and reloads wait for it. */
@@ -148,11 +167,15 @@ export function createActions(
     stopWatch = null
     held = null
     commandFiles = []
+    commands.clearDrafts()
   }
 
-  /** Holds the config file and the command files, and watches the config file, replacing the previous watch. */
+  /**
+   * Holds the config file and the command files, and watches the config file, replacing the
+   * previous watch. The command drafts stay: a new folder or load calls forget() first.
+   */
   function hold(folder: FolderAccess, configFile: TextFile, files: CommandFile[]): void {
-    forget()
+    stopWatch?.()
     held = { folder, configFile }
     commandFiles = files
     stopWatch = platform.watch?.([configFile.path], () => actions.recheck()) ?? null
@@ -166,21 +189,9 @@ export function createActions(
   /** The editor opens on a loaded session. */
   function opened(session: Session, settings: Settings): void {
     dispatch({ type: 'loaded', session, settings })
+    forget()
     hold(session.folder, session.configFile, session.commandFiles)
   }
-
-  const commands = createCommandActions({
-    platform,
-    dispatch,
-    getState,
-    folder: () => held?.folder ?? null,
-    files: {
-      get: () => commandFiles,
-      set: (next) => {
-        commandFiles = next
-      },
-    },
-  })
 
   /** Counts the dialogs the save flow shows, so a slow macropad lookup can tell it was overtaken. */
   let dialogs = 0
@@ -440,9 +451,7 @@ export function createActions(
         const session = await readSession(file.folder, file.configFile.path)
         if (token !== loads || held !== file) return
         // Command files with unsaved edits keep the version they were edited on, as the reducer does.
-        const state = getState()
-        const drafts = state.screen === 'edit' ? state.commands.drafts : {}
-        const files = mergeReloaded(commandFiles, session.commandFiles, drafts)
+        const files = mergeReloaded(commandFiles, session.commandFiles, commands.draftPaths())
         dispatch({ type: 'reloaded', session })
         hold(session.folder, session.configFile, files)
       } catch (e) {
@@ -455,6 +464,7 @@ export function createActions(
 
     reloadMacropad,
 
+    editCommand: commands.editCommand,
     saveCommandFile: commands.saveCommandFile,
     reloadCommandFile: commands.reloadCommandFile,
 

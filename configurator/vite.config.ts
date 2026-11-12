@@ -7,6 +7,10 @@ export default defineConfig({
   // Electron loads dist/index.html from disk, so assets need relative URLs.
   base: './',
   plugins: [react(), tailwindcss()],
+  build: {
+    // Served from the user's own PC (localhost or Electron's file load): one large chunk costs no network time.
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
     // core imports ../scripts/validate-config-core.mjs, outside this folder.
     fs: { allow: ['..'] },

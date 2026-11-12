@@ -18,28 +18,36 @@ export interface CommandDeps {
   files: { get(): CommandFile[]; set(next: CommandFile[]): void }
 }
 
-export type CommandActions = Pick<AppActions, 'saveCommandFile' | 'reloadCommandFile'> & {
+export type CommandActions = Pick<AppActions, 'editCommand' | 'saveCommandFile' | 'reloadCommandFile'> & {
   /** Resolves once no command file is being saved, however the saves ended. */
   settled(): Promise<void>
+  /** The paths with unsaved edits, as of the last edit (React may not have committed it yet). */
+  draftPaths(): string[]
+  /** Forgets every draft: the folder was closed, replaced or loaded again. */
+  clearDrafts(): void
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** Saving and reloading one command file at a time. */
 export function createCommandActions(deps: CommandDeps): CommandActions {
-  const { dispatch, getState, files } = deps
+  const { dispatch, files } = deps
   /** The save in progress for each path. */
   const saves = new Map<string, Promise<SaveResult>>()
+  /**
+   * The drafts, path to text, kept in step with the reducer's `commands.drafts` but ahead of
+   * React's commit, so a save or a reload never misses an edit made just before it.
+   */
+  const drafts = new Map<string, string>()
 
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
   const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
 
   async function trySave(path: string, force: boolean): Promise<SaveResult> {
-    const state = getState()
     const folder = deps.folder()
     const held = entry(path)
-    if (state.screen !== 'edit' || !folder || !held?.editable) return 'blocked'
-    const draft = state.commands.drafts[path]
+    if (!folder || !held?.editable) return 'blocked'
+    const draft = drafts.get(path)
     if (draft === undefined) return 'blocked'
     /** False once the folder was closed or replaced, or the file was reloaded, meanwhile. */
     const current = () => deps.folder() === folder && entry(path) === held
@@ -65,11 +73,22 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     if (!current()) return 'saved'
     const file: CommandFile = { ...held, file: written, functions: LANGUAGES[held.lang].findFunctions(written.text) }
     files.set(withCommandFile(files.get(), path, file))
+    // The user may have typed during the write: only a draft equal to what was written is done.
+    if (drafts.get(path) === written.text) drafts.delete(path)
     dispatch({ type: 'command-saved', file })
     return 'saved'
   }
 
   return {
+    editCommand(path, text) {
+      const held = entry(path)
+      // A file that is gone or not UTF-8 is never edited.
+      if (!held?.editable) return
+      if (text === held.file.text) drafts.delete(path)
+      else drafts.set(path, text)
+      dispatch({ type: 'draft', path, text })
+    },
+
     saveCommandFile(path, { force = false } = {}) {
       // A second click while saving gets the same save.
       const running = saves.get(path)
@@ -96,11 +115,18 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       // A save of the file since the read holds a newer version, and that one decides.
       if (deps.folder() !== folder || entry(path) !== held || saves.has(path)) return
       files.set(withCommandFile(files.get(), path, file))
+      drafts.delete(path)
       dispatch({ type: 'command-file', path, file })
     },
 
     async settled() {
       await Promise.all([...saves.values()].map((s) => s.catch(() => undefined)))
+    },
+
+    draftPaths: () => [...drafts.keys()],
+
+    clearDrafts() {
+      drafts.clear()
     },
   }
 }

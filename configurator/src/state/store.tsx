@@ -167,7 +167,7 @@ function editReducer(state: EditCore, action: Action): EditCore {
       return { ...state, configFile: action.configFile, saved: action.saved, outsideChange: null }
     case 'reloaded': {
       // The command files with unsaved edits keep them, and the version they were made on.
-      const commandFiles = mergeReloaded(state.commandFiles, action.session.commandFiles, state.commands.drafts)
+      const commandFiles = mergeReloaded(state.commandFiles, action.session.commandFiles, Object.keys(state.commands.drafts))
       const session = { ...action.session, commandFiles, catalog: commandCatalog(commandFiles) }
       return { ...loadedState(session, state.settings), tab: state.tab, commands: state.commands }
     }

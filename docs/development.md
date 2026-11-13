@@ -98,7 +98,7 @@ Jenkins runs the `Jenkinsfile`:
 2. Installs, lints and unit-tests the configurator on the Linux agent, without the Electron binary.
 3. Runs the browser tests in headless Chromium. The agent needs Chromium's system libraries (`npx playwright install-deps chromium`, once, as root); set the `OMB_SKIP_BROWSER_TESTS` global to skip the stage on an agent without them.
 4. Builds the configurator.
-5. Runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one.
+5. On `develop` only: runs the Pester suite on the Windows agent (`windows-x64`).
 6. Sends everything to SonarQube, with the coverage of the unit and the browser tests, and waits for the quality gate.
 7. On `develop` only: packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).
 8. On `develop` only: publishes all of it as a release. [releasing.md](releasing.md) has the version scheme and the order of the steps.

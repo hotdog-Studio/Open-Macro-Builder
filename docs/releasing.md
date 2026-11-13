@@ -45,7 +45,7 @@ The tag goes first so that a number is taken only once its tag exists. If a late
 
 A `develop` build ends UNSTABLE, with the reason in its log, and takes no number when:
 
-- the Windows agent did not take the work within 45 minutes (it is a desktop PC, and may be off);
+- the Windows agent did not take the work within 45 minutes, for the Pester suite or for the desktop app (it is a desktop PC, and may be off);
 - the arm64 agent did not take the work within 20 minutes;
 - Jenkins has no GitHub credential (below), or the pipeline cannot see the checkout credential that pushes the tag.
 
@@ -53,7 +53,7 @@ Build it again once the cause is gone.
 
 ### What Jenkins needs
 
-- Agents labelled `windows-x64` (Node and Git) and `linux-arm64` (Docker). The `Jenkinsfile` header has the globals that rename them.
+- Agents labelled `windows-x64` (Node, Git, AutoHotkey v2, and Pester 5.5 or newer installed for all users) and `linux-arm64` (Docker). The `Jenkinsfile` header has the globals that rename them.
 - The job's SSH checkout credential must be allowed to push tags.
 - A **Username with password** credential with the id `omb-github`: a GitHub user name, and as the password a token of that user that may write this repository's contents (for the release) and write packages (for ghcr.io). A classic token with the `repo` and `write:packages` scopes does both.
 

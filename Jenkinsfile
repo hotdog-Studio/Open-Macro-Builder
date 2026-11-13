@@ -7,14 +7,11 @@
 // Recognised globals, all optional:
 //   OMB_NTFY_URL           ntfy topic URL for build notifications (none are sent when unset)
 //   OMB_SONAR_PROJECT_KEY  overrides sonar.projectKey from sonar-project.properties
-//   OMB_WINDOWS_LABEL      label of a Windows agent with Windows PowerShell 5.1, Pester 5.5+ and
-//                          AutoHotkey v2. When set, 'Windows Tests' runs the Pester suite there;
-//                          when unset the stage is skipped with a log line: the AutoHotkey and
-//                          PowerShell versions need Win32 and WinForms, which the Linux agents lack.
+//   OMB_WINDOWS_LABEL      label of the Windows agent (default windows-x64). It runs the Pester
+//                          suite and packages the desktop app, so it needs Windows PowerShell 5.1,
+//                          Pester 5.5+ installed for all users, AutoHotkey v2, Node and Git.
 //   OMB_SKIP_BROWSER_TESTS set to anything to skip 'Configurator Browser Test', for an agent that
 //                          lacks the system libraries headless Chromium needs.
-//   OMB_BUILD_WINDOWS_LABEL label of the Windows agent that packages the desktop app (default
-//                          windows-x64: Node and Git, nothing else needed)
 //   OMB_ARM64_LABEL        label of the arm64 agent that tries the arm64 image (default linux-arm64)
 //   OMB_IMAGE              where the images are published (default ghcr.io/hotdog-studio/open-macro-builder)
 //   OMB_GITHUB_CREDENTIALS_ID  id of the GitHub credential below (default omb-github)
@@ -29,14 +26,14 @@
 // the v* git tags. A green build of develop is a release: the Release stage pushes the tag
 // v<version> FIRST, then the two Linux images and their shared tags, then the GitHub release with
 // the installer and the portable exe. Only develop uses the Windows and the arm64 agent: on any
-// other branch the Desktop app, Container images and Release stages are skipped.
+// other branch the Windows tests, Desktop app, Container images and Release stages are skipped.
 //
 // STAGES, in order: Checkout → Version → Validate config (scripts/validate-config.mjs: config.json's
 // structure, icons, and every action defined in both versions) → Script tests (node:test,
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
 // installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron: the
-// desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (only
-// with OMB_WINDOWS_LABEL) → SonarQube analysis → quality gate → Desktop app (the installer and the portable exe,
+// desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (the
+// Pester suite, on the Windows agent) → SonarQube analysis → quality gate → Desktop app (the installer and the portable exe,
 // on the Windows agent) → Container images (linux/amd64 and linux/arm64, both built here, the
 // arm64 one tried on the arm64 agent) → Release (develop only) → Cleanup. Nothing is deployed
 // from here, the macropad runs on the desktop it drives.
@@ -211,23 +208,25 @@ node {
         // The Pester suite (powershell/tests) exercises the PowerShell version against real Win32,
         // WinForms and AutoHotkey, so it needs a Windows agent. -Ci writes JUnit XML and leaves out
         // the Integration-tagged tests, which open windows and send real keys.
-        if (env.OMB_WINDOWS_LABEL) {
-            node(env.OMB_WINDOWS_LABEL) {
-                try {
-                    deleteDir()
-                    checkout scm
-                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                        bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci'
-                    }
-                    junit testResults: 'results/pester/test-results.xml', skipPublishingChecks: true, allowEmptyResults: true
-                } finally {
-                    cleanWs(notFailBuild: true)
+        // The agent is a desktop PC that may be off, hence the long wait.
+        def label = env.OMB_WINDOWS_LABEL ?: 'windows-x64'
+        if (!releasing) {
+            echo "Skipping the Windows tests: only develop builds on the '${label}' agent"
+        } else if (!onAgent(label, 45) {
+            try {
+                deleteDir()
+                checkout scm
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci'
                 }
+                junit testResults: 'results/pester/test-results.xml', skipPublishingChecks: true, allowEmptyResults: true
+            } finally {
+                cleanWs(notFailBuild: true)
             }
-            stopIfFailed('Windows tests')
-        } else {
-            echo 'Skipping Windows tests — the Jenkins global OMB_WINDOWS_LABEL is not set (the PowerShell and AutoHotkey versions need a Windows agent)'
+        }) {
+            unstable "the Windows tests did not run (no '${label}' agent): nothing is released"
         }
+        stopIfFailed('Windows tests')
     }
 
     stage('SonarQube Analysis') {
@@ -256,7 +255,7 @@ node {
         // Windows can build. They carry this build's number: npm version writes it into the
         // workspace's package.json, and nothing is committed. The agent is a desktop PC that may
         // be off, hence the long wait.
-        def label = env.OMB_BUILD_WINDOWS_LABEL ?: 'windows-x64'
+        def label = env.OMB_WINDOWS_LABEL ?: 'windows-x64'
         if (!releasing) {
             echo "Skipping the desktop app: only develop builds on the '${label}' agent"
         } else if (!onAgent(label, 45) {

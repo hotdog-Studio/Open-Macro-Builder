@@ -1,6 +1,6 @@
 import { oneLine, rewriteBody, type FunctionInfo, type Language } from './types'
 
-const DEFINITION = /^(\w+)\(([^)]*)\)\s*\{?\s*$/
+const DEFINITION = /^(\w+)\(([^)]*)\)\s*(?:\{\s*)?$/
 const PARAM_NAME = /^[&*]?(\w+)/
 const NOT_FUNCTIONS = new Set(['if', 'while', 'for', 'loop', 'switch', 'catch', 'until', 'return', 'else'])
 

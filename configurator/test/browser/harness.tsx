@@ -228,7 +228,7 @@ export function cell(row: number, col: number): HTMLElement {
 /** A key of the grid by the name of the keyboard key it sends ('F13'), whatever else its face says. */
 export function padKey(name: string): HTMLElement {
   const keys = screen.getByRole('list', { name: 'Keys' })
-  const found = [...keys.querySelectorAll<HTMLElement>(':scope > li > [role="button"]')].filter((el) =>
+  const found = [...keys.querySelectorAll<HTMLElement>(':scope > li > [data-key]')].filter((el) =>
     // The Fn key's face reads "Fn" straight before its name on the Layers and Macros tabs.
     (el.textContent ?? '')
       .replace(/^Fn(?=\S)/, '')
@@ -251,5 +251,5 @@ export function carried(): HTMLElement | null {
 
 /** The error or notice above the editor, or null. */
 export function banner(): string | null {
-  return document.querySelector('[role="alert"] > p, [role="status"] > p')?.textContent ?? null
+  return document.querySelector('[role="alert"] > span, output > span')?.textContent ?? null
 }

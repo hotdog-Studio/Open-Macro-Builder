@@ -1,4 +1,4 @@
-import { execFile, type ExecFileException } from 'node:child_process'
+import { execFile, type ExecException } from 'node:child_process'
 import { win32 } from 'node:path'
 import type { LangId } from '../src/core/languages'
 import type { SyntaxProblem, SyntaxReport } from '../src/platform/types'
@@ -18,7 +18,7 @@ const AHK_TOO_SLOW = `${TOO_SLOW} AutoHotkey may be showing an error window.`
 
 /** Validates main.ahk rather than the saved file, so every include loads as the macropad loads it. */
 export function ahkCheckCommand(exe: string, root: string): { file: string; args: string[] } {
-  return { file: exe, args: ['/ErrorStdOut=UTF-8', '/Validate', `${root}\\ahk\\main.ahk`] }
+  return { file: exe, args: ['/ErrorStdOut=UTF-8', '/Validate', String.raw`${root}\ahk\main.ahk`] }
 }
 
 /** `<file> (<line>) : ==> <message>`, as AutoHotkey writes a load-time error. */
@@ -67,14 +67,14 @@ export function parsePsErrors(json: string, rel: string): SyntaxProblem[] {
   return rows.map((row) => ({
     path: rel,
     line: typeof row.line === 'number' ? row.line : null,
-    message: String(row.message ?? ''),
+    message: typeof row.message === 'string' ? row.message : '',
   }))
 }
 
 type Exec = typeof execFile
 
 interface Ran {
-  error: ExecFileException | null
+  error: ExecException | null
   stdout: string
   stderr: string
 }

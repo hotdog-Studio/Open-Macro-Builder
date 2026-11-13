@@ -61,7 +61,7 @@ describe('Overlay preview', () => {
     await start()
     // The example starts on the first layer, which sits on k1.
     const cells = overlayCells(ws(), 'k1')
-    expect(cells.length).toBe(13) // 12 keys and Fn
+    expect(cells).toHaveLength(13) // 12 keys and Fn
     expect(images()).toHaveLength(cells.length)
     cells.forEach((cell, i) => {
       const img = images()[i]

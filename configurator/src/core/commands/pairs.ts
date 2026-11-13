@@ -1,3 +1,4 @@
+import { compareText } from '../folder/path'
 import { isCommand, LANG_IDS, type CommandFile, type LangId } from '../languages'
 
 /** The AutoHotkey and PowerShell files that share a name, in one group. */
@@ -9,7 +10,6 @@ export interface CommandPair {
   files: Partial<Record<LangId, CommandFile>>
 }
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 /** Each file pair once: yours first, then by pair name. */
 export function commandPairs(files: CommandFile[]): CommandPair[] {
@@ -24,7 +24,7 @@ export function commandPairs(files: CommandFile[]): CommandPair[] {
     entry.files[f.lang] = f
   }
   const order = (p: CommandPair) => (p.group === 'yours' ? 0 : 1)
-  return [...pairs.values()].sort((a, b) => order(a) - order(b) || compare(a.pair, b.pair))
+  return [...pairs.values()].sort((a, b) => order(a) - order(b) || compareText(a.pair, b.pair))
 }
 
 /** How many of the file's functions are commands. */
@@ -38,7 +38,7 @@ export function languagesDiffer(p: CommandPair): boolean {
     (p.files[lang]?.functions ?? [])
       .filter(isCommand)
       .map((f) => f.name.toLowerCase())
-      .sort()
+      .sort(compareText)
       .join('\n'),
   )
   return names.some((n) => n !== names[0])

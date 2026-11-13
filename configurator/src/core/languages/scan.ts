@@ -1,4 +1,5 @@
 import { functionNames } from '../../../../scripts/validate-config-core.mjs'
+import { compareText as compare } from '../folder/path'
 import type { FolderAccess } from '../folder/types'
 import { readTextFileLenient, type TextFile } from '../folder/textFile'
 import { ahk } from './ahk'
@@ -31,16 +32,17 @@ export interface CatalogEntry {
 }
 
 async function listFiles(folder: FolderAccess, dir: string, ext: string): Promise<string[]> {
-  const out: string[] = []
-  for (const entry of await folder.list(dir)) {
-    const path = `${dir}/${entry.name}`
-    if (entry.kind === 'dir') out.push(...(await listFiles(folder, path, ext)))
-    else if (entry.name.toLowerCase().endsWith(ext)) out.push(path)
-  }
-  return out
+  const entries = await folder.list(dir)
+  // Each entry gives its files in place, so the list keeps the folder's order.
+  const found = await Promise.all(
+    entries.map((entry) => {
+      const path = `${dir}/${entry.name}`
+      if (entry.kind === 'dir') return listFiles(folder, path, ext)
+      return entry.name.toLowerCase().endsWith(ext) ? [path] : []
+    }),
+  )
+  return found.flat()
 }
-
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 /** Where a command file lives: its language, group and pair name. */
 export function commandFileAt(path: string): { lang: LangId; group: 'yours' | 'shared'; pair: string } | null {
@@ -133,16 +135,10 @@ export function mergeRescan(
  * is still scanned (command names are ASCII), but marked not editable.
  */
 export async function scanCommands(folder: FolderAccess): Promise<CommandFile[]> {
-  const found: CommandFile[] = []
-  for (const lang of ALL) {
-    for (const dir of [lang.personalDir, lang.sharedDir]) {
-      for (const path of await listFiles(folder, dir, lang.ext)) {
-        const file = await readCommandFile(folder, path)
-        if (file) found.push(file)
-      }
-    }
-  }
-  return sortCommandFiles(found)
+  const dirs = ALL.flatMap((lang) => [lang.personalDir, lang.sharedDir].map((dir) => ({ dir, ext: lang.ext })))
+  const paths = (await Promise.all(dirs.map(({ dir, ext }) => listFiles(folder, dir, ext)))).flat()
+  const files = await Promise.all(paths.map((path) => readCommandFile(folder, path)))
+  return sortCommandFiles(files.filter((file) => file !== null))
 }
 
 /** A load notice for each command file that is not UTF-8. */
@@ -167,7 +163,7 @@ export function commandCatalog(files: CommandFile[]): CatalogEntry[] {
         entry = { name: fn.name, pair: cf.pair, group: cf.group, description: '', in: {} }
         entries.set(key, entry)
       }
-      if (!entry.in[cf.lang]) entry.in[cf.lang] = { path: cf.file.path, line: fn.line }
+      entry.in[cf.lang] ??= { path: cf.file.path, line: fn.line }
       if (entry.description === '') entry.description = fn.description
     }
   }

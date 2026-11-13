@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
-import type { KeyId, Workspace } from '../core/config/model'
+import type { Workspace } from '../core/config/model'
 import { writeConfig } from '../core/config/write'
 import type { TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
@@ -78,7 +78,7 @@ export interface EditCore extends Session {
   screen: 'edit'
   settings: Settings
   tab: Tab
-  selectedKey: KeyId | null
+  selectedKey: string | null
   selectedLayer: string | null
   banner: Banner | null
   saveDialog: SaveDialog | null
@@ -106,7 +106,7 @@ export type Action =
   /** Every tab dispatches the result of a pure op from core/config/ops. */
   | { type: 'edit'; ws: Workspace }
   /** Leaves out a field to keep its selection. */
-  | { type: 'select'; key?: KeyId | null; layer?: string | null }
+  | { type: 'select'; key?: string | null; layer?: string | null }
   | { type: 'tab'; tab: Tab }
   | { type: 'banner'; banner: Banner | null }
   | { type: 'settings'; settings: Settings }
@@ -223,7 +223,7 @@ function useConfigText(ws: Workspace | null): string | null {
   return useMemo(() => (ws ? writeConfig(ws) : null), [ws])
 }
 
-export function AppProvider({ platform, children }: { platform: Platform; children: ReactNode }) {
+export function AppProvider({ platform, children }: Readonly<{ platform: Platform; children: ReactNode }>) {
   const [stored, dispatch] = useReducer(reducer, initialState)
   const editing = stored.screen === 'edit' ? stored : null
   const wsText = useConfigText(editing?.ws ?? null)

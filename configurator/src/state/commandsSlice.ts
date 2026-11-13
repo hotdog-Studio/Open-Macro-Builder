@@ -145,46 +145,76 @@ function shownPath(files: CommandFile[], key: string | null, lang: LangId): stri
   return shownPair(commandPairs(files), key)?.files[lang]?.file.path
 }
 
+type ActionOf<T extends CommandAction['type']> = Extract<CommandAction, { type: T }>
+
+function showCommands(state: EditCore, action: ActionOf<'commands-show'>): EditCore {
+  const c = state.commands
+  const pair = action.pair ?? c.pair
+  const lang = action.lang ?? c.lang
+  // A jump belongs to the file it was made for; another file must not take it up later.
+  const same = shownPath(state.commandFiles, pair, lang) === shownPath(state.commandFiles, c.pair, c.lang)
+  const jump = same ? c.jump : null
+  return { ...state, commands: { ...c, pair, lang, jump } }
+}
+
+function editDraft(state: EditCore, action: ActionOf<'draft'>): EditCore {
+  const c = state.commands
+  const file = state.commandFiles.find((f) => f.file.path === action.path)
+  // A file that is gone or not UTF-8 is never edited.
+  if (!file?.editable) return state
+  const done = draftDone(file.file, action.text, action.base)
+  const drafts = done ? without(c.drafts, action.path) : { ...c.drafts, [action.path]: action.text }
+  // An edit made on an older version than the one held (it raced a quiet replace): the file
+  // differs from what the edit was made on, so it is marked changed on disk.
+  const version = file.file.version
+  const stale = !done && action.base !== version && c.outside[action.path]?.version !== version
+  const outside = stale ? { ...c.outside, [action.path]: { version, dismissed: false } } : c.outside
+  return { ...state, commands: { ...c, drafts, outside, saved: without(c.saved, action.path) } }
+}
+
+function fileSaved(state: EditCore, action: ActionOf<'command-saved'>): EditCore {
+  const c = state.commands
+  const path = action.file.file.path
+  // The user may have typed during the write: only a draft equal to what was written is done.
+  const drafts = c.drafts[path] === action.file.file.text ? without(c.drafts, path) : c.drafts
+  return {
+    ...state,
+    ...withFile(state, path, action.file),
+    commands: {
+      ...c,
+      drafts,
+      // The disk now holds what the app wrote.
+      outside: without(c.outside, path),
+      saved: { ...c.saved, [path]: { n: action.n, check: action.check, macropad: null, note: null, unlisted: null } },
+    },
+  }
+}
+
+function filesRechecked(state: EditCore, action: ActionOf<'command-files'>): EditCore {
+  const c = state.commands
+  // Only the files that still differ keep an entry; the same outside version again keeps its banner as it is.
+  const outside: CommandsView['outside'] = {}
+  for (const { path, version } of action.changed) {
+    const was = c.outside[path]
+    outside[path] = was?.version === version ? was : { version, dismissed: false }
+  }
+  return {
+    ...state,
+    commandFiles: action.files,
+    catalog: commandCatalog(action.files),
+    commands: { ...c, outside },
+  }
+}
+
 export function commandsReducer(state: EditCore, action: CommandAction): EditCore {
   const c = state.commands
   switch (action.type) {
-    case 'commands-show': {
-      const pair = action.pair ?? c.pair
-      const lang = action.lang ?? c.lang
-      // A jump belongs to the file it was made for; another file must not take it up later.
-      const same = shownPath(state.commandFiles, pair, lang) === shownPath(state.commandFiles, c.pair, c.lang)
-      const jump = same ? c.jump : null
-      return { ...state, commands: { ...c, pair, lang, jump } }
-    }
-    case 'draft': {
-      const file = state.commandFiles.find((f) => f.file.path === action.path)
-      // A file that is gone or not UTF-8 is never edited.
-      if (!file?.editable) return state
-      const done = draftDone(file.file, action.text, action.base)
-      const drafts = done ? without(c.drafts, action.path) : { ...c.drafts, [action.path]: action.text }
-      // An edit made on an older version than the one held (it raced a quiet replace): the file
-      // differs from what the edit was made on, so it is marked changed on disk.
-      const version = file.file.version
-      const stale = !done && action.base !== version && c.outside[action.path]?.version !== version
-      const outside = stale ? { ...c.outside, [action.path]: { version, dismissed: false } } : c.outside
-      return { ...state, commands: { ...c, drafts, outside, saved: without(c.saved, action.path) } }
-    }
-    case 'command-saved': {
-      const path = action.file.file.path
-      // The user may have typed during the write: only a draft equal to what was written is done.
-      const drafts = c.drafts[path] === action.file.file.text ? without(c.drafts, path) : c.drafts
-      return {
-        ...state,
-        ...withFile(state, path, action.file),
-        commands: {
-          ...c,
-          drafts,
-          // The disk now holds what the app wrote.
-          outside: without(c.outside, path),
-          saved: { ...c.saved, [path]: { n: action.n, check: action.check, macropad: null, note: null, unlisted: null } },
-        },
-      }
-    }
+    case 'commands-show':
+      return showCommands(state, action)
+    case 'draft':
+      return editDraft(state, action)
+    case 'command-saved':
+      return fileSaved(state, action)
     case 'command-after-save': {
       const was = c.saved[action.path]
       // A later save, an edit, a reload or a delete of the file came first: that one decides.
@@ -204,20 +234,8 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
           saved: without(c.saved, action.path),
         },
       }
-    case 'command-files': {
-      // Only the files that still differ keep an entry; the same outside version again keeps its banner as it is.
-      const outside: CommandsView['outside'] = {}
-      for (const { path, version } of action.changed) {
-        const was = c.outside[path]
-        outside[path] = was?.version === version ? was : { version, dismissed: false }
-      }
-      return {
-        ...state,
-        commandFiles: action.files,
-        catalog: commandCatalog(action.files),
-        commands: { ...c, outside },
-      }
-    }
+    case 'command-files':
+      return filesRechecked(state, action)
     case 'command-dismiss': {
       const was = c.outside[action.path]
       if (!was) return state

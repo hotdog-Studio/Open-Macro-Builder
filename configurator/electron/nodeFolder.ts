@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { PathError, normalizePath } from '../src/core/folder/path'
+import { PathError, byName, normalizePath } from '../src/core/folder/path'
 import type { DirEntry, FolderAccess } from '../src/core/folder/types'
 
 const TEMP_SUFFIX = '.omb-tmp'
@@ -72,15 +72,13 @@ export class NodeFolder implements FolderAccess {
     }
   }
 
-  private async replace(temp: string, target: string): Promise<void> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await rename(temp, target)
-        return
-      } catch (e) {
-        if (!isBusy(e) || attempt >= 5) throw e
-        await pause(50 * attempt)
-      }
+  private async replace(temp: string, target: string, attempt = 1): Promise<void> {
+    try {
+      await rename(temp, target)
+    } catch (e) {
+      if (!isBusy(e) || attempt >= 5) throw e
+      await pause(50 * attempt)
+      await this.replace(temp, target, attempt + 1)
     }
   }
 
@@ -94,9 +92,7 @@ export class NodeFolder implements FolderAccess {
       if (isMissing(e)) return []
       throw e
     }
-    return dirents
-      .map((d): DirEntry => ({ name: d.name, kind: d.isDirectory() ? 'dir' : 'file' }))
-      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    return dirents.map((d): DirEntry => ({ name: d.name, kind: d.isDirectory() ? 'dir' : 'file' })).sort(byName)
   }
 
   async remove(path: string): Promise<void> {

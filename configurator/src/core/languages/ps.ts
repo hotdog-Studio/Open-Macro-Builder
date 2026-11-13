@@ -18,42 +18,45 @@ function paramNames(lines: string[], index: number): string[] {
   // Read to the matching close paren, which may be past the three-line window.
   const rest = [lines[index + startLine].slice(lines[index + startLine].search(PARAM_START)), ...lines.slice(index + startLine + 1)]
   const body = rest.join('\n')
-  const open = body.indexOf('(')
+  return splitParams(body.slice(body.indexOf('('))).flatMap((piece) => {
+    const match = /\$(\w+)/.exec(piece)
+    return match ? [match[1]] : []
+  })
+}
+
+const QUOTES = `'"`
+const PAREN: Record<string, number> = { '(': 1, ')': -1 }
+
+/**
+ * The pieces between the commas of a parameter list. `list` starts at its open paren; what comes
+ * after the matching close paren is not read. A comma inside quotes or inner parens splits nothing.
+ */
+function splitParams(list: string): string[] {
+  const pieces: string[] = []
   let depth = 0
   let quote = ''
   let piece = ''
-  const pieces: string[] = []
-  for (let i = open; i < body.length; i++) {
-    const ch = body[i]
+  for (const ch of list) {
     if (quote) {
       piece += ch
       if (ch === quote) quote = ''
       continue
     }
-    if (ch === "'" || ch === '"') {
-      quote = ch
-      piece += ch
-    } else if (ch === '(') {
-      if (depth > 0) piece += ch
-      depth++
-    } else if (ch === ')') {
-      depth--
-      if (depth === 0) break
-      piece += ch
-    } else if (ch === ',' && depth === 1) {
+    if (QUOTES.includes(ch)) quote = ch
+    const outside = depth === 0
+    depth += PAREN[ch] ?? 0
+    // The paren that closes the list.
+    if (depth === 0) break
+    if (ch === ',' && depth === 1) {
       pieces.push(piece)
       piece = ''
-    } else {
+    } else if (!outside) {
+      // Everything but the paren that opens the list.
       piece += ch
     }
   }
   pieces.push(piece)
-  const names: string[] = []
-  for (const p of pieces) {
-    const match = /\$(\w+)/.exec(p)
-    if (match) names.push(match[1])
-  }
-  return names
+  return pieces
 }
 
 function findFunctions(text: string): FunctionInfo[] {
@@ -62,8 +65,9 @@ function findFunctions(text: string): FunctionInfo[] {
   lines.forEach((line, i) => {
     const match = DEFINITION.exec(line)
     if (!match) return
-    const above = i > 0 ? /^\s*#\s*(.*?)\s*$/.exec(lines[i - 1]) : null
-    found.push({ name: match[1], line: i + 1, params: paramNames(lines, i), description: above ? above[1] : '' })
+    const above = i > 0 ? lines[i - 1].trim() : ''
+    const description = above.startsWith('#') ? above.slice(1).trim() : ''
+    found.push({ name: match[1], line: i + 1, params: paramNames(lines, i), description })
   })
   return found
 }

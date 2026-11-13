@@ -1,8 +1,13 @@
-import { normalizePath } from './path'
+import { byName, normalizePath } from './path'
 import type { DirEntry, FolderAccess } from './types'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+
+/** The promise of what `run` gives; a throw becomes a rejection, as it does from a real folder. */
+function later<T>(run: () => T): Promise<T> {
+  return new Promise((resolve) => resolve(run()))
+}
 
 /** In-memory FolderAccess for tests and demos. */
 export class MemoryFolder implements FolderAccess {
@@ -20,15 +25,21 @@ export class MemoryFolder implements FolderAccess {
     }
   }
 
-  async readBytes(path: string): Promise<Uint8Array | null> {
-    return this.files.get(normalizePath(path))?.slice() ?? null
+  readBytes(path: string): Promise<Uint8Array | null> {
+    return later(() => this.files.get(normalizePath(path))?.slice() ?? null)
   }
 
-  async writeBytes(path: string, data: Uint8Array): Promise<void> {
-    this.files.set(normalizePath(path), data.slice())
+  writeBytes(path: string, data: Uint8Array): Promise<void> {
+    return later(() => {
+      this.files.set(normalizePath(path), data.slice())
+    })
   }
 
-  async list(dir: string): Promise<DirEntry[]> {
+  list(dir: string): Promise<DirEntry[]> {
+    return later(() => this.entriesOf(dir))
+  }
+
+  private entriesOf(dir: string): DirEntry[] {
     const prefix = dir === '' ? '' : `${normalizePath(dir)}/`
     const entries = new Map<string, DirEntry>()
     for (const path of this.files.keys()) {
@@ -42,11 +53,13 @@ export class MemoryFolder implements FolderAccess {
         entries.set(name, { name, kind: 'dir' })
       }
     }
-    return [...entries.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    return [...entries.values()].sort(byName)
   }
 
-  async remove(path: string): Promise<void> {
-    this.files.delete(normalizePath(path))
+  remove(path: string): Promise<void> {
+    return later(() => {
+      this.files.delete(normalizePath(path))
+    })
   }
 
   /** Test convenience: the file decoded as UTF-8, or null when missing. */

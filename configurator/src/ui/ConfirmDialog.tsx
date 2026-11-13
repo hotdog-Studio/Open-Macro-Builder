@@ -45,11 +45,12 @@ export function ConfirmDialog({ title, children, choices, onCancel }: Readonly<C
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-8">
-      <div
-        role="dialog"
+      {/* Open and laid out by the page, not shown with showModal(): the classes undo the browser's own dialog box. */}
+      <dialog
+        open
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-full w-full max-w-lg flex-col rounded-xl border border-zinc-700 bg-zinc-900"
+        className="static m-0 flex max-h-full w-full max-w-lg flex-col rounded-xl border border-zinc-700 bg-zinc-900 p-0 text-inherit"
       >
         <h2 id={titleId} className="border-b border-zinc-800 px-4 py-2.5 font-semibold">
           {title}
@@ -73,7 +74,7 @@ export function ConfirmDialog({ title, children, choices, onCancel }: Readonly<C
             </button>
           ))}
         </div>
-      </div>
+      </dialog>
     </div>
   )
 }

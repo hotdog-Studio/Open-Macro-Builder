@@ -18,7 +18,9 @@ const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 /** A small coloured mark with a name for screen readers. */
 function Dot({ label, tone }: Readonly<{ label: string; tone: string }>) {
   return (
-    <span role="img" aria-label={label} title={label} className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} />
+    <span title={label} className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone}`}>
+      <span className="sr-only">{label}</span>
+    </span>
   )
 }
 
@@ -205,9 +207,7 @@ function SaveStatus({
   return (
     <div className="space-y-1 border-t border-zinc-800 px-4 py-1.5 text-[12px]">
       <div className="flex items-center gap-3">
-        <p role="status" className="text-emerald-300">
-          {`Saved ${fileName(path)}.`}
-        </p>
+        <output className="text-emerald-300">{`Saved ${fileName(path)}.`}</output>
         {after.macropad && (
           <button type="button" className={STYLE.button} onClick={() => void actions.reloadMacropadFor(path)}>
             {problems ? 'Reload anyway' : 'Reload macropad'}

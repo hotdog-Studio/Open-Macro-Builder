@@ -19,8 +19,8 @@ async function pad(): Promise<HTMLElement> {
   const frame = screen.getByRole('list', { name: 'Keys' }).parentElement!.parentElement!
   await waitFor(() => {
     for (const img of frame.querySelectorAll('img')) expect(img.complete && img.naturalWidth > 0).toBe(true)
-    // An icon still loading is a labelled placeholder with nothing in it.
-    expect(frame.querySelector('span[role="img"]:empty')).toBeNull()
+    // An icon still loading is a placeholder.
+    expect(frame.querySelector('[data-no-icon]')).toBeNull()
   })
   return frame
 }

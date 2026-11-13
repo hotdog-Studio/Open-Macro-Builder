@@ -65,6 +65,19 @@ export type CommandActions = Pick<
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
+ * Overwrite anyway: the outside edit being replaced is kept beside the file as .bak, and only that
+ * edit is replaced. Resolves to its version, null when the file is gone. A failed copy rejects,
+ * which stops the save.
+ */
+async function keepOutsideEdit(folder: FolderAccess, path: string): Promise<string | null> {
+  const onDisk = await folder.readBytes(path)
+  if (onDisk === null) return null
+  const version = await hashBytes(onDisk)
+  await folder.writeBytes(`${path}.bak`, onDisk)
+  return version
+}
+
+/**
  * Adds the line that loads `path` to its include file (made when missing). Include files are read
  * right before the edit and written with the version just read, so they never hold stale text.
  */
@@ -250,14 +263,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     try {
       // The version the draft was made on, which is not the one held when the edit raced a
       // quiet replace: that edit must not land on the newer text unseen.
-      let version = draft.base
-      if (force) {
-        // Overwrite anyway: the outside edit being replaced is kept beside the file, and only that
-        // edit is replaced. A failed copy stops the save.
-        const onDisk = await folder.readBytes(path)
-        version = onDisk === null ? null : await hashBytes(onDisk)
-        if (onDisk !== null) await folder.writeBytes(`${path}.bak`, onDisk)
-      }
+      const version = force ? await keepOutsideEdit(folder, path) : draft.base
       // Refuses with ConflictError, writing nothing, when the disk is not that version: the
       // draft's, or after Overwrite anyway the one just copied to .bak.
       saved = await writeTextFile(folder, { ...held.file, text: draft.text, version })
@@ -379,13 +385,14 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       if (why) return why
       let error: string | null = null
       const made: LangId[] = []
-      for (const lang of langs) {
+      const create = async (lang: LangId): Promise<void> => {
         const path = newFilePath(lang, group, name)
-        // One language at a time; a failed one does not stop the next.
         const failed = await createFile(path)
         error ??= failed
         if (entry(path)) made.push(lang)
       }
+      // One language at a time; a failed one does not stop the next.
+      await langs.reduce((before, lang) => before.then(() => create(lang)), Promise.resolve())
       if (made.length > 0) {
         const at = commandFileAt(newFilePath(made[0], group, name))!
         const state = deps.getState()

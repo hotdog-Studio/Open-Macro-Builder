@@ -92,7 +92,7 @@ describe('config.json', () => {
       ],
     })
     const ws = parseConfig(text, 'config.json')
-    expect(ws.parked.length).toBe(1)
+    expect(ws.parked).toHaveLength(1)
     expect(ws.parked[0].title).toBe('C')
     expect(ws.notices).toEqual([
       'Layer "A" has more macros than keys. Saving needs the extra ones dropped (Save offers this) or more keys added.',

@@ -22,7 +22,7 @@ const scroller = () => document.querySelector<HTMLElement>('.cm-scroller')!
 const text = () => editorView().state.doc.toString()
 const toolbar = () => screen.getByRole('toolbar', { name: 'Command file' })
 const toolbarButton = (name: string) => within(toolbar()).getByRole('button', { name })
-const unsavedMark = (name: string) => within(pairButton(name)).queryByRole('img', { name: 'unsaved changes' })
+const unsavedMark = (name: string) => within(pairButton(name)).queryByTitle('unsaved changes')
 const outline = () => screen.getByRole('region', { name: 'Commands in this file' })
 const key = (combo: string) => userEvent.keyboard(combo)
 
@@ -125,7 +125,7 @@ describe('Commands tab: typing', () => {
     await waitFor(() => expect(unsavedMark('media')).not.toBeNull())
     expect(text().endsWith('; typed by hand')).toBe(true)
     expect((toolbarButton('Save media.ahk') as HTMLButtonElement).disabled).toBe(false)
-    expect(within(toolbar()).getByRole('img', { name: 'unsaved changes' })).toBeTruthy()
+    expect(within(toolbar()).getByTitle('unsaved changes')).toBeTruthy()
     expect(folder.text(MEDIA)).not.toContain('typed by hand')
     // Command files are not part of config.json.
     expect(dirty()).toBe(false)

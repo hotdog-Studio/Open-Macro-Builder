@@ -144,7 +144,8 @@ function CommandItem({ entry, missing }: Readonly<{ entry: CatalogEntry; missing
     }
   }
   return (
-    <div
+    <button
+      type="button"
       ref={setNodeRef}
       {...attributes}
       {...listeners}
@@ -152,9 +153,9 @@ function CommandItem({ entry, missing }: Readonly<{ entry: CatalogEntry; missing
       data-command={entry.name}
       data-drag-id={dragId}
       title={entry.description || undefined}
-      className={`${CHIP} cursor-grab touch-none select-none ${isDragging ? 'opacity-40' : ''}`}
+      className={`${CHIP} block w-full cursor-grab touch-none select-none text-left ${isDragging ? 'opacity-40' : ''}`}
     >
-      <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center justify-between gap-2">
         <span className="truncate font-mono text-[11px] text-zinc-200">{entry.name}</span>
         <span className="flex shrink-0 gap-1">
           {missing.map((l) => (
@@ -163,9 +164,9 @@ function CommandItem({ entry, missing }: Readonly<{ entry: CatalogEntry; missing
             </span>
           ))}
         </span>
-      </div>
-      {entry.description && <p className="truncate text-[10px] text-zinc-500">{entry.description}</p>}
-    </div>
+      </span>
+      {entry.description && <span className="block truncate text-[10px] text-zinc-500">{entry.description}</span>}
+    </button>
   )
 }
 
@@ -215,7 +216,7 @@ function Palette() {
 function GroupList({ group, missingIn }: Readonly<{ group: Group; missingIn: (c: string) => LangId[] }>) {
   const heading = useId()
   return (
-    <div role="group" aria-labelledby={heading} className="mt-3">
+    <fieldset aria-labelledby={heading} className="mt-3 min-w-0">
       <div className={STYLE.heading}>
         <span id={heading}>{group.pair}</span>
         {group.yours && <span className="rounded bg-sky-950 px-1 normal-case text-sky-300">yours</span>}
@@ -223,7 +224,7 @@ function GroupList({ group, missingIn }: Readonly<{ group: Group; missingIn: (c:
       {group.entries.map((e) => (
         <CommandItem key={`${e.group}/${e.pair}/${e.name}`} entry={e} missing={missingIn(e.name)} />
       ))}
-    </div>
+    </fieldset>
   )
 }
 
@@ -237,6 +238,8 @@ function IconChoice({
   onChoose,
 }: Readonly<{ name: string; label: string; path: string | null; chosen: boolean; onChoose: () => void }>) {
   const src = useAsset(path)
+  // The choice with no path is the layer's own picture; a set whose picture is missing shows nothing.
+  const placeholder = path === null ? 'Layer' : null
   return (
     <button
       type="button"
@@ -248,7 +251,7 @@ function IconChoice({
       }`}
       onClick={onChoose}
     >
-      {src ? <img src={src} alt="" draggable={false} className="pointer-events-none h-7 w-7 object-contain" /> : path === null ? 'Layer' : null}
+      {src ? <img src={src} alt="" draggable={false} className="pointer-events-none h-7 w-7 object-contain" /> : placeholder}
     </button>
   )
 }

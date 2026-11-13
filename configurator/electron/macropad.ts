@@ -1,6 +1,6 @@
 import { execFile, spawn as nodeSpawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 import type { LangId } from '../src/core/languages'
 
 // Finds the running macropad and starts it again. No electron imports here, so the
@@ -24,16 +24,23 @@ export function parseProcessList(json: string): ProcInfo[] {
   const parsed: unknown = JSON.parse(json)
   const rows = Array.isArray(parsed) ? parsed : [parsed]
   return rows.map((row: Record<string, unknown>) => ({
-    name: String(row.Name ?? ''),
+    name: typeof row.Name === 'string' ? row.Name : '',
     pid: Number(row.ProcessId ?? 0),
     exe: typeof row.ExecutablePath === 'string' ? row.ExecutablePath : null,
     commandLine: typeof row.CommandLine === 'string' ? row.CommandLine : null,
   }))
 }
 
+/** `text` without any of `chars` at its end. */
+function trimEnd(text: string, chars: string): string {
+  let end = text.length
+  while (end > 0 && chars.includes(text[end - 1])) end--
+  return text.slice(0, end)
+}
+
 /** Quotes dropped, slashes made backslashes, lower case, no trailing backslash. */
 function comparable(path: string): string {
-  return path.replaceAll('"', '').replaceAll('/', '\\').trim().toLowerCase().replace(/\\+$/, '')
+  return trimEnd(path.replaceAll('"', '').replaceAll('/', '\\').trim().toLowerCase(), '\\')
 }
 
 function escapeRegExp(text: string): string {
@@ -53,8 +60,8 @@ const VALIDATE = /(^|\s)\\validate(\s|$)/
  */
 export function findMacropad(procs: ProcInfo[], root: string): FoundMacropad | null {
   const base = comparable(root)
-  const ahkScript = escapeRegExp(`${base}\\ahk\\main.ahk`)
-  const psScript = escapeRegExp(`${base}\\powershell\\main.ps1`)
+  const ahkScript = escapeRegExp(String.raw`${base}\ahk\main.ahk`)
+  const psScript = escapeRegExp(String.raw`${base}\powershell\main.ps1`)
   const ahkLine = new RegExp(String.raw`(^|\s)${ahkScript}$`)
   const psLine = new RegExp(String.raw`(^|\s)-file\s+${psScript}(\s|$)`)
 
@@ -79,9 +86,9 @@ export function findMacropad(procs: ProcInfo[], root: string): FoundMacropad | n
 
 /** What starts the macropad again; both runtimes replace the copy that is running. */
 export function relaunchCommand(found: FoundMacropad, root: string): { file: string; args: string[] } {
-  const base = root.replace(/[\\/]+$/, '')
-  if (found.lang === 'ahk') return { file: found.exe, args: [`${base}\\ahk\\main.ahk`] }
-  return { file: 'wscript.exe', args: [`${base}\\powershell\\launch.vbs`] }
+  const base = trimEnd(root, '\\/')
+  if (found.lang === 'ahk') return { file: found.exe, args: [String.raw`${base}\ahk\main.ahk`] }
+  return { file: 'wscript.exe', args: [String.raw`${base}\powershell\launch.vbs`] }
 }
 
 type Spawn = typeof nodeSpawn
@@ -106,16 +113,25 @@ export const PROCESS_QUERY =
   `Get-CimInstance Win32_Process -Filter "Name LIKE 'AutoHotkey%' OR Name = 'powershell.exe'" | ` +
   'Select-Object Name,ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress'
 
+/** Windows PowerShell by its full path, so that a powershell.exe put earlier on PATH is never run in its place. */
+const POWERSHELL = win32.join(
+  process.env.SystemRoot ?? String.raw`C:\Windows`,
+  'System32',
+  'WindowsPowerShell',
+  'v1.0',
+  'powershell.exe',
+)
+
 /** The AutoHotkey and PowerShell processes that run now; [] away from Windows. */
 export function listProcesses(): Promise<ProcInfo[]> {
   if (process.platform !== 'win32') return Promise.resolve([])
   return new Promise((resolve, reject) => {
     execFile(
-      'powershell.exe',
+      POWERSHELL,
       ['-NoProfile', '-NonInteractive', '-Command', PROCESS_QUERY],
       { windowsHide: true, timeout: 20_000, maxBuffer: 16 * 1024 * 1024 },
       (error, stdout) => {
-        if (error) return reject(error)
+        if (error) return reject(error instanceof Error ? error : new Error(String(error)))
         try {
           resolve(parseProcessList(stdout))
         } catch (e) {

@@ -10,8 +10,8 @@ import {
   type CollisionDetection,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import { createContext, useContext, type KeyboardEvent, type ReactNode } from 'react'
-import { size, type KeyId, type PadKey, type Workspace } from '../core/config/model'
+import { createContext, useCallback, useContext, useMemo, type KeyboardEvent, type ReactNode } from 'react'
+import { size, type PadKey, type Workspace } from '../core/config/model'
 import { findLayer, resizeKey, type OpResult } from '../core/config/ops'
 import { keyRect } from '../core/overlay'
 import { useEditor, type Tab } from '../state/store'
@@ -119,7 +119,7 @@ export interface PadActions {
   /** Runs a drop. A refusal shows its reason in the banner. True when the edit was made. */
   run(action: DropAction): boolean
   /** Alt + arrow on a key: moves it (Pad shape) or swaps it with its neighbour; with `resize`, Shift is held too. */
-  nudge(id: KeyId, dir: Direction, resize: boolean): void
+  nudge(id: string, dir: Direction, resize: boolean): void
 }
 
 const PadContext = createContext<PadActions | null>(null)
@@ -156,11 +156,49 @@ export function PadDnd({ mode, children }: Readonly<{ mode: Tab; children: React
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const labels = state.ws.options.showLabels ?? false
 
-  const commit = (result: OpResult): boolean => {
-    if (result.ok) dispatch({ type: 'edit', ws: result.ws })
-    else dispatch({ type: 'banner', banner: { text: result.reason, kind: 'error' } })
-    return result.ok
-  }
+  const commit = useCallback(
+    (result: OpResult): boolean => {
+      if (result.ok) dispatch({ type: 'edit', ws: result.ws })
+      else dispatch({ type: 'banner', banner: { text: result.reason, kind: 'error' } })
+      return result.ok
+    },
+    [dispatch],
+  )
+
+  const run = useCallback(
+    (action: DropAction): boolean => {
+      const { ws } = state
+      const describe = (command: string) => commandDescription(state.catalog, command)
+      return commit(applyDrop(ws, action, editableLayer(ws, state.selectedLayer), describe))
+    },
+    [state, commit],
+  )
+
+  const nudge = useCallback(
+    (id: string, dir: Direction, resize: boolean) => {
+      const { ws } = state
+      if (resize) {
+        const key = id === 'fn' ? ws.fn : ws.keys.find((k) => k.id === id)
+        if (mode !== 'shape' || !key) return
+        const next = resizeByStep(key, dir)
+        const now = size(key)
+        if (next.width !== now.w || next.height !== now.h) commit(resizeKey(ws, id, next.width, next.height))
+        return
+      }
+      const action = nudgeAction(mode, ws, id, dir)
+      if (!action || !run(action)) return
+      // What was moved stays selected and focused, so the next arrow moves it again.
+      let to = id
+      if (action.type === 'moveKey') to = action.id
+      else if ('b' in action) to = action.b
+      dispatch({ type: 'select', key: to })
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-key="${CSS.escape(to)}"]`)?.focus())
+    },
+    [state, mode, commit, run, dispatch],
+  )
+
+  // The same object until something it reads changes, so its users are not drawn again for nothing.
+  const actions = useMemo(() => ({ run, nudge }), [run, nudge])
 
   const onDragEnd = (e: DragEndEvent) => {
     const { ws } = state
@@ -180,32 +218,8 @@ export function PadDnd({ mode, children }: Readonly<{ mode: Tab; children: React
     if (run(action) && action.type === 'moveKey') dispatch({ type: 'select', key: action.id })
   }
 
-  const run = (action: DropAction): boolean => {
-    const { ws } = state
-    const describe = (command: string) => commandDescription(state.catalog, command)
-    return commit(applyDrop(ws, action, editableLayer(ws, state.selectedLayer), describe))
-  }
-
-  const nudge = (id: KeyId, dir: Direction, resize: boolean) => {
-    const { ws } = state
-    if (resize) {
-      const key = id === 'fn' ? ws.fn : ws.keys.find((k) => k.id === id)
-      if (mode !== 'shape' || !key) return
-      const next = resizeByStep(key, dir)
-      const now = size(key)
-      if (next.width !== now.w || next.height !== now.h) commit(resizeKey(ws, id, next.width, next.height))
-      return
-    }
-    const action = nudgeAction(mode, ws, id, dir)
-    if (!action || !run(action)) return
-    // What was moved stays selected and focused, so the next arrow moves it again.
-    const to = action.type === 'moveKey' ? action.id : 'b' in action ? action.b : id
-    dispatch({ type: 'select', key: to })
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-key="${CSS.escape(to)}"]`)?.focus())
-  }
-
   return (
-    <PadContext.Provider value={{ run, nudge }}>
+    <PadContext.Provider value={actions}>
       <DndContext
         sensors={sensors}
         collisionDetection={collide}
@@ -297,10 +311,11 @@ function KeyBox({ k, mode, labels, selected, dragId, droppable, strip, onSelect,
       className="absolute"
       style={{ left: px(r.x + 2), top: px(r.y + 2), width: px(r.w - 4), height: px(r.h - 4) }}
     >
-      <div
+      <button
+        type="button"
         ref={setRefs}
         data-key={k.id}
-        {...(dragId === null ? { role: 'button', tabIndex: 0 } : drag.attributes)}
+        {...(dragId === null ? undefined : drag.attributes)}
         {...drag.listeners}
         onClick={onSelect}
         onKeyDown={onKeyDown}
@@ -313,7 +328,7 @@ function KeyBox({ k, mode, labels, selected, dragId, droppable, strip, onSelect,
         }}
       >
         {children}
-      </div>
+      </button>
       {mode === 'shape' && <ResizeHandle k={k} />}
       {label && strip !== undefined && strip !== null && (
         <div
@@ -367,7 +382,7 @@ function Grid({ mode, renderKey, extraCell = false, renderStrip }: Readonly<PadG
   }
 
   const layer = selectedLayer === null ? undefined : findLayer(ws, selectedLayer)
-  const dragIdOf = (id: KeyId): string | null => {
+  const dragIdOf = (id: string): string | null => {
     if (mode === 'shape') return `key:${id}`
     if (id === 'fn') return null
     if (mode === 'layers') return ws.slots[id] ? `slot:${id}` : null

@@ -65,7 +65,7 @@ function start(): void {
 
 // With ELECTRON_RUN_AS_NODE set, electron.exe runs this file as plain Node and
 // require('electron') gives no app.
-if (typeof app === 'undefined') {
+if (app === undefined) {
   console.error('Open Macro Builder must run inside Electron; unset ELECTRON_RUN_AS_NODE or use npm run electron.')
   process.exit(1)
 } else {

@@ -1,4 +1,4 @@
-import type { KeyId, Macro, PadKey, Workspace } from '../core/config/model'
+import type { Macro, PadKey, Workspace } from '../core/config/model'
 import { size } from '../core/config/model'
 import {
   macroLabel,
@@ -19,11 +19,11 @@ import type { Tab } from '../state/store'
 // Drop ids:  'cell:<row>:<col>', 'key:<id>', 'shelf'.
 
 export type DropAction =
-  | { type: 'moveKey'; id: KeyId; row: number; col: number }
-  | { type: 'swapLayers' | 'swapMacros'; a: KeyId; b: KeyId }
-  | { type: 'placeParked'; layerId: string; key: KeyId }
-  | { type: 'parkLayer'; key: KeyId }
-  | { type: 'setMacroFromCommand'; command: string; key: KeyId }
+  | { type: 'moveKey'; id: string; row: number; col: number }
+  | { type: 'swapLayers' | 'swapMacros'; a: string; b: string }
+  | { type: 'placeParked'; layerId: string; key: string }
+  | { type: 'parkLayer'; key: string }
+  | { type: 'setMacroFromCommand'; command: string; key: string }
 
 /** 'slot:k1' → ['slot', 'k1']. Only the first colon splits, so a cell's 'cell:2:5' keeps '2:5'. */
 function parse(id: string): [string, string] {
@@ -33,22 +33,30 @@ function parse(id: string): [string, string] {
 
 /** What dropping `dragId` on `overId` means on a tab, or null when it means nothing. */
 export function dropAction(tab: Tab, dragId: string, overId: string): DropAction | null {
-  const [drag, from] = parse(dragId)
-  const [over, to] = parse(overId)
+  const drag = parse(dragId)
+  const over = parse(overId)
+  if (tab === 'shape') return shapeDrop(drag, over)
+  if (tab === 'layers') return layersDrop(drag, over)
+  return macrosDrop(drag, over)
+}
 
-  if (tab === 'shape') {
-    if (drag !== 'key' || over !== 'cell') return null
-    const cell = /^(\d+):(\d+)$/.exec(to)
-    return cell ? { type: 'moveKey', id: from, row: Number(cell[1]), col: Number(cell[2]) } : null
-  }
+/** A drag or drop id in its two parts: what it is, and which one. */
+type Part = [kind: string, id: string]
 
-  if (tab === 'layers') {
-    if (drag === 'slot' && over === 'key') return from === to ? null : { type: 'swapLayers', a: from, b: to }
-    if (drag === 'parked' && over === 'key') return { type: 'placeParked', layerId: from, key: to }
-    if (drag === 'slot' && over === 'shelf') return { type: 'parkLayer', key: from }
-    return null
-  }
+function shapeDrop([drag, from]: Part, [over, to]: Part): DropAction | null {
+  if (drag !== 'key' || over !== 'cell') return null
+  const cell = /^(\d+):(\d+)$/.exec(to)
+  return cell ? { type: 'moveKey', id: from, row: Number(cell[1]), col: Number(cell[2]) } : null
+}
 
+function layersDrop([drag, from]: Part, [over, to]: Part): DropAction | null {
+  if (drag === 'slot' && over === 'key') return from === to ? null : { type: 'swapLayers', a: from, b: to }
+  if (drag === 'parked' && over === 'key') return { type: 'placeParked', layerId: from, key: to }
+  if (drag === 'slot' && over === 'shelf') return { type: 'parkLayer', key: from }
+  return null
+}
+
+function macrosDrop([drag, from]: Part, [over, to]: Part): DropAction | null {
   if (over !== 'key') return null
   // A palette row's id is 'group/pair/name' so that a command listed under two file pairs has two ids.
   if (drag === 'cmd') return { type: 'setMacroFromCommand', command: from.slice(from.lastIndexOf('/') + 1), key: to }
@@ -126,7 +134,7 @@ export function arrowDirection(key: string): Direction | null {
  * square (and past its far edge when going right or down). Null when that square is free, off
  * the pad, or the Fn key.
  */
-export function neighbourKey(ws: Workspace, id: KeyId, dir: Direction): KeyId | null {
+export function neighbourKey(ws: Workspace, id: string, dir: Direction): string | null {
   const key = ws.keys.find((k) => k.id === id)
   if (!key) return null
   const s = size(key)
@@ -143,7 +151,7 @@ export function neighbourKey(ws: Workspace, id: KeyId, dir: Direction): KeyId | 
  * What Alt + an arrow key means for the focused key on a tab, as the drop it stands for: one square
  * over on the Pad shape tab, a swap with the neighbouring key on the others. Null when it means nothing.
  */
-export function nudgeAction(tab: Tab, ws: Workspace, id: KeyId, dir: Direction): DropAction | null {
+export function nudgeAction(tab: Tab, ws: Workspace, id: string, dir: Direction): DropAction | null {
   if (tab === 'shape') {
     const key = id === 'fn' ? ws.fn : ws.keys.find((k) => k.id === id)
     if (!key) return null

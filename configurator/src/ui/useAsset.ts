@@ -80,5 +80,5 @@ export function useAsset(path: string | null): string | null {
     }
   }, [folder, path])
 
-  return loaded && loaded.folder === folder && loaded.path === path ? loaded.entry.url : null
+  return loaded?.folder === folder && loaded.path === path ? loaded.entry.url : null
 }

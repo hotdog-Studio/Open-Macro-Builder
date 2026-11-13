@@ -47,7 +47,7 @@ const NAMED: Record<string, string> = {
 export function ahkKeyName(code: string): string | null {
   if (Object.hasOwn(NAMED, code)) return NAMED[code]
   const fn = /^F(\d{1,2})$/.exec(code)
-  if (fn && Number(fn[1]) >= 1 && Number(fn[1]) <= 24 && fn[1][0] !== '0') return code
+  if (fn && Number(fn[1]) >= 1 && Number(fn[1]) <= 24 && !fn[1].startsWith('0')) return code
   const letter = /^Key([A-Z])$/.exec(code)
   if (letter) return letter[1].toLowerCase()
   const digit = /^Digit(\d)$/.exec(code)

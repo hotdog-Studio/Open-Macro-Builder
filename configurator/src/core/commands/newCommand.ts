@@ -2,7 +2,7 @@ import { functionNames } from '../../../../scripts/validate-config-core.mjs'
 import { LANGUAGES, type CommandFile, type LangId } from '../languages'
 
 /** What a command name looks like, in both languages. */
-export const COMMAND_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+export const COMMAND_NAME = /^[A-Za-z_]\w*$/
 
 /**
  * `text` with `block` added at the end, after a blank line. A text that does not end in a

@@ -1,4 +1,4 @@
-import type { Extra, KeyId, Layer, Macro, Options, PadKey, Workspace } from './model'
+import type { Extra, Layer, Macro, Options, PadKey, Workspace } from './model'
 
 export class ConfigError extends Error {}
 
@@ -25,7 +25,7 @@ function takeText(rest: Obj, name: string): string {
   return isString(v) ? v : ''
 }
 
-function parseKey(raw: Obj, id: KeyId): PadKey {
+function parseKey(raw: Obj, id: string): PadKey {
   const rest = { ...raw }
   const key: PadKey = { id, key: takeText(rest, 'key'), extra: rest }
   for (const f of ['row', 'col', 'width', 'height'] as const) {
@@ -59,7 +59,7 @@ function parseLayer(raw: Obj, id: string, keys: PadKey[], notices: string[]): { 
   const icon = takeText(rest, 'icon')
   const list: unknown[] = Array.isArray(rest.macros) ? rest.macros : []
   delete rest.macros
-  const macros: Record<KeyId, Macro> = {}
+  const macros: Record<string, Macro> = {}
   list.slice(0, keys.length).forEach((m, j) => {
     const macro = readMacro(m)
     if (macro) macros[keys[j].id] = macro
@@ -73,7 +73,8 @@ function parseLayer(raw: Obj, id: string, keys: PadKey[], notices: string[]): { 
   return { layer: { id, title, icon, macros, overflowMacros, extra: rest }, disabled }
 }
 
-export function parseConfig(text: string, fileName: string): Workspace {
+/** The JSON object in `text`. */
+function readObject(text: string, fileName: string): Obj {
   let data: unknown
   try {
     data = JSON.parse(text)
@@ -81,19 +82,15 @@ export function parseConfig(text: string, fileName: string): Workspace {
     throw new ConfigError(`${fileName} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
   }
   if (!isObj(data)) throw new ConfigError(`${fileName} must hold a JSON object.`)
-  const { fn: rawFn, keys: rawKeys, layers: rawLayers, ...others } = data
-  if (!isObj(rawFn)) throw new ConfigError(`${fileName} has no "fn" object.`)
-  if (!Array.isArray(rawKeys)) throw new ConfigError(`${fileName} has no "keys" list.`)
+  return data
+}
 
-  const rest: Obj = others
-  const notices: string[] = []
-  const fn = parseKey(rawFn, 'fn')
-  const keys = rawKeys.map((k: unknown, i) => {
-    if (!isObj(k)) throw new ConfigError(`${fileName}: key ${i + 1} in "keys" is not an object.`)
-    return parseKey(k, `k${i + 1}`)
-  })
-
-  const slots: Record<KeyId, Layer> = {}
+/**
+ * Puts the layers of the "layers" list on the keys, in order. An entry that is not an object still
+ * takes its key. A disabled layer is parked, and so is one with no key left for it.
+ */
+function placeLayers(rawLayers: unknown, keys: PadKey[], notices: string[]): Pick<Workspace, 'slots' | 'parked'> {
+  const slots: Record<string, Layer> = {}
   const parked: Layer[] = []
   const layerList: unknown[] = Array.isArray(rawLayers) ? rawLayers : []
   let counter = 0
@@ -114,7 +111,11 @@ export function parseConfig(text: string, fileName: string): Workspace {
       notices.push(`Layer "${layer.title}" had no key, so it was parked.`)
     }
   }
+  return { slots, parked }
+}
 
+/** Moves the options the editor knows out of `rest`. */
+function takeOptions(rest: Obj, keys: PadKey[]): Options {
   const options: Options = { defaultKey: null, hasDefault: 'default' in rest }
   if (options.hasDefault) {
     const n = rest.default
@@ -133,6 +134,23 @@ export function parseConfig(text: string, fileName: string): Workspace {
   }
   const iconAction = take(rest, 'iconAction', isString)
   if (iconAction !== undefined) options.iconAction = iconAction
+  return options
+}
+
+export function parseConfig(text: string, fileName: string): Workspace {
+  const { fn: rawFn, keys: rawKeys, layers: rawLayers, ...others } = readObject(text, fileName)
+  if (!isObj(rawFn)) throw new ConfigError(`${fileName} has no "fn" object.`)
+  if (!Array.isArray(rawKeys)) throw new ConfigError(`${fileName} has no "keys" list.`)
+
+  const rest: Obj = others
+  const notices: string[] = []
+  const fn = parseKey(rawFn, 'fn')
+  const keys = rawKeys.map((k: unknown, i) => {
+    if (!isObj(k)) throw new ConfigError(`${fileName}: key ${i + 1} in "keys" is not an object.`)
+    return parseKey(k, `k${i + 1}`)
+  })
+  const { slots, parked } = placeLayers(rawLayers, keys, notices)
+  const options = takeOptions(rest, keys)
 
   const ws: Workspace = { fn, keys, slots, parked, options, extra: rest as Extra, notices }
   if ('hotkeys' in rest) {

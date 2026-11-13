@@ -7,7 +7,7 @@ import { DownloadLink } from './DownloadLink'
 const PRIMARY = 'rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500'
 const PLAIN = 'rounded-md border border-zinc-700 px-4 py-2 hover:bg-zinc-800'
 
-function Frame({ message, children }: { message: string | null; children?: ReactNode }) {
+function Frame({ message, children }: Readonly<{ message: string | null; children?: ReactNode }>) {
   return (
     <main className="flex h-full flex-col items-center justify-center gap-6 p-8">
       <h1 className="text-2xl font-semibold">Open Macro Builder</h1>
@@ -24,7 +24,7 @@ function Frame({ message, children }: { message: string | null; children?: React
 const LINK = 'text-sky-400 underline-offset-4 hover:underline'
 
 /** A browser that cannot open folders: the explanation, and the desktop app, which works everywhere on Windows. */
-export function Unsupported({ message }: { message: string }) {
+export function Unsupported({ message }: Readonly<{ message: string }>) {
   return (
     <Frame message={message}>
       <DownloadLink className={LINK}>Or download the desktop app for Windows</DownloadLink>

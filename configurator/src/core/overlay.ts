@@ -1,4 +1,4 @@
-import type { KeyId, PadKey, Workspace } from './config/model'
+import type { PadKey, Workspace } from './config/model'
 import { size } from './config/model'
 import { layerOnKey } from './config/ops'
 
@@ -10,7 +10,7 @@ export interface Rect {
 }
 
 export interface OverlayCell {
-  keyId: KeyId
+  keyId: string
   key: Rect
   image: string | null
   label: { rect: Rect; text: string; filled: boolean } | null
@@ -44,25 +44,30 @@ export function emptyIconPath(k: PadKey): string {
   return stock.some(([sw, sh]) => sw === w && sh === h) ? `img/empty_${w}x${h}.png` : 'img/empty.png'
 }
 
-function keyImage(ws: Workspace, selected: KeyId, k: PadKey): string {
+function keyImage(ws: Workspace, selected: string, k: PadKey): string {
   const markers = ws.options.showMacroMarkers ?? false
   const selectedLayer = layerOnKey(ws, selected)
   const macro = selectedLayer?.macros[k.id]
   const macroIcon = ws.options.useMacroIcons ? macro?.icon : undefined
 
+  const marked = markers && macro !== undefined
   if (k.id === selected && selectedLayer) {
+    // A macro's own icon is marked whenever markers are on; the layer's icon only on a key with a macro.
     if (macroIcon) return `img/${macroIcon}/${markers ? 'selected_macro' : 'selected'}.png`
-    return `img/${selectedLayer.icon}/${markers && macro ? 'selected_macro' : 'selected'}.png`
+    return `img/${selectedLayer.icon}/${marked ? 'selected_macro' : 'selected'}.png`
   }
   if (macroIcon) return `img/${macroIcon}/${markers ? 'macro' : 'layer'}.png`
+  return unselectedImage(ws, k, marked)
+}
 
-  const marked = markers && macro !== undefined
+/** The picture on a key that is not the selected one and shows no macro icon. */
+function unselectedImage(ws: Workspace, k: PadKey, marked: boolean): string {
   const layer = layerOnKey(ws, k.id)
   if (!layer) return marked ? emptyIconPath(k) : 'img/blank.png'
   return `img/${layer.icon}/${marked ? 'macro' : 'layer'}.png`
 }
 
-function keyLabel(ws: Workspace, selected: KeyId, k: PadKey): { text: string; filled: boolean } {
+function keyLabel(ws: Workspace, selected: string, k: PadKey): { text: string; filled: boolean } {
   if (ws.options.useMacroIcons) {
     const layer = layerOnKey(ws, k.id)
     return layer ? { text: layer.title, filled: true } : { text: '', filled: false }
@@ -72,7 +77,7 @@ function keyLabel(ws: Workspace, selected: KeyId, k: PadKey): { text: string; fi
 }
 
 /** The cells of the overlay while the layer on `selected` is selected: macro keys in order, then Fn when shown. */
-export function overlayCells(ws: Workspace, selected: KeyId): OverlayCell[] {
+export function overlayCells(ws: Workspace, selected: string): OverlayCell[] {
   const labels = ws.options.showLabels ?? false
   const cells: OverlayCell[] = ws.keys.map((k) => {
     const rect = keyRect(k, labels)

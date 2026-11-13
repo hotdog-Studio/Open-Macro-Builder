@@ -1,4 +1,4 @@
-import type { StreamParser } from '@codemirror/language'
+import type { StreamParser, StringStream } from '@codemirror/language'
 
 export interface AhkState {
   /** Inside a /* ... *\/ comment that began on an earlier line. */
@@ -12,50 +12,51 @@ const KEYWORDS = new Set(
   ).split(' '),
 )
 
+/** Reads a block comment to its end, or to the end of the line when it goes on past it. */
+function blockComment(stream: StringStream, state: AhkState): 'comment' {
+  if (stream.skipTo('*/')) {
+    stream.match('*/')
+    state.inBlock = false
+  } else {
+    stream.skipToEnd()
+    state.inBlock = true
+  }
+  return 'comment'
+}
+
+/** A semicolon starts a comment at the start of a line or after whitespace. */
+function atLineComment(stream: StringStream): boolean {
+  if (stream.peek() !== ';') return false
+  return stream.sol() || /\s/.test(stream.string.charAt(stream.pos - 1))
+}
+
+/** Reads a string to its closing quote; a backtick escapes the character after it. */
+function quoted(stream: StringStream, quote: string): 'string' {
+  stream.next()
+  let ch: string | void
+  while ((ch = stream.next()) != null) {
+    if (ch === '`') stream.next()
+    else if (ch === quote) break
+  }
+  return 'string'
+}
+
 /** A small AutoHotkey tokenizer: enough colour to read a command file, not a full grammar. */
 export const ahkMode: StreamParser<AhkState> = {
   name: 'autohotkey',
   startState: () => ({ inBlock: false }),
   token(stream, state) {
-    if (state.inBlock) {
-      if (stream.skipTo('*/')) {
-        stream.match('*/')
-        state.inBlock = false
-      } else {
-        stream.skipToEnd()
-      }
-      return 'comment'
-    }
+    if (state.inBlock) return blockComment(stream, state)
     if (stream.eatSpace()) return null
+    if (stream.match('/*')) return blockComment(stream, state)
 
-    if (stream.match('/*')) {
-      state.inBlock = true
-      if (stream.skipTo('*/')) {
-        stream.match('*/')
-        state.inBlock = false
-      } else {
-        stream.skipToEnd()
-      }
-      return 'comment'
-    }
-
-    // A semicolon starts a comment at the start of a line or after whitespace.
-    const afterSpace = stream.sol() || /\s/.test(stream.string.charAt(stream.pos - 1))
-    if (stream.peek() === ';' && afterSpace) {
+    if (atLineComment(stream)) {
       stream.skipToEnd()
       return 'comment'
     }
 
     const quote = stream.peek()
-    if (quote === '"' || quote === "'") {
-      stream.next()
-      let ch: string | void
-      while ((ch = stream.next()) != null) {
-        if (ch === '`') stream.next()
-        else if (ch === quote) break
-      }
-      return 'string'
-    }
+    if (quote === '"' || quote === "'") return quoted(stream, quote)
 
     if (stream.match(/^#[A-Za-z_]\w*/)) return 'meta'
     if (stream.match(/^(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?)/)) return 'number'

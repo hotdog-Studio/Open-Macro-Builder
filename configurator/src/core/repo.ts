@@ -1,3 +1,4 @@
+import { compareText } from './folder/path'
 import type { FolderAccess } from './folder/types'
 
 export type RepoInfo = { ok: true; configPath: 'local/config.json' | 'config.json' } | { ok: false; reason: string }
@@ -33,11 +34,11 @@ export async function copyExampleConfig(folder: FolderAccess): Promise<void> {
 /** The icon sets a layer can use: img/<name> folders with a layer.png, sorted, without the template. */
 export async function listIconSets(folder: FolderAccess): Promise<string[]> {
   const dirs = (await folder.list('img')).filter((e) => e.kind === 'dir' && e.name !== 'template')
-  const found: string[] = []
-  for (const d of dirs) {
-    if ((await folder.list(`img/${d.name}`)).some((e) => e.kind === 'file' && e.name === 'layer.png')) {
-      found.push(d.name)
-    }
-  }
-  return found.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const hasLayer = await Promise.all(
+    dirs.map(async (d) => (await folder.list(`img/${d.name}`)).some((e) => e.kind === 'file' && e.name === 'layer.png')),
+  )
+  return dirs
+    .filter((_, i) => hasLayer[i])
+    .map((d) => d.name)
+    .sort(compareText)
 }

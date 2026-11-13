@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { _electron, type ElectronApplication, type Page } from 'playwright'
+import { _electron, type ElectronApplication, type Locator, type Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 // Starts the real built desktop app (dist/ + dist-electron/) and drives its window. Slow, so it
@@ -154,12 +154,47 @@ async function firstRun(page: Page): Promise<void> {
   await tab.waitFor()
 }
 
+/**
+ * Waits until the page has drawn `count` more frames, which is when dnd-kit acts on a press or a
+ * move. A window that is not drawing (covered or minimised) is given half a second instead.
+ */
+function frames(page: Page, count = 2): Promise<void> {
+  return page.evaluate(
+    (n) =>
+      new Promise<void>((done) => {
+        const next = (left: number): void => {
+          if (left === 0) done()
+          else requestAnimationFrame(() => next(left - 1))
+        }
+        next(n)
+        setTimeout(done, 500)
+      }),
+    count,
+  )
+}
+
+/** Waits until the element has stopped moving: the same box twice in a row. */
+async function settled(element: Locator): Promise<void> {
+  let last = ''
+  await expect
+    .poll(
+      async () => {
+        const now = JSON.stringify(await element.boundingBox())
+        const same = now === last
+        last = now
+        return same
+      },
+      { timeout: 5000 },
+    )
+    .toBe(true)
+}
+
 /** Drags a key with real mouse moves, in steps: dnd-kit's PointerSensor ignores the first 5 px. */
 async function dragKey(page: Page, keyName: RegExp, cell: string): Promise<void> {
   const key = page.getByRole('list', { name: 'Keys' }).getByRole('button', { name: keyName })
   await key.waitFor()
   // The first layout can still move the grid; measure after it settled.
-  await page.waitForTimeout(500)
+  await settled(key)
   const from = (await key.boundingBox())!
   const to = (await page.locator(`[data-cell="${cell}"]`).boundingBox())!
   const startX = from.x + from.width / 2
@@ -167,17 +202,17 @@ async function dragKey(page: Page, keyName: RegExp, cell: string): Promise<void>
   await page.mouse.move(startX, startY)
   await page.mouse.down()
   // Let the sensor see the press before the moves; a drag that starts mid-frame can be missed.
-  await page.waitForTimeout(100)
+  await frames(page)
   // Drops land on the cell nearest the dragged key's top-left corner, so aim that corner.
   const endX = startX + (to.x + to.width / 2 - (from.x + from.width / 2))
   const endY = startY + (to.y + to.height / 2 - (from.y + from.height / 2))
   const steps = 12
   for (let i = 1; i <= steps; i++) {
     await page.mouse.move(startX + ((endX - startX) * i) / steps, startY + ((endY - startY) * i) / steps)
-    await page.waitForTimeout(16)
+    await frames(page, 1)
   }
   // Collision detection runs on a frame after the last move.
-  await page.waitForTimeout(100)
+  await frames(page)
   await page.mouse.up()
   // Dropped when the key sits on the square it was aimed at.
   await expect
@@ -191,8 +226,9 @@ async function dragKey(page: Page, keyName: RegExp, cell: string): Promise<void>
     )
     .toBe(true)
   // dnd-kit swallows any click for 50 ms after a drop (it would otherwise count as a click on the
-  // key). A person never clicks that fast; the next click here must not either.
-  await page.waitForTimeout(250)
+  // key). A person never clicks that fast; the next click here must not either, so let the page
+  // draw well past that first.
+  await frames(page, 16)
 }
 
 interface Config {
@@ -249,7 +285,38 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
     // so seeing the example pad proves the remembered folder was restored.
     const second = await launch(userData, await tempDir('omb-e2e-decoy-'))
     await second.page.getByRole('tab', { name: 'Pad shape' }).waitFor()
-    await second.page.getByRole('list', { name: 'Keys' }).getByRole('button', { name: /^F24 1×1/ }).waitFor()
+    const f24 = second.page.getByRole('list', { name: 'Keys' }).getByRole('button', { name: /^F24 1×1/ })
+    await f24.waitFor()
+    expect(await f24.isVisible()).toBe(true)
+  })
+
+  it('asks before the window closes on unsaved edits, and stays open when told to', async () => {
+    const folder = await tempDir('omb-e2e-folder-')
+    const userData = await tempDir('omb-e2e-user-')
+    await copyExample(folder)
+
+    const { app, page } = await launch(userData, folder)
+    await firstRun(page)
+    await page.getByRole('tab', { name: 'Pad shape' }).click()
+    const save = page.getByRole('button', { name: 'Save config.json' })
+    await dragKey(page, /^F24 1×1/, '5:1')
+    await expect.poll(() => save.isEnabled(), { timeout: 5000 }).toBe(true)
+
+    // The question is a modal box that cannot be clicked: count how often it is asked, and answer Stay.
+    await app.evaluate(({ dialog }) => {
+      const main = globalThis as unknown as { asked: number }
+      main.asked = 0
+      dialog.showMessageBoxSync = (() => {
+        main.asked++
+        return 1
+      }) as never
+    })
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+
+    await expect.poll(() => app.evaluate(() => (globalThis as unknown as { asked: number }).asked), { timeout: 5000 }).toBe(1)
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
+    // The edit is still there to save.
+    expect(await save.isEnabled()).toBe(true)
   })
 
   it('keeps the page sandboxed: no Node in the page, only the omb bridge', async () => {

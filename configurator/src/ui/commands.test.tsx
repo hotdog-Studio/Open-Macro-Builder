@@ -138,10 +138,10 @@ describe('Commands tab', () => {
   it('marks a pair whose languages differ', async () => {
     await start({ files: { ...MINE, 'local/ahk/odd.ahk': 'Odd(Macro)\n{\n}\n' } })
     const odd = pairButton('odd')
-    expect(within(odd).getByLabelText('languages differ')).toBeTruthy()
+    expect(within(odd).getByTitle('languages differ')).toBeTruthy()
     // A missing file shows a dash.
     expect(odd.textContent).toContain('AHK 1 · PS —')
-    expect(within(pairButton('mine')).queryByLabelText('languages differ')).toBeNull()
+    expect(within(pairButton('mine')).queryByTitle('languages differ')).toBeNull()
   })
 
   it('opens on the language you run', async () => {
@@ -165,7 +165,7 @@ describe('Commands tab', () => {
     await save(user, 'chrome.ahk')
     expect(folder.text(CHROME_AHK)).toBe(`; x${eol}${before}`)
     expect(await folder.readBytes(`${CHROME_AHK}.bak`)).toBeNull()
-    expect(screen.getByText('Saved chrome.ahk.').getAttribute('role')).toBe('status')
+    expect(screen.getByRole('status').textContent).toBe('Saved chrome.ahk.')
 
     // The next edit of the file hides the note.
     typeAt(0, ';')
@@ -229,11 +229,11 @@ describe('Commands tab', () => {
     expect(saveButton('chrome.ahk').disabled).toBe(true)
     typeAt(0, '; x\n')
     expect(saveButton('chrome.ahk').disabled).toBe(false)
-    expect(within(langButton('AutoHotkey')).getByLabelText('unsaved changes')).toBeTruthy()
-    expect(within(pairButton('custom/chrome')).getByLabelText('unsaved changes')).toBeTruthy()
+    expect(within(langButton('AutoHotkey')).getByTitle('unsaved changes')).toBeTruthy()
+    expect(within(pairButton('custom/chrome')).getByTitle('unsaved changes')).toBeTruthy()
     undo()
     expect(saveButton('chrome.ahk').disabled).toBe(true)
-    expect(within(langButton('AutoHotkey')).queryByLabelText('unsaved changes')).toBeNull()
+    expect(within(langButton('AutoHotkey')).queryByTitle('unsaved changes')).toBeNull()
     expect(editor().commands.drafts).toEqual({})
   })
 
@@ -368,14 +368,14 @@ describe('Commands tab', () => {
     typeAt(0, '; ahk edit\n')
     await user.click(langButton('PowerShell'))
     expect(text()).toBe(readRepoText(CHROME_PS))
-    expect(within(langButton('AutoHotkey')).getByLabelText('unsaved changes')).toBeTruthy()
+    expect(within(langButton('AutoHotkey')).getByTitle('unsaved changes')).toBeTruthy()
     typeAt(0, '# ps edit\n')
 
     await user.click(pairButton('custom/ssh'))
     expect(langButton('PowerShell').getAttribute('aria-pressed')).toBe('true')
     expect(text()).toBe(readRepoText('powershell/commands/custom/ssh.ps1'))
-    expect(within(pairButton('custom/chrome')).getByLabelText('unsaved changes')).toBeTruthy()
-    expect(within(pairButton('custom/ssh')).queryByLabelText('unsaved changes')).toBeNull()
+    expect(within(pairButton('custom/chrome')).getByTitle('unsaved changes')).toBeTruthy()
+    expect(within(pairButton('custom/ssh')).queryByTitle('unsaved changes')).toBeNull()
 
     await user.click(screen.getByRole('tab', { name: 'Macros' }))
     await user.click(screen.getByRole('tab', { name: 'Commands' }))
@@ -603,7 +603,7 @@ describe('outside changes', () => {
   const CHANGED = 'chrome.ahk changed on disk.'
   /** The Commands tab's banner for chrome.ahk, if it shows. */
   const queryBanner = () => (screen.queryByText(CHANGED)?.closest('[role]') ?? null) as HTMLElement | null
-  const chromeDot = () => within(pairButton('custom/chrome')).queryByLabelText('changed on disk')
+  const chromeDot = () => within(pairButton('custom/chrome')).queryByTitle('changed on disk')
   /** Runs a recheck of the command files and waits for it. */
   const recheckCommands = () =>
     act(async () => {
@@ -697,7 +697,7 @@ describe('outside changes', () => {
     expect(text()).toBe(`; mine\n${lf}`)
     expect(saveButton('chrome.ahk').disabled).toBe(false)
     expect(chromeDot()).toBeTruthy()
-    expect(within(pairButton('custom/ssh')).queryByLabelText('changed on disk')).toBeNull()
+    expect(within(pairButton('custom/ssh')).queryByTitle('changed on disk')).toBeNull()
 
     // The edit is still checked against the version it was made on.
     await user.click(saveButton('chrome.ahk'))

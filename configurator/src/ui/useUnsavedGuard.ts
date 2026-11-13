@@ -9,8 +9,6 @@ export function useUnsavedGuard(dirty: boolean): void {
     if (!dirty) return
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault()
-      // Older Chromium asks only when returnValue is set.
-      e.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)

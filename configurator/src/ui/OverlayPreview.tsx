@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { KeyId, Workspace } from '../core/config/model'
+import type { Workspace } from '../core/config/model'
 import { overlayCells, overlaySize } from '../core/overlay'
 import type { OverlayCell } from '../core/overlay'
 import { useEditor } from '../state/store'
@@ -8,7 +8,7 @@ import { useAsset } from './useAsset'
 const NO_LAYER = 'No layer is on a key yet.'
 
 /** The key a layer sits on, or undefined when the layer is parked or unknown. */
-function keyOfLayer(ws: Workspace, layerId: string | null): KeyId | undefined {
+function keyOfLayer(ws: Workspace, layerId: string | null): string | undefined {
   if (layerId === null) return undefined
   return ws.keys.find((k) => ws.slots[k.id]?.id === layerId)?.id
 }
@@ -21,9 +21,9 @@ function keyOfLayer(ws: Workspace, layerId: string | null): KeyId | undefined {
 export function previewKey(
   ws: Workspace,
   tab: string,
-  selectedKey: KeyId | null,
+  selectedKey: string | null,
   selectedLayer: string | null,
-): KeyId | undefined {
+): string | undefined {
   if (tab === 'layers' && selectedKey !== null && ws.slots[selectedKey]) return selectedKey
   const chosen = keyOfLayer(ws, selectedLayer)
   if (chosen !== undefined) return chosen
@@ -85,7 +85,7 @@ export function OverlayPreview() {
     body = <p className="text-[11px] text-zinc-300">{NO_LAYER}</p>
   } else if (shown) {
     const { w, h } = overlaySize(ws)
-    const cells = overlayCells(ws, key as KeyId)
+    const cells = overlayCells(ws, key as string)
     body = (
       <div className="overflow-auto">
         <div style={{ position: 'relative', width: w, height: h }}>

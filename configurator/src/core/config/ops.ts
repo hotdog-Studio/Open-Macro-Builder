@@ -1,4 +1,4 @@
-import type { KeyId, Layer, Macro, Options, PadKey, Workspace } from './model'
+import type { Layer, Macro, Options, PadKey, Workspace } from './model'
 import { size } from './model'
 import { readMacro } from './parse'
 
@@ -12,7 +12,7 @@ const TOO_SMALL = 'A key is at least 1 wide and 1 tall.'
 
 const allKeys = (ws: Workspace): PadKey[] => [ws.fn, ...ws.keys]
 
-function keyOf(ws: Workspace, id: KeyId): PadKey | undefined {
+function keyOf(ws: Workspace, id: string): PadKey | undefined {
   return id === 'fn' ? ws.fn : ws.keys.find((k) => k.id === id)
 }
 
@@ -20,21 +20,21 @@ export function findLayer(ws: Workspace, layerId: string): Layer | undefined {
   return [...Object.values(ws.slots), ...ws.parked].find((l) => l.id === layerId)
 }
 
-export function layerOnKey(ws: Workspace, key: KeyId): Layer | undefined {
+export function layerOnKey(ws: Workspace, key: string): Layer | undefined {
   return ws.slots[key]
 }
 
 // ---------------------------------------------------------------- copy helpers
 
 /** Replaces one key (by id) with a changed copy; the rest of the workspace is shared. */
-function withKey(ws: Workspace, id: KeyId, change: (k: PadKey) => PadKey): Workspace {
+function withKey(ws: Workspace, id: string, change: (k: PadKey) => PadKey): Workspace {
   if (id === 'fn') return { ...ws, fn: change(ws.fn) }
   return { ...ws, keys: ws.keys.map((k) => (k.id === id ? change(k) : k)) }
 }
 
 /** Replaces one layer (wherever it sits) with a changed copy. */
 function withLayer(ws: Workspace, layerId: string, change: (l: Layer) => Layer): Workspace {
-  const slots: Record<KeyId, Layer> = {}
+  const slots: Record<string, Layer> = {}
   for (const [k, l] of Object.entries(ws.slots)) slots[k] = l.id === layerId ? change(l) : l
   return { ...ws, slots, parked: ws.parked.map((l) => (l.id === layerId ? change(l) : l)) }
 }
@@ -51,7 +51,7 @@ function overlaps(a: { row: number; col: number; w: number; h: number }, b: type
   return a.row < b.row + b.h && b.row < a.row + a.h && a.col < b.col + b.w && b.col < a.col + a.w
 }
 
-function checkPlace(ws: Workspace, id: KeyId, row: number, col: number, w: number, h: number): string | null {
+function checkPlace(ws: Workspace, id: string, row: number, col: number, w: number, h: number): string | null {
   if (!Number.isInteger(row) || !Number.isInteger(col) || row < 1 || col < 1) return TOO_LOW
   if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1) return TOO_SMALL
   const me = { row, col, w, h }
@@ -61,7 +61,7 @@ function checkPlace(ws: Workspace, id: KeyId, row: number, col: number, w: numbe
   return null
 }
 
-export function moveKey(ws: Workspace, id: KeyId, row: number, col: number): OpResult {
+export function moveKey(ws: Workspace, id: string, row: number, col: number): OpResult {
   const key = keyOf(ws, id)
   if (!key) return { ok: false, reason: 'There is no such key.' }
   const { w, h } = size(key)
@@ -70,7 +70,7 @@ export function moveKey(ws: Workspace, id: KeyId, row: number, col: number): OpR
   return { ok: true, ws: withKey(ws, id, (k) => ({ ...k, row, col })) }
 }
 
-export function resizeKey(ws: Workspace, id: KeyId, width: number, height: number): OpResult {
+export function resizeKey(ws: Workspace, id: string, width: number, height: number): OpResult {
   const key = keyOf(ws, id)
   if (!key) return { ok: false, reason: 'There is no such key.' }
   const { row, col } = size(key)
@@ -87,7 +87,7 @@ export function resizeKey(ws: Workspace, id: KeyId, width: number, height: numbe
   }
 }
 
-export function renameKey(ws: Workspace, id: KeyId, key: string): Workspace {
+export function renameKey(ws: Workspace, id: string, key: string): Workspace {
   return withKey(ws, id, (k) => ({ ...k, key }))
 }
 
@@ -108,12 +108,12 @@ function takeOverflow(ws: Workspace, added: PadKey): Workspace {
       overflowMacros: l.overflowMacros.slice(1),
     }
   }
-  const slots: Record<KeyId, Layer> = {}
+  const slots: Record<string, Layer> = {}
   for (const [k, l] of Object.entries(ws.slots)) slots[k] = take(l)
   return { ...ws, slots, parked: ws.parked.map(take), notices }
 }
 
-export function addKey(ws: Workspace, key: string): { ws: Workspace; id: KeyId } {
+export function addKey(ws: Workspace, key: string): { ws: Workspace; id: string } {
   const highest = ws.keys.reduce((n, k) => Math.max(n, Number(/^k(\d+)$/.exec(k.id)?.[1] ?? 0)), 0)
   const id = `k${highest + 1}`
   let width = 0
@@ -141,7 +141,7 @@ export function addKey(ws: Workspace, key: string): { ws: Workspace; id: KeyId }
  */
 export function dropOverflow(ws: Workspace): Workspace {
   const drop = (l: Layer): Layer => (l.overflowMacros.length === 0 ? l : { ...l, overflowMacros: [] })
-  const slots: Record<KeyId, Layer> = {}
+  const slots: Record<string, Layer> = {}
   for (const [k, l] of Object.entries(ws.slots)) slots[k] = drop(l)
   return { ...ws, slots, parked: ws.parked.map(drop) }
 }
@@ -151,7 +151,7 @@ export interface RemovalImpact {
   macros: { layer: string; name: string }[]
 }
 
-export function removalImpact(ws: Workspace, id: KeyId): RemovalImpact {
+export function removalImpact(ws: Workspace, id: string): RemovalImpact {
   const macros: { layer: string; name: string }[] = []
   for (const l of [...ws.keys.map((k) => ws.slots[k.id]).filter(Boolean), ...ws.parked]) {
     const m = l.macros[id]
@@ -160,13 +160,13 @@ export function removalImpact(ws: Workspace, id: KeyId): RemovalImpact {
   return { layer: ws.slots[id]?.title ?? null, macros }
 }
 
-export function removeKey(ws: Workspace, id: KeyId): OpResult {
+export function removeKey(ws: Workspace, id: string): OpResult {
   if (id === 'fn') return { ok: false, reason: 'The Fn key cannot be removed.' }
   if (!ws.keys.some((k) => k.id === id)) return { ok: false, reason: 'There is no such key.' }
   if (ws.keys.length <= 1) return { ok: false, reason: 'A pad needs at least one macro key.' }
   const owner = ws.slots[id]
   const strip = (l: Layer): Layer => (id in l.macros ? { ...l, macros: without(l.macros, id) } : l)
-  const slots: Record<KeyId, Layer> = {}
+  const slots: Record<string, Layer> = {}
   for (const [k, l] of Object.entries(ws.slots)) if (k !== id) slots[k] = strip(l)
   const parked = ws.parked.map(strip)
   if (owner) parked.push(strip(owner))
@@ -177,11 +177,11 @@ export function removeKey(ws: Workspace, id: KeyId): OpResult {
 // ---------------------------------------------------------------- layers
 
 /** Moves the start layer along with its layer: only when the layer was on that key. */
-function followStart(options: Options, from: KeyId, to: KeyId | null): Options {
+function followStart(options: Options, from: string, to: string | null): Options {
   return options.defaultKey === from ? { ...options, defaultKey: to } : options
 }
 
-export function swapLayers(ws: Workspace, a: KeyId, b: KeyId): Workspace {
+export function swapLayers(ws: Workspace, a: string, b: string): Workspace {
   if (a === b) return ws
   const la = ws.slots[a]
   const lb = ws.slots[b]
@@ -197,7 +197,7 @@ export function swapLayers(ws: Workspace, a: KeyId, b: KeyId): Workspace {
   return { ...ws, slots, options }
 }
 
-export function parkLayer(ws: Workspace, key: KeyId): Workspace {
+export function parkLayer(ws: Workspace, key: string): Workspace {
   const layer = ws.slots[key]
   if (!layer) return ws
   return {
@@ -208,7 +208,7 @@ export function parkLayer(ws: Workspace, key: KeyId): Workspace {
   }
 }
 
-export function placeParked(ws: Workspace, layerId: string, key: KeyId): Workspace {
+export function placeParked(ws: Workspace, layerId: string, key: string): Workspace {
   const layer = ws.parked.find((l) => l.id === layerId)
   if (!layer || !ws.keys.some((k) => k.id === key)) return ws
   const occupant = ws.slots[key]
@@ -240,7 +240,7 @@ export function updateLayer(ws: Workspace, layerId: string, patch: { title?: str
   }))
 }
 
-export function setDefaultLayer(ws: Workspace, key: KeyId | null): Workspace {
+export function setDefaultLayer(ws: Workspace, key: string | null): Workspace {
   const options: Options = { ...ws.options, defaultKey: key, hasDefault: key !== null }
   delete options.defaultRaw
   return { ...ws, options }
@@ -248,14 +248,14 @@ export function setDefaultLayer(ws: Workspace, key: KeyId | null): Workspace {
 
 // ---------------------------------------------------------------- macros
 
-export function setMacro(ws: Workspace, layerId: string, key: KeyId, macro: Macro | null): Workspace {
+export function setMacro(ws: Workspace, layerId: string, key: string, macro: Macro | null): Workspace {
   return withLayer(ws, layerId, (l) => ({
     ...l,
     macros: macro ? { ...l.macros, [key]: macro } : without(l.macros, key),
   }))
 }
 
-export function swapMacros(ws: Workspace, layerId: string, a: KeyId, b: KeyId): Workspace {
+export function swapMacros(ws: Workspace, layerId: string, a: string, b: string): Workspace {
   if (a === b) return ws
   return withLayer(ws, layerId, (l) => {
     const macros = { ...l.macros }
@@ -273,7 +273,7 @@ export function swapMacros(ws: Workspace, layerId: string, a: KeyId, b: KeyId): 
 export function updateMacro(
   ws: Workspace,
   layerId: string,
-  key: KeyId,
+  key: string,
   patch: { name?: string; description?: string; icon?: string },
 ): Workspace {
   if (!findLayer(ws, layerId)?.macros[key]) return ws
@@ -303,7 +303,7 @@ export function macroLabel(command: string): string {
   const name = /^Open(?=[A-Z])/.test(command) ? command.slice(4) : command
   return name
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
     .replace(/([A-Za-z])(\d)/g, '$1 $2')
     .replace(/(\d)([A-Za-z])/g, '$1 $2')
 }

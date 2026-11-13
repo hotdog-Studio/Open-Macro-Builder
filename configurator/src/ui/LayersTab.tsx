@@ -14,7 +14,7 @@ export function LayerIcon({ icon, title, className }: Readonly<{ icon: string; t
   return src ? (
     <img src={src} alt={title} draggable={false} className={`pointer-events-none object-contain ${className}`} />
   ) : (
-    <span role={title ? 'img' : undefined} aria-label={title || undefined} aria-hidden={title ? undefined : true} className={className} />
+    <span data-no-icon className={className}>{title && <span className="sr-only">{title}</span>}</span>
   )
 }
 
@@ -88,15 +88,16 @@ function ParkedItem({ layer }: Readonly<{ layer: Layer }>) {
     }
   }
   return (
-    <div
+    <button
+      type="button"
       ref={setNodeRef}
       {...attributes}
       {...listeners}
       onKeyDown={onKeyDown}
-      className={`${CHIP} cursor-grab touch-none select-none ${isDragging ? 'opacity-40' : ''}`}
+      className={`${CHIP} w-full cursor-grab touch-none select-none text-left ${isDragging ? 'opacity-40' : ''}`}
     >
       <ParkedChip layer={layer} />
-    </div>
+    </button>
   )
 }
 
@@ -127,18 +128,17 @@ function Shelf() {
         <span id={heading}>Parked</span>
         <span>{ws.parked.length}</span>
       </div>
-      <div
+      <fieldset
         ref={setNodeRef}
-        role="group"
         aria-labelledby={heading}
-        className={`min-h-[5rem] rounded-lg border border-dashed p-1.5 ${isOver ? 'border-sky-400 bg-sky-400/10' : 'border-zinc-700'}`}
+        className={`min-h-[5rem] min-w-0 rounded-lg border border-dashed p-1.5 ${isOver ? 'border-sky-400 bg-sky-400/10' : 'border-zinc-700'}`}
       >
         {ws.parked.map((l) => (
           <ParkedItem key={l.id} layer={l} />
         ))}
         <p className="px-1 pt-1 text-[11px] text-zinc-600">Saved as "disabled": true.</p>
         <p className="px-1 pb-1 text-[11px] text-zinc-600">Drop a layer here to keep it without a key. Enter on a parked layer puts it on the selected key.</p>
-      </div>
+      </fieldset>
       <button
         type="button"
         className={`${STYLE.button} mt-3 w-full`}

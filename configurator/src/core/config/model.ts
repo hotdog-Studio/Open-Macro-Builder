@@ -1,8 +1,8 @@
-export type KeyId = string // 'fn' for the Fn key, 'k1', 'k2', … for macro keys
 export type Extra = Record<string, unknown> // unknown fields, kept in source order
 
 export interface PadKey {
-  id: KeyId
+  /** 'fn' for the Fn key, 'k1', 'k2', … for macro keys. */
+  id: string
   key: string
   row?: number
   col?: number
@@ -23,13 +23,13 @@ export interface Layer {
   id: string
   title: string
   icon: string
-  macros: Record<KeyId, Macro>
+  macros: Record<string, Macro>
   overflowMacros: unknown[]
   extra: Extra
 }
 
 export interface Options {
-  defaultKey: KeyId | null
+  defaultKey: string | null
   defaultRaw?: unknown // only when "default" is present but out of range
   hasDefault: boolean // "default" was present
   showFn?: boolean | string
@@ -42,7 +42,7 @@ export interface Options {
 export interface Workspace {
   fn: PadKey
   keys: PadKey[]
-  slots: Record<KeyId, Layer>
+  slots: Record<string, Layer>
   parked: Layer[]
   options: Options
   hotkeys?: unknown

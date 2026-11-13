@@ -17,7 +17,9 @@ export function LeftPanel({ children }: Readonly<{ children?: ReactNode }>) {
 }
 
 export function CentrePanel({ children }: Readonly<{ children?: ReactNode }>) {
-  return <main className="flex min-w-0 flex-1 flex-col items-center gap-3 overflow-auto p-5">{children}</main>
+  // Centred only while it fits ("safe"): plain centring pushes the left edge of a pad wider than the
+  // panel out where no scrolling reaches it.
+  return <main className="flex min-w-0 flex-1 flex-col items-center-safe gap-3 overflow-auto p-5">{children}</main>
 }
 
 /** `preview` adds the overlay preview under the details (the Commands tab has none). */

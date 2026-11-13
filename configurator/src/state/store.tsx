@@ -212,6 +212,8 @@ interface AppContextValue {
   state: AppState
   dispatch: (a: Action) => void
   actions: AppActions
+  /** Where the app runs: a browser tab or the desktop app. */
+  platform: Platform['kind']
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -235,7 +237,7 @@ export function AppProvider({ platform, children }: { platform: Platform; childr
   useEffect(() => sync(state), [sync, state])
   // Stops watching config.json when the app goes away.
   useEffect(() => dispose, [dispose])
-  const value = useMemo(() => ({ state, dispatch, actions }), [state, actions])
+  const value = useMemo(() => ({ state, dispatch, actions, platform: platform.kind }), [state, actions, platform.kind])
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 

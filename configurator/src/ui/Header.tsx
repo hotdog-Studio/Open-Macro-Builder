@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react'
 import { LANG_IDS, LANGUAGES, type LangId } from '../core/languages'
 import { useEditor, type Tab } from '../state/store'
 import { ConfirmDialog } from './ConfirmDialog'
+import { DownloadLink } from './DownloadLink'
 
 const TABS: [Tab, string][] = [
   ['shape', 'Pad shape'],
@@ -11,7 +12,7 @@ const TABS: [Tab, string][] = [
 ]
 
 export function Header() {
-  const { state, dispatch, actions } = useEditor()
+  const { state, dispatch, actions, platform } = useEditor()
   const running = state.settings.languages
   const [confirmOpen, setConfirmOpen] = useState(false)
   // config.json first, then each command file with unsaved edits, in list order.
@@ -32,8 +33,9 @@ export function Header() {
     if (next.length > 0) void actions.setLanguages(next)
   }
 
+  // The header wraps in a narrow window: wider than the window, it would make the whole page scroll sideways.
   return (
-    <header className="flex items-center gap-1 border-b border-zinc-800 bg-zinc-900 px-4 py-2">
+    <header className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-zinc-800 bg-zinc-900 px-4 py-2">
       <span className="mr-4 font-semibold">Open Macro Builder</span>
       <nav role="tablist" aria-label="Views" className="flex gap-1">
         {TABS.map(([tab, label]) => (
@@ -70,6 +72,9 @@ export function Header() {
           </label>
         ))}
       </fieldset>
+      {platform === 'browser' && (
+        <DownloadLink className="mr-2 rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-200 hover:bg-zinc-800" />
+      )}
       <button
         type="button"
         className="mr-2 rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-200 hover:bg-zinc-800"

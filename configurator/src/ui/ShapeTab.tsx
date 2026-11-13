@@ -229,7 +229,8 @@ export function ShapeTab() {
       <CentrePanel>
         <p className="text-zinc-400">The physical pad. One grid square is one key unit.</p>
         <PadGrid mode="shape" extraCell renderKey={(k) => <KeyFace k={k} />} />
-        <p className="text-[11px] text-zinc-500">Drag a key to an empty square to move it · drag its corner to resize it</p>
+        <p className="text-[11px] text-zinc-500">Drag a key to an empty square to move it · drag its corner to resize it · Alt+arrows move the focused key,
+          Shift+Alt+arrows resize it</p>
       </CentrePanel>
       <RightPanel>
         {selected ? <KeyDetails key={selected.id} k={selected} /> : <p className="text-zinc-500">Select a key.</p>}

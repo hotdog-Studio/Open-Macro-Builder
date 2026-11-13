@@ -1,11 +1,11 @@
 import { DragOverlay, useDndContext, useDraggable } from '@dnd-kit/core'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
 import type { Layer, PadKey, Workspace } from '../core/config/model'
 import { findLayer, setMacro, updateMacro } from '../core/config/ops'
 import { definedNames, isCommand, LANG_IDS, LANGUAGES, type CatalogEntry, type LangId } from '../core/languages'
 import { useEditor } from '../state/store'
-import { LayerIcon } from './LayersTab'
-import { PadDnd, PadGrid } from './PadGrid'
+import { LayerIcon, OVERLAY_STYLE } from './LayersTab'
+import { PadDnd, PadGrid, usePadActions } from './PadGrid'
 import { CentrePanel, LeftPanel, RightPanel, STYLE } from './Panels'
 import { useAsset } from './useAsset'
 
@@ -129,11 +129,26 @@ function CommandItem({ entry, missing }: Readonly<{ entry: CatalogEntry; missing
   // Unique per row: one command can be listed under two file pairs, and dnd-kit keys by id.
   const dragId = `cmd:${entry.group}/${entry.pair}/${entry.name}`
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: dragId })
+  const { state, dispatch } = useEditor()
+  const pad = usePadActions()
+  // Without the mouse: Enter or Space puts the command on the selected key.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    const key = state.selectedKey
+    if (key === null || key === 'fn') {
+      const text = 'Select a key first, then press Enter on a command to put it there.'
+      dispatch({ type: 'banner', banner: { text, kind: 'info' } })
+    } else {
+      pad.run({ type: 'setMacroFromCommand', command: entry.name, key })
+    }
+  }
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onKeyDown={onKeyDown}
       data-command={entry.name}
       data-drag-id={dragId}
       title={entry.description || undefined}
@@ -159,7 +174,7 @@ function DraggedCommand() {
   const { active } = useDndContext()
   const id = String(active?.id ?? '')
   return (
-    <DragOverlay>
+    <DragOverlay style={OVERLAY_STYLE}>
       {id.startsWith('cmd:') ? (
         <div className={`${CHIP} cursor-grabbing font-mono text-[11px] text-zinc-200`}>{id.slice(id.lastIndexOf('/') + 1)}</div>
       ) : null}
@@ -188,7 +203,7 @@ function Palette() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <p className={STYLE.note}>Drag a command onto a key.</p>
+      <p className={STYLE.note}>Drag a command onto a key, or select a key and press Enter on a command.</p>
       {groups.map((g) => (
         <GroupList key={g.id} group={g} missingIn={missingIn} />
       ))}
@@ -389,7 +404,8 @@ export function MacrosTab() {
               renderStrip={(k) => (k.id === 'fn' ? null : (layer.macros[k.id]?.name ?? null))}
             />
             <p className="text-[11px] text-zinc-500">
-              Drag a command from the list onto a key · drag a key onto another to swap them
+              Drag a command from the list onto a key · drag a key onto another to swap them, or focus it and press
+              Alt+arrows
             </p>
           </>
         ) : (

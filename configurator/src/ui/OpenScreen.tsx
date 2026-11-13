@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { LANG_IDS, LANGUAGES } from '../core/languages'
 import { useApp } from '../state/store'
 import { ConfirmDialog } from './ConfirmDialog'
+import { DownloadLink } from './DownloadLink'
 
 const PRIMARY = 'rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500'
 const PLAIN = 'rounded-md border border-zinc-700 px-4 py-2 hover:bg-zinc-800'
@@ -20,14 +21,20 @@ function Frame({ message, children }: { message: string | null; children?: React
   )
 }
 
-/** A browser that cannot open folders: only the explanation. */
+const LINK = 'text-sky-400 underline-offset-4 hover:underline'
+
+/** A browser that cannot open folders: the explanation, and the desktop app, which works everywhere on Windows. */
 export function Unsupported({ message }: { message: string }) {
-  return <Frame message={message} />
+  return (
+    <Frame message={message}>
+      <DownloadLink className={LINK}>Or download the desktop app for Windows</DownloadLink>
+    </Frame>
+  )
 }
 
 /** No folder open yet, or one being opened: Open folder, Reopen <name>, and the first-run prompts. */
 export function OpenScreen() {
-  const { state, actions } = useApp()
+  const { state, actions, platform } = useApp()
   if (state.screen === 'edit') return null
   const open = state.screen === 'open' ? state : null
 
@@ -43,6 +50,7 @@ export function OpenScreen() {
           </button>
         )}
       </div>
+      {platform === 'browser' && <DownloadLink className={LINK}>Download the desktop app for Windows</DownloadLink>}
       {state.screen === 'pick-config' && (
         <ConfirmDialog
           title="This folder has no local/config.json yet"

@@ -1,9 +1,9 @@
 import { DragOverlay, useDndContext, useDraggable, useDroppable } from '@dnd-kit/core'
-import { useId } from 'react'
+import { useId, type KeyboardEvent } from 'react'
 import type { Layer, PadKey } from '../core/config/model'
 import { addLayer, layerOnKey, parkLayer, setDefaultLayer, updateLayer } from '../core/config/ops'
 import { useEditor } from '../state/store'
-import { PadDnd, PadGrid } from './PadGrid'
+import { PadDnd, PadGrid, usePadActions } from './PadGrid'
 import { CentrePanel, LeftPanel, RightPanel, STYLE } from './Panels'
 import { useAsset } from './useAsset'
 
@@ -73,11 +73,26 @@ const CHIP = 'mb-1 flex items-center gap-2 rounded border border-zinc-700 bg-zin
 
 function ParkedItem({ layer }: Readonly<{ layer: Layer }>) {
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: `parked:${layer.id}` })
+  const { state, dispatch } = useEditor()
+  const pad = usePadActions()
+  // Without the mouse: Enter or Space puts the layer on the selected key.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    const key = state.selectedKey
+    if (key === null || key === 'fn') {
+      const text = 'Select a key first, then press Enter on the parked layer to put it there.'
+      dispatch({ type: 'banner', banner: { text, kind: 'info' } })
+    } else {
+      pad.run({ type: 'placeParked', layerId: layer.id, key })
+    }
+  }
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onKeyDown={onKeyDown}
       className={`${CHIP} cursor-grab touch-none select-none ${isDragging ? 'opacity-40' : ''}`}
     >
       <ParkedChip layer={layer} />
@@ -85,13 +100,20 @@ function ParkedItem({ layer }: Readonly<{ layer: Layer }>) {
   )
 }
 
+/**
+ * dnd-kit keeps the overlay box, invisible, on top of the page during every drag and for the quarter
+ * second of its drop animation. It must not take the mouse, or a press where something was just
+ * dropped lands on nothing.
+ */
+export const OVERLAY_STYLE = { pointerEvents: 'none' } as const
+
 /** The layer being dragged follows the pointer even outside the side panel, which would clip it. */
 function DraggedLayer() {
   const { state } = useEditor()
   const { active } = useDndContext()
   const id = String(active?.id ?? '')
   const layer = id.startsWith('parked:') ? state.ws.parked.find((l) => `parked:${l.id}` === id) : undefined
-  return <DragOverlay>{layer ? <div className={`${CHIP} cursor-grabbing`}><ParkedChip layer={layer} /></div> : null}</DragOverlay>
+  return <DragOverlay style={OVERLAY_STYLE}>{layer ? <div className={`${CHIP} cursor-grabbing`}><ParkedChip layer={layer} /></div> : null}</DragOverlay>
 }
 
 function Shelf() {
@@ -115,7 +137,7 @@ function Shelf() {
           <ParkedItem key={l.id} layer={l} />
         ))}
         <p className="px-1 pt-1 text-[11px] text-zinc-600">Saved as "disabled": true.</p>
-        <p className="px-1 pb-1 text-[11px] text-zinc-600">Drop a layer here to keep it without a key.</p>
+        <p className="px-1 pb-1 text-[11px] text-zinc-600">Drop a layer here to keep it without a key. Enter on a parked layer puts it on the selected key.</p>
       </div>
       <button
         type="button"
@@ -221,7 +243,8 @@ export function LayersTab() {
           renderStrip={(k) => (k.id === 'fn' ? null : (layerOnKey(ws, k.id)?.title ?? null))}
         />
         <p className="text-[11px] text-zinc-500">
-          Drag a layer to another key to move or swap it · ★ marks the layer the pad starts on
+          Drag a layer to another key to move or swap it, or focus it and press Alt+arrows · ★ marks the layer the pad
+          starts on
         </p>
       </CentrePanel>
       <RightPanel>

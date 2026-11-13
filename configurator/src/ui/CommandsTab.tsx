@@ -243,7 +243,7 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
   const askReload = () => (draft === undefined ? reload() : setConfirmReload(true))
   return (
     <>
-      <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
+      <div role="toolbar" aria-label="Command file" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-zinc-800 px-4 py-2">
         <LanguageButtons pair={pair} />
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-400">{path}</span>
         <NewCommandButton file={file} />
@@ -321,7 +321,7 @@ function MissingFile({ pair }: Readonly<{ pair: CommandPair }>) {
   const create = async () => setError(await actions.createMissingFile(pair.key, lang))
   return (
     <>
-      <div role="toolbar" aria-label="Command file" className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
+      <div role="toolbar" aria-label="Command file" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-zinc-800 px-4 py-2">
         <LanguageButtons pair={pair} />
         <span className="flex-1" />
         <NewCommandButton file={undefined} />

@@ -104,6 +104,64 @@ function newMacro(command: string, description: string | undefined): Macro {
   return description ? { action: command, name, description, extra: {} } : { action: command, name, extra: {} }
 }
 
+// ---------------------------------------------------------------- the keyboard
+
+export type Direction = 'up' | 'down' | 'left' | 'right'
+
+const STEP: Record<Direction, { row: number; col: number }> = {
+  up: { row: -1, col: 0 },
+  down: { row: 1, col: 0 },
+  left: { row: 0, col: -1 },
+  right: { row: 0, col: 1 },
+}
+
+/** The direction of an arrow key ('ArrowLeft' gives 'left'), or null for any other key. */
+export function arrowDirection(key: string): Direction | null {
+  const found = /^Arrow(Up|Down|Left|Right)$/.exec(key)
+  return found ? (found[1].toLowerCase() as Direction) : null
+}
+
+/**
+ * The macro key on the square next to a key in a direction, measured from the key's top-left
+ * square (and past its far edge when going right or down). Null when that square is free, off
+ * the pad, or the Fn key.
+ */
+export function neighbourKey(ws: Workspace, id: KeyId, dir: Direction): KeyId | null {
+  const key = ws.keys.find((k) => k.id === id)
+  if (!key) return null
+  const s = size(key)
+  const row = dir === 'down' ? s.row + s.h : s.row + STEP[dir].row
+  const col = dir === 'right' ? s.col + s.w : s.col + STEP[dir].col
+  const hit = ws.keys.find((k) => {
+    const o = size(k)
+    return k.id !== id && row >= o.row && row < o.row + o.h && col >= o.col && col < o.col + o.w
+  })
+  return hit?.id ?? null
+}
+
+/**
+ * What Alt + an arrow key means for the focused key on a tab, as the drop it stands for: one square
+ * over on the Pad shape tab, a swap with the neighbouring key on the others. Null when it means nothing.
+ */
+export function nudgeAction(tab: Tab, ws: Workspace, id: KeyId, dir: Direction): DropAction | null {
+  if (tab === 'shape') {
+    const key = id === 'fn' ? ws.fn : ws.keys.find((k) => k.id === id)
+    if (!key) return null
+    const { row, col } = size(key)
+    return { type: 'moveKey', id, row: row + STEP[dir].row, col: col + STEP[dir].col }
+  }
+  if (tab !== 'layers' && tab !== 'macros') return null
+  const to = neighbourKey(ws, id, dir)
+  if (to === null) return null
+  return { type: tab === 'layers' ? 'swapLayers' : 'swapMacros', a: id, b: to }
+}
+
+/** The size a key gets from Shift + Alt + an arrow key: right and down grow it, left and up shrink it, never below 1. */
+export function resizeByStep(k: PadKey, dir: Direction): { width: number; height: number } {
+  const { w, h } = size(k)
+  return { width: Math.max(1, w + STEP[dir].col), height: Math.max(1, h + STEP[dir].row) }
+}
+
 const UNIT_W = 64
 const UNIT_H = 83
 

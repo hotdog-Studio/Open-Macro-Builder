@@ -1,0 +1,20 @@
+# escape=`
+# The web configurator as a Windows container (windows/amd64). Needs a Windows host with Docker in
+# Windows-container mode, and the host's Windows version must match WINDOWS_VERSION.
+#
+# Windows has no Node image to build the page in, so build it first, then the image, from the
+# repository root:
+#
+#   cd configurator; npm ci; npm run build; cd ..
+#   docker build -f docker/Dockerfile.windows -t open-macro-builder:windows .
+#   docker run --rm -p 8080:8080 open-macro-builder:windows      then open http://localhost:8080
+#
+# See docs/docker.md. The Linux image (../Dockerfile) is far smaller and also runs on Windows
+# through Docker Desktop; use this one only where Linux containers are not an option.
+ARG WINDOWS_VERSION=ltsc2022
+FROM caddy:2-windowsservercore-${WINDOWS_VERSION}
+ENV SITE_ROOT=C:/site
+COPY docker/Caddyfile C:/etc/caddy/Caddyfile
+COPY configurator/dist C:/site
+EXPOSE 8080
+CMD ["caddy", "run", "--config", "C:/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

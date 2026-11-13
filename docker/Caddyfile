@@ -1,0 +1,35 @@
+# The web server of the configurator image, the same file for the Linux and the Windows image.
+# It serves the built page on port 8080 over plain HTTP. A browser only lets the page open a
+# folder on https:// or on localhost, so anywhere else put your own HTTPS in front (docs/docker.md).
+{
+	# No admin API and no certificates: this server only hands out files.
+	admin off
+	auto_https off
+}
+
+:8080 {
+	# SITE_ROOT is set by the image: /srv on Linux, C:/site on Windows.
+	root * {$SITE_ROOT:/srv}
+	encode zstd gzip
+
+	# For Docker's health check and for load balancers.
+	respond /healthz "ok" 200
+
+	header {
+		# The page loads only its own files. Icons it shows are blob: URLs it makes from the folder
+		# you open; the code editor writes its styles into the page.
+		Content-Security-Policy "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Built files have a hash in their name, so they never change: cache them for good.
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	# The page itself is looked up again each time, so a new image shows up at once.
+	@page path / /index.html
+	header @page Cache-Control "no-cache"
+
+	file_server
+}

@@ -1,0 +1,28 @@
+# What `docker build` may read. The images need only the configurator, the shared config checks in
+# scripts/ and docker/. Everything personal or bulky stays out of the build.
+
+# Your own layout, commands and notes: never in an image.
+local/
+.env*
+.git/
+.vscode/
+.claude/
+.superpowers/
+
+# Dependencies and outputs are made inside the build. configurator/dist is not listed: the Windows
+# image copies it, built beforehand (docker/Dockerfile.windows); the Linux build makes its own.
+**/node_modules/
+configurator/dist-electron/
+configurator/release/
+configurator/.vitest/
+coverage/
+results/
+.scannerwork/
+
+# Not part of the web page.
+ahk/
+powershell/
+qmk/
+img/
+ci/
+docs/

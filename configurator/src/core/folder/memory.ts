@@ -6,7 +6,7 @@ const decoder = new TextDecoder()
 
 /** The promise of what `run` gives; a throw becomes a rejection, as it does from a real folder. */
 function later<T>(run: () => T): Promise<T> {
-  return new Promise((resolve) => resolve(run()))
+  return Promise.resolve().then(run)
 }
 
 /** In-memory FolderAccess for tests and demos. */

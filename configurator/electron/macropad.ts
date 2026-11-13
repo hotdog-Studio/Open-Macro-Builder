@@ -86,7 +86,7 @@ export function findMacropad(procs: ProcInfo[], root: string): FoundMacropad | n
 
 /** What starts the macropad again; both runtimes replace the copy that is running. */
 export function relaunchCommand(found: FoundMacropad, root: string): { file: string; args: string[] } {
-  const base = trimEnd(root, '\\/')
+  const base = trimEnd(root, String.raw`\/`)
   if (found.lang === 'ahk') return { file: found.exe, args: [String.raw`${base}\ahk\main.ahk`] }
   return { file: 'wscript.exe', args: [String.raw`${base}\powershell\launch.vbs`] }
 }
@@ -131,7 +131,7 @@ export function listProcesses(): Promise<ProcInfo[]> {
       ['-NoProfile', '-NonInteractive', '-Command', PROCESS_QUERY],
       { windowsHide: true, timeout: 20_000, maxBuffer: 16 * 1024 * 1024 },
       (error, stdout) => {
-        if (error) return reject(error instanceof Error ? error : new Error(String(error)))
+        if (error) return reject(new Error(error.message, { cause: error }))
         try {
           resolve(parseProcessList(stdout))
         } catch (e) {

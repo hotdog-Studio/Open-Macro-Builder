@@ -38,7 +38,7 @@ async function listFiles(folder: FolderAccess, dir: string, ext: string): Promis
     entries.map((entry) => {
       const path = `${dir}/${entry.name}`
       if (entry.kind === 'dir') return listFiles(folder, path, ext)
-      return entry.name.toLowerCase().endsWith(ext) ? [path] : []
+      return Promise.resolve(entry.name.toLowerCase().endsWith(ext) ? [path] : [])
     }),
   )
   return found.flat()

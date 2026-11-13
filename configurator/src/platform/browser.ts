@@ -1,5 +1,5 @@
 import { del, get, set } from 'idb-keyval'
-import { normalizePath } from '../core/folder/path'
+import { byName, normalizePath } from '../core/folder/path'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
 import type { Platform } from './types'
 
@@ -52,10 +52,11 @@ export class BrowserFolder implements FolderAccess {
   async writeBytes(path: string, data: Uint8Array): Promise<void> {
     const segments = normalizePath(path).split('/')
     const fileName = segments.pop()!
-    let dir = this.handle
-    for (const segment of segments) {
-      dir = await dir.getDirectoryHandle(segment, { create: true })
-    }
+    // Each folder on the way is made inside the one before it.
+    const dir = await segments.reduce(
+      (parent, segment) => parent.then((d) => d.getDirectoryHandle(segment, { create: true })),
+      Promise.resolve(this.handle),
+    )
     const file = await dir.getFileHandle(fileName, { create: true })
     // The browser writes to a swap file and replaces the original on close(),
     // so a failed write leaves the old content in place.
@@ -78,7 +79,7 @@ export class BrowserFolder implements FolderAccess {
     for await (const [name, child] of handle.entries()) {
       entries.push({ name, kind: child.kind === 'directory' ? 'dir' : 'file' })
     }
-    return entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    return entries.sort(byName)
   }
 
   async remove(path: string): Promise<void> {

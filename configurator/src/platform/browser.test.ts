@@ -73,6 +73,23 @@ describe('BrowserFolder', () => {
     await expect(folder.readBytes('x.txt')).rejects.toThrow()
   })
 
+  it('lets an error from a parent folder through when reading, listing or writing below it', async () => {
+    const root = new FakeDir('omb')
+    root.put('a/x.txt', 'x')
+    root.failWith = 'NotAllowedError'
+    const folder = new BrowserFolder(root.asHandle())
+    await expect(folder.readBytes('a/x.txt')).rejects.toMatchObject({ name: 'NotAllowedError' })
+    await expect(folder.list('a')).rejects.toMatchObject({ name: 'NotAllowedError' })
+    await expect(folder.remove('a/x.txt')).rejects.toMatchObject({ name: 'NotAllowedError' })
+  })
+
+  it('does not hide a failed remove as a missing file', async () => {
+    const root = new FakeDir('omb')
+    root.put('x.txt', 'x')
+    root.failWith = 'NotAllowedError'
+    await expect(new BrowserFolder(root.asHandle()).remove('x.txt')).rejects.toMatchObject({ name: 'NotAllowedError' })
+  })
+
   it('leaves a file unchanged when the write fails before close', async () => {
     const root = new FakeDir('omb')
     const file = root.put('x.txt', 'old')
@@ -152,6 +169,12 @@ describe('createBrowserPlatform', () => {
       expect(store.handle).toBeUndefined()
     })
 
+    it('lets a permission check that fails for another reason through', async () => {
+      const dir = new FakeDir('omb')
+      dir.permissionFailWith = 'SecurityError'
+      await expect(platformWith({ handle: dir }).platform.restoreFolder()).rejects.toMatchObject({ name: 'SecurityError' })
+    })
+
     it('says the folder is lost when it cannot be listed', async () => {
       const dir = new FakeDir('omb')
       dir.failWith = 'NotFoundError'
@@ -204,6 +227,23 @@ describe('createBrowserPlatform', () => {
       expect(store.cleared).toBe(1)
     })
 
+    it('lets a permission request that fails for another reason through', async () => {
+      const dir = new FakeDir('omb')
+      dir.permission = 'prompt'
+      dir.permissionFailWith = 'SecurityError'
+      const { platform, store } = platformWith({ handle: dir })
+      await expect(platform.grantPermission!()).rejects.toMatchObject({ name: 'SecurityError' })
+      expect(store.cleared).toBe(0)
+    })
+
+    it('finds the remembered folder in the store when restoreFolder did not run first', async () => {
+      const dir = new FakeDir('omb')
+      dir.put('config.json', '{}')
+      dir.permission = 'prompt'
+      const result = await platformWith({ handle: dir }).platform.grantPermission!()
+      expect(result).toMatchObject({ folder: { name: 'omb' } })
+    })
+
     it('returns null when nothing is remembered', async () => {
       expect(await platformWith().platform.grantPermission!()).toBeNull()
     })
@@ -235,6 +275,14 @@ describe('createBrowserPlatform', () => {
         },
       })
       await expect(platform.openFolder()).rejects.toThrow()
+    })
+
+    it('lets a picker that throws something other than an error through', async () => {
+      const { platform, store } = platformWith({
+        pick: () => Promise.reject('boom'),
+      })
+      await expect(platform.openFolder()).rejects.toBe('boom')
+      expect(store.handle).toBeUndefined()
     })
 
     it('still opens the folder when it cannot be remembered', async () => {

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -122,6 +122,63 @@ describe('Pad shape tab', () => {
     expect(ws().keys).toHaveLength(11)
     expect(ws().keys.some((k) => k.key === 'F14')).toBe(false)
     expect(ws().parked.map((l) => l.title)).toContain('Programs')
+  })
+
+  it('leaves a new key unnamed once F1 to F24 are all used', async () => {
+    const { user } = await openPad()
+    // F13 to F24 are taken; twelve more keys take F1 to F12.
+    for (let i = 0; i < 13; i++) await user.click(screen.getByRole('button', { name: '+ Add key' }))
+    expect(ws().keys).toHaveLength(25)
+    expect(ws().keys[24].key).toBe('')
+    expect((screen.getByRole('textbox', { name: 'Keyboard key it sends' }) as HTMLInputElement).value).toBe('')
+  })
+
+  it('says nothing is assigned when the key to remove has no layer or macros', async () => {
+    const { user } = await openPad()
+    await user.click(screen.getByRole('button', { name: '+ Add key' }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(within(screen.getByRole('dialog')).getByText('Nothing is assigned to this key.')).toBeTruthy()
+  })
+
+  it('Escape closes the remove question without removing the key', async () => {
+    const { user } = await openPad()
+    await user.click(keyButton('F14'))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(ws().keys).toHaveLength(12)
+  })
+
+  it('refuses to remove the last macro key and says why', async () => {
+    const { user } = await openPad()
+    await user.click(keyButton('F13'))
+    act(() => seen.dispatch({ type: 'edit', ws: { ...ws(), keys: [ws().keys[0]] } }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(within(await screen.findByRole('alert')).getByText('A pad needs at least one macro key.')).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(ws().keys).toHaveLength(1)
+  })
+
+  it('keeps the key and says why when the pad shrank while the remove question was open', async () => {
+    const { user } = await openPad()
+    await user.click(keyButton('F13'))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    // For example a reload from disk replaced the pad while the question was showing.
+    act(() => seen.dispatch({ type: 'edit', ws: { ...ws(), keys: [ws().keys[0]] } }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove key' }))
+    expect(within(await screen.findByRole('alert')).getByText('A pad needs at least one macro key.')).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(ws().keys).toHaveLength(1)
+  })
+
+  it('the banner goes away when it is dismissed', async () => {
+    const { user } = await openPad()
+    await user.click(keyButton('F13'))
+    act(() => seen.dispatch({ type: 'edit', ws: { ...ws(), keys: [ws().keys[0]] } }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    const banner = await screen.findByRole('alert')
+    await user.click(within(banner).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('does not offer to remove the Fn key', async () => {

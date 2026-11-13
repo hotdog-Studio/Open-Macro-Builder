@@ -209,6 +209,54 @@ describe('pad edits', () => {
     expect(updateLayer(parked, 'L1', { icon: 'z' }).parked[0].icon).toBe('z')
   })
 
+  it('swaps a layer from an empty key onto an occupied one, and the start layer follows', () => {
+    const ws = example()
+    const swapped = swapLayers(ws, 'k4', 'k1')
+    expect(layerOnKey(swapped, 'k4')?.title).toBe('Media')
+    expect(layerOnKey(swapped, 'k1')).toBeUndefined()
+    expect(swapped.options.defaultKey).toBe('k4')
+  })
+
+  it('swapping a key with itself, or two empty keys, changes nothing', () => {
+    const ws = example()
+    expect(swapLayers(ws, 'k1', 'k1')).toBe(ws)
+    expect(swapLayers(ws, 'k4', 'k9')).toBe(ws)
+    expect(swapMacros(ws, 'L1', 'k1', 'k1')).toBe(ws)
+  })
+
+  it('moves a macro onto an empty key and leaves the key it came from empty', () => {
+    const ws = example()
+    const moved = findLayer(swapMacros(ws, 'L1', 'k4', 'k1'), 'L1')!
+    expect(moved.macros.k4.name).toBe('Prev')
+    expect('k1' in moved.macros).toBe(false)
+  })
+
+  it('refuses to move or resize a key that does not exist', () => {
+    const ws = example()
+    expect(moveKey(ws, 'nope', 1, 1)).toEqual({ ok: false, reason: 'There is no such key.' })
+    expect(resizeKey(ws, 'nope', 1, 1)).toEqual({ ok: false, reason: 'There is no such key.' })
+    expect(removeKey(ws, 'nope')).toEqual({ ok: false, reason: 'There is no such key.' })
+  })
+
+  it('refuses a size below 1 or a size that runs into another key', () => {
+    const ws = example()
+    expect(resizeKey(ws, 'k1', 0, 1).ok).toBe(false)
+    expect(resizeKey(ws, 'k1', 1.5, 1).ok).toBe(false)
+    expect(resizeKey(ws, 'k1', 99, 1).ok).toBe(false)
+  })
+
+  it('resizing a tall key to 2 by 1 keeps the height of 1 out of the file', () => {
+    const resized = ok(resizeKey(example(), 'k10', 2, 1)).ws.keys[9]
+    expect(resized.width).toBe(2)
+    expect('height' in resized).toBe(false)
+  })
+
+  it('placing a parked layer that does not exist, or on a key that does not exist, changes nothing', () => {
+    const parked = parkLayer(example(), 'k1')
+    expect(placeParked(parked, 'nope', 'k2')).toBe(parked)
+    expect(placeParked(parked, 'L1', 'nope')).toBe(parked)
+  })
+
   it('sets, clears, swaps and updates macros on their key', () => {
     const ws = example()
     const macro = { action: 'Escape', name: 'Esc', extra: {} }

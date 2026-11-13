@@ -8,7 +8,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 - Configurator: everything that can be dragged can be done from the keyboard. Alt + arrow moves a key on the Pad shape tab and swaps a layer or macro with the key beside it on the other tabs; Shift + Alt + arrow resizes a key; Enter on a command or a parked layer puts it on the selected key.
 - Configurator, in the browser: a Download link to the desktop app on the GitHub releases page, in the header and on the start screen.
-- Docker images of the web configurator for `linux/amd64` and `linux/arm64`, published at `ghcr.io/hotdog-studio/open-macro-builder`, and a Dockerfile for a Windows container.
+- Docker images of the web configurator for `linux/amd64` and `linux/arm64`, published at `ghcr.io/hotdog-studio/open-macro-builder`.
 - Releases: every green build of `develop` is published as a GitHub release with the Windows installer and a portable exe, and as a container image.
 - The hotdog icon redrawn as clean pixel art from an SVG source, and a logo. Both macropad versions and the desktop app use the new icon.
 - Developer documentation: `CONTRIBUTING.md` and `docs/`.

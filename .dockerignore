@@ -9,9 +9,9 @@ local/
 .claude/
 .superpowers/
 
-# Dependencies and outputs are made inside the build. configurator/dist is not listed: the Windows
-# image copies it, built beforehand (docker/Dockerfile.windows); the Linux build makes its own.
+# Dependencies and outputs are made inside the build.
 **/node_modules/
+configurator/dist/
 configurator/dist-electron/
 configurator/release/
 configurator/.vitest/

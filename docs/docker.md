@@ -43,7 +43,6 @@ Binding to `127.0.0.1` keeps it to the computer it runs on, which is also the on
 | Platform | Built from | Notes |
 | --- | --- | --- |
 | `linux/amd64`, `linux/arm64` | [`Dockerfile`](../Dockerfile) | About 90 MB. Also what Docker Desktop on Windows and macOS runs. |
-| `windows/amd64` | [`docker/Dockerfile.windows`](../docker/Dockerfile.windows) | A Windows container, on Windows Server Core LTSC 2022: several GB, and only for a Windows host in Windows-container mode whose version matches. Use it where Linux containers are not an option. Not published: [build it yourself](#build-it-yourself). |
 
 ## From another device
 
@@ -61,21 +60,12 @@ A self-signed certificate works only once the browser has been told to trust it.
 
 From the repository root.
 
-Linux, both architectures:
+Both architectures:
 
 ```
 docker buildx build --platform linux/amd64,linux/arm64 -t open-macro-builder .
 ```
 
 The page is built once, on the machine doing the build, and copied into each architecture's image, so no emulation is needed.
-
-Windows, on a Windows host in Windows-container mode. There is no Node image for Windows, so build the page first:
-
-```
-cd configurator; npm ci; npm run build; cd ..
-docker build -f docker/Dockerfile.windows -t open-macro-builder:windows .
-```
-
-`--build-arg WINDOWS_VERSION=ltsc2025` picks another Windows base; it must be one the [Caddy image](https://hub.docker.com/_/caddy) is published for.
 
 Both images use the same server settings, [`docker/Caddyfile`](../docker/Caddyfile): compression, long-lived caching for the hashed files, and a Content-Security-Policy that lets the page load only its own files.

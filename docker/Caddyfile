@@ -1,4 +1,4 @@
-# The web server of the configurator image, the same file for the Linux and the Windows image.
+# The web server of the configurator image, for linux/amd64 and linux/arm64.
 # It serves the built page on port 8080 over plain HTTP. A browser only lets the page open a
 # folder on https:// or on localhost, so anywhere else put your own HTTPS in front (docs/docker.md).
 {
@@ -8,7 +8,7 @@
 }
 
 :8080 {
-	# SITE_ROOT is set by the image: /srv on Linux, C:/site on Windows.
+	# SITE_ROOT is set by the image.
 	root * {$SITE_ROOT:/srv}
 	encode zstd gzip
 

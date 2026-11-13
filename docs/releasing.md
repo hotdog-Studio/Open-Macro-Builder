@@ -13,8 +13,6 @@ What a release of Open Macro Builder is made of, how its number is chosen, and w
 
 The two `.exe` files are not signed, so Windows SmartScreen warns the first time one is run. Signing needs a code-signing certificate; with one, electron-builder signs during `npm run dist`.
 
-The Windows container image (`docker/Dockerfile.windows`) is not built by Jenkins: no agent runs Windows containers. [docker.md](docker.md#build-it-yourself) says how to build it by hand.
-
 ## The version number
 
 A version is `MAJOR.MINOR.PATCH`, and `node scripts/ci-version.mjs` prints the one the next build of the current commit gets.

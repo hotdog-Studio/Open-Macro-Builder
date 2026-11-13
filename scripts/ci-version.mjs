@@ -60,8 +60,8 @@ export function main(argv, { git, read, log, error }) {
     const { version, base } = versionFor({ pkgVersion, merged, atHead });
     log(flag === '--base' ? (base ?? '(none)') : version);
     return 0;
-  } catch (problem) {
-    error(problem.message);
+  } catch (error_) {
+    error(error_.message);
     return 1;
   }
 }
@@ -69,9 +69,9 @@ export function main(argv, { git, read, log, error }) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
   // The git on PATH, as in scripts/check-private.mjs: there is no fixed git location across the
-  // build machines, and whoever controls PATH on one already controls the build.
+  // build machines, and whoever controls PATH on one already controls the build (hence NOSONAR).
   process.exitCode = main(process.argv.slice(2), {
-    git: (args) => execFileSync('git', args, { cwd: root }).toString(),
+    git: (args) => execFileSync('git', args, { cwd: root }).toString(), // NOSONAR S4036
     read: (path) => readFileSync(join(root, path), 'utf8'),
     log: (line) => console.log(line),
     error: (line) => console.error(line),

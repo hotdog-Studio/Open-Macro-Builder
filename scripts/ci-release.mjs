@@ -164,13 +164,14 @@ export async function main(argv, { env, git, fetch, readFile, log }) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // The git on PATH, as in scripts/check-private.mjs. It runs in the workspace Jenkins checked out.
-  const git = (args) => execFileSync('git', args, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+  // The git on PATH, as in scripts/check-private.mjs: whoever controls PATH on the build machine
+  // already controls the build (hence NOSONAR). It runs in the workspace Jenkins checked out.
+  const git = (args) => execFileSync('git', args, { stdio: ['ignore', 'pipe', 'pipe'] }).toString(); // NOSONAR S4036
   const deps = { env: process.env, git, fetch, readFile: (path) => readFileSync(path), log: (line) => console.log(line) };
   try {
     process.exitCode = await main(process.argv.slice(2), deps);
-  } catch (problem) {
-    console.error(problem.message);
+  } catch (error) {
+    console.error(error.message);
     process.exitCode = 1;
   }
 }

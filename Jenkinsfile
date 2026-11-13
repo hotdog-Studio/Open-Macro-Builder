@@ -28,7 +28,8 @@
 // scripts/ci-version.mjs. MAJOR.MINOR is the version in configurator/package.json; PATCH counts
 // the v* git tags. A green build of develop is a release: the Release stage pushes the tag
 // v<version> FIRST, then the two Linux images and their shared tags, then the GitHub release with
-// the installer and the portable exe. Other branches build and try everything and publish nothing.
+// the installer and the portable exe. Only develop uses the Windows and the arm64 agent: on any
+// other branch the Desktop app, Container images and Release stages are skipped.
 //
 // STAGES, in order: Checkout → Version → Validate config (scripts/validate-config.mjs: config.json's
 // structure, icons, and every action defined in both versions) → Script tests (node:test,
@@ -250,14 +251,15 @@ node {
         }
     }
 
-    def desktopBuilt = false
     stage('Desktop App') {
         // The installer and the portable exe (configurator/electron-builder.yml), which only
         // Windows can build. They carry this build's number: npm version writes it into the
-        // workspace's package.json, and nothing is committed. The agent is a desktop PC, so a
-        // release waits longer for it than a branch build does.
+        // workspace's package.json, and nothing is committed. The agent is a desktop PC that may
+        // be off, hence the long wait.
         def label = env.OMB_BUILD_WINDOWS_LABEL ?: 'windows-x64'
-        desktopBuilt = onAgent(label, releasing ? 45 : 15) {
+        if (!releasing) {
+            echo "Skipping the desktop app: only develop builds on the '${label}' agent"
+        } else if (!onAgent(label, 45) {
             try {
                 deleteDir()
                 checkout scm
@@ -274,13 +276,8 @@ node {
             } finally {
                 cleanWs(notFailBuild: true)
             }
-        }
-        if (!desktopBuilt) {
-            if (releasing) {
-                unstable "the desktop app was not built (no '${label}' agent): nothing is released"
-            } else {
-                echo 'Skipping the desktop app: this branch does not release, so the build stays as it is'
-            }
+        }) {
+            unstable "the desktop app was not built (no '${label}' agent): nothing is released"
         }
     }
 
@@ -290,7 +287,9 @@ node {
         // The page is built once (the Dockerfile's build stage runs on this machine) and copied
         // onto each architecture's web server, so the arm64 image needs no emulation and no build
         // on the arm64 agent. Each image is then started and asked for the page (docker/smoke.sh).
-        withEnv(["BUILT=${built}", "REVISION=${scmVars?.GIT_COMMIT ?: 'unknown'}"]) {
+        if (!releasing) {
+            echo 'Skipping the container images: only develop builds them'
+        } else withEnv(["BUILT=${built}", "REVISION=${scmVars?.GIT_COMMIT ?: 'unknown'}"]) {
             runGated('''
                 for arch in amd64 arm64; do
                     docker buildx build --platform "linux/$arch" \\

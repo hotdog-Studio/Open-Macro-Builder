@@ -30,18 +30,16 @@ The `PATCH` in `package.json` stays `0`. The installer and the desktop app get t
 
 ## What Jenkins does
 
-Every branch goes through the same stages (see [development.md](development.md#ci)). After the SonarQube quality gate:
+Every branch is linted, tested and sent to SonarQube (see [development.md](development.md#ci)). A build of `develop` that passes the quality gate then goes on, and is the only one to use the Windows and the arm64 agent:
 
 1. **Desktop app.** The Windows agent runs `npm ci` and `npm run dist` and hands back the two `.exe` files.
 2. **Container images.** The controller builds the image for both architectures. The page is built once and copied onto each architecture's web server, so the arm64 image needs no emulation. `docker/smoke.sh` then starts each image and asks it for the page: the amd64 one on the controller, the arm64 one on the arm64 agent.
-3. **Release**, on `develop` only and only when everything before it is green. In this order:
+3. **Release**, only when everything before it is green. In this order:
    1. the git tag `v<version>`, listing the commits since the tag before it;
    2. the images: `:<version>-amd64` and `:<version>-arm64`, then `:<version>`, `:<MAJOR>.<MINOR>` and `:latest`, each naming both architectures;
    3. the GitHub release, with the two `.exe` files and `SHA256SUMS.txt`.
 
 The tag goes first so that a number is taken only once its tag exists. If a later step fails, run the build again: it finds the tag on the commit and carries on, replacing whatever was already published under that number.
-
-Other branches run stages 1 and 2 as a check and publish nothing.
 
 ### When a build releases nothing
 

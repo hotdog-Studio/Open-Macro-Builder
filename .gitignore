@@ -24,3 +24,7 @@ configurator/dist/
 configurator/dist-electron/
 configurator/release/
 configurator/*.tsbuildinfo
+
+# Scratch output of the configurator browser tests (screenshot comparisons)
+configurator/.vitest/
+configurator/.vitest-attachments/

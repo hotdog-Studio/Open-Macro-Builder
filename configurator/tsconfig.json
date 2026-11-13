@@ -14,7 +14,8 @@
     "allowJs": false,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["node", "vite/client", "wicg-file-system-access"]
   },
-  "include": ["src", "test", "electron", "vite.config.ts"]
+  "include": ["src", "test", "electron", "e2e", "vite.config.ts", "vitest.browser.config.ts", "vitest.electron.config.ts"]
 }

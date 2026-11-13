@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '../core/config/model'
 import { SETTINGS_PATH } from '../core/settings'
@@ -36,7 +36,7 @@ afterEach(cleanup)
 let seen: ReturnType<typeof useApp>
 function Probe() {
   const app = useApp()
-  useEffect(() => {
+  useLayoutEffect(() => {
     seen = app
   })
   return null
@@ -247,7 +247,7 @@ describe('useAsset', () => {
     function Follow() {
       const [path, setPath] = useState<string | null>(A)
       const url = useAsset(path)
-      useEffect(() => {
+      useLayoutEffect(() => {
         returned.push({ value: url, revokedThen: [...revoked] })
       })
       return (

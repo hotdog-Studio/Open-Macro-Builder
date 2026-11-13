@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Workspace } from '../core/config/model'
 import { SETTINGS_PATH } from '../core/settings'
@@ -16,7 +16,7 @@ afterEach(cleanup)
 let seen: ReturnType<typeof useApp>
 function Probe() {
   const app = useApp()
-  useEffect(() => {
+  useLayoutEffect(() => {
     seen = app
   })
   return null

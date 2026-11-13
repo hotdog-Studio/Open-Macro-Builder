@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Transaction } from '@codemirror/state'
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renameKey } from '../core/config/ops'
 import type { MemoryFolder } from '../core/folder/memory'
@@ -33,7 +33,7 @@ const BOM = [0xef, 0xbb, 0xbf]
 let seen: ReturnType<typeof useApp>
 function Probe() {
   const app = useApp()
-  useEffect(() => {
+  useLayoutEffect(() => {
     seen = app
   })
   return null

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '../core/config/model'
 import type { MemoryFolder } from '../core/folder/memory'
@@ -28,7 +28,7 @@ const enc = new TextEncoder()
 let seen: ReturnType<typeof useApp>
 function Probe() {
   const app = useApp()
-  useEffect(() => {
+  useLayoutEffect(() => {
     seen = app
   })
   return null

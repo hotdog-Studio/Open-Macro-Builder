@@ -56,6 +56,25 @@ export type TouchPath = Pick<PointerPath, 'points' | 'steps' | 'viewport'>
  * test page is an iframe, so its coordinates are shifted (and scaled, with the Vitest UI open) to
  * the window's.
  */
+/**
+ * Lets the page draw two frames. A hand rests a moment before it lets go; without the rest, a slow
+ * machine gets the release before the page has worked out what is under the pointer, and the drop
+ * lands where the pointer was one step earlier.
+ */
+const rest = (frame: { evaluate: (fn: () => Promise<void>) => Promise<void> }) =>
+  frame.evaluate(
+    () =>
+      new Promise<void>((done) => {
+        const timer = setTimeout(done, 500)
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            clearTimeout(timer)
+            done()
+          }),
+        )
+      }),
+  )
+
 export const pointerPath: BrowserCommand<[path: PointerPath]> = async (ctx, path) => {
   const frame = await ctx.frame()
   const box = await (await frame.frameElement()).boundingBox()
@@ -63,13 +82,16 @@ export const pointerPath: BrowserCommand<[path: PointerPath]> = async (ctx, path
   const sx = box.width / path.viewport.width
   const sy = box.height / path.viewport.height
   const mouse = ctx.page.mouse
-  const [first, ...rest] = path.points
+  const [first, ...others] = path.points
   if (first) {
     await mouse.move(box.x + first.x * sx, box.y + first.y * sy)
     if (path.press) await mouse.down()
   }
-  for (const p of rest) await mouse.move(box.x + p.x * sx, box.y + p.y * sy, { steps: path.steps })
-  if (path.release) await mouse.up()
+  for (const p of others) await mouse.move(box.x + p.x * sx, box.y + p.y * sy, { steps: path.steps })
+  if (path.release) {
+    if (others.length > 0) await rest(frame)
+    await mouse.up()
+  }
 }
 
 /**
@@ -90,16 +112,17 @@ export const touchPath: BrowserCommand<[path: TouchPath]> = async (ctx, path) =>
     })
   try {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true })
-    const [first, ...rest] = path.points
+    const [first, ...others] = path.points
     await send('touchStart', first)
     let from = first
-    for (const to of rest) {
+    for (const to of others) {
       for (let i = 1; i <= path.steps; i++) {
         const t = i / path.steps
         await send('touchMove', { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t })
       }
       from = to
     }
+    await rest(frame)
     await send('touchEnd')
   } finally {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false })

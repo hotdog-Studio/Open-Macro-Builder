@@ -10,7 +10,7 @@
     "url": "git+https://github.com/hotdog-Studio/Open-Macro-Builder.git",
     "directory": "configurator"
   },
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {

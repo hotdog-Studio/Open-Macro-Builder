@@ -47,7 +47,7 @@ The configurator, which edits the layout in that folder, comes three ways:
 
 | | Where | Notes |
 | --- | --- | --- |
-| **Desktop app** (Windows) | [Releases](https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest): `Open Macro Builder Setup <version>.exe`, or the portable `.exe` | Can also reload the running macropad after a save, and checks a command file's syntax. |
+| **Desktop app** (Windows) | [Releases](https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest): `Open-Macro-Builder-Setup-<version>.exe`, or the portable `.exe` | Can also reload the running macropad after a save, and checks a command file's syntax. |
 | **Docker image** | `ghcr.io/hotdog-studio/open-macro-builder` | The browser version on a small web server. See [docs/docker.md](docs/docker.md). |
 | **From source** | `cd configurator && npm install && npm run dev` | See [docs/development.md](docs/development.md). |
 

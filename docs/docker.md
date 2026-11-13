@@ -43,7 +43,7 @@ Binding to `127.0.0.1` keeps it to the computer it runs on, which is also the on
 | Platform | Built from | Notes |
 | --- | --- | --- |
 | `linux/amd64`, `linux/arm64` | [`Dockerfile`](../Dockerfile) | About 90 MB. Also what Docker Desktop on Windows and macOS runs. |
-| `windows/amd64` | [`docker/Dockerfile.windows`](../docker/Dockerfile.windows) | A Windows container, on Windows Server Core LTSC 2022: several GB, and only for a Windows host in Windows-container mode whose version matches. Use it where Linux containers are not an option. |
+| `windows/amd64` | [`docker/Dockerfile.windows`](../docker/Dockerfile.windows) | A Windows container, on Windows Server Core LTSC 2022: several GB, and only for a Windows host in Windows-container mode whose version matches. Use it where Linux containers are not an option. Not published: [build it yourself](#build-it-yourself). |
 
 ## From another device
 

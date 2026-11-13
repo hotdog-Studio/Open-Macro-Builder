@@ -100,6 +100,8 @@ Jenkins runs the `Jenkinsfile`:
 4. Builds the configurator.
 5. Runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one.
 6. Sends everything to SonarQube, with the coverage of the unit and the browser tests, and waits for the quality gate.
+7. Packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).
+8. On `develop`, publishes all of it as a release. [releasing.md](releasing.md) has the version scheme and the order of the steps.
 
 The `Jenkinsfile` header lists the globals, such as `OMB_NTFY_URL` for build notifications.
 

@@ -21,6 +21,10 @@ COPY configurator configurator
 RUN cd configurator && npm run build
 
 FROM caddy:2-alpine
+# Ties the image to its repository on ghcr.io. The build adds the version and the commit.
+LABEL org.opencontainers.image.source="https://github.com/hotdog-Studio/Open-Macro-Builder" \
+      org.opencontainers.image.title="Open Macro Builder configurator" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
 # Caddy keeps its state under these; point them somewhere any user can write.
 ENV SITE_ROOT=/srv XDG_DATA_HOME=/tmp XDG_CONFIG_HOME=/tmp
 COPY docker/Caddyfile /etc/caddy/Caddyfile

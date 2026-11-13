@@ -1,30 +1,69 @@
 # Releasing
 
-What a release of Open Macro Builder is made of, and the steps to cut one.
+What a release of Open Macro Builder is made of, how its number is chosen, and what Jenkins does to publish one. Nobody cuts a release by hand: **every green build of `develop` is a release.**
 
 ## What a release contains
 
-| Artifact | Where it goes | Built by |
+| Artifact | Where it goes | Built on |
 | --- | --- | --- |
-| `Open Macro Builder Setup <version>.exe` (installer) and `Open Macro Builder <version> portable.exe` | The GitHub release | `npm run dist` in `configurator/`, on Windows |
-| The configurator image for `linux/amd64` and `linux/arm64` | `ghcr.io/hotdog-studio/open-macro-builder` | `Dockerfile` |
-| The configurator image for `windows/amd64` | `ghcr.io/hotdog-studio/open-macro-builder` | `docker/Dockerfile.windows`, on a Windows host |
+| `Open-Macro-Builder-Setup-<version>.exe` (installer) and `Open-Macro-Builder-<version>-portable.exe` | The GitHub release of `v<version>` | The Windows agent, with `npm run dist` |
+| `SHA256SUMS.txt`, the checksums of the two | The GitHub release | The controller |
+| The configurator image for `linux/amd64` and `linux/arm64` | `ghcr.io/hotdog-studio/open-macro-builder` | The controller, from `Dockerfile` |
 | The source, which is the macropad itself | The GitHub release's source archive | git |
 
-The version is the `version` in `configurator/package.json`. The installer and the portable exe take their names from it, and the git tag is `v<version>`.
+The two `.exe` files are not signed, so Windows SmartScreen warns the first time one is run. Signing needs a code-signing certificate; with one, electron-builder signs during `npm run dist`.
 
-## Before the release
+The Windows container image (`docker/Dockerfile.windows`) is not built by Jenkins: no agent runs Windows containers. [docker.md](docker.md#build-it-yourself) says how to build it by hand.
 
-1. Everything is merged, and CI is green on the commit to release, including the browser tests and the Windows tests.
-2. On a Windows machine, in `configurator/`: `npm run test:electron` passes. CI cannot run it.
-3. Set the version: `npm version <version> --no-git-tag-version` in `configurator/` (it updates `package.json` and `package-lock.json`).
-4. Move the entries under **Unreleased** in `CHANGELOG.md` to a heading for the version, with the date.
-5. Run `node scripts/check-private.mjs --history`: nothing personal is in any commit.
-6. Commit, and tag the commit `v<version>`.
+## The version number
 
-## Building the artifacts
+A version is `MAJOR.MINOR.PATCH`, and `node scripts/ci-version.mjs` prints the one the next build of the current commit gets.
 
-The build and publish pipeline is not in this repository yet. Until it is, these are the commands it has to run, and they work by hand.
+| Part | Where it comes from |
+| --- | --- |
+| `MAJOR.MINOR` | The first two numbers of `version` in `configurator/package.json`. Only the maintainer changes them, in a commit. |
+| `PATCH` | The newest `v<MAJOR>.<MINOR>.*` git tag reachable from the commit, plus one. The first build of a line is `.0`. |
+
+- **Tags are the record.** Jenkins pushes the tag `v<version>` for each release and writes nothing back to the repository. Never push a `v*` tag by hand.
+- **One number, one commit.** A build of a commit that already has the newest tag is a rebuild of that release and keeps its number. A red build takes no number.
+- **Moving `MAJOR` or `MINOR`.** In `configurator/`, run `npm version <MAJOR>.<MINOR>.0 --no-git-tag-version`, set `sonar.projectVersion` in `sonar-project.properties` to `<MAJOR>.<MINOR>`, move the entries under **Unreleased** in `CHANGELOG.md` to a heading for the line that just ended, and commit. The next green build of `develop` is `<MAJOR>.<MINOR>.0`.
+
+The `PATCH` in `package.json` stays `0`. The installer and the desktop app get the real number because the build writes it into its own copy of `package.json` before packaging.
+
+## What Jenkins does
+
+Every branch goes through the same stages (see [development.md](development.md#ci)). After the SonarQube quality gate:
+
+1. **Desktop app.** The Windows agent runs `npm ci` and `npm run dist` and hands back the two `.exe` files.
+2. **Container images.** The controller builds the image for both architectures. The page is built once and copied onto each architecture's web server, so the arm64 image needs no emulation. `docker/smoke.sh` then starts each image and asks it for the page: the amd64 one on the controller, the arm64 one on the arm64 agent.
+3. **Release**, on `develop` only and only when everything before it is green. In this order:
+   1. the git tag `v<version>`, listing the commits since the tag before it;
+   2. the images: `:<version>-amd64` and `:<version>-arm64`, then `:<version>`, `:<MAJOR>.<MINOR>` and `:latest`, each naming both architectures;
+   3. the GitHub release, with the two `.exe` files and `SHA256SUMS.txt`.
+
+The tag goes first so that a number is taken only once its tag exists. If a later step fails, run the build again: it finds the tag on the commit and carries on, replacing whatever was already published under that number.
+
+Other branches run stages 1 and 2 as a check and publish nothing.
+
+### When a build releases nothing
+
+A `develop` build ends UNSTABLE, with the reason in its log, and takes no number when:
+
+- the Windows agent did not take the work within 45 minutes (it is a desktop PC, and may be off);
+- the arm64 agent did not take the work within 20 minutes;
+- Jenkins has no GitHub credential (below), or the pipeline cannot see the checkout credential that pushes the tag.
+
+Build it again once the cause is gone.
+
+### What Jenkins needs
+
+- Agents labelled `windows-x64` (Node and Git) and `linux-arm64` (Docker). The `Jenkinsfile` header has the globals that rename them.
+- The job's SSH checkout credential must be allowed to push tags.
+- A **Username with password** credential with the id `omb-github`: a GitHub user name, and as the password a token of that user that may write this repository's contents (for the release) and write packages (for ghcr.io). A classic token with the `repo` and `write:packages` scopes does both.
+
+## Trying it by hand
+
+The commands Jenkins runs also work on your own machine.
 
 The desktop app, on Windows:
 
@@ -34,35 +73,17 @@ npm ci
 npm run dist
 ```
 
-The two `.exe` files appear in `configurator/release/`. They are unsigned.
+The two `.exe` files appear in `configurator/release/`.
 
-The Linux images:
-
-```
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/hotdog-studio/open-macro-builder:<version> --push .
-```
-
-The Windows image, on a Windows host in Windows-container mode:
+One image, and the check that it serves the page:
 
 ```
-cd configurator; npm ci; npm run build; cd ..
-docker build -f docker/Dockerfile.windows -t ghcr.io/hotdog-studio/open-macro-builder:<version>-windows .
-docker push ghcr.io/hotdog-studio/open-macro-builder:<version>-windows
+docker buildx build --platform linux/amd64 -t open-macro-builder --load .
+sh docker/smoke.sh open-macro-builder x86_64
 ```
 
-To offer the Windows image under the same tag as the Linux ones, join them into one multi-platform tag after pushing each on its own:
+## After the first release
 
-```
-docker buildx imagetools create -t ghcr.io/hotdog-studio/open-macro-builder:<version> \
-  ghcr.io/hotdog-studio/open-macro-builder:<version>-linux \
-  ghcr.io/hotdog-studio/open-macro-builder:<version>-windows
-```
-
-(Push the Linux images as `<version>-linux` in that case.)
-
-## After the release
-
-1. Install the installer on a clean Windows account, open a folder, change something, save, and reload the macropad.
-2. `docker run --rm -p 8080:8080 ghcr.io/hotdog-studio/open-macro-builder:<version>` and open <http://localhost:8080>.
-3. Check that the package on ghcr.io is public and linked to the repository.
+1. On GitHub, open the package `open-macro-builder` under the organisation's **Packages**, set its visibility to public and link it to the repository. A package starts private, and this is done once.
+2. Install the installer on a clean Windows account, open a folder, change something, save, and reload the macropad.
+3. `docker run --rm -p 8080:8080 ghcr.io/hotdog-studio/open-macro-builder` and open <http://localhost:8080>.

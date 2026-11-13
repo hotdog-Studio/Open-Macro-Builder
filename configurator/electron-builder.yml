@@ -18,6 +18,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  artifactName: "${productName} Setup ${version}.${ext}"
+  # No spaces: GitHub turns a space in a release file's name into a dot.
+  artifactName: "Open-Macro-Builder-Setup-${version}.${ext}"
 portable:
-  artifactName: "${productName} ${version} portable.${ext}"
+  artifactName: "Open-Macro-Builder-${version}-portable.${ext}"

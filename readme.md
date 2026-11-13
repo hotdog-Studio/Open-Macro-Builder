@@ -1,9 +1,58 @@
-# Open Macro Builder
-*Build your perfect macropad, with any keyboard.*
+<p align="center">
+  <img src="img/logo.svg" alt="Open Macro Builder logo: a hotdog on a macropad key" width="128" height="128">
+</p>
+
+<h1 align="center">Open Macro Builder</h1>
+
+<p align="center"><em>Build your perfect macropad, with any keyboard.</em></p>
+
+<p align="center">
+  <a href="https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/hotdog-Studio/Open-Macro-Builder?sort=semver"></a>
+  <a href="LICENSE"><img alt="License: GPL v3" src="https://img.shields.io/badge/license-GPLv3-blue"></a>
+  <img alt="Runs on Windows" src="https://img.shields.io/badge/runs%20on-Windows-0078D4">
+</p>
 
 Turn a spare keypad into layers of macros. Bind its keys to F13 to F24 and pick one key as Fn. Hold Fn to see an overlay of your layers and tap a key to choose one. Let go, and each key runs the macro in its slot of that layer.
 
-## Two versions, one config
+![The overlay on a numpad](img/showcase.png)
+
+- **Any keyboard.** Anything that can send F13 to F24 works: a numpad, a QMK or VIA board, a remapped spare keyboard.
+- **Two versions, one layout.** Run it with AutoHotkey v2, or with the PowerShell that is already in Windows and install nothing.
+- **A visual configurator.** Draw the pad, arrange layers and drop commands onto keys, in a desktop app or in the browser.
+- **Yours stays yours.** Your layout and commands live in one git-ignored folder.
+
+## Contents
+
+- [Get it](#get-it)
+- [Getting started](#getting-started)
+- [Configurator](#configurator)
+- [The layout file](#the-layout-file)
+- [Commands](#commands)
+- [Your own layout and commands](#your-own-layout-and-commands)
+- [For developers](#for-developers)
+- [License](#license)
+
+## Get it
+
+The macropad runs from a copy of this repository, so start with that:
+
+```
+git clone https://github.com/hotdog-Studio/Open-Macro-Builder.git
+```
+
+Or download the source of the [latest release](https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest) and unzip it.
+
+The configurator, which edits the layout in that folder, comes three ways:
+
+| | Where | Notes |
+| --- | --- | --- |
+| **Desktop app** (Windows) | [Releases](https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest): `Open Macro Builder Setup <version>.exe`, or the portable `.exe` | Can also reload the running macropad after a save, and checks a command file's syntax. |
+| **Docker image** | `ghcr.io/hotdog-studio/open-macro-builder` | The browser version on a small web server. See [docs/docker.md](docs/docker.md). |
+| **From source** | `cd configurator && npm install && npm run dev` | See [docs/development.md](docs/development.md). |
+
+The desktop app is unsigned, so Windows SmartScreen asks for confirmation on the first run: choose **More info**, then **Run anyway**.
+
+## Getting started
 
 | Folder | Runs on | Notes |
 | --- | --- | --- |
@@ -12,12 +61,36 @@ Turn a spare keypad into layers of macros. Bind its keys to F13 to F24 and pick 
 
 Both read the same layout file, use the same icons in `img/` and have the same command names, so you can switch between them without touching your layout. Run one at a time: both claim the macro keys.
 
-## Getting started
+1. Set your keypad's keys to send F13 to F24, with whatever tool your keypad uses. `qmk/` has the VIA/QMK layout of the EPOMAKER EK21 this was built for.
+2. Copy the example `config.json` to `local/config.json` and edit it, by hand or with the [configurator](#configurator). The `local/` folder is yours: git ignores it (see [Your own layout and commands](#your-own-layout-and-commands)).
+3. **AutoHotkey:** install AutoHotkey v2, then run `ahk/main.ahk`. **PowerShell:** run `wscript powershell\launch.vbs`.
 
-1. Copy the example `config.json` to `local/config.json` and edit it. The `local/` folder is yours: git ignores it (see [Your own layout and commands](#your-own-layout-and-commands)).
-2. **AutoHotkey:** install AutoHotkey v2, then run `ahk/main.ahk`. **PowerShell:** run `wscript powershell\launch.vbs`.
+To start either one with Windows, point a shortcut in `shell:startup` at `ahk\main.ahk` or at `launch.vbs` (powershell/README.md has the steps).
 
-To start either one with Windows, point the shortcut in `shell:startup` at `ahk\main.ahk` or at `launch.vbs` (powershell/README.md has the steps).
+## Configurator
+
+A visual editor for the layout (the pad shape, the layers and the macros) and for the command files in both languages. Press **Open folder** and pick your copy of this repository. It edits `local/config.json` when that exists, else the example `config.json`, and offers to make the copy for you the first time. It ignores `OMB_CONFIG`.
+
+| Pad shape | Layers |
+| --- | --- |
+| ![Pad shape tab](docs/img/configurator-shape.png) | ![Layers tab](docs/img/configurator-layers.png) |
+| Place and size the keys of your pad. | Choose which layer each key selects while Fn is held. |
+
+| Macros | Commands |
+| --- | --- |
+| ![Macros tab](docs/img/configurator-macros.png) | ![Commands tab](docs/img/configurator-commands.png) |
+| Drag commands onto the keys of a layer. | Read and edit the command files, in AutoHotkey and PowerShell. |
+
+Everything you can drag you can also do from the keyboard:
+
+| Keys | On | Does |
+| --- | --- | --- |
+| <kbd>Alt</kbd> + arrow | a key on Pad shape | moves it one square |
+| <kbd>Shift</kbd> + <kbd>Alt</kbd> + arrow | a key on Pad shape | resizes it |
+| <kbd>Alt</kbd> + arrow | a key on Layers or Macros | swaps its layer or macro with the key beside it |
+| <kbd>Enter</kbd> | a command, or a parked layer | puts it on the selected key |
+
+In a browser it needs Chrome or Edge: Firefox and Safari can't open folders, so they can't run it.
 
 ## The layout file
 
@@ -84,73 +157,17 @@ Everything specific to you lives in `local/`, which git ignores, so your hosts, 
 - `local/ahk/commands.ahk`: your AutoHotkey commands. `ahk/config.ahk` includes it when it exists; `#Include` your other files from it.
 - `local/powershell/commands/*.ps1`: your PowerShell commands, loaded automatically.
 - `local/powershell/tests/*.Tests.ps1`: tests for them, which `powershell/tests/run.ps1` runs too.
-- `local/ci/jenkins.env`: the Jenkins URL and checkout credential id for `ci/create-jenkins-job.sh`.
-- `local/denylist.txt`: strings that must never be committed, one per line.
+- `local/denylist.txt`: strings that must never be committed, one per line. [docs/development.md](docs/development.md#keeping-private-details-out-of-git) has the git hooks that enforce it.
 
-`scripts/check-private.mjs` fails when a deny-listed string would reach git. Run it from git hooks so nothing slips through:
+## For developers
 
-```
-printf '#!/bin/sh\nexec node scripts/check-private.mjs --staged\n' > .git/hooks/pre-commit
-printf '#!/bin/sh\nexec node scripts/check-private.mjs --pre-push\n' > .git/hooks/pre-push
-node scripts/check-private.mjs --history          # check every commit
-```
-
-## Configurator
-
-A visual editor for `config.json` (the pad shape, the layers and the macros) and for the command files in both languages. It edits `local/config.json` when that exists, else the example `config.json`. It ignores `OMB_CONFIG`.
-
-```
-cd configurator
-npm install
-npm run dev
-```
-
-Open the address it prints in Chrome or Edge, press **Open folder** and pick this repository. Firefox and Safari can't open folders, so they can't run it.
-
-For a desktop app instead of a browser tab, run `npm run electron`. It can also reload the running macropad after you save. The desktop app also checks a command file's syntax when you save it.
-
-To build the desktop app for Windows, run `npm run dist` in `configurator/`. It writes two files into `configurator/release/`, which git ignores:
-
-- `Open Macro Builder Setup 0.1.0.exe`: an installer that lets you choose the install folder.
-- `Open Macro Builder 0.1.0 portable.exe`: one file you can run from anywhere, with no install.
-
-The app is unsigned, so Windows SmartScreen asks for confirmation on the first run: choose **More info**, then **Run anyway**. The packaged app opens any Open Macro Builder folder you pick, exactly as `npm run electron` does.
-
-## Repository layout
-
-- `config.json`: the example layout.
-- `ahk/`: the AutoHotkey version (`main.ahk`, `lib/`, `commands/`, `tests/`).
-- `powershell/`: the PowerShell version, its tests and its docs.
-- `img/`: icon sets, one folder per icon.
-- `qmk/`: the VIA/QMK layout of the EPOMAKER EK21 keypad this was built for.
-- `scripts/`: the config validator, the private-details check and their tests.
-- `configurator/`: the web and desktop configurator (React, Vite, TypeScript, Electron). See [Configurator](#configurator).
-- `Jenkinsfile`, `sonar-project.properties`, `ci/`: CI and the Jenkins job definition.
-- `local/`: yours, ignored by git.
-
-## Tests and CI
-
-```
-node --test "scripts/*.test.mjs"                          # validator and private-details check
-cd configurator && npm install && npm test                # configurator (Vitest); also npm run lint and npm run build
-powershell -NoProfile -File powershell\tests\run.ps1      # Pester suite (Windows)
-```
-
-Jenkins validates `config.json`, runs the script tests, then installs, lints, tests and builds the configurator on the Linux agent (without the Electron binary, which it never starts). It runs the Pester suite on a Windows agent when the `OMB_WINDOWS_LABEL` global names one, then sends everything to SonarQube and waits for the quality gate. The `Jenkinsfile` header lists the globals, such as `OMB_NTFY_URL` for build notifications.
-
-The Jenkins job is a multibranch pipeline defined in `ci/jenkins-job.xml`. It checks out over SSH and scans for new commits every 2 minutes. To create it, or update it after editing the XML, put `JENKINS_URL` and `JENKINS_CREDENTIALS_ID` in `local/ci/jenkins.env` and run:
-
-```
-JENKINS_USER=<user> JENKINS_TOKEN=<api token> sh ci/create-jenkins-job.sh
-```
-
-The first analysis creates the SonarQube project `hotdog-Studio_open-macro-builder` if the Jenkins token may create projects. Otherwise, create it in SonarQube first.
-
-## Showcase
-
-### Example with Numpad
-![numpad example](img/showcase.png)
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to propose a change.
+- [docs/development.md](docs/development.md): setting up, the repository layout, every test suite and CI.
+- [docs/architecture.md](docs/architecture.md): how the configurator is put together.
+- [docs/docker.md](docs/docker.md): the Docker images.
+- [docs/releasing.md](docs/releasing.md): what a release is made of and how to cut one.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 
 ## License
 
-See [LICENSE](LICENSE).
+[GNU General Public License v3](LICENSE). Made by [hotdog Studio](https://hotdog.studio).

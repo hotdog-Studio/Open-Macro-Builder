@@ -30,6 +30,7 @@ Turn a spare keypad into layers of macros. Bind its keys to F13 to F24 and pick 
 - [Commands](#commands)
 - [Your own layout and commands](#your-own-layout-and-commands)
 - [For developers](#for-developers)
+- [AI assistance](#ai-assistance)
 - [License](#license)
 
 ## Get it
@@ -167,6 +168,13 @@ Everything specific to you lives in `local/`, which git ignores, so your hosts, 
 - [docs/docker.md](docs/docker.md): the Docker images.
 - [docs/releasing.md](docs/releasing.md): what a release is made of and how to cut one.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
+
+## AI assistance
+
+The original AutoHotkey version was written by hand by the maintainer. Most of what came after was written with [Claude Code](https://claude.com/claude-code), Anthropic's coding assistant, working under the maintainer's direction: the configurator, the PowerShell version, the rework of the AutoHotkey version, the tests and the documentation.
+
+- Every commit Claude took part in says so with a `Co-Authored-By: Claude` line, so `git log --grep="Co-Authored-By: Claude"` lists them.
+- Nothing is merged on the assistant's word. Each change has to pass the test suites and the SonarQube quality gate in CI, described in [docs/development.md](docs/development.md).
 
 ## License
 

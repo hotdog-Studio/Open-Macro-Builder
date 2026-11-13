@@ -11,12 +11,15 @@
 //                          AutoHotkey v2. When set, 'Windows Tests' runs the Pester suite there;
 //                          when unset the stage is skipped with a log line: the AutoHotkey and
 //                          PowerShell versions need Win32 and WinForms, which the Linux agents lack.
+//   OMB_SKIP_BROWSER_TESTS set to anything to skip 'Configurator Browser Test', for an agent that
+//                          lacks the system libraries headless Chromium needs.
 // Credentials: Secret text `ntfy-ci-token`, the ntfy access token.
 //
 // STAGES, in order: Checkout → Validate config (scripts/validate-config.mjs: config.json's
 // structure, icons, and every action defined in both versions) → Script tests (node:test,
-// scripts/*.test.mjs) → Configurator install / lint / test / build (configurator/, installed with
-// ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron) → Windows tests (only
+// scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
+// installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron: the
+// desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (only
 // with OMB_WINDOWS_LABEL) → SonarQube analysis → quality gate → Cleanup. Nothing is deployed from
 // here, the macropad runs on the desktop it drives.
 
@@ -106,6 +109,23 @@ node {
         runGated('mkdir -p results/configurator && cd configurator && npx vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=../results/configurator/junit.xml')
         junit testResults: 'results/configurator/junit.xml', skipPublishingChecks: true, allowEmptyResults: true
         stopIfFailed('Configurator tests')
+    }
+
+    stage('Configurator Browser Test') {
+        // The same app in headless Chromium, where a drag is a real mouse press, move and release
+        // (configurator/vitest.browser.config.ts). Its coverage goes to its own lcov file
+        // (coverage/configurator-browser/lcov.info), which SonarQube adds to the unit tests' one.
+        // `playwright install chromium` downloads the browser into the agent's cache (a no-op once
+        // it is there). Chromium also needs system libraries; an agent without them fails here
+        // with Playwright's list of what is missing: install them once on the agent, as root, with
+        // `npx playwright install-deps chromium`, or set OMB_SKIP_BROWSER_TESTS until then.
+        if (env.OMB_SKIP_BROWSER_TESTS) {
+            echo 'Skipping the configurator browser tests — the Jenkins global OMB_SKIP_BROWSER_TESTS is set'
+        } else {
+            runGated('mkdir -p results/configurator && cd configurator && npx playwright install chromium && npx vitest run --config vitest.browser.config.ts --coverage --reporter=default --reporter=junit --outputFile.junit=../results/configurator/browser-junit.xml')
+            junit testResults: 'results/configurator/browser-junit.xml', skipPublishingChecks: true, allowEmptyResults: true
+            stopIfFailed('Configurator browser tests')
+        }
     }
 
     stage('Configurator Build') {

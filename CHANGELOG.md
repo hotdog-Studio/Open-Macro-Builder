@@ -4,6 +4,14 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ## Unreleased
 
+### Security
+
+- Build tools: `minimatch` is held at 11.0.8 or newer, which fixes a slow pattern match ([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)). Only linting and packaging used the affected versions; nothing in the app or the image did.
+
+## 1.0.0 - 2026-11-14
+
+The first release.
+
 ### Added
 
 - Configurator: everything that can be dragged can be done from the keyboard. Alt + arrow moves a key on the Pad shape tab and swaps a layer or macro with the key beside it on the other tabs; Shift + Alt + arrow resizes a key; Enter on a command or a parked layer puts it on the selected key.

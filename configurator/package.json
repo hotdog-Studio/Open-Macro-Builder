@@ -21,7 +21,7 @@
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:electron": "vitest run --config vitest.electron.config.ts",
     "lint": "eslint .",
-    "dist": "npm run build && node scripts/build-electron.mjs && electron-builder --win nsis portable --x64",
+    "dist": "npm run build && node scripts/build-electron.mjs && electron-builder --win nsis portable --x64 --publish never",
     "electron": "npm run build && node scripts/build-electron.mjs && node scripts/run-electron.mjs"
   },
   "dependencies": {

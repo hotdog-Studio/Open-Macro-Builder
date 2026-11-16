@@ -51,6 +51,16 @@ export function registerIpc(win: BrowserWindow, storeFile: string): () => void {
     return folder.name
   }
 
+  /** Remembers the folder for next time, then holds it. */
+  const remember = (root: string): string => {
+    try {
+      saveLastFolder(storeFile, root)
+    } catch {
+      // Not being able to remember the folder must not stop it opening.
+    }
+    return hold(root)
+  }
+
   const opened = (): NodeFolder => {
     if (!folder) throw new Error('No folder is open.')
     return folder
@@ -68,12 +78,7 @@ export function registerIpc(win: BrowserWindow, storeFile: string): () => void {
     const picked = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
     const root = picked.filePaths[0]
     if (picked.canceled || !root) return null
-    try {
-      saveLastFolder(storeFile, root)
-    } catch {
-      // Not being able to remember the folder must not stop it opening.
-    }
-    return hold(root)
+    return remember(root)
   })
 
   handle(CHANNELS.createFolder, async (value) => {
@@ -90,12 +95,7 @@ export function registerIpc(win: BrowserWindow, storeFile: string): () => void {
     // A folder already there is opened as it is: recursive makes that succeed.
     const root = join(parent, name)
     await mkdir(root, { recursive: true })
-    try {
-      saveLastFolder(storeFile, root)
-    } catch {
-      // Not being able to remember the folder must not stop it opening.
-    }
-    return hold(root)
+    return remember(root)
   })
 
   handle(CHANNELS.restoreFolder, () => {

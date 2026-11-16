@@ -158,6 +158,7 @@ export function createBrowserPlatform(deps: {
     }
   }
 
+  /** Keeps the handle as the current folder (and for next time); a store failure is ignored. */
   async function remember(handle: FileSystemDirectoryHandle): Promise<FolderAccess> {
     remembered = handle
     // Not being able to remember the folder must not stop it opening.

@@ -286,6 +286,9 @@ node {
 
     def sha8 = scmVars?.GIT_COMMIT ? scmVars.GIT_COMMIT.substring(0, 8) : 'unknown'
     def built = "omb-build:${sha8}"   // the images of this build, here: <built>-amd64 and <built>-arm64
+    // Where a release publishes them; Cleanup removes the same names.
+    def image = env.OMB_IMAGE ?: 'ghcr.io/hotdog-studio/open-macro-builder'
+    def mirror = env.OMB_REGISTRY ? "${env.OMB_REGISTRY}/${env.OMB_REGISTRY_REPO ?: 'hotdogstudio/open-macro-builder'}" : null
     stage('Container Images') {
         // The page is built once (the Dockerfile's build stage runs on this machine) and copied
         // onto each architecture's web server, so the arm64 image needs no emulation and no build
@@ -325,7 +328,6 @@ node {
     }
 
     stage('Release') {
-        def image = env.OMB_IMAGE ?: 'ghcr.io/hotdog-studio/open-macro-builder'
         def githubCred = env.OMB_GITHUB_CREDENTIALS_ID ?: 'omb-github'
         // Look for the GitHub credential before anything is tagged: a number is taken only by a
         // build that can publish under it.
@@ -378,18 +380,18 @@ node {
             }
             // 4. The second registry, when there is one. The release is already out, so a
             // failure here leaves the build UNSTABLE and takes nothing back. latest goes last:
-            // it is the tag a host that follows the registry watches.
-            if (!env.OMB_REGISTRY) {
+            // it is the tag a host that follows the registry watches. Each push has five minutes,
+            // so a registry that does not answer cannot hold the build.
+            if (!mirror) {
                 echo 'no second registry: the Jenkins global OMB_REGISTRY is not set'
             } else {
-                def mirror = "${env.OMB_REGISTRY}/${env.OMB_REGISTRY_REPO ?: 'hotdogstudio/open-macro-builder'}"
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE', message: "the image was not pushed to ${mirror}") {
                     withEnv(["VERSION=${version}", "MIRROR=${mirror}", "BUILT=${built}"]) {
                         sh '''
                             set -eu
                             for tag in "$VERSION" latest; do
                                 docker tag "$BUILT-amd64" "$MIRROR:$tag"
-                                docker push "$MIRROR:$tag"
+                                timeout 300 docker push "$MIRROR:$tag"
                             done
                         '''
                     }
@@ -399,8 +401,10 @@ node {
     }
 
     stage('Cleanup') {
-        // This build's images, under their local and their published names (either registry).
-        sh 'docker image ls --format "{{.Repository}}:{{.Tag}}" | grep -E "^(omb-build|.+/open-macro-builder):" | xargs -r docker image rm >/dev/null 2>&1 || true'
+        // The images this job made, under their local and their published names, and no others.
+        withEnv(["NAMES=omb-build ${image} ${mirror ?: ''}"]) {
+            sh 'for name in $NAMES; do docker image ls --format "{{.Repository}}:{{.Tag}}" "$name"; done | grep -v "<none>" | xargs -r docker image rm >/dev/null 2>&1 || true'
+        }
         cleanWs(cleanWhenNotBuilt: false,
             deleteDirs: true,
             disableDeferredWipeout: true,

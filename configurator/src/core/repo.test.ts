@@ -23,6 +23,7 @@ describe('inspectFolder', () => {
     const folder = new MemoryFolder('r', { 'readme.md': 'hi' })
     expect(await inspectFolder(folder)).toEqual({
       ok: false,
+      empty: false,
       reason: "This folder doesn't look like Open Macro Builder: it needs config.json and an ahk or powershell folder.",
     })
   })
@@ -30,6 +31,19 @@ describe('inspectFolder', () => {
   it('refuses a folder with a config but no script folder', async () => {
     const folder = new MemoryFolder('r', { 'config.json': '{}' })
     expect((await inspectFolder(folder)).ok).toBe(false)
+  })
+
+  it('reports an empty folder as empty', async () => {
+    expect(await inspectFolder(new MemoryFolder('new', {}))).toMatchObject({ ok: false, empty: true })
+  })
+
+  it.each(['desktop.ini', '.DS_Store', 'notes.txt'])('a folder holding only %s is not empty', async (name) => {
+    const info = await inspectFolder(new MemoryFolder('x', { [name]: new Uint8Array() }))
+    expect(info).toEqual({
+      ok: false,
+      empty: false,
+      reason: "This folder doesn't look like Open Macro Builder: it needs config.json and an ahk or powershell folder.",
+    })
   })
 })
 

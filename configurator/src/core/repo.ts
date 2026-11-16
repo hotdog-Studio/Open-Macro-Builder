@@ -1,7 +1,7 @@
 import { compareText } from './folder/path'
 import type { FolderAccess } from './folder/types'
 
-export type RepoInfo = { ok: true; configPath: 'local/config.json' | 'config.json' } | { ok: false; reason: string }
+export type RepoInfo = { ok: true; configPath: 'local/config.json' | 'config.json' } | { ok: false; empty: boolean; reason: string }
 
 const EXAMPLE_CONFIG = 'config.json'
 const PERSONAL_CONFIG = 'local/config.json'
@@ -13,6 +13,7 @@ export async function inspectFolder(folder: FolderAccess): Promise<RepoInfo> {
   if (!has('config.json', 'file') || !(has('ahk', 'dir') || has('powershell', 'dir'))) {
     return {
       ok: false,
+      empty: root.length === 0,
       reason:
         "This folder doesn't look like Open Macro Builder: it needs config.json and an ahk or powershell folder.",
     }

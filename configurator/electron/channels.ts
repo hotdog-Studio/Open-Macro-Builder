@@ -1,6 +1,7 @@
 /** IPC channel names shared by the preload and the main process. */
 export const CHANNELS = {
   openFolder: 'omb:open-folder',
+  createFolder: 'omb:create-folder',
   restoreFolder: 'omb:restore-folder',
   readBytes: 'omb:read-bytes',
   writeBytes: 'omb:write-bytes',

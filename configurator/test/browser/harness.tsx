@@ -113,7 +113,7 @@ export const click = (el: Element) => userEvent.click(el)
 /** The example repository in memory, opened in the editor on a tab. */
 export async function startApp(tab: TabName = 'Pad shape'): Promise<{ folder: MemoryFolder }> {
   const folder = new MemoryFolder('repo', await editableFiles())
-  mount({ kind: 'browser', openFolder: async () => folder, restoreFolder: async () => null })
+  mount({ kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null })
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
   if (tab !== 'Pad shape') await openTab(tab)

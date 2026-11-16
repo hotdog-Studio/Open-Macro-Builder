@@ -10,6 +10,8 @@ import type { Platform, SyntaxReport } from './types'
 export interface OmbBridge {
   /** The opened folder's name, or null when the user cancels. */
   openFolder(): Promise<string | null>
+  /** Creates the named folder inside one the user picks and opens it: its name, or null when the user cancels. */
+  createFolder(name: string): Promise<string | null>
   /** The remembered folder's name, null when none is remembered, or lost with a message. */
   restoreFolder(): Promise<string | null | { lost: string }>
   readBytes(rel: string): Promise<Uint8Array | null>
@@ -64,6 +66,11 @@ export function createElectronPlatform(bridge: OmbBridge): Platform {
     async openFolder() {
       const name = await bridge.openFolder()
       return name === null ? null : new BridgeFolder(name, bridge)
+    },
+
+    async createFolder(name) {
+      const created = await bridge.createFolder(name)
+      return created === null ? null : new BridgeFolder(created, bridge)
     },
 
     async restoreFolder() {

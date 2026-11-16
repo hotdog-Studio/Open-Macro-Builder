@@ -148,21 +148,35 @@ export function createBrowserPlatform(deps: {
     }
   }
 
+  /** The picker's answer, or null when the user cancelled it. */
+  async function picked(): Promise<FileSystemDirectoryHandle | null> {
+    try {
+      return await pick()
+    } catch (e) {
+      if (errorName(e) === 'AbortError') return null
+      throw e
+    }
+  }
+
+  async function remember(handle: FileSystemDirectoryHandle): Promise<FolderAccess> {
+    remembered = handle
+    // Not being able to remember the folder must not stop it opening.
+    await store.set(handle).catch(() => {})
+    return new BrowserFolder(handle)
+  }
+
   return {
     kind: 'browser',
 
     async openFolder() {
-      let handle: FileSystemDirectoryHandle
-      try {
-        handle = await pick()
-      } catch (e) {
-        if (errorName(e) === 'AbortError') return null
-        throw e
-      }
-      remembered = handle
-      // Not being able to remember the folder must not stop it opening.
-      await store.set(handle).catch(() => {})
-      return new BrowserFolder(handle)
+      const handle = await picked()
+      return handle && remember(handle)
+    },
+
+    async createFolder(name) {
+      const parent = await picked()
+      if (!parent) return null
+      return remember(await parent.getDirectoryHandle(name, { create: true }))
     },
 
     async restoreFolder() {

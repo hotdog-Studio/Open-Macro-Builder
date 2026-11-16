@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
 /** Compile-time list: adding a method to OmbBridge fails type checking here until the test knows it. */
 const BRIDGE_METHODS: Record<keyof OmbBridge, true> = {
   openFolder: true,
+  createFolder: true,
   restoreFolder: true,
   readBytes: true,
   writeBytes: true,
@@ -61,6 +62,7 @@ describe('preload', () => {
   // Each method must reach the channel the main process answers; a typo would fail only at runtime.
   it.each([
     ['openFolder', CHANNELS.openFolder, []],
+    ['createFolder', CHANNELS.createFolder, ['Open Macro Builder']],
     ['restoreFolder', CHANNELS.restoreFolder, []],
     ['readBytes', CHANNELS.readBytes, ['a.txt']],
     ['writeBytes', CHANNELS.writeBytes, ['a.txt', new Uint8Array([1, 2])]],

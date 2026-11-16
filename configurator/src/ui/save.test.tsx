@@ -71,6 +71,7 @@ async function start({ languages = ['ahk', 'ps'], config = EXAMPLE, files = {}, 
   const fake: Platform = {
     kind: 'browser',
     openFolder: async () => folder,
+    createFolder: async () => null,
     restoreFolder: async () => null,
     ...platform,
   }

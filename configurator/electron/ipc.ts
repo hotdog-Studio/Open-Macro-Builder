@@ -1,6 +1,9 @@
 import { dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { realpathSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { CHANNELS } from './channels'
+import { folderNameError } from '../src/core/folder/name'
 import type { LangId } from '../src/core/languages'
 import { autoHotkeyInstalled, findAutoHotkey, findMacropad, listProcesses, relaunch, type FoundMacropad } from './macropad'
 import { NodeFolder, resolveInside } from './nodeFolder'
@@ -65,6 +68,28 @@ export function registerIpc(win: BrowserWindow, storeFile: string): () => void {
     const picked = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
     const root = picked.filePaths[0]
     if (picked.canceled || !root) return null
+    try {
+      saveLastFolder(storeFile, root)
+    } catch {
+      // Not being able to remember the folder must not stop it opening.
+    }
+    return hold(root)
+  })
+
+  handle(CHANNELS.createFolder, async (value) => {
+    const name = text(value)
+    const problem = folderNameError(name)
+    if (problem) throw new Error(problem)
+    const picked = await dialog.showOpenDialog(win, {
+      title: `Choose where to create ${name}`,
+      buttonLabel: 'Create here',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const parent = picked.filePaths[0]
+    if (picked.canceled || !parent) return null
+    // A folder already there is opened as it is: recursive makes that succeed.
+    const root = join(parent, name)
+    await mkdir(root, { recursive: true })
     try {
       saveLastFolder(storeFile, root)
     } catch {

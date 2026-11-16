@@ -299,4 +299,64 @@ describe('createBrowserPlatform', () => {
       expect((await platform.openFolder())?.name).toBe('chosen')
     })
   })
+
+  describe('createFolder', () => {
+    it('creates the named folder inside the picked one, opens it and remembers it', async () => {
+      const parent = new FakeDir('Documents')
+      const { platform, store } = platformWith({ pick: async () => parent.asHandle() })
+      const folder = await platform.createFolder('Open Macro Builder')
+      expect(folder?.name).toBe('Open Macro Builder')
+      const child = parent.children.get('Open Macro Builder')
+      expect(child).toBeInstanceOf(FakeDir)
+      // The remembered handle is the new folder, not the one the user picked.
+      expect(store.handle).toBe((child as FakeDir).asHandle())
+      expect(await folder?.list('')).toEqual([])
+    })
+
+    it('opens an existing folder of that name without touching its files', async () => {
+      const parent = new FakeDir('Documents')
+      const existing = parent.put('Open Macro Builder/notes.txt', 'keep me')
+      const { platform, store } = platformWith({ pick: async () => parent.asHandle() })
+      const folder = await platform.createFolder('Open Macro Builder')
+      expect(folder?.name).toBe('Open Macro Builder')
+      expect(await folder?.list('')).toEqual([{ name: 'notes.txt', kind: 'file' }])
+      expect(new TextDecoder().decode(existing.data)).toBe('keep me')
+      expect(store.handle).toBe((parent.children.get('Open Macro Builder') as FakeDir).asHandle())
+    })
+
+    it('returns null and remembers nothing when the picker is cancelled', async () => {
+      const { platform, store } = platformWith({
+        pick: async () => {
+          throw domError('AbortError')
+        },
+      })
+      expect(await platform.createFolder('Open Macro Builder')).toBeNull()
+      expect(store.handle).toBeUndefined()
+    })
+
+    it('lets other picker errors through', async () => {
+      const { platform, store } = platformWith({
+        pick: async () => {
+          throw domError('SecurityError')
+        },
+      })
+      await expect(platform.createFolder('Open Macro Builder')).rejects.toThrow()
+      expect(store.handle).toBeUndefined()
+    })
+
+    it('still opens the new folder when it cannot be remembered', async () => {
+      const parent = new FakeDir('Documents')
+      const platform = createBrowserPlatform({
+        pick: async () => parent.asHandle(),
+        store: {
+          get: async () => undefined,
+          set: async () => {
+            throw new Error('IndexedDB unavailable')
+          },
+          clear: async () => {},
+        },
+      })
+      expect((await platform.createFolder('Open Macro Builder'))?.name).toBe('Open Macro Builder')
+    })
+  })
 })

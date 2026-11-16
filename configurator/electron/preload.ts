@@ -5,6 +5,7 @@ import { CHANNELS } from './channels'
 // Only these functions reach the page; it gets no ipcRenderer and no Node.
 const bridge: OmbBridge = {
   openFolder: () => ipcRenderer.invoke(CHANNELS.openFolder),
+  createFolder: (name) => ipcRenderer.invoke(CHANNELS.createFolder, name),
   restoreFolder: () => ipcRenderer.invoke(CHANNELS.restoreFolder),
   readBytes: (rel) => ipcRenderer.invoke(CHANNELS.readBytes, rel),
   writeBytes: (rel, data) => ipcRenderer.invoke(CHANNELS.writeBytes, rel, data),

@@ -22,6 +22,12 @@ export interface Platform {
   kind: 'browser' | 'electron'
   /** Resolves to null when the user cancels. */
   openFolder(): Promise<FolderAccess | null>
+  /**
+   * Creates `name` inside a location the user picks and opens it, remembered as openFolder
+   * remembers one. A folder of that name already there is opened as it is. Resolves to null
+   * when the user cancels. The caller checks the name with folderNameError.
+   */
+  createFolder(name: string): Promise<FolderAccess | null>
   /** Resolves to null when nothing is remembered. */
   restoreFolder(): Promise<Restore>
   /**

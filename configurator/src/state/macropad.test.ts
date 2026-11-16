@@ -5,6 +5,7 @@ import { createMacropadActions } from './macropad'
 const platform = (more: Partial<Platform>): Platform => ({
   kind: 'electron',
   openFolder: async () => null,
+  createFolder: async () => null,
   restoreFolder: async () => null,
   ...more,
 })

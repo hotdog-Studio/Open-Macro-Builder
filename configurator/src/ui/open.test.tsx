@@ -33,6 +33,7 @@ function fakePlatform(folder: FolderAccess | null, more: Partial<Platform> = {})
   return {
     kind: 'browser',
     openFolder: async () => folder,
+    createFolder: async () => null,
     restoreFolder: async () => null,
     ...more,
   }

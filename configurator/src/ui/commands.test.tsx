@@ -67,7 +67,7 @@ async function start({ languages = ['ahk', 'ps'], files = {}, platform: extra = 
   for (const [path, content] of Object.entries(files)) {
     await folder.writeBytes(path, typeof content === 'string' ? enc.encode(content) : content)
   }
-  const platform: Platform = { kind: 'browser', openFolder: async () => folder, restoreFolder: async () => null, ...extra }
+  const platform: Platform = { kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null, ...extra }
   render(
     <AppProvider platform={platform}>
       <App />

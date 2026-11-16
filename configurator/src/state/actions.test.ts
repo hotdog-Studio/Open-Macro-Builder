@@ -93,7 +93,7 @@ function harness(platform: Partial<Platform> = {}) {
   let stored: StoredState = initialState
   const view = (): AppState =>
     stored.screen === 'edit' ? { ...stored, dirty: writeConfig(stored.ws) !== writeConfig(stored.saved) } : stored
-  const made = createActions({ kind: 'browser', openFolder: async () => null, restoreFolder: async () => null, ...platform }, (a) => {
+  const made = createActions({ kind: 'browser', openFolder: async () => null, createFolder: async () => null, restoreFolder: async () => null, ...platform }, (a) => {
     stored = reducer(stored, a)
     made.sync(view())
   })

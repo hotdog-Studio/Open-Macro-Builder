@@ -7,13 +7,20 @@ const bytes = (s: string) => new TextEncoder().encode(s)
 const text = (b: Uint8Array | null) => (b ? new TextDecoder().decode(b) : null)
 
 /** A bridge over a MemoryFolder that records what the platform asked of it. */
-function fakeBridge(opts: { open?: string | null; restore?: string | null | { lost: string } } = {}) {
+function fakeBridge(
+  opts: { open?: string | null; restore?: string | null | { lost: string }; create?: string | null } = {},
+) {
   const disk = new MemoryFolder('macropad_ahk', { 'config.json': '{}' })
   const calls: string[] = []
+  const created: string[] = []
   const watched: string[][] = []
   const listeners = new Set<(rel: string) => void>()
   const bridge: OmbBridge = {
     openFolder: async () => opts.open ?? null,
+    createFolder: async (name) => {
+      created.push(name)
+      return opts.create ?? null
+    },
     restoreFolder: async () => opts.restore ?? null,
     readBytes: async (rel) => {
       calls.push(`read ${rel}`)
@@ -47,7 +54,7 @@ function fakeBridge(opts: { open?: string | null; restore?: string | null | { lo
     },
   }
   const emit = (rel: string) => listeners.forEach((cb) => cb(rel))
-  return { bridge, disk, calls, watched, listeners, emit }
+  return { bridge, disk, calls, created, watched, listeners, emit }
 }
 
 describe('createElectronPlatform', () => {
@@ -64,6 +71,14 @@ describe('createElectronPlatform', () => {
     expect(platform.kind).toBe('electron')
     expect((await platform.openFolder())?.name).toBe('macropad_ahk')
     expect(await createElectronPlatform(fakeBridge({ open: null }).bridge).openFolder()).toBeNull()
+  })
+
+  it('creates a folder through the bridge, or gives null when the user cancels', async () => {
+    const { bridge, created } = fakeBridge({ create: 'Open Macro Builder' })
+    const folder = await createElectronPlatform(bridge).createFolder('Open Macro Builder')
+    expect(created).toEqual(['Open Macro Builder'])
+    expect(folder?.name).toBe('Open Macro Builder')
+    expect(await createElectronPlatform(fakeBridge({ create: null }).bridge).createFolder('x')).toBeNull()
   })
 
   it('sends folder calls through the bridge with normalised paths', async () => {

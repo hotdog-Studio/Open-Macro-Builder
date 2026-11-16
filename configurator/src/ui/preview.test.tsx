@@ -40,7 +40,7 @@ async function start(config?: (c: { layers: unknown[] }) => void) {
   config?.(parsed)
   await folder.writeBytes('local/config.json', enc.encode(JSON.stringify(parsed, null, 2) + '\n'))
   await folder.writeBytes(SETTINGS_PATH, enc.encode('{ "languages": ["ahk"] }\n'))
-  const platform: Platform = { kind: 'browser', openFolder: async () => folder, restoreFolder: async () => null }
+  const platform: Platform = { kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
   render(
     <AppProvider platform={platform}>
       <App />

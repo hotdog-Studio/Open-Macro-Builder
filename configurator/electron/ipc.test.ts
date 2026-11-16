@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -157,6 +157,73 @@ describe('opening a folder', () => {
     watch.watchFiles.mockReturnValue(stop)
     await call(CHANNELS.watch, ['config.json'])
     await call(CHANNELS.openFolder)
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('creating a folder', () => {
+  const NAME = 'Open Macro Builder'
+
+  it('asks where, makes the folder there, holds it and remembers it', async () => {
+    expect(await call(CHANNELS.createFolder, NAME)).toBe(NAME)
+    expect(electron.openDialog).toHaveBeenCalledWith(win, {
+      title: 'Choose where to create Open Macro Builder',
+      buttonLabel: 'Create here',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    expect((await stat(join(root, NAME))).isDirectory()).toBe(true)
+    // The new folder is the one held.
+    expect(await call(CHANNELS.list, '')).toEqual([])
+    expect(JSON.parse(await readFile(storeFile, 'utf8'))).toEqual({ lastFolder: join(root, NAME) })
+  })
+
+  it('returns null, creates nothing and keeps the previous folder when cancelled', async () => {
+    await call(CHANNELS.openFolder)
+    await writeFile(join(root, 'a.txt'), 'a')
+    electron.openDialog.mockResolvedValue({ canceled: true, filePaths: [root] })
+    expect(await call(CHANNELS.createFolder, NAME)).toBeNull()
+    expect(existsSync(join(root, NAME))).toBe(false)
+    expect(JSON.parse(await readFile(storeFile, 'utf8'))).toEqual({ lastFolder: root })
+    // Still the first folder.
+    expect(await call(CHANNELS.list, '')).toEqual([{ name: 'a.txt', kind: 'file' }])
+  })
+
+  it('returns null when the dialog gives no path even though it was not cancelled', async () => {
+    electron.openDialog.mockResolvedValue({ canceled: false, filePaths: [] })
+    expect(await call(CHANNELS.createFolder, NAME)).toBeNull()
+  })
+
+  it.each(['..', 'a/b', 'a\\b', 'CON', '', 'C:'])('refuses the name %j before asking where', async (name) => {
+    await expect(call(CHANNELS.createFolder, name)).rejects.toThrow()
+    expect(electron.openDialog).not.toHaveBeenCalled()
+  })
+
+  it('refuses a name that is not text', async () => {
+    await expect(call(CHANNELS.createFolder, 42)).rejects.toThrow(new TypeError('Expected a path'))
+    expect(electron.openDialog).not.toHaveBeenCalled()
+  })
+
+  it('opens a folder that already exists there, leaving its files alone', async () => {
+    await mkdir(join(root, NAME))
+    await writeFile(join(root, NAME, 'keep.txt'), 'keep me')
+    expect(await call(CHANNELS.createFolder, NAME)).toBe(NAME)
+    expect(await call(CHANNELS.list, '')).toEqual([{ name: 'keep.txt', kind: 'file' }])
+    expect(await readFile(join(root, NAME, 'keep.txt'), 'utf8')).toBe('keep me')
+  })
+
+  it('still opens the new folder when it cannot be remembered', async () => {
+    // A file where userData should be makes the store write fail.
+    await writeFile(join(dir, 'userData'), 'in the way')
+    expect(await call(CHANNELS.createFolder, NAME)).toBe(NAME)
+    expect(await call(CHANNELS.list, '')).toEqual([])
+  })
+
+  it('stops watching the old folder when a new one is made', async () => {
+    await call(CHANNELS.openFolder)
+    const stop = vi.fn()
+    watch.watchFiles.mockReturnValue(stop)
+    await call(CHANNELS.watch, ['config.json'])
+    await call(CHANNELS.createFolder, NAME)
     expect(stop).toHaveBeenCalledTimes(1)
   })
 })

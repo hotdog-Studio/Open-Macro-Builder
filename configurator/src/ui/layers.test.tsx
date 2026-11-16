@@ -55,7 +55,7 @@ async function start(folder = folderFromRepo(), extra: React.ReactNode = null) {
   const enc = new TextEncoder()
   await folder.writeBytes('local/config.json', enc.encode(readRepoText('config.json')))
   await folder.writeBytes(SETTINGS_PATH, enc.encode('{ "languages": ["ahk"] }\n'))
-  const platform: Platform = { kind: 'browser', openFolder: async () => folder, restoreFolder: async () => null }
+  const platform: Platform = { kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
   render(
     <AppProvider platform={platform}>
       <App />

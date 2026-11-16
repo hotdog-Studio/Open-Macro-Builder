@@ -56,9 +56,14 @@ async function buildIfNeeded(): Promise<void> {
     join(configurator, 'dist-electron', 'main.cjs'),
     join(configurator, 'dist-electron', 'preload.cjs'),
   ]
-  const sources = ['src', 'electron', 'index.html', 'package.json', 'scripts/build-electron.mjs', 'vite.config.ts'].map(
-    (p) => join(configurator, p),
-  )
+  // Besides the app's own sources, the page carries config.json, ahk/, powershell/ and img/ of the
+  // repository as its starter copy (scripts/starter.mjs), so a change there needs a rebuild too.
+  const sources = [
+    ...['src', 'electron', 'index.html', 'package.json', 'scripts/build-electron.mjs', 'scripts/starter.mjs', 'vite.config.ts'].map(
+      (p) => join(configurator, p),
+    ),
+    ...['config.json', 'ahk', 'powershell', 'img'].map((p) => join(repoRoot, p)),
+  ]
   const built = outputs.every((file) => existsSync(file))
   // Test files change often and are not part of the bundle; compare against the bundle's inputs
   // by the oldest output, so any newer source triggers one rebuild.

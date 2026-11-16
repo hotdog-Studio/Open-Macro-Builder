@@ -1,5 +1,6 @@
-# What `docker build` may read. The images need only the configurator, the shared config checks in
-# scripts/ and docker/. Everything personal or bulky stays out of the build.
+# What `docker build` may read. The images need the configurator, the shared config checks in
+# scripts/, docker/, and the files the page carries as its starter copy (config.json, ahk/,
+# powershell/, img/). Everything personal or bulky stays out of the build.
 
 # Your own layout, commands and notes: never in an image.
 local/
@@ -20,9 +21,7 @@ results/
 .scannerwork/
 
 # Not part of the web page.
-ahk/
-powershell/
+**/tests/
 qmk/
-img/
 ci/
 docs/

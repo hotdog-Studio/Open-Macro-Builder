@@ -1,12 +1,15 @@
+import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { configDefaults } from 'vitest/config'
+import { starterPlugin } from './scripts/starter.mjs'
 
 export default defineConfig({
   // Electron loads dist/index.html from disk, so assets need relative URLs.
   base: './',
-  plugins: [react(), tailwindcss()],
+  // starterPlugin carries the repository's scripts and icons in the page (virtual:omb-starter).
+  plugins: [react(), tailwindcss(), starterPlugin(resolve(import.meta.dirname, '..'))],
   build: {
     // Served from the user's own PC (localhost or Electron's file load): one large chunk costs no network time.
     chunkSizeWarningLimit: 1000,

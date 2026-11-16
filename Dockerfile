@@ -17,6 +17,11 @@ RUN cd configurator && npm ci
 # The configurator shares its config checks with the repository's validator.
 COPY scripts/validate-config-core.mjs scripts/validate-config-core.d.mts scripts/
 COPY configurator configurator
+# The page carries these as the starter copy it sets up a new folder from.
+COPY config.json ./
+COPY ahk ahk
+COPY powershell powershell
+COPY img img
 RUN cd configurator && npm run build
 
 FROM caddy:2-alpine

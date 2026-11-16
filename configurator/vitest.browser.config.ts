@@ -1,8 +1,10 @@
 /// <reference types="vitest/config" />
+import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vite'
+import { starterPlugin } from './scripts/starter.mjs'
 import { pointerPath, touchPath, validateSavedConfig } from './test/browser/commands.ts'
 
 // The browser tests (src/**/*.browser.test.tsx): the app in headless Chromium, so elements have
@@ -14,7 +16,7 @@ import { pointerPath, touchPath, validateSavedConfig } from './test/browser/comm
 // excludes these files.
 export default defineConfig({
   base: './',
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), starterPlugin(resolve(import.meta.dirname, '..'))],
   // Every package the app and the tests import, bundled before the first test. Left to find them
   // one test file at a time, Vite re-bundles and reloads the page mid-run (always, on a fresh CI
   // checkout), and a reloaded test can end up with two copies of React.

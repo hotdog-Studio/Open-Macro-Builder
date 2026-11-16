@@ -14,6 +14,10 @@
 //                          lacks the system libraries headless Chromium needs.
 //   OMB_ARM64_LABEL        label of the arm64 agent that tries the arm64 image (default linux-arm64)
 //   OMB_IMAGE              where the images are published (default ghcr.io/hotdog-studio/open-macro-builder)
+//   OMB_REGISTRY           host[:port] of a second, private registry that also gets the linux/amd64
+//                          image of every release, as <version> and latest (none when unset). It
+//                          must take a push without a login.
+//   OMB_REGISTRY_REPO      the repository there (default hotdogstudio/open-macro-builder)
 //   OMB_GITHUB_CREDENTIALS_ID  id of the GitHub credential below (default omb-github)
 //   OMB_GIT_CREDENTIALS_ID id of the SSH key that pushes the release tag, when the pipeline may not
 //                          read the job's own checkout credential (scm.userRemoteConfigs)
@@ -372,12 +376,31 @@ node {
                     sh 'node scripts/ci-release.mjs github configurator/release/*.exe'
                 }
             }
+            // 4. The second registry, when there is one. The release is already out, so a
+            // failure here leaves the build UNSTABLE and takes nothing back. latest goes last:
+            // it is the tag a host that follows the registry watches.
+            if (!env.OMB_REGISTRY) {
+                echo 'no second registry: the Jenkins global OMB_REGISTRY is not set'
+            } else {
+                def mirror = "${env.OMB_REGISTRY}/${env.OMB_REGISTRY_REPO ?: 'hotdogstudio/open-macro-builder'}"
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE', message: "the image was not pushed to ${mirror}") {
+                    withEnv(["VERSION=${version}", "MIRROR=${mirror}", "BUILT=${built}"]) {
+                        sh '''
+                            set -eu
+                            for tag in "$VERSION" latest; do
+                                docker tag "$BUILT-amd64" "$MIRROR:$tag"
+                                docker push "$MIRROR:$tag"
+                            done
+                        '''
+                    }
+                }
+            }
         }
     }
 
     stage('Cleanup') {
-        // This build's images, under their local and their published names.
-        sh 'docker image ls --format "{{.Repository}}:{{.Tag}}" | grep -E "^(omb-build|ghcr\\.io/.+/open-macro-builder):" | xargs -r docker image rm >/dev/null 2>&1 || true'
+        // This build's images, under their local and their published names (either registry).
+        sh 'docker image ls --format "{{.Repository}}:{{.Tag}}" | grep -E "^(omb-build|.+/open-macro-builder):" | xargs -r docker image rm >/dev/null 2>&1 || true'
         cleanWs(cleanWhenNotBuilt: false,
             deleteDirs: true,
             disableDeferredWipeout: true,

@@ -4,6 +4,10 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ## Unreleased
 
+### Added
+
+- Releases: with the Jenkins global `OMB_REGISTRY` set, each release also pushes the `linux/amd64` image to that private registry ([docs/releasing.md](docs/releasing.md)).
+
 ### Security
 
 - Build tools: `minimatch` is held at 11.0.8 or newer, which fixes a slow pattern match ([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)). Only linting and packaging used the affected versions; nothing in the app or the image did.

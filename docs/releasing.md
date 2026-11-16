@@ -9,6 +9,7 @@ What a release of Open Macro Builder is made of, how its number is chosen, and w
 | `Open-Macro-Builder-Setup-<version>.exe` (installer) and `Open-Macro-Builder-<version>-portable.exe` | The GitHub release of `v<version>` | The Windows agent, with `npm run dist` |
 | `SHA256SUMS.txt`, the checksums of the two | The GitHub release | The controller |
 | The configurator image for `linux/amd64` and `linux/arm64` | `ghcr.io/hotdog-studio/open-macro-builder` | The controller, from `Dockerfile` |
+| The same image for `linux/amd64`, only when `OMB_REGISTRY` is set | A private registry you run, as `<version>` and `latest` | The controller |
 | The source, which is the macropad itself | The GitHub release's source archive | git |
 
 The two `.exe` files are not signed, so Windows SmartScreen warns the first time one is run. Signing needs a code-signing certificate; with one, electron-builder signs during `npm run dist`.
@@ -56,6 +57,7 @@ Build it again once the cause is gone.
 - Agents labelled `windows-x64` (Node, Git, AutoHotkey v2, and Pester 5.5 or newer installed for all users) and `linux-arm64` (Docker). The `Jenkinsfile` header has the globals that rename them.
 - The job's SSH checkout credential must be allowed to push tags.
 - A **Username with password** credential with the id `omb-github`: a GitHub user name, and as the password a token of that user that may write this repository's contents (for the release) and write packages (for ghcr.io). A classic token with the `repo` and `write:packages` scopes does both.
+- Optional: the global `OMB_REGISTRY`, the `host:port` of a private registry that takes a push without a login. Each release then also pushes the `linux/amd64` image there, as `<version>` and then `latest`, after the GitHub release. If that push fails the build ends unstable and the release stands. `OMB_REGISTRY_REPO` renames the repository (default `hotdogstudio/open-macro-builder`).
 
 ## Trying it by hand
 

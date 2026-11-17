@@ -126,6 +126,29 @@ describe('opening an empty folder', () => {
     expect(folder.configWrites).toBe(1)
   })
 
+  it('shows Setting up… with nothing to press while the copy runs', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    class Held extends MemoryFolder {
+      override async writeBytes(path: string, data: Uint8Array): Promise<void> {
+        await held
+        return super.writeBytes(path, data)
+      }
+    }
+    const user = await openFolder(fakePlatform(new Held('fresh')))
+    await user.click(await screen.findByRole('button', { name: 'Set up' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Setting up…' })
+    expect(within(dialog).getByText('Copying files into fresh.')).toBeTruthy()
+    expect(within(dialog).queryAllByRole('button')).toEqual([])
+    for (const name of ['Open folder', 'Create new folder…'])
+      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true)
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog', { name: 'Setting up…' })).toBeTruthy()
+    release()
+    await screen.findByRole('dialog', { name: 'This folder has no local/config.json yet' })
+    expect((screen.getByRole('button', { name: 'Open folder' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('a folder holding only desktop.ini is refused as before, untouched', async () => {
     const folder = new MemoryFolder('fresh', { 'desktop.ini': '[.ShellClassInfo]\r\n' })
     const before = await snapshot(folder)

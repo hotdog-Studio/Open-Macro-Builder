@@ -307,9 +307,9 @@ describe('choosing the config to edit', () => {
 
 describe('setting up an empty folder', () => {
   /** An empty folder, opened: the Set up prompt is showing. */
-  async function prompted() {
+  async function prompted(platform: Partial<Platform> = {}) {
     const folder = new Flaky(new MemoryFolder('fresh'))
-    const h = harness()
+    const h = harness(platform)
     await h.actions.load(folder)
     expect(h.state()).toEqual({ screen: 'setup', folder, writing: false })
     return { h, folder }
@@ -343,6 +343,55 @@ describe('setting up an empty folder', () => {
       message: 'This folder is no longer empty, so nothing was copied into it.',
     })
     expect(folder.writes).toEqual([])
+  })
+
+  /**
+   * The pickers, as spies. In the desktop app the main process switches to the picked folder as
+   * soon as a picker returns, so a picker opened during the copy would send the rest of it there.
+   */
+  function pickers() {
+    return {
+      openFolder: vi.fn<Platform['openFolder']>(async () => null),
+      createFolder: vi.fn<Platform['createFolder']>(async () => null),
+      grantPermission: vi.fn<NonNullable<Platform['grantPermission']>>(async () => null),
+    }
+  }
+  async function tryEveryPicker(h: ReturnType<typeof harness>) {
+    await h.actions.openFolder()
+    await h.actions.createFolder('pad')
+    await h.actions.reopen()
+  }
+  const timesCalled = (spies: ReturnType<typeof pickers>) =>
+    [spies.openFolder, spies.createFolder, spies.grantPermission].map((spy) => spy.mock.calls.length)
+
+  it('opens no picker while the copy runs, and opens them again once it is done', async () => {
+    const spies = pickers()
+    const { h, folder } = await prompted(spies)
+    const hold = gate()
+    folder.onWrite = () => hold.wait
+    const setting = h.actions.chooseSetup()
+    await tryEveryPicker(h)
+    expect(timesCalled(spies)).toEqual([0, 0, 0])
+    hold.open()
+    await setting
+    expect(h.state().screen).toBe('pick-config')
+    await tryEveryPicker(h)
+    expect(timesCalled(spies)).toEqual([1, 1, 1])
+  })
+
+  it('opens the pickers again after a copy that failed', async () => {
+    const spies = pickers()
+    const { h, folder } = await prompted(spies)
+    const hold = gate()
+    folder.onWrite = () => hold.wait
+    const setting = h.actions.chooseSetup()
+    await tryEveryPicker(h)
+    expect(timesCalled(spies)).toEqual([0, 0, 0])
+    hold.fail(new Error('disk full'))
+    await setting
+    expect(h.state()).toMatchObject({ screen: 'open', message: expect.stringMatching(/^Setting up stopped part-way: disk full\./) })
+    await tryEveryPicker(h)
+    expect(timesCalled(spies)).toEqual([1, 1, 1])
   })
 })
 

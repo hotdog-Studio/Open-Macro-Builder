@@ -5,8 +5,9 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { DownloadLink } from './DownloadLink'
 import { NewFolderDialog } from './NewFolderDialog'
 
-const PRIMARY = 'rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500'
-const PLAIN = 'rounded-md border border-zinc-700 px-4 py-2 hover:bg-zinc-800'
+const DISABLED = 'disabled:cursor-not-allowed disabled:opacity-50'
+const PRIMARY = `rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500 ${DISABLED}`
+const PLAIN = `rounded-md border border-zinc-700 px-4 py-2 hover:bg-zinc-800 ${DISABLED}`
 
 function Frame({ message, children }: Readonly<{ message: string | null; children?: ReactNode }>) {
   return (
@@ -66,18 +67,20 @@ export function OpenScreen() {
   const [naming, setNaming] = useState(false)
   if (state.screen === 'edit') return null
   const open = state.screen === 'open' ? state : null
+  // Still reachable by Tab behind the Setting up… dialog; no folder may open while the copy runs.
+  const copying = state.screen === 'setup' && state.writing
 
   return (
     <Frame message={open?.message ?? null}>
       <div className="flex gap-3">
-        <button type="button" className={PRIMARY} onClick={() => void actions.openFolder()}>
+        <button type="button" disabled={copying} className={PRIMARY} onClick={() => void actions.openFolder()}>
           Open folder
         </button>
-        <button type="button" className={PLAIN} onClick={() => setNaming(true)}>
+        <button type="button" disabled={copying} className={PLAIN} onClick={() => setNaming(true)}>
           Create new folder…
         </button>
         {open?.reopen && (
-          <button type="button" className={PLAIN} onClick={() => void actions.reopen()}>
+          <button type="button" disabled={copying} className={PLAIN} onClick={() => void actions.reopen()}>
             Reopen {open.reopen}
           </button>
         )}

@@ -22,7 +22,7 @@ import {
 } from '../core/languages'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
-import { NOT_EMPTY, StarterError, writeStarter } from '../core/starter'
+import { NOT_EMPTY, StarterError, writeStarter, type StarterFile } from '../core/starter'
 import type { Platform } from '../platform/types'
 import { createCommandActions } from './commandActions'
 import { mergeAfterRead } from './commandsSlice'
@@ -148,6 +148,11 @@ function setupError(e: unknown): string {
   // The sentence goes on after the reason, so the reason's own full stop goes.
   const reason = messageOf(e).replace(/\.$/, '')
   return `Setting up stopped part-way: ${reason}. The folder may hold a partial copy: delete it, or pick another empty folder.`
+}
+
+/** What the open screen shows when the starter's own chunk could not be fetched (a page older than its server). */
+function starterLoadError(e: unknown): string {
+  return `Nothing was copied: the starter files could not be loaded (${messageOf(e)}). Reload and try again.`
 }
 
 /** True when both lists hold the same command file paths, in any order. */
@@ -399,18 +404,46 @@ export function createActions(
     openInspected(folder, (empty) => dispatch({ type: 'setup', folder: empty, writing: false }))
 
   /**
+   * True while setUp loads and writes the starter. In the desktop app a folder access carries no
+   * identity: the main process answers for whichever folder it holds, and switches as soon as a
+   * picker returns. So no picker opens until the copy is over, or the rest of it would land in the
+   * folder just picked.
+   */
+  let copying = false
+
+  /**
    * Copies the starter into an empty folder, then opens it like any other. A failure goes back to
-   * the open screen; a newer load, or Cancel, drops the outcome (the copy itself cannot be stopped).
+   * the open screen; a newer load drops the outcome (the copy itself cannot be stopped).
    */
   async function setUp(folder: FolderAccess, token: number): Promise<void> {
     dispatch({ type: 'setup', folder, writing: true })
+    copying = true
+    let copied: boolean
     try {
-      await writeStarter(folder, await loadStarter())
+      copied = await copyStarter(folder, token)
+    } finally {
+      copying = false
+    }
+    if (copied && token === loads) await load(folder)
+  }
+
+  /** Loads the starter, then writes it; false when either failed, and the open screen says why. */
+  async function copyStarter(folder: FolderAccess, token: number): Promise<boolean> {
+    let files: StarterFile[]
+    try {
+      files = await loadStarter()
+    } catch (e) {
+      // Nothing written yet, so no partial copy to warn about.
+      if (token === loads) showOpen(starterLoadError(e))
+      return false
+    }
+    try {
+      await writeStarter(folder, files)
+      return true
     } catch (e) {
       if (token === loads) showOpen(setupError(e))
-      return
+      return false
     }
-    if (token === loads) await load(folder)
   }
 
   /** The prompt state last answered, so a double click answers it once. */
@@ -440,6 +473,8 @@ export function createActions(
     },
 
     async openFolder() {
+      // No picker while the starter is being copied (see `copying`).
+      if (copying) return
       let folder: FolderAccess | null
       try {
         folder = await platform.openFolder()
@@ -459,7 +494,7 @@ export function createActions(
     },
 
     async reopen() {
-      if (!platform.grantPermission) return
+      if (!platform.grantPermission || copying) return
       const token = loads
       let result
       try {
@@ -480,6 +515,7 @@ export function createActions(
     },
 
     async createFolder(name) {
+      if (copying) return
       let folder: FolderAccess | null
       try {
         folder = await platform.createFolder(name)

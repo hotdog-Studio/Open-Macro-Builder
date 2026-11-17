@@ -25,10 +25,24 @@ until docker exec "$id" wget -q -O /dev/null http://127.0.0.1:8080/healthz 2>/de
     sleep 0.5
 done
 
-if ! docker exec "$id" wget -q -O - http://127.0.0.1:8080/ | grep -q '<div id="root"'; then
+page="$(docker exec "$id" wget -q -O - http://127.0.0.1:8080/)"
+if ! printf '%s\n' "$page" | grep -q '<div id="root"'; then
     echo "smoke: $image does not serve the configurator page" >&2
     exit 1
 fi
+
+# The page names its icons (the project logo, configurator/index.html): each must be served.
+icons="$(printf '%s\n' "$page" | grep -o '<link rel="icon"[^>]*>' | sed 's/.*href="\([^"]*\)".*/\1/')"
+if [ -z "$icons" ]; then
+    echo "smoke: the page of $image names no icon" >&2
+    exit 1
+fi
+for icon in $icons; do
+    if ! docker exec "$id" wget -q -O /dev/null "http://127.0.0.1:8080/${icon#./}"; then
+        echo "smoke: $image does not serve its icon $icon" >&2
+        exit 1
+    fi
+done
 
 if [ -n "$machine" ]; then
     actual="$(docker exec "$id" uname -m)"

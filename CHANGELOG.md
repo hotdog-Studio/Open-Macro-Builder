@@ -9,6 +9,10 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 - Configurator: an empty folder can be set up as a fresh copy. **Open folder** on an empty folder offers to copy in the scripts, the icons and the example layout, and **Create new folder…** on the start screen makes the folder first. The files are carried inside the app, so no download or clone is needed.
 - Releases: with the Jenkins global `OMB_REGISTRY` set, each release also pushes the `linux/amd64` image to that private registry ([docs/releasing.md](docs/releasing.md)).
 
+### Changed
+
+- Configurator: a folder without `local/config.json` is now offered only a copy in `local/`. The option to edit the shared example `config.json` itself is gone, so the example stays as everyone gets it.
+
 ### Security
 
 - Build tools: `minimatch` is held at 11.0.8 or newer, which fixes a slow pattern match ([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)). Only linting and packaging used the affected versions; nothing in the app or the image did.

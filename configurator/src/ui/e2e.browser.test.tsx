@@ -139,7 +139,7 @@ describe('in the browser, on a real folder', () => {
 
     await click(await screen.findByRole('button', { name: 'Open folder' }))
     await waitFor(() => expect(dialog().textContent).toContain('This folder has no local/config.json yet'))
-    await choose('Edit a copy in local/ (recommended)')
+    await choose('Edit a copy in local/')
     await waitFor(() => expect(dialog().textContent).toContain('Which version do you run?'))
     await choose('AutoHotkey')
     await screen.findByRole('list', { name: 'Keys' })

@@ -55,7 +55,7 @@ export interface AppActions {
    */
   createFolder(name: string): Promise<void>
   /** Answer to the missing local/config.json prompt. */
-  chooseConfig(choice: 'copy' | 'example'): Promise<void>
+  chooseConfig(): Promise<void>
   /** Answer to Which version do you run? */
   chooseLanguage(lang: LangId): Promise<void>
   /** I run: ignored when it would leave no language; saved straight away. */
@@ -530,12 +530,11 @@ export function createActions(
       await openInspected(folder, setUp)
     },
 
-    async chooseConfig(choice) {
+    async chooseConfig() {
       const state = getState()
       if (state.screen !== 'pick-config' || !firstAnswer(state)) return
       const token = ++loads
       await guarded(token, async () => {
-        if (choice === 'example') return finishLoad(state.folder, EXAMPLE_CONFIG, token)
         // Every load check runs on the example first: a copy that cannot be
         // opened would hide config.json for good, since local/config.json wins.
         const session = await readSession(state.folder, EXAMPLE_CONFIG)

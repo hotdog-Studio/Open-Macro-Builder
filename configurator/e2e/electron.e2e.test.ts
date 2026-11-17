@@ -151,7 +151,7 @@ async function closeApps(): Promise<void> {
  */
 async function firstRun(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Open folder' }).click()
-  await page.getByRole('button', { name: 'Edit a copy in local/ (recommended)' }).click()
+  await page.getByRole('button', { name: 'Edit a copy in local/' }).click()
   const language = page.getByRole('button', { name: 'AutoHotkey' })
   const tab = page.getByRole('tab', { name: 'Pad shape' })
   await language.or(tab).first().waitFor()

@@ -253,7 +253,7 @@ describe('choosing the config to edit', () => {
     expect(h.state().screen).toBe('pick-config')
     // The copy is written, but then reads as missing (a file that vanished at once).
     folder.onRead = (path) => (path === CONFIG ? null : undefined)
-    await h.actions.chooseConfig('copy')
+    await h.actions.chooseConfig()
     expect(h.state()).toMatchObject({ screen: 'open', message: 'local/config.json is missing.' })
   })
 
@@ -261,7 +261,7 @@ describe('choosing the config to edit', () => {
     const folder = repoFolder({ noPersonalConfig: true })
     const h = harness()
     await h.actions.load(folder)
-    await Promise.all([h.actions.chooseConfig('copy'), h.actions.chooseConfig('copy')])
+    await Promise.all([h.actions.chooseConfig(), h.actions.chooseConfig()])
     expect(h.edit().configFile.path).toBe(CONFIG)
     expect(folder.writes.filter((p) => p === CONFIG)).toHaveLength(1)
   })
@@ -269,7 +269,7 @@ describe('choosing the config to edit', () => {
   it('ignores an answer when no question is open', async () => {
     const h = await opened()
     const before = h.state()
-    await h.actions.chooseConfig('copy')
+    await h.actions.chooseConfig()
     await h.actions.chooseLanguage('ps')
     expect(h.state()).toEqual(before)
   })
@@ -282,7 +282,7 @@ describe('choosing the config to edit', () => {
     slow.onRead = async (path) => {
       if (path === 'config.json') await hold.wait
     }
-    const choosing = h.actions.chooseConfig('example')
+    const choosing = h.actions.chooseConfig()
     await h.actions.load(repoFolder())
     hold.open()
     await choosing
@@ -296,7 +296,7 @@ describe('choosing the config to edit', () => {
     const hold = gate()
     const wait = (path: string) => (path === 'config.json' ? hold.wait : undefined)
     folder.onRead = wait
-    const choosing = h.actions.chooseConfig('copy')
+    const choosing = h.actions.chooseConfig()
     await h.actions.load(repoFolder())
     hold.open()
     await choosing

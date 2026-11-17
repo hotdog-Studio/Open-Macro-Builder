@@ -39,7 +39,7 @@ export interface OpenState {
   reopen: string | null
 }
 
-/** local/config.json is missing: edit a copy or the shared example. */
+/** local/config.json is missing: offer to make it as a copy of the shared example. */
 export interface PickConfigState {
   screen: 'pick-config'
   folder: FolderAccess

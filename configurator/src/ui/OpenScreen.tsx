@@ -100,18 +100,11 @@ export function OpenScreen() {
         <ConfirmDialog
           title="This folder has no local/config.json yet"
           onCancel={actions.closeFolder}
-          choices={[
-            { label: 'Edit the shared example', onChoose: () => void actions.chooseConfig('example') },
-            {
-              label: 'Edit a copy in local/ (recommended)',
-              primary: true,
-              onChoose: () => void actions.chooseConfig('copy'),
-            },
-          ]}
+          choices={[{ label: 'Edit a copy in local/', primary: true, onChoose: () => void actions.chooseConfig() }]}
         >
           <p>
-            Your own layout lives in local/config.json, which git ignores, so updates never touch it. The shared
-            config.json is the example everyone gets.
+            Your own layout lives in local/config.json, which git ignores, so updates never touch it. It starts as
+            a copy of the shared example, config.json, which is left as it is.
           </p>
         </ConfirmDialog>
       )}

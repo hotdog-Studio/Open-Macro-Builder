@@ -94,7 +94,7 @@ describe('opening an empty folder', () => {
   it('then opens onto the tabs after the two first-run answers', async () => {
     const user = await openFolder(fakePlatform(empty()))
     await user.click(await screen.findByRole('button', { name: 'Set up' }))
-    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/ (recommended)' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
     const language = await screen.findByRole('dialog', { name: 'Which version do you run?' })
     await user.click(within(language).getByRole('button', { name: 'AutoHotkey' }))
     expect(await keyButtons()).toHaveLength(12)

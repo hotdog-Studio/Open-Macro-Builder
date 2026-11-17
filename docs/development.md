@@ -48,7 +48,7 @@ Press **Open folder** and pick this repository.
 | `node scripts/validate-config.mjs` | the repository root | Checks the layout both versions would load. |
 | `npm test` | `configurator/` | The unit tests (Vitest, in Node and jsdom). Add `-- --coverage` for coverage. |
 | `npm run test:browser` | `configurator/` | The app in headless Chromium: real mouse drags, keyboard, touch, small windows, a real folder handle, and pictures of the pad. |
-| `npm run test:electron` | `configurator/` | Builds and launches the desktop app, drags a key, saves and checks the file on disk. Skips itself without the Electron binary or a display. |
+| `npm run test:electron` | `configurator/` | Builds and launches the desktop app, drags a key, saves and checks the file on disk, and sets up a fresh copy in an empty folder. Skips itself without the Electron binary or a display. |
 | `npm run lint` and `npm run build` | `configurator/` | ESLint, then the type check and the production build. |
 | `powershell -NoProfile -File powershell\tests\run.ps1` | the repository root, on Windows | The Pester suite of the PowerShell version. |
 

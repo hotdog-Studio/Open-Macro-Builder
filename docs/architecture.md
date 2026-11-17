@@ -22,6 +22,9 @@ Plain TypeScript with no React, no browser and no Node in it. ESLint enforces th
 - `folder/`: `FolderAccess`, the four things the app needs from a folder: read a file, write a file, list a directory, remove a file. Everything above reads and writes through it. `memory.ts` is the in-memory version the tests use.
 - `languages/`: what the app knows about AutoHotkey and PowerShell: finding the command functions in a file, and building the catalog of commands from both languages' folders.
 - `overlay.ts`: where each key sits on the overlay, shared by the grid and the preview.
+- `starter.ts`: `writeStarter` copies the starter files into an empty folder through `FolderAccess`, `config.json` last, so a copy that stopped part-way is not mistaken for a finished one. `repo.ts` (`inspectFolder`) tells an empty folder apart from a setup and from anything else.
+
+The starter is `config.json`, `ahk/`, `powershell/` and `img/` of the repository, without any `tests` or `local` folder and without `.xcf`, `.bak` and `.omb-tmp` files. `configurator/scripts/starter.mjs` is a Vite plugin that reads them at build time and serves them as the virtual module `virtual:omb-starter`; `state/starter.ts` (`loadStarter`) imports it on demand, so the page fetches that separate chunk (about 1.2 MB) only when a folder is set up.
 
 The checks in `validate.ts` are the repository's own validator, `scripts/validate-config-core.mjs`, imported from outside `configurator/`. The configurator and `node scripts/validate-config.mjs` therefore cannot disagree about what a valid layout is.
 
@@ -31,6 +34,8 @@ The checks in `validate.ts` are the repository's own validator, `scripts/validat
 
 - `browser.ts` uses the File System Access API (`showDirectoryPicker`) and remembers the folder handle in IndexedDB. Only Chromium browsers have that API, and only on `https://` or `localhost`.
 - `electron.ts` talks to the desktop shell through `window.omb`, the bridge the preload script exposes.
+
+`createFolder(name)` makes a new folder and opens it: the browser version asks for the place with `showDirectoryPicker` and creates `<place>/<name>`, the desktop app shows a native folder picker and does the same (`electron/ipc.ts`).
 
 ### `src/state`: what is open
 

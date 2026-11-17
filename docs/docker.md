@@ -13,7 +13,7 @@ Two things to know before you use one:
 docker run --rm -p 8080:8080 ghcr.io/hotdog-studio/open-macro-builder
 ```
 
-Open <http://localhost:8080> in Chrome or Edge, press **Open folder** and pick your copy of the repository.
+Open <http://localhost:8080> in Chrome or Edge, press **Open folder** and pick your copy of the repository, or an empty folder: the page offers to set up a fresh copy there, and **Create new folder…** makes the folder. The scripts and icons for that copy are served with the page.
 
 The image runs as an unprivileged user, writes nothing, and needs no volumes or environment variables, so it can be locked down:
 

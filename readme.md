@@ -43,7 +43,7 @@ git clone https://github.com/hotdog-Studio/Open-Macro-Builder.git
 
 Or download the source of the [latest release](https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest) and unzip it.
 
-The configurator, which edits the layout in that folder, comes three ways:
+The configurator, which edits the layout in that folder, comes three ways. You can also start from the configurator alone: it sets up a fresh copy in an empty folder (see [Configurator](#configurator)).
 
 | | Where | Notes |
 | --- | --- | --- |
@@ -62,6 +62,8 @@ The desktop app is unsigned, so Windows SmartScreen asks for confirmation on the
 
 Both read the same layout file, use the same icons in `img/` and have the same command names, so you can switch between them without touching your layout. Run one at a time: both claim the macro keys.
 
+Without a copy of the repository, you can set one up from the [configurator](#configurator) first: press **Open folder** and pick an empty folder, or press **Create new folder…**.
+
 1. Set your keypad's keys to send F13 to F24, with whatever tool your keypad uses. `qmk/` has the VIA/QMK layout of the EPOMAKER EK21 this was built for.
 2. Copy the example `config.json` to `local/config.json` and edit it, by hand or with the [configurator](#configurator). The `local/` folder is yours: git ignores it (see [Your own layout and commands](#your-own-layout-and-commands)).
 3. **AutoHotkey:** install AutoHotkey v2, then run `ahk/main.ahk`. **PowerShell:** run `wscript powershell\launch.vbs`.
@@ -70,7 +72,7 @@ To start either one with Windows, point a shortcut in `shell:startup` at `ahk\ma
 
 ## Configurator
 
-A visual editor for the layout (the pad shape, the layers and the macros) and for the command files in both languages. Press **Open folder** and pick your copy of this repository. It edits `local/config.json` when that exists, else the example `config.json`, and offers to make the copy for you the first time. It ignores `OMB_CONFIG`.
+A visual editor for the layout (the pad shape, the layers and the macros) and for the command files in both languages. Press **Open folder** and pick your copy of this repository. Without a copy, pick an empty folder instead: the configurator offers to set up a fresh one there, with the scripts, the icons and the example layout. **Create new folder…** makes that folder for you. It edits `local/config.json` when that exists, else the example `config.json`, and offers to make the copy for you the first time. It ignores `OMB_CONFIG`.
 
 | Pad shape | Layers |
 | --- | --- |

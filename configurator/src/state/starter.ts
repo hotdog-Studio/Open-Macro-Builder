@@ -8,6 +8,6 @@ export async function loadStarter(): Promise<StarterFile[]> {
   const { default: files } = await import('virtual:omb-starter')
   return files.map(({ path, base64 }) => ({
     path,
-    data: Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)),
+    data: Uint8Array.from(atob(base64), (char) => char.codePointAt(0) ?? 0),
   }))
 }

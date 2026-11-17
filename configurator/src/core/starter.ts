@@ -24,8 +24,11 @@ export const NOT_EMPTY = 'This folder is no longer empty, so nothing was copied 
 export async function writeStarter(folder: FolderAccess, files: StarterFile[]): Promise<void> {
   if ((await folder.list('')).length > 0) throw new StarterError(NOT_EMPTY)
   const ordered = [...files.filter((f) => f.path !== 'config.json'), ...files.filter((f) => f.path === 'config.json')]
+  // One file at a time, in order: the copy stops at the first failure, and config.json has to be
+  // the last one written (hence NOSONAR on the awaits in the loop).
   for (const { path, data } of ordered) {
-    if ((await folder.readBytes(path)) !== null) throw new StarterError(`${path} already exists, so the copy stopped.`)
-    await folder.writeBytes(path, data)
+    const existing = await folder.readBytes(path) // NOSONAR S9382
+    if (existing !== null) throw new StarterError(`${path} already exists, so the copy stopped.`)
+    await folder.writeBytes(path, data) // NOSONAR S9382
   }
 }

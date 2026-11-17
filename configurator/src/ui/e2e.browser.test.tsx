@@ -50,6 +50,30 @@ async function read(path: string): Promise<string | null> {
   }
 }
 
+/** The size in bytes of a file of the folder, or null when it is not there. */
+async function sizeOf(path: string): Promise<number | null> {
+  const parts = path.split('/')
+  const name = parts.pop()!
+  try {
+    let at = folder
+    for (const part of parts) at = await at.getDirectoryHandle(part)
+    return (await (await at.getFileHandle(name)).getFile()).size
+  } catch {
+    return null
+  }
+}
+
+/** True when the folder holds a directory at `path`. */
+async function hasDir(path: string): Promise<boolean> {
+  try {
+    let at = folder
+    for (const part of path.split('/')) at = await at.getDirectoryHandle(part)
+    return true
+  } catch {
+    return false
+  }
+}
+
 interface SavedConfig {
   fn: { key: string }
   keys: { key: string; row: number; col: number; width?: number; height?: number }[]
@@ -130,6 +154,22 @@ describe('in the browser, on a real folder', () => {
     // The shared example is the file everyone gets: untouched, byte for byte.
     expect(await read('config.json')).toBe(shared)
     expect((await saved('config.json')).keys[11]).toMatchObject({ row: 4, col: 3 })
+  })
+
+  it('sets up a fresh copy in an empty folder: the starter chunk, written through the real handle', async () => {
+    folder = await seed({})
+    launch()
+
+    await click(await screen.findByRole('button', { name: 'Open folder' }))
+    await waitFor(() => expect(dialog().textContent).toContain('This folder is empty'))
+    await choose('Set up')
+    await waitFor(() => expect(dialog().textContent).toContain('This folder has no local/config.json yet'), {
+      timeout: 15000,
+    })
+
+    for (const path of ['ahk/main.ahk', 'config.json', 'img/blank.png']) expect(await sizeOf(path)).toBeGreaterThan(0)
+    expect(await hasDir('powershell')).toBe(true)
+    expect(await hasDir('powershell/tests')).toBe(false)
   })
 
   it('drags on every tab are saved to the folder, and are there when the app starts again', async () => {

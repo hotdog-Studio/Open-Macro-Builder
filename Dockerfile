@@ -4,8 +4,9 @@
 #   docker buildx build --platform linux/amd64,linux/arm64 -t open-macro-builder .
 #   docker run --rm -p 8080:8080 open-macro-builder        then open http://localhost:8080
 #
-# The image holds only the built page and a web server. The macropad itself (AutoHotkey or
-# PowerShell) runs on Windows and is not in it. See docs/docker.md.
+# The image holds only the built page and a web server; the page carries the starter copy of the
+# scripts and icons. The macropad itself (AutoHotkey or PowerShell) runs on Windows, never in the
+# image. See docs/docker.md.
 
 # The page is the same on every architecture, so it is built once, on the machine doing the build.
 FROM --platform=$BUILDPLATFORM node:24-alpine AS build

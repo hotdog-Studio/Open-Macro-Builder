@@ -43,13 +43,15 @@ git clone https://github.com/hotdog-Studio/Open-Macro-Builder.git
 
 Or download the source of the [latest release](https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest) and unzip it.
 
-The configurator, which edits the layout in that folder, comes three ways. You can also start from the configurator alone: it sets up a fresh copy in an empty folder (see [Configurator](#configurator)).
+The configurator, which edits the layout in that folder, comes three ways:
 
 | | Where | Notes |
 | --- | --- | --- |
 | **Desktop app** (Windows) | [Releases](https://github.com/hotdog-Studio/Open-Macro-Builder/releases/latest): `Open-Macro-Builder-Setup-<version>.exe`, or the portable `.exe` | Can also reload the running macropad after a save, and checks a command file's syntax. |
 | **Docker image** | `ghcr.io/hotdog-studio/open-macro-builder` | The browser version on a small web server. See [docs/docker.md](docs/docker.md). |
 | **From source** | `cd configurator && npm install && npm run dev` | See [docs/development.md](docs/development.md). |
+
+You can also start from the configurator alone: it sets up a fresh copy in an empty folder (see [Configurator](#configurator)).
 
 The desktop app is unsigned, so Windows SmartScreen asks for confirmation on the first run: choose **More info**, then **Run anyway**.
 
@@ -72,7 +74,7 @@ To start either one with Windows, point a shortcut in `shell:startup` at `ahk\ma
 
 ## Configurator
 
-A visual editor for the layout (the pad shape, the layers and the macros) and for the command files in both languages. Press **Open folder** and pick your copy of this repository. Without a copy, pick an empty folder instead: the configurator offers to set up a fresh one there, with the scripts, the icons and the example layout. **Create new folder…** makes that folder for you. It edits `local/config.json` when that exists, else the example `config.json`, and offers to make the copy for you the first time. It ignores `OMB_CONFIG`.
+A visual editor for the layout (the pad shape, the layers and the macros) and for the command files in both languages. Press **Open folder** and pick your copy of this repository. Without a copy, pick an empty folder instead: the configurator offers to set up a fresh one there, with the scripts, the icons and the example layout; a folder that holds other files but is not a copy is refused, and nothing is written to it. **Create new folder…** makes that folder for you. It edits `local/config.json` when that exists, else the example `config.json`, and offers to make the copy for you the first time. It ignores `OMB_CONFIG`.
 
 | Pad shape | Layers |
 | --- | --- |

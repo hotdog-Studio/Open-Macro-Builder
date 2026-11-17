@@ -45,6 +45,13 @@ export interface PickConfigState {
   folder: FolderAccess
 }
 
+/** The folder is empty: Set up a fresh copy here? `writing` once the copy is under way. */
+export interface SetupState {
+  screen: 'setup'
+  folder: FolderAccess
+  writing: boolean
+}
+
 /** Loaded, but no settings yet and the browser cannot tell which version is installed. */
 export interface PickLanguageState {
   screen: 'pick-language'
@@ -93,13 +100,14 @@ export interface EditState extends EditCore {
 }
 
 /** What the reducer keeps. */
-export type StoredState = OpenState | PickConfigState | PickLanguageState | EditCore
+export type StoredState = OpenState | SetupState | PickConfigState | PickLanguageState | EditCore
 
 /** What useApp() gives: the stored state plus derived fields. */
-export type AppState = OpenState | PickConfigState | PickLanguageState | EditState
+export type AppState = OpenState | SetupState | PickConfigState | PickLanguageState | EditState
 
 export type Action =
   | { type: 'show-open'; message: string | null; reopen?: string | null }
+  | { type: 'setup'; folder: FolderAccess; writing: boolean }
   | { type: 'pick-config'; folder: FolderAccess }
   | { type: 'pick-language'; session: Session }
   | { type: 'loaded'; session: Session; settings: Settings }
@@ -197,6 +205,8 @@ export function reducer(state: StoredState, action: Action): StoredState {
   switch (action.type) {
     case 'show-open':
       return { screen: 'open', message: action.message, reopen: action.reopen ?? null }
+    case 'setup':
+      return { screen: 'setup', folder: action.folder, writing: action.writing }
     case 'pick-config':
       return { screen: 'pick-config', folder: action.folder }
     case 'pick-language':

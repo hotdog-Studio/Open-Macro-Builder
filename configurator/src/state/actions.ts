@@ -22,10 +22,12 @@ import {
 } from '../core/languages'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
+import { NOT_EMPTY, StarterError, writeStarter } from '../core/starter'
 import type { Platform } from '../platform/types'
 import { createCommandActions } from './commandActions'
 import { mergeAfterRead } from './commandsSlice'
 import { createMacropadActions } from './macropad'
+import { loadStarter } from './starter'
 import type { Action, AppState, EditState, SaveDialog, Session } from './store'
 
 export type SaveResult = 'saved' | 'blocked' | 'conflict'
@@ -40,8 +42,18 @@ export interface AppActions {
   openFolder(): Promise<void>
   /** The Reopen <name> button; must run straight from the click (browsers want a user gesture). */
   reopen(): Promise<void>
-  /** inspectFolder → readTextFile → parseConfig → scanCommands → listIconSets → loadSettings. */
+  /**
+   * inspectFolder → readTextFile → parseConfig → scanCommands → listIconSets → loadSettings. An empty
+   * folder offers to set up a fresh copy instead.
+   */
   load(folder: FolderAccess): Promise<void>
+  /** Answer to the empty-folder prompt: copies the starter into the folder, then opens it. */
+  chooseSetup(): Promise<void>
+  /**
+   * The Create new folder dialog's answer; must run straight from the click (browsers want a user
+   * gesture). An empty folder is set up without asking; an existing setup of that name opens.
+   */
+  createFolder(name: string): Promise<void>
   /** Answer to the missing local/config.json prompt. */
   chooseConfig(choice: 'copy' | 'example'): Promise<void>
   /** Answer to Which version do you run? */
@@ -128,6 +140,15 @@ function checkContext(state: EditState): CheckContext {
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** What the open screen shows when setting up a fresh copy failed. */
+function setupError(e: unknown): string {
+  // Refused before the first write: there is no partial copy to warn about.
+  if (e instanceof StarterError && e.message === NOT_EMPTY) return e.message
+  // The sentence goes on after the reason, so the reason's own full stop goes.
+  const reason = messageOf(e).replace(/\.$/, '')
+  return `Setting up stopped part-way: ${reason}. The folder may hold a partial copy: delete it, or pick another empty folder.`
+}
 
 /** True when both lists hold the same command file paths, in any order. */
 function samePaths(a: CommandFile[], b: CommandFile[]): boolean {
@@ -355,15 +376,41 @@ export function createActions(
     }
   }
 
-  async function load(folder: FolderAccess): Promise<void> {
+  /**
+   * Opens a folder as inspectFolder finds it: a setup loads, an empty folder goes to `onEmpty`, and
+   * anything else is refused with the reason.
+   */
+  async function openInspected(
+    folder: FolderAccess,
+    onEmpty: (folder: FolderAccess, token: number) => void | Promise<void>,
+  ): Promise<void> {
     const token = ++loads
     await guarded(token, async () => {
       const info = await inspectFolder(folder)
       if (token !== loads) return
-      if (!info.ok) return showOpen(info.reason)
+      if (!info.ok) return info.empty ? onEmpty(folder, token) : showOpen(info.reason)
       if (info.configPath === EXAMPLE_CONFIG) return dispatch({ type: 'pick-config', folder })
       await finishLoad(folder, info.configPath, token)
     })
+  }
+
+  /** An empty folder asks first: Set up a fresh copy here? */
+  const load = (folder: FolderAccess) =>
+    openInspected(folder, (empty) => dispatch({ type: 'setup', folder: empty, writing: false }))
+
+  /**
+   * Copies the starter into an empty folder, then opens it like any other. A failure goes back to
+   * the open screen; a newer load, or Cancel, drops the outcome (the copy itself cannot be stopped).
+   */
+  async function setUp(folder: FolderAccess, token: number): Promise<void> {
+    dispatch({ type: 'setup', folder, writing: true })
+    try {
+      await writeStarter(folder, await loadStarter())
+    } catch (e) {
+      if (token === loads) showOpen(setupError(e))
+      return
+    }
+    if (token === loads) await load(folder)
   }
 
   /** The prompt state last answered, so a double click answers it once. */
@@ -424,6 +471,27 @@ export function createActions(
       if (token !== loads || !result) return
       if ('folder' in result) await load(result.folder)
       else showOpen(result.lost)
+    },
+
+    async chooseSetup() {
+      const state = getState()
+      if (state.screen !== 'setup' || state.writing || !firstAnswer(state)) return
+      await setUp(state.folder, ++loads)
+    },
+
+    async createFolder(name) {
+      let folder: FolderAccess | null
+      try {
+        folder = await platform.createFolder(name)
+      } catch (e) {
+        showOpen(openError(e))
+        return
+      }
+      // Cancelled: the open screen stays as it is.
+      if (!folder) return
+      forget()
+      // The folder was named for this, so an empty one is set up without asking again.
+      await openInspected(folder, setUp)
     },
 
     async chooseConfig(choice) {

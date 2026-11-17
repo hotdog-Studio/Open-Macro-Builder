@@ -14,14 +14,15 @@ export class StarterError extends Error {
   }
 }
 
+/** Why writeStarter refused before copying anything: the folder holds something now. */
+export const NOT_EMPTY = 'This folder is no longer empty, so nothing was copied into it.'
+
 /**
  * Writes the starter copy into an empty folder, config.json last so a folder holding it is a finished setup.
  * Never writes into a folder that holds anything, and never replaces a file that appeared meanwhile.
  */
 export async function writeStarter(folder: FolderAccess, files: StarterFile[]): Promise<void> {
-  if ((await folder.list('')).length > 0) {
-    throw new StarterError('This folder is no longer empty, so nothing was copied into it.')
-  }
+  if ((await folder.list('')).length > 0) throw new StarterError(NOT_EMPTY)
   const ordered = [...files.filter((f) => f.path !== 'config.json'), ...files.filter((f) => f.path === 'config.json')]
   for (const { path, data } of ordered) {
     if ((await folder.readBytes(path)) !== null) throw new StarterError(`${path} already exists, so the copy stopped.`)

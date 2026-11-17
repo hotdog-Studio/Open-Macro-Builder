@@ -7,6 +7,8 @@ export interface Choice {
   primary?: boolean
   /** A choice that loses work, shown in red. */
   danger?: boolean
+  /** Not available yet, such as while a field in the dialog holds something invalid. */
+  disabled?: boolean
 }
 
 export interface ConfirmDialogProps {
@@ -17,7 +19,7 @@ export interface ConfirmDialogProps {
   onCancel?: () => void
 }
 
-const BUTTON = 'rounded-md px-3 py-1 font-medium'
+const BUTTON = 'rounded-md px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-50'
 const STYLE = {
   primary: `${BUTTON} bg-sky-600 text-white hover:bg-sky-500`,
   danger: `${BUTTON} bg-red-600 text-white hover:bg-red-500`,
@@ -56,24 +58,28 @@ export function ConfirmDialog({ title, children, choices, onCancel }: Readonly<C
           {title}
         </h2>
         {children && <div className="min-h-0 overflow-auto p-4 text-zinc-300">{children}</div>}
-        <div className="flex justify-end gap-2 border-t border-zinc-800 px-4 py-2.5">
-          {onCancel && (
-            <button type="button" className={STYLE.plain} onClick={onCancel}>
-              Cancel
-            </button>
-          )}
-          {choices.map((c) => (
-            <button
-              key={c.label}
-              type="button"
-              autoFocus={c.primary}
-              className={styleOf(c)}
-              onClick={c.onChoose}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
+        {/* A dialog with nothing to answer (work under way) has no button row. */}
+        {(onCancel || choices.length > 0) && (
+          <div className="flex justify-end gap-2 border-t border-zinc-800 px-4 py-2.5">
+            {onCancel && (
+              <button type="button" className={STYLE.plain} onClick={onCancel}>
+                Cancel
+              </button>
+            )}
+            {choices.map((c) => (
+              <button
+                key={c.label}
+                type="button"
+                autoFocus={c.primary}
+                disabled={c.disabled}
+                className={styleOf(c)}
+                onClick={c.onChoose}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
       </dialog>
     </div>
   )

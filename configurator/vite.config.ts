@@ -12,7 +12,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), starterPlugin(resolve(import.meta.dirname, '..'))],
   build: {
     // Served from the user's own PC (localhost or Electron's file load): one large chunk costs no network time.
-    chunkSizeWarningLimit: 1000,
+    // The starter copy (loadStarter's chunk, about 1.2 MB of scripts and icons) is fetched only when a
+    // fresh folder is set up, so it sits above the old 1000 kB limit without slowing the page.
+    chunkSizeWarningLimit: 2000,
   },
   server: {
     // core imports ../scripts/validate-config-core.mjs, outside this folder.

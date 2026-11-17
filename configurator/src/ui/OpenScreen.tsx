@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { LANG_IDS, LANGUAGES } from '../core/languages'
-import { useApp } from '../state/store'
+import { useApp, type SetupState } from '../state/store'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DownloadLink } from './DownloadLink'
+import { NewFolderDialog } from './NewFolderDialog'
 
 const PRIMARY = 'rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500'
 const PLAIN = 'rounded-md border border-zinc-700 px-4 py-2 hover:bg-zinc-800'
@@ -32,9 +33,37 @@ export function Unsupported({ message }: Readonly<{ message: string }>) {
   )
 }
 
-/** No folder open yet, or one being opened: Open folder, Reopen <name>, and the first-run prompts. */
+/** An empty folder: Set up a fresh copy here?, then Setting up… while the files are copied. */
+function SetupDialog({ state }: Readonly<{ state: SetupState }>) {
+  const { actions } = useApp()
+  if (state.writing) {
+    return (
+      <ConfirmDialog title="Setting up…" choices={[]}>
+        <p>Copying files into {state.folder.name}.</p>
+      </ConfirmDialog>
+    )
+  }
+  return (
+    <ConfirmDialog
+      title="This folder is empty"
+      onCancel={actions.closeFolder}
+      choices={[{ label: 'Set up', primary: true, onChoose: () => void actions.chooseSetup() }]}
+    >
+      <p>
+        Set up a fresh Open Macro Builder here? It copies the scripts, the icons and the example layout into this
+        folder.
+      </p>
+    </ConfirmDialog>
+  )
+}
+
+/**
+ * No folder open yet, or one being opened: Open folder, Create new folder…, Reopen <name>, and the
+ * first-run prompts.
+ */
 export function OpenScreen() {
   const { state, actions, platform } = useApp()
+  const [naming, setNaming] = useState(false)
   if (state.screen === 'edit') return null
   const open = state.screen === 'open' ? state : null
 
@@ -44,6 +73,9 @@ export function OpenScreen() {
         <button type="button" className={PRIMARY} onClick={() => void actions.openFolder()}>
           Open folder
         </button>
+        <button type="button" className={PLAIN} onClick={() => setNaming(true)}>
+          Create new folder…
+        </button>
         {open?.reopen && (
           <button type="button" className={PLAIN} onClick={() => void actions.reopen()}>
             Reopen {open.reopen}
@@ -51,6 +83,16 @@ export function OpenScreen() {
         )}
       </div>
       {platform === 'browser' && <DownloadLink className={LINK}>Download the desktop app for Windows</DownloadLink>}
+      {naming && (
+        <NewFolderDialog
+          onCreate={(name) => {
+            setNaming(false)
+            void actions.createFolder(name)
+          }}
+          onCancel={() => setNaming(false)}
+        />
+      )}
+      {state.screen === 'setup' && <SetupDialog state={state} />}
       {state.screen === 'pick-config' && (
         <ConfirmDialog
           title="This folder has no local/config.json yet"

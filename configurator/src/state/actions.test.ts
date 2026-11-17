@@ -305,6 +305,47 @@ describe('choosing the config to edit', () => {
   })
 })
 
+describe('setting up an empty folder', () => {
+  /** An empty folder, opened: the Set up prompt is showing. */
+  async function prompted() {
+    const folder = new Flaky(new MemoryFolder('fresh'))
+    const h = harness()
+    await h.actions.load(folder)
+    expect(h.state()).toEqual({ screen: 'setup', folder, writing: false })
+    return { h, folder }
+  }
+
+  it('copies the starter once when Set up is answered twice', async () => {
+    const { h, folder } = await prompted()
+    await Promise.all([h.actions.chooseSetup(), h.actions.chooseSetup()])
+    expect(h.state().screen).toBe('pick-config')
+    expect(folder.writes.filter((p) => p === 'config.json')).toHaveLength(1)
+  })
+
+  it('drops the outcome when another folder opened during the copy', async () => {
+    const { h, folder } = await prompted()
+    const hold = gate()
+    folder.onWrite = () => hold.wait
+    const setting = h.actions.chooseSetup()
+    expect(h.state()).toMatchObject({ screen: 'setup', writing: true })
+    await h.actions.load(repoFolder())
+    hold.open()
+    await setting
+    expect(h.edit().configFile.path).toBe(CONFIG)
+  })
+
+  it('says only that nothing was copied when the folder filled up before the copy', async () => {
+    const { h, folder } = await prompted()
+    await folder.inner.writeBytes('notes.txt', enc.encode('mine'))
+    await h.actions.chooseSetup()
+    expect(h.state()).toMatchObject({
+      screen: 'open',
+      message: 'This folder is no longer empty, so nothing was copied into it.',
+    })
+    expect(folder.writes).toEqual([])
+  })
+})
+
 describe('choosing the language', () => {
   it('writes the choice to the settings file and opens the editor', async () => {
     const folder = repoFolder({ noSettings: true })

@@ -324,6 +324,28 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
     expect(await save.isEnabled()).toBe(true)
   })
 
+  it('creates a new folder and sets up a fresh copy in it', async () => {
+    const parent = await tempDir('omb-e2e-new-')
+    const { page } = await launch(await tempDir('omb-e2e-user-'), parent)
+    await page.getByRole('button', { name: 'Create new folder…' }).click()
+    await page.getByRole('button', { name: 'Choose where…' }).click()
+    await page.getByRole('dialog', { name: 'This folder has no local/config.json yet' }).waitFor()
+    const made = join(parent, 'Open Macro Builder')
+    for (const rel of ['config.json', 'ahk/main.ahk', 'powershell/main.ps1', 'img/icon.ico'])
+      expect((await readFile(join(made, rel))).equals(await readFile(join(repoRoot, rel)))).toBe(true)
+    expect(existsSync(join(made, 'powershell', 'tests'))).toBe(false)
+    expect((await readdir(made)).sort()).toEqual(['ahk', 'config.json', 'img', 'powershell'])
+  })
+
+  it('offers to set up an empty folder picked with Open folder', async () => {
+    const folder = await tempDir('omb-e2e-empty-')
+    const { page } = await launch(await tempDir('omb-e2e-user-'), folder)
+    await page.getByRole('button', { name: 'Open folder' }).click()
+    await page.getByRole('button', { name: 'Set up' }).click()
+    await page.getByRole('dialog', { name: 'This folder has no local/config.json yet' }).waitFor()
+    expect(existsSync(join(folder, 'ahk', 'main.ahk'))).toBe(true)
+  })
+
   it('keeps the page sandboxed: no Node in the page, only the omb bridge', async () => {
     const folder = await tempDir('omb-e2e-folder-')
     const userData = await tempDir('omb-e2e-user-')
@@ -345,6 +367,7 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
     expect(seen.bridge).toEqual(
       [
         'checkSyntax',
+        'createFolder',
         'findMacropad',
         'installedLanguages',
         'list',

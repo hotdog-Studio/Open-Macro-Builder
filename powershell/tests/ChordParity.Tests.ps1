@@ -61,6 +61,10 @@ BeforeDiscovery {
                 VsCodeMoveGroupRight = 'two key presses with a pause between (Ctrl+K, Right)'
             }
         }
+        @{ Name = 'custom\vsstudio'; Ahk = 'ahk\commands\custom\vsstudio.ahk'; Ps = 'powershell\commands\custom\vsstudio.ps1'; Skip = @{
+                VsStudioShowTestExplorer = 'two key presses (Ctrl+E, then T); Commands.Tests checks the PowerShell steps'
+            }
+        }
     )
 }
 BeforeAll {

@@ -10,11 +10,11 @@ VsStudioShowSolutionExplorer(Macro) {
 }
 
 /**
- * Shows or hides the Test Explorer.
+ * Shows the Test Explorer (Ctrl+E, T: Ctrl+E, then T without Ctrl).
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 VsStudioShowTestExplorer(Macro) {
-    Send("{Ctrl Down}{e down}t{e up}{Ctrl Up}")
+    Send("{Ctrl Down}e{Ctrl Up}t")
 }
 
 /**

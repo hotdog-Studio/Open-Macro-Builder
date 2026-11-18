@@ -26,9 +26,12 @@ function InfoIcon() {
 
 function ToastCard({ banner, dispatch }: Readonly<{ banner: Banner; dispatch: (a: Action) => void }>) {
   // The pointer on it or the focus in it holds the countdown; both gone starts the whole time again.
+  // Both are tracked on `frame`, which stays mounted from one message to the next: the element inside
+  // it changes with the kind of message (a notice is an <output>, the others an alert), and an element
+  // that is replaced under a resting pointer never reports that the pointer left it.
+  const frame = useRef<HTMLDivElement>(null)
   const [pointerOn, setPointerOn] = useState(false)
   const [focusIn, setFocusIn] = useState(false)
-  const held = pointerOn || focusIn
 
   // The message showing now. A timer that fires after its message was replaced must find another one here.
   const showing = useRef(banner)
@@ -38,22 +41,21 @@ function ToastCard({ banner, dispatch }: Readonly<{ banner: Banner; dispatch: (a
 
   useEffect(() => {
     const ms = toastLifetime(banner)
-    if (ms === null || held) return
+    // A replaced message removes the button that had the focus and the page gets it back, without a
+    // blur event to say so: the hold ends then, so look at where the focus really is.
+    const focusHeld = focusIn && frame.current !== null && frame.current.contains(document.activeElement)
+    if (ms === null || pointerOn || focusHeld) return
     const timer = setTimeout(() => {
       if (showing.current === banner) dispatch({ type: 'banner', banner: null })
     }, ms)
     return () => clearTimeout(timer)
-  }, [banner, held, dispatch])
+  }, [banner, pointerOn, focusIn, dispatch])
 
   const onBlur = (e: FocusEvent<HTMLElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setFocusIn(false)
   }
   const props = {
-    className: `pointer-events-auto flex w-fit max-h-full max-w-[min(40rem,90vw)] items-start gap-3 overflow-y-auto rounded-[1.25rem] border px-4 py-2.5 shadow-lg shadow-black/50 ${TONE[banner.kind]}`,
-    onPointerEnter: () => setPointerOn(true),
-    onPointerLeave: () => setPointerOn(false),
-    onFocus: () => setFocusIn(true),
-    onBlur,
+    className: `flex min-h-0 min-w-0 flex-1 items-start gap-3 overflow-y-auto rounded-[1.25rem] border px-4 py-2.5 shadow-lg shadow-black/50 ${TONE[banner.kind]}`,
   }
   const body = (
     <>
@@ -70,7 +72,19 @@ function ToastCard({ banner, dispatch }: Readonly<{ banner: Banner; dispatch: (a
     </>
   )
   // A refusal or a failure interrupts a screen reader; a notice waits its turn.
-  return banner.kind === 'info' ? <output {...props}>{body}</output> : <div role="alert" {...props}>{body}</div>
+  const card = banner.kind === 'info' ? <output {...props}>{body}</output> : <div role="alert" {...props}>{body}</div>
+  return (
+    <div
+      ref={frame}
+      className="pointer-events-auto flex max-h-full max-w-[min(40rem,90vw)]"
+      onPointerEnter={() => setPointerOn(true)}
+      onPointerLeave={() => setPointerOn(false)}
+      onFocus={() => setFocusIn(true)}
+      onBlur={onBlur}
+    >
+      {card}
+    </div>
+  )
 }
 
 /**

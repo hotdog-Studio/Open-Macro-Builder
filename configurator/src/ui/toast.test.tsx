@@ -154,6 +154,55 @@ describe('messages as toasts', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('a message of another kind that replaces one under the resting pointer stays until the pointer leaves', async () => {
+    await openPad()
+    vi.useFakeTimers()
+    show({ text: 'That space is taken.', kind: 'warning' })
+    fireEvent.pointerEnter(screen.getByRole('alert'))
+    wait(1000)
+
+    // The notice is another kind of element, drawn where the pointer already is.
+    const notice: Banner = { text: 'Select a key first.', kind: 'info' }
+    show(notice)
+    expect(screen.queryByRole('alert')).toBeNull()
+    wait(60000)
+    expect(screen.queryByText('Select a key first.')).toBeTruthy()
+
+    // Once the pointer leaves, the notice has its whole time.
+    fireEvent.pointerLeave(screen.getByText('Select a key first.').parentElement!)
+    wait(toastLifetime(notice)! - 1)
+    expect(screen.queryByText('Select a key first.')).toBeTruthy()
+    wait(1)
+    expect(screen.queryByText('Select a key first.')).toBeNull()
+  })
+
+  it('a message of the same kind that replaces one with the focus in it keeps the hold', async () => {
+    await openPad()
+    vi.useFakeTimers()
+    show({ text: 'That space is taken.', kind: 'warning' })
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus())
+    show({ text: 'Keys start at row 1 and column 1.', kind: 'warning' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss' }))
+    wait(60000)
+    expect(screen.queryByText('Keys start at row 1 and column 1.')).toBeTruthy()
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).blur())
+    wait(toastLifetime({ text: 'Keys start at row 1 and column 1.', kind: 'warning' })!)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a message of another kind that replaces one with the focus in it counts down, as the focus is gone', async () => {
+    await openPad()
+    vi.useFakeTimers()
+    show({ text: 'That space is taken.', kind: 'warning' })
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus())
+    const notice: Banner = { text: 'Select a key first.', kind: 'info' }
+    // The button that had the focus is replaced, so the focus falls back to the page.
+    show(notice)
+    expect(document.activeElement).toBe(document.body)
+    wait(toastLifetime(notice)!)
+    expect(screen.queryByText('Select a key first.')).toBeNull()
+  })
+
   it('a new message replaces the old one and gets its own time', async () => {
     await openPad()
     vi.useFakeTimers()
@@ -190,10 +239,11 @@ describe('messages as toasts', () => {
   it('floats over the editor without taking part in its layout', async () => {
     await openPad()
     show({ text: 'That space is taken.', kind: 'warning' })
-    const holder = screen.getByRole('alert').parentElement!
+    const toast = screen.getByRole('alert').parentElement!
+    const holder = toast.parentElement!
     expect(holder.className).toContain('absolute')
     expect(holder.className).toContain('pointer-events-none')
-    expect(screen.getByRole('alert').className).toContain('pointer-events-auto')
+    expect(toast.className).toContain('pointer-events-auto')
     expect(screen.getByRole('alert').className).toContain('rounded-[1.25rem]')
   })
 })

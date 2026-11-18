@@ -29,7 +29,7 @@ function ActivateOrOpen {
 .SYNOPSIS
 Brings forward a window that fits a WinTitle, or starts a program when none does.
 .DESCRIPTION
-ActivateOrOpen for windows that are found by title or class rather than by the program that starts them, such as Calculator (its window belongs to ApplicationFrameHost.exe) or a shell that Windows Terminal shows. When a window fits, the topmost one is activated; when one of them is already active, the bottom one comes forward instead, so pressing the key again steps through them. When none fits, the program is started, up to 5 seconds are given for a fitting window to appear, and it is activated.
+ActivateOrOpen for windows that are found by title or class rather than by the program that starts them, such as Calculator (its window belongs to ApplicationFrameHost.exe) or a shell that Windows Terminal shows. When a window fits, the topmost one is activated; when one of them is already active, the bottom one comes forward instead, so pressing the key again steps through them. When none fits, the program is started, up to 5 seconds are given for a fitting window to appear, and it is activated. The macropad's own windows never count.
 .PARAMETER WinTitle
 Describes the windows, as Find-Window reads it, such as 'Calculator ahk_exe ApplicationFrameHost.exe'. Give several to accept a window that fits any of them.
 .PARAMETER Program
@@ -44,7 +44,8 @@ ActivateOrOpenWindow -WinTitle 'ahk_exe cmd.exe', 'Command Prompt ahk_exe Window
 function ActivateOrOpenWindow {
     param([Parameter(Mandatory)][string[]]$WinTitle, [Parameter(Mandatory)][string]$Program, [string]$Arguments = '')
     $find = {
-        $fit = @(foreach ($title in $WinTitle) { foreach ($h in (Find-Window $title -All)) { $h } })
+        # The macropad's own windows (its overlay and forms run in powershell.exe) never count.
+        $fit = @(foreach ($title in $WinTitle) { foreach ($h in (Find-Window $title -All)) { if ((Get-WindowInfo $h).Pid -ne $PID) { $h } } })
         if ($WinTitle.Count -gt 1 -and $fit.Count -gt 1) {
             # Topmost first across all the WinTitles: every visible window, in the order they lie on the screen.
             $fit = @(foreach ($h in (Find-Window '' -All)) { if ($fit -contains $h) { $h } })

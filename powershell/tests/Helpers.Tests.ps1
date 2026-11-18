@@ -55,6 +55,14 @@ Describe 'EnsureActiveOrOpen' {
 Describe 'ActivateOrOpenWindow' {
     BeforeEach {
         Mock Start-Program {}; Mock Set-ActiveWindow { $true }; Mock Wait-Pump {}; Mock Test-WindowActive { [IntPtr]99 }
+        Mock Get-WindowInfo { [pscustomobject]@{ Hwnd = $Hwnd; Pid = 1 } }
+    }
+    It 'never counts the macropad''s own windows, such as its overlay in powershell.exe' {
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5) } -ParameterFilter { $WinTitle -eq 'ahk_exe powershell.exe' -and $All }
+        Mock Get-WindowInfo { [pscustomobject]@{ Hwnd = $Hwnd; Pid = $PID } } -ParameterFilter { $Hwnd -eq [IntPtr]5 }
+        ActivateOrOpenWindow 'ahk_exe powershell.exe' 'powershell'
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'powershell' }
+        Should -Invoke Set-ActiveWindow -Times 0 -Exactly
     }
     It 'activates the topmost window that fits, without starting the program' {
         Mock Find-Window { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) } -ParameterFilter { $WinTitle -eq 'Calculator ahk_exe ApplicationFrameHost.exe' -and $All }

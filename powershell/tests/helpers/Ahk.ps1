@@ -1,7 +1,9 @@
 # Runs an AutoHotkey v2 script that prints to stdout and exits. Returns $null when AutoHotkey is
 # not installed. A runtime error opens a dialog instead of exiting, so the run is cut off after
-# $TimeoutSeconds rather than hanging the test run. With -Validate the script is only loaded
-# (checked for load errors, and for warnings only where the script turns #Warn on), never run.
+# $TimeoutSeconds rather than hanging the test run. With -Validate the script is only loaded, never
+# run. A load-time error then prints to Err. A load-time warning opens a dialog and prints nothing,
+# so the run is cut off in the same way, unless the script sends its warnings to StdOut with #Warn
+# (then they print to Out). A script with no #Warn line has its warnings on, as dialogs.
 
 function Get-AhkExe {
     @("$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1

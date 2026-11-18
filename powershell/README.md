@@ -142,7 +142,7 @@ powershell -NoProfile -File powershell\tests\run.ps1
 powershell -NoProfile -File powershell\tests\run.ps1 -ExcludeTag Integration
 ```
 
-The Integration tests send real keys and clicks, open and close Character Map, and run AutoHotkey check scripts. They type only into their own test windows, and the Fn hook swallows their ScrollLock press. Exclude them when you do not want keys sent or other programs started. The unit tests still flash a few of their own forms while they run: the overlay, tooltips, and the window tests' target windows. The delayed key and click forms are built but never shown.
+The Integration tests send real keys and clicks, open and close Character Map, and run AutoHotkey check scripts. They type only into their own test windows, and the Fn hook swallows their ScrollLock press. Exclude them when you do not want keys sent or other programs started. The unit tests still flash a few of their own windows while they run: a tooltip, and the small test windows that the window tests move, resize, minimize and close. The overlay and the delayed key and click forms are built but never shown.
 
 The end-to-end test is left out of both, and runs alone:
 

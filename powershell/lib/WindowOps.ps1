@@ -342,7 +342,7 @@ function Set-WindowStyle {
 .SYNOPSIS
 Finds a control, such as a button or a text box, inside a window. It stands in for AutoHotkey's ControlGetHwnd.
 .DESCRIPTION
-A control is a part inside a window, such as a button, a text box or a list. This goes through the window's controls in the order Windows lists them and returns the first that fits. An error is raised when none does. The result is a window handle, because each control is a small window of its own. Pass it to Get-ControlText, Set-ControlText, Invoke-ControlClick or Send-ControlKeys. The example needs the Run dialog open: press Win+R first.
+A control is a part inside a window, such as a button, a text box or a list. This goes through the window's controls in the order Windows lists them and returns the first that fits. An error is raised when none does. The result is a window handle, because each control is a small window of its own. Pass it to Get-ControlText, Set-ControlText, Invoke-ControlClick or Send-ControlKeys. The examples need the Run dialog open: press Win+R first.
 .PARAMETER Window
 The window to act on: a window handle (the number Windows uses to name one window, as Find-Window returns it; a plain integer works too) or a WinTitle string. A WinTitle string is text that describes a window, such as 'ahk_exe notepad.exe' (the windows of that program), part of a title such as 'Untitled', or 'A' for the active window; Find-Window lists every form. An error is raised when no window is found. Leaving it out matches the first visible window, which is rarely the one you mean.
 .PARAMETER Control
@@ -438,7 +438,7 @@ function Send-WindowMessage {
 .SYNOPSIS
 Clicks a control without moving the mouse. It stands in for AutoHotkey's ControlClick.
 .DESCRIPTION
-Posts a button-down and a button-up message straight to the control, at a point inside it: its middle unless X and Y say otherwise. The mouse pointer does not move. To click at a point on the screen with the real mouse, use Send-Click. The example needs the Run dialog open: press Win+R first.
+Posts a button-down and a button-up message straight to the control, at a point inside it: its middle unless X and Y say otherwise. The mouse pointer does not move. To click at a point on the screen with the real mouse, use Send-Click. The examples need the Run dialog open: press Win+R first.
 .PARAMETER Control
 The window handle of the control to click, as Find-Control returns it. A window handle is the number Windows uses to name one window, and each control is one. Leaving it out raises an error.
 .PARAMETER Button

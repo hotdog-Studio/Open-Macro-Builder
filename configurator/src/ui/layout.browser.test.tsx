@@ -49,7 +49,7 @@ async function bring(...els: Element[]): Promise<void> {
 describe('at 1280 wide', () => {
   it('the page itself never scrolls: only the panels do', async () => {
     await startApp()
-    for (const tab of ['Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
+    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
       await click(screen.getByRole('tab', { name: tab }))
       const root = document.documentElement
       expect(root.scrollWidth, tab).toBeLessThanOrEqual(root.clientWidth)
@@ -67,11 +67,25 @@ describe('at 1280 wide', () => {
 })
 
 describe('in a small window', () => {
+  it('the guide scrolls inside its own panel, not the page', async () => {
+    await page.viewport(760, 420)
+    await startApp('Get started')
+    const guide = screen.getByRole('article', { name: 'Get started' }).parentElement!
+    expect(guide.tagName).toBe('MAIN')
+    expect(guide.scrollHeight).toBeGreaterThan(guide.clientHeight)
+    const root = document.documentElement
+    expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight)
+    // The end of the guide can be scrolled to.
+    guide.scrollTop = guide.scrollHeight
+    await settle()
+    expect(inView(screen.getByRole('link', { name: 'contributing guide' }))).toBe(true)
+  })
+
   it('the page itself still never scrolls, and the header wraps to fit', async () => {
     await page.viewport(760, 420)
     await startApp()
     const root = document.documentElement
-    for (const tab of ['Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
+    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
       await click(screen.getByRole('tab', { name: tab }))
       expect(root.scrollWidth, tab).toBeLessThanOrEqual(root.clientWidth)
       expect(root.scrollHeight, tab).toBeLessThanOrEqual(root.clientHeight)

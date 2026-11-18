@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useApp, useEditor } from '../state/store'
 import { Banner } from './Banner'
 import { CommandsTab } from './CommandsTab'
+import { GetStarted } from './GetStarted'
 import { Header } from './Header'
 import { LayersTab } from './LayersTab'
 import { MacrosTab } from './MacrosTab'
@@ -18,6 +19,11 @@ function Editor() {
       <Banner />
       <SaveFlow />
       <div className="flex min-h-0 flex-1">
+        {state.tab === 'start' && (
+          <main className="min-w-0 flex-1 overflow-y-auto p-5">
+            <GetStarted folderName={state.folder.name} languages={state.settings.languages} />
+          </main>
+        )}
         {state.tab === 'shape' && <ShapeTab />}
         {state.tab === 'layers' && <LayersTab />}
         {state.tab === 'macros' && <MacrosTab />}

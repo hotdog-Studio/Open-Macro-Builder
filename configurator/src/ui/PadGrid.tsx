@@ -133,6 +133,8 @@ export function usePadActions(): PadActions {
 
 /** For someone using a screen reader or the keyboard: what to press instead of dragging. */
 const INSTRUCTIONS: Record<Tab, string> = {
+  // The guide has no pad, so nothing is ever dragged there.
+  start: '',
   shape:
     'Drag with the mouse, or hold Alt and press an arrow key to move the key one square. Shift, Alt and an arrow key resize it.',
   layers:

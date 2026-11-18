@@ -5,6 +5,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { DownloadLink } from './DownloadLink'
 
 const TABS: [Tab, string][] = [
+  ['start', 'Get started'],
   ['shape', 'Pad shape'],
   ['layers', 'Layers'],
   ['macros', 'Macros'],

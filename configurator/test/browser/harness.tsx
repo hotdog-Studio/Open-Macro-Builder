@@ -106,7 +106,7 @@ export function unmount(): void {
   document.getElementById('root')?.remove()
 }
 
-export type TabName = 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
+export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
 
 /** A real click, through the browser. */
 export const click = (el: Element) => userEvent.click(el)

@@ -542,12 +542,20 @@ describe('Commands tab: docs on hover', () => {
     const view = editorView()
     const left = view.coordsAtPos(open)!
     const right = view.coordsAtPos(open + 1)!
-    await hover({ x: left.left + (right.left - left.left) * 0.75, y: (left.top + left.bottom) / 2 })
-    await new Promise((r) => setTimeout(r, 700))
-    expect(card()).toBeNull()
-    // The name itself does get its card, so the silence above is not a broken hover.
-    await hover(await wordPoint('ActivateOrOpen'))
+    const width = right.left - left.left
+    const y = (left.top + left.bottom) / 2
+    // The left half of the name's first letter, just right of the paren, gets the card: time how long
+    // this machine takes to show it, so the wait below grows with a slow machine.
+    const started = performance.now()
+    await hover({ x: right.left + width * 0.25, y })
     await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
+    const shown = performance.now() - started
+    await hover(toolbar())
+    await waitFor(() => expect(card()).toBeNull())
+    // The right half of the paren, the same position from the other side: no card, however long it rests.
+    await hover({ x: left.left + width * 0.75, y })
+    await new Promise((r) => setTimeout(r, Math.max(700, 3 * shown)))
+    expect(card()).toBeNull()
   })
 
   it('takes the card away when the text changes', async () => {

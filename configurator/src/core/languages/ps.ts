@@ -139,12 +139,26 @@ function readParam(piece: string): ParamDoc | null {
   return { name: name[1], text: '', type, optional: def !== '' || type.toLowerCase() === 'switch', default: def, values }
 }
 
-/** `Name <A> [-B <string>] [-C]`: each parameter as it is passed. */
+const isSwitch = (p: ParamDoc) => p.type.toLowerCase() === 'switch'
+
+/** One parameter as it is passed; `named` once a parameter that can be left out came before it. */
+function usagePart(p: ParamDoc, named: boolean): string {
+  if (isSwitch(p)) return `[-${p.name}]`
+  if (p.default !== '') return `[-${p.name} <${p.type === '' ? 'value' : p.type}>]`
+  return named ? `-${p.name} <${p.name}>` : `<${p.name}>`
+}
+
+/**
+ * `Name <A> [-B <string>] [-C] -D <D>`: each parameter as it is passed. PowerShell fills parameters
+ * by position in declared order, so one that must be given after one that can be left out is
+ * written by name: by position it would land in the one left out.
+ */
 function usageLine(name: string, params: ParamDoc[]): string {
+  let named = false
   const parts = params.map((p) => {
-    if (p.type.toLowerCase() === 'switch') return `[-${p.name}]`
-    if (p.default !== '') return `[-${p.name} <${p.type === '' ? 'value' : p.type}>]`
-    return `<${p.name}>`
+    const part = usagePart(p, named)
+    named ||= isSwitch(p) || p.default !== ''
+    return part
   })
   return [name, ...parts].join(' ')
 }

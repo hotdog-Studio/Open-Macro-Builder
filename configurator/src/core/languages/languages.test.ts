@@ -413,6 +413,11 @@ describe('PowerShell findFunctions', () => {
     expect(LANGUAGES.ps.findFunctions('#regional settings\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'regional settings' })
   })
 
+  it('writes a parameter without a default after one with a default by name', () => {
+    expect(LANGUAGES.ps.findFunctions('function F {\n    param($A, $B = 1, $C)\n}')[0].usage).toBe('F <A> [-B <value>] -C <C>')
+    expect(LANGUAGES.ps.findFunctions('function F {\n    param([switch]$A, [int]$B)\n}')[0].usage).toBe('F [-A] -B <B>')
+  })
+
   it('reads past comments inside the parameter list', () => {
     const text = [
       'function Send-Click {',

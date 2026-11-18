@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import { click, dirty, drag, hover, openTab, padKey, startApp, strip, unmount, type Point } from '../../test/browser/harness'
+import { at as pointOn, click, dirty, drag, hover, openTab, padKey, startApp, strip, unmount, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { HOVER_TIME } from './code/hoverDocs'
 import { GRACE } from './DocHover'
@@ -685,7 +685,7 @@ describe('Commands tab: docs on hover', () => {
   it('keeps the pointer on a tall card of the list whose docs shrink under it, until it leaves', async () => {
     try {
       const { tip, shrink } = await tallToolCard()
-      // Near the bottom of the card, on an example line the shrink takes away; the shrunk card still covers it.
+      // Near the bottom of the card, on its "More below" line, which the shrink takes away; the shrunk card still covers the point.
       const tall = tip.getBoundingClientRect()
       const rest = { x: tall.left + tall.width / 2, y: tall.bottom - 10 }
       await hover(rest)
@@ -707,7 +707,7 @@ describe('Commands tab: docs on hover', () => {
   })
 
   it('lets the card go when the pointer leaves right after the line under it was taken away, every time', async () => {
-    // The line under the resting pointer goes with the shrink. When the pointer moves before the browser
+    // The line under the resting pointer (the card's "More below" line) goes with the shrink. When the pointer moves before the browser
     // has looked again at what lies under it, the browser's mouseout goes to that line, now off the page,
     // so React's own leave never comes; only the card's native mouseleave does. That race goes either way
     // from one try to the next, so the test makes several.
@@ -742,12 +742,90 @@ describe('Commands tab: docs on hover', () => {
       expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
       await shrink()
       await waitFor(() => expect(tip.getBoundingClientRect().top).toBeGreaterThan(rest.y))
-      // The pointer has not moved: the card goes, and blocks no click where the pointer rests.
+      // The pointer has not moved: the card goes.
       await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-      expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(false)
     } finally {
       await page.viewport(1280, 900)
     }
+  })
+
+  describe('the card of the list, by where the pointer comes from and where it goes', () => {
+    /** Where the pointer can be: the card's row, the row under it, the card, the 8 px gap between them, or elsewhere (the file list). */
+    type Spot = 'row' | 'row, another point' | 'other row' | 'card' | 'card, another point' | 'gap' | 'elsewhere'
+    /** Whose card is up once the pointer has rested where it went: the row's, the other row's, or none. */
+    type Card = 'row' | 'other row' | 'none'
+
+    /**
+     * Set-ControlText's card in a 300 px window, taller than the window so that it takes the pointer,
+     * up for its row with the pointer on the row; then the pointer is put on `from`.
+     */
+    async function startFrom(from: 'row' | 'card' | 'elsewhere') {
+      await page.viewport(1280, 300)
+      const list = await powerShellList()
+      const row = within(list).getByRole('button', { name: /^Set-ControlText\b/ })
+      row.scrollIntoView({ block: 'center' })
+      const item = row.closest('li')!
+      const other = (item.nextElementSibling ?? item.previousElementSibling)!.querySelector('button')!
+      await hover(nav())
+      await hover(row)
+      const tip = await screen.findByRole('tooltip')
+      await waitFor(() => expect(getComputedStyle(tip).pointerEvents).toBe('auto'))
+      const box = tip.getBoundingClientRect()
+      const spots: Record<Spot, Point> = {
+        row: pointOn(row),
+        'row, another point': pointOn(row, 0.2),
+        'other row': pointOn(other),
+        card: { x: box.left + box.width / 2, y: box.top + box.height / 2 },
+        'card, another point': { x: box.left + box.width / 2, y: box.top + box.height / 4 },
+        // In the middle of the 8 px between the card and the panel, level with the row.
+        gap: { x: box.right + 4, y: pointOn(row).y },
+        elsewhere: pointOn(nav()),
+      }
+      const names: Record<Exclude<Card, 'none'>, string> = { row: 'Set-ControlText', 'other row': other.querySelector('span')!.textContent! }
+      if (from === 'card') await hover(spots.card)
+      if (from === 'elsewhere') {
+        await hover(spots.elsewhere)
+        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      }
+      return { spot: (s: Spot) => spots[s], names }
+    }
+
+    // Each path starts with the pointer on `from` and moves through the spots in turn, straight from one to
+    // the next (a stop is a spot on the way); then the pointer rests on the last one.
+    it.each<[string, 'row' | 'card' | 'elsewhere', Spot[], Card]>([
+      ['row → the same row', 'row', ['row, another point'], 'row'],
+      ['row → other row', 'row', ['other row'], 'other row'],
+      ['row → card', 'row', ['card'], 'row'],
+      ['row → (stop in the gap) → card', 'row', ['gap', 'card'], 'row'],
+      ['row → (stop in the gap) → back to the row', 'row', ['gap', 'row'], 'row'],
+      ['row → rests in the gap', 'row', ['gap'], 'none'],
+      ['row → elsewhere', 'row', ['elsewhere'], 'none'],
+      ['row → (stop elsewhere) → back to the row', 'row', ['elsewhere', 'row'], 'row'],
+      ['card → the same card', 'card', ['card, another point'], 'row'],
+      ['card → its row', 'card', ['row'], 'row'],
+      ['card → (stop in the gap) → its row', 'card', ['gap', 'row'], 'row'],
+      ['card → other row', 'card', ['other row'], 'other row'],
+      ['card → (stop in the gap) → other row', 'card', ['gap', 'other row'], 'other row'],
+      ['card → rests in the gap', 'card', ['gap'], 'none'],
+      ['card → elsewhere', 'card', ['elsewhere'], 'none'],
+      ['card → (stop elsewhere) → back to the card', 'card', ['elsewhere', 'card'], 'row'],
+      ['elsewhere → row', 'elsewhere', ['row'], 'row'],
+      ['elsewhere → other row', 'elsewhere', ['other row'], 'other row'],
+    ])('%s', async (_name, from, path, card) => {
+      try {
+        const { spot, names } = await startFrom(from)
+        await path.reduce((moved, step) => moved.then(() => hover(spot(step))), Promise.resolve())
+        if (card === 'none') {
+          await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+        } else {
+          // Past the grace after which a card left behind goes: the card is the one of where the pointer rests.
+          await pause(CARD_STAYS)
+          expect(screen.getByRole('tooltip').textContent).toContain(names[card])
+        }
+      } finally {
+        await page.viewport(1280, 900)
+      }
+    })
   })
 
   it('lets the pointer pass over a card that fits, on its way to the editor', async () => {

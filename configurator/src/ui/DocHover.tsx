@@ -99,7 +99,7 @@ function useDropGoneRows(up: boolean, setHover: Dispatch<SetStateAction<Hover>>)
 /** What the rows' handlers do to the hover state. */
 interface HoverActions {
   set: (change: Partial<Hover>) => void
-  /** Hides the pointer's card once the grace has passed, unless the pointer reaches the card first. */
+  /** After the grace, hides the pointer's card unless the pointer is then on its row or on the card. */
   leaveRow: () => void
   /** Stops a hide that waits for the grace to pass. */
   stay: () => void
@@ -253,23 +253,30 @@ function FloatingCard({
   )
 }
 
+/** Whether the pointer is on `row` or on the card with the id `cardId` at this moment, as the page itself tells it. */
+function pointerOver(row: HTMLElement | undefined, cardId: string): boolean {
+  return Boolean(row?.matches(':hover') || document.getElementById(cardId)?.matches(':hover'))
+}
+
 /**
  * What the rows' handlers do to the hover state, the same functions on every render. Leaving a row
- * or the card hides the pointer's card after the grace, which entering a row or the card cancels.
+ * or the card hides the pointer's card after the grace, unless the pointer is then on its row or the
+ * card. That is asked of the page when the grace ends, so it holds whatever order the enter and leave
+ * events of the row and the card came in. Entering a row or the card cancels a hide still waiting.
  */
-function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>): HoverActions {
+function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: string): HoverActions {
   const grace = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const actions = useMemo<HoverActions>(
     () => ({
       set: (change) => setHover((was) => ({ ...was, ...change })),
       leaveRow: () => {
         clearTimeout(grace.current)
-        grace.current = setTimeout(() => setHover((was) => ({ ...was, pointer: null })), GRACE)
+        grace.current = setTimeout(() => setHover((was) => (pointerOver(was.pointer?.el, cardId) ? was : { ...was, pointer: null })), GRACE)
       },
       stay: () => clearTimeout(grace.current),
       hideAll: () => setHover(NONE),
     }),
-    [setHover],
+    [setHover, cardId],
   )
   // No hide may land once the lists are gone.
   useEffect(() => actions.stay, [actions])
@@ -284,7 +291,7 @@ function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>): HoverAction
 export function DocHoverProvider({ dicts, children }: Readonly<{ dicts: Dictionary[]; children: ReactNode }>) {
   const [hover, setHover] = useState<Hover>(NONE)
   const id = useId()
-  const actions = useHoverActions(setHover)
+  const actions = useHoverActions(setHover, id)
   const shown = hover.pointer ?? hover.focus
   // Undefined once the entry is gone from the dictionaries (renamed, deleted, another file shown): no card then.
   const entry = shown ? findEntry(dicts, shown.id) : undefined

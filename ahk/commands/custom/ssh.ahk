@@ -5,19 +5,19 @@
 ; ignores (see the readme).
 
 /**
- * Load a putty session by name
- * @param {(String)} Name String - Name of the putty session to load
+ * Starts a session saved in PuTTY, then brings a PuTTY window forward: PuTTY is started with -load and the session's name in double quotes, then up to 15 seconds are given for a PuTTY window, and the topmost one is activated, or the bottom one when a PuTTY window is already active. If no window appears in time, nothing is activated.
+ * @param {String} Name - The name of a saved session, as PuTTY's Saved Sessions list shows it. Spaces in the name are fine.
  * @example LoadPuttySession("my-server")
  */
 LoadPuttySession(Name) {
     window := "ahk_exe putty.exe"
-    Run('cmd /c "start putty -load ' Name '"',,"Hide") ;use cmd in hidden mode to launch requested program
-    WinWait(window,,,15)		; wait up to 15 seconds for window to exist
-    if WinActive(window) {
-        WinActivateBottom window ; Uses the last found window.
-    }
-    else {
-        WinActivate  ; Uses the last found window.
+    Run('"putty.exe" -load "' Name '"')
+    if WinWait(window,,15)  ; 0 when no window appeared in 15 seconds
+    {
+        if WinActive(window)
+            WinActivateBottom window
+        else
+            WinActivate  ; the window WinWait found
     }
 }
 

@@ -47,6 +47,12 @@ BeforeDiscovery {
                 ChromeOpenSettings       = 'types an address into the address bar after a chord and a pause'
             }
         }
+        @{ Name = 'custom\ssh'; Ahk = 'ahk\commands\custom\ssh.ahk'; Ps = 'powershell\commands\custom\ssh.ps1'; Skip = @{
+                SshMacroName        = 'starts PuTTY'
+                SshMacroDescription = 'starts PuTTY'
+                SshExample          = 'starts ssh'
+            }
+        }
     )
 }
 BeforeAll {

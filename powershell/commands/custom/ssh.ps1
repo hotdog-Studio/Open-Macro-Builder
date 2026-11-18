@@ -17,7 +17,8 @@ function LoadPuttySession {
     param([string]$Name)
     Start-Program 'putty' "-load `"$Name`""
     $windows = Wait-ProcessWindow 'putty.exe' 15
-    $target = Select-WindowToActivate $windows ([Macropad.Native]::GetForegroundWindow())
+    # Test-WindowActive with no WinTitle gives the handle of the active window, whatever it is.
+    $target = Select-WindowToActivate $windows (Test-WindowActive)
     if ($null -ne $target) { [void](Set-ActiveWindow $target) }
 }
 

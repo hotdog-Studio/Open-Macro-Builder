@@ -1,0 +1,64 @@
+#Requires AutoHotkey v2.0
+#SingleInstance Off
+#NoTrayIcon
+; The end-to-end test's banner (powershell\tests\EndToEnd.Tests.ps1). It shows one small, dark,
+; always-on-top strip at the top of the main screen for the whole run, and never changes it. It never
+; takes the focus and lets clicks through.
+;
+; It is also the run's watchdog: when the test process is gone, or the run's time limit has passed
+; by a minute, it carries out the clean-up the test left in its state file and exits. The file has
+; one instruction per line:
+;   kill <pid> <exe name>     end that process, if it still runs under that name
+;   run <command line>        start this (the macropad the test stopped)
+;
+;   AutoHotkey64.exe banner.ahk <test pid> <state file> <deadline, seconds since 1970 UTC>
+
+testPid := Integer(A_Args[1])
+stateFile := A_Args[2]
+deadline := Integer(A_Args[3]) + 60
+
+banner := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale +E0x08000020", "Open Macro Builder end-to-end test")  ; WS_EX_NOACTIVATE | WS_EX_TRANSPARENT
+banner.BackColor := "202020"
+banner.MarginX := 14
+banner.MarginY := 8
+banner.SetFont("s10 bold cE6E6E6", "Segoe UI")
+banner.AddText("w740", "Open Macro Builder end-to-end test: keyboard and mouse are in use")
+banner.SetFont("s9 norm cC8C8C8", "Segoe UI")
+banner.AddText("w740", "Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.")
+MonitorGetWorkArea(MonitorGetPrimary(), &left, &top, &right)
+banner.Show("NoActivate x" (left + (right - left - 768) // 2) " y" top " w768 h56")
+
+BannerUnixNow() {
+    return DateDiff(A_NowUTC, "19700101000000", "Seconds")
+}
+
+BannerWatch() {
+    global testPid, deadline
+    if (ProcessExist(testPid) && BannerUnixNow() < deadline)
+        return
+    SetTimer(BannerWatch, 0)
+    BannerCleanUp()
+    ExitApp()
+}
+
+BannerCleanUp() {
+    global stateFile
+    if !FileExist(stateFile)
+        return
+    runs := []
+    Loop Parse FileRead(stateFile, "UTF-8"), "`n", "`r" {
+        if RegExMatch(A_LoopField, "^kill (\d+) (\S+)$", &m) {
+            try {
+                if (ProcessExist(m[1]) && StrLower(ProcessGetName(Integer(m[1]))) = StrLower(m[2]))
+                    ProcessClose(Integer(m[1]))
+            }
+        } else if RegExMatch(A_LoopField, "^run (.+)$", &m) {
+            runs.Push(m[1])
+        }
+    }
+    Sleep(500)
+    for line in runs
+        try Run(line)
+}
+
+SetTimer(BannerWatch, 500)

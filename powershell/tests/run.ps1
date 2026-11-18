@@ -1,21 +1,33 @@
 # Runs the Pester suite, plus the tests for your own commands in local\powershell\tests when that
 # folder exists (git ignores it). -Ci (the Jenkins Windows stage) writes JUnit XML to
 # results/pester/test-results.xml at the repo root and leaves out the Integration tests, which
-# open windows and send real keys.
-param([string[]]$ExcludeTag = @(), [switch]$Ci)
+# open windows and send real keys. The end-to-end test (tag EndToEnd) is left out of every run but
+# -EndToEnd, which runs it alone: it takes the keyboard, the mouse and the screen for a few minutes.
+# With -Ci -EndToEnd its JUnit XML goes to results/pester/end-to-end-results.xml.
+param([string[]]$ExcludeTag = @(), [switch]$Ci, [switch]$EndToEnd)
 Import-Module Pester -MinimumVersion 5.0 -Force
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $c = New-PesterConfiguration
 $c.Run.Path = @($PSScriptRoot) + @(Join-Path $root 'local\powershell\tests' | Where-Object { Test-Path -LiteralPath $_ })
 $c.Run.Exit = $true
 $c.Output.Verbosity = 'Detailed'
+$resultFile = 'test-results.xml'
+if ($EndToEnd) {
+    Write-Host 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
+    $c.Run.Path = @(Join-Path $PSScriptRoot 'EndToEnd.Tests.ps1')
+    $c.Filter.Tag = @('EndToEnd')
+    $resultFile = 'end-to-end-results.xml'
+    $env:OMB_E2E = '1'
+} else {
+    $ExcludeTag = @($ExcludeTag) + 'EndToEnd'
+}
 if ($Ci) {
-    $ExcludeTag = @($ExcludeTag) + 'Integration'
+    if (-not $EndToEnd) { $ExcludeTag = @($ExcludeTag) + 'Integration' }
     $results = Join-Path $root 'results\pester'
     New-Item -ItemType Directory -Force -Path $results | Out-Null
     $c.TestResult.Enabled = $true
     $c.TestResult.OutputFormat = 'JUnitXml'
-    $c.TestResult.OutputPath = Join-Path $results 'test-results.xml'
+    $c.TestResult.OutputPath = Join-Path $results $resultFile
 }
 $c.Filter.ExcludeTag = $ExcludeTag
-Invoke-Pester -Configuration $c
+try { Invoke-Pester -Configuration $c } finally { if ($EndToEnd) { Remove-Item Env:\OMB_E2E -ErrorAction SilentlyContinue } }

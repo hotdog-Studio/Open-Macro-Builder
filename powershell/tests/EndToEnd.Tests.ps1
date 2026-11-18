@@ -1,0 +1,121 @@
+# The end-to-end test of the macropad, in both of its versions. It starts the real macropad on a real
+# desktop with a test layout (OMB_CONFIG), presses the real macro keys with SendInput, and checks what
+# really happened: a window that opened and is active, a file a script wrote, a window that moved, or
+# the exact keys a stand-in window received. Every case runs twice, once against the AutoHotkey
+# macropad (ahk\main.ahk) and once against the PowerShell one (powershell\main.ps1). The cases are in
+# helpers\EndToEndCases.ps1, the harness in helpers\EndToEnd.ps1, the fixtures in ahk\tests\e2e.
+#
+# Run it with: powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd
+# It takes the keyboard, the mouse and the screen for a few minutes. Photosensitivity warning: it
+# opens, moves and closes windows (at most three changes a second; see Wait-ScreenChange).
+#
+# Why the coverage of the two languages differs where it does (the parity test below holds the rest):
+# - The PowerShell version also has unit tests with mocks (Commands.Tests.ps1, Chrome.Tests.ps1,
+#   Helpers.Tests.ps1 and the others), so a PowerShell command is tested twice: there, and here.
+# - The AutoHotkey version has no unit tests, by the owner's decision. Its coverage is this suite and
+#   the tests that read its scripts: it loads (AhkLoad.Tests.ps1), every key name exists, and both
+#   languages press the same keys (KeyNames.Tests.ps1, ChordParity.Tests.ps1).
+
+BeforeDiscovery {
+    . "$PSScriptRoot\helpers\EndToEndCases.ps1"
+    $Cases = @(foreach ($c in Get-E2eCases) { @{ Name = $(if ($c.Name) { $c.Name } else { $c.Command }) } })
+    $Langs = @(@{ Lang = 'ahk'; Title = 'AutoHotkey macropad' }, @{ Lang = 'ps'; Title = 'PowerShell macropad' })
+}
+
+BeforeAll {
+    $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'AhkSyntax', 'WinTitle', 'WindowOps', 'Window', 'Sound') { . "$root\powershell\lib\$f.ps1" }
+    . "$PSScriptRoot\helpers\Ahk.ps1"
+    . "$PSScriptRoot\helpers\CommandSource.ps1"
+    . "$PSScriptRoot\helpers\EndToEnd.ps1"
+    . "$PSScriptRoot\helpers\EndToEndCases.ps1"
+
+    # The commands of the shared command files of a language: name -> file ('custom\vscode').
+    function Get-E2eSharedCommand {
+        param([ValidateSet('ahk', 'ps')][string]$Lang)
+        $result = [ordered]@{}
+        if ($Lang -eq 'ahk') { $dir = Join-Path $root 'ahk\commands'; $filter = '*.ahk' } else { $dir = Join-Path $root 'powershell\commands'; $filter = '*.ps1' }
+        foreach ($file in Get-ChildItem -LiteralPath $dir -Recurse -Filter $filter | Sort-Object FullName) {
+            $pair = $file.FullName.Substring($dir.Length + 1) -replace '\.(ahk|ps1)$', ''
+            if ($Lang -eq 'ahk') { $functions = Get-AhkFunctionSource $file.FullName } else { $functions = Get-PsFunctionSource $file.FullName }
+            foreach ($name in $functions.Keys) { if ($functions[$name].Params -eq 'Macro') { $result[$name] = $pair } }
+        }
+        $result
+    }
+
+    # The PowerShell twin's chords of every shared command that is only sends: name -> chords.
+    function Get-E2eTwinChords {
+        $result = @{}
+        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $root 'powershell\commands') -Recurse -Filter *.ps1) {
+            $functions = Get-PsFunctionSource $file.FullName
+            foreach ($name in $functions.Keys) { if ($null -ne $functions[$name].Chord) { $result[$name] = @($functions[$name].Chord) } }
+        }
+        $result
+    }
+}
+
+Describe 'End-to-end pacing' -Tag EndToEnd {
+    It 'keeps at least 350 ms between two changes of the screen' {
+        $script:E2eChangeClock = $null
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $at = foreach ($i in 1..4) { Wait-ScreenChange; $sw.ElapsedMilliseconds }
+        for ($i = 1; $i -lt $at.Count; $i++) { ($at[$i] - $at[$i - 1]) | Should -BeGreaterOrEqual 350 }
+        $at[0] | Should -BeLessThan 100 -Because 'the first change waits for nothing'
+    }
+    It 'counts a change that was seen to happen, so the next one keeps its distance from it' {
+        Wait-ScreenChange
+        Wait-Pump 200
+        Wait-ScreenChange -Observed
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        Wait-ScreenChange
+        $sw.ElapsedMilliseconds | Should -BeGreaterOrEqual 340
+    }
+}
+
+Describe 'End-to-end on the desktop' -Tag EndToEnd {
+    BeforeAll {
+        $script:E2eSkip = $null
+        if (-not (Get-AhkExe)) { $script:E2eSkip = 'AutoHotkey v2 is not installed' }
+        elseif ($env:OMB_E2E -ne '1') { $script:E2eSkip = 'it takes the desktop; run it with powershell\tests\run.ps1 -EndToEnd' }
+        if ($script:E2eSkip) { return }
+
+        Write-Host $script:E2eWarning
+        [void](New-E2eRun -LimitMinutes 20)
+        $twins = Get-E2eTwinChords
+        $script:E2eCaseTable = [ordered]@{}
+        foreach ($c in Get-E2eCases) {
+            if (-not $c.Name) { $c.Name = $c.Command }
+            if (-not $c.Kind) { $c.Kind = 'Chord' }
+            if ($c.Kind -eq 'Chord' -and -not $c.Chords) {
+                if (-not $twins.ContainsKey($c.Command)) { throw "$($c.Command) has no one-chord PowerShell twin; give its case Chords and Source." }
+                $c.Chords = $twins[$c.Command]
+            }
+            $script:E2eCaseTable[$c.Name] = $c
+        }
+        Write-E2eLayout @($script:E2eCaseTable.Values)
+        Install-E2eLaunchers
+        if (-not [OmbE2e.KeyWatch]::Start()) { throw 'Could not install the key watch (a low-level keyboard hook).' }
+        Start-E2eBanner
+        Wait-Pump 3000  # the banner is up three seconds before the first key
+        Stop-E2eOwnerMacropad
+        [void](Start-E2eStandin 'A' -Exe 'chrome.exe' -X 40 -Y 120)
+        [void](Start-E2eStandin 'B' -Exe 'e2eapp.exe' -X 500 -Y 120)
+    }
+    AfterAll {
+        if (-not $script:E2eSkip) { Complete-E2eRun }
+    }
+
+    Describe '<Title>' -ForEach $Langs {
+        BeforeAll {
+            if (-not $script:E2eSkip) { [void](Start-E2eMacropad $Lang) }
+        }
+        AfterAll {
+            if (-not $script:E2eSkip) { Stop-E2eMacropad }
+        }
+        It '<Name>' -ForEach $Cases {
+            if ($script:E2eSkip) { Set-ItResult -Skipped -Because $script:E2eSkip; return }
+            $why = Invoke-E2eCase $script:E2eCaseTable[$Name] $Lang
+            if ($why) { Set-ItResult -Skipped -Because $why }
+        }
+    }
+}

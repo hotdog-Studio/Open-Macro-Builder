@@ -6,6 +6,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ### Added
 
+- Configurator: hovering a function in the Commands tab shows its docs (what it does, how to call it, an example, each parameter), and the right panel lists what else a command can call. The PowerShell functions meant for commands now carry help blocks, which `Get-Help` reads too.
 - Configurator: an empty folder can be set up as a fresh copy. **Open folder** on an empty folder offers to copy in the scripts, the icons and the example layout, and **Create new folder…** on the start screen makes the folder first. The files are carried inside the app, so no download or clone is needed.
 - Configurator: the web page shows the project logo as its browser tab icon.
 - Releases: with the Jenkins global `OMB_REGISTRY` set, each release also pushes the `linux/amd64` image to that private registry ([docs/releasing.md](docs/releasing.md)).

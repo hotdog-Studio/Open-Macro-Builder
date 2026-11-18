@@ -111,6 +111,25 @@ In PowerShell code, the same definitions can be built with `Hotkey` and `Hotstri
 
 Window functions take an AutoHotkey WinTitle such as `'ahk_exe chrome.exe'` or `'Untitled - Notepad ahk_class Notepad'`.
 
+The configurator's Commands tab reads these functions' docs. A function with a help block directly above it, with no blank line between, is listed under "Functions to call" in the right panel, and hovering its name in the editor shows the block: what it does (`.SYNOPSIS`, `.DESCRIPTION`), each `.PARAMETER`, `.OUTPUTS` and every `.EXAMPLE`. A function with only `#` notes above it shows them on hover but is not listed. The same blocks are what `Get-Help` reads. A helper of your own, in `../local/powershell/commands`, is documented the same way:
+
+```powershell
+<#
+.SYNOPSIS
+Types a greeting for a name.
+.PARAMETER Name
+Who the greeting is for.
+.EXAMPLE
+Send-Greeting 'Sam'
+#>
+function Send-Greeting {
+    param([string]$Name)
+    Send-Text "Hello, $Name"
+}
+```
+
+A parameter's `.PARAMETER` line must give its name as the function declares it. The first line of a library file, when it is a `#` comment, is the file's heading in the list.
+
 ## Test
 
 From `macropad_ahk`:

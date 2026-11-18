@@ -20,7 +20,8 @@ Plain TypeScript with no React, no browser and no Node in it. ESLint enforces th
 
 - `config/`: the layout. `parse.ts` reads `config.json` into a `Workspace` (`model.ts`), `ops.ts` holds every edit as a function from one workspace to the next (move a key, swap two layers, set a macro), `validate.ts` checks it, and `write.ts` turns it back into JSON.
 - `folder/`: `FolderAccess`, the four things the app needs from a folder: read a file, write a file, list a directory, remove a file. Everything above reads and writes through it. `memory.ts` is the in-memory version the tests use.
-- `languages/`: what the app knows about AutoHotkey and PowerShell: finding the command functions in a file, and building the catalog of commands from both languages' folders.
+- `languages/`: what the app knows about AutoHotkey and PowerShell: finding the command functions in a file, and building the catalog of commands from both languages' folders. The parsers also read a function's doc block (`/** */` in AutoHotkey, `<# #>` or a run of `#` notes in PowerShell) and build its usage line, and `scanLibrary` reads `powershell/lib` the way `scanCommands` reads the command folders.
+- `commands/dictionary.ts`: what a command file can call. `buildDictionary` lists the functions of the file shown, then your other command files, then the shared ones, then the library, and a name resolves to the first of them (unsaved text stands in for its file). `listSections` groups the same entries for the right panel. An entry's source is a file today (`DictSource`) and will be a bundled reference later.
 - `overlay.ts`: where each key sits on the overlay, shared by the grid and the preview.
 - `starter.ts`: `writeStarter` copies the starter files into an empty folder through `FolderAccess`, `config.json` last, so a copy that stopped part-way is not mistaken for a finished one. `repo.ts` (`inspectFolder`) tells an empty folder apart from a setup and from anything else.
 
@@ -46,6 +47,8 @@ An edit is always `dispatch({ type: 'edit', ws: someOp(ws, ...) })`: an operatio
 ### `src/ui`: what you see
 
 One file per tab (`ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsTab`), plus the pieces they share.
+
+`DocCard` (`code/DocCard.tsx`) is the one card of a function's docs. `hoverDocs` shows it over a name in the code editor, and `OtherCommands` shows it beside a row of the right panel's list of what a command can call.
 
 `PadGrid.tsx` draws the pad on all three pad tabs and owns the drag and drop, built on [dnd-kit](https://dndkit.com/):
 

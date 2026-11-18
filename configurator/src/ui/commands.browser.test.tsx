@@ -517,4 +517,40 @@ describe('Commands tab: docs on hover', () => {
     await hover(await pointAt(text().lastIndexOf('Send-Chord') + 2))
     await waitFor(() => expect(card()?.textContent).toContain('Send-Chord <Chord>'))
   })
+
+  it('shows nothing over an AutoHotkey comment, string or member', async () => {
+    await start()
+    await openFile('windows')
+    // The call is indented, as in a function body: alone at the left edge a line reads as a definition.
+    replaceAll('; aa ActivateOrOpen\n/* bb ActivateOrOpen */\nx := "cc ActivateOrOpen"\nobj.ActivateOrOpen\n    ActivateOrOpen("x", "y")\n')
+    // Five characters in is inside the name each time; after the dot, two characters in.
+    for (const pos of [text().indexOf('aa ActivateOrOpen') + 5, text().indexOf('bb ActivateOrOpen') + 5, text().indexOf('cc ActivateOrOpen') + 5, text().indexOf('obj.ActivateOrOpen') + 6]) {
+      await hover(await pointAt(pos))
+      await new Promise((r) => setTimeout(r, 700))
+      expect(card()).toBeNull()
+    }
+    // The same name as a call does get one, so the silence above is not a broken hover.
+    await hover(await pointAt(text().lastIndexOf('ActivateOrOpen') + 2))
+    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
+  })
+
+  it('shows the written docs of a library function, in the editor and in the list', async () => {
+    await start()
+    await click(pairButton('windows'))
+    await click(toolbarButton('PowerShell'))
+    await waitFor(() => expect(text()).toContain('Send-Chord'))
+    await hover(await wordPoint('Send-Chord'))
+    await waitFor(() => expect(card()?.textContent).toContain('Example'))
+    const other = screen.getByRole('region', { name: 'Other commands available' })
+    expect(within(other).getByRole('button', { name: /^Keys and mouse clicks/ })).toBeTruthy()
+    // The list sits far down the panel: scroll the row to where a hand can rest on it.
+    const row = within(other).getByRole('button', { name: /^Send-Chord\b/ })
+    row.scrollIntoView({ block: 'center' })
+    await hover(row)
+    const tip = await screen.findByRole('tooltip')
+    const panel = other.closest('aside')!.getBoundingClientRect()
+    // Beside the panel, not under it and not cut off by it.
+    expect(tip.getBoundingClientRect().right).toBeLessThanOrEqual(panel.left)
+    expect(tip.getBoundingClientRect().left).toBeGreaterThanOrEqual(0)
+  })
 })

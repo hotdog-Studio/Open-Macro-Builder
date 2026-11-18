@@ -127,6 +127,22 @@ Describe 'Send-Chord' {
         Should -Invoke Send-KeyEvent -Times 4 -Exactly
     }
 }
+Describe 'Send-KeyEvent' {
+    It 'sends the scan code the key has on the keyboard layout of the active window' {
+        # The same layout the key names are read from (Get-ForegroundKeyboardLayout), so vk and scan agree.
+        Mock Get-ForegroundKeyboardLayout { [IntPtr]0x111 }
+        Mock Get-LayoutScanCode { 0x29 } -ParameterFilter { $Vk -eq 0xDF -and $Layout -eq [IntPtr]0x111 }
+        Mock Get-LayoutScanCode { 0 } -ParameterFilter { -not ($Vk -eq 0xDF -and $Layout -eq [IntPtr]0x111) }
+        Mock Invoke-KeyInjection {}
+        Send-KeyEvent ([pscustomobject]@{ Vk = 0xDF; Up = $true })
+        Should -Invoke Invoke-KeyInjection -Times 1 -Exactly -ParameterFilter { $Vk -eq 0xDF -and $Scan -eq 0x29 -and $Up -and -not $Extended }
+    }
+}
+Describe 'Get-LayoutScanCode on this PC' {
+    It 'gives Enter its scan code on the real keyboard layout' {
+        Get-LayoutScanCode 0x0D (Get-ForegroundKeyboardLayout) | Should -Be 0x1C
+    }
+}
 Describe 'Send-Click' {
     It 'rejects unknown buttons' { Mock Send-KeyEvent {}; { Send-Click 1 1 'Nope' } | Should -Throw }
 }

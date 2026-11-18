@@ -4,13 +4,15 @@ using System.Runtime.InteropServices;
 
 namespace Macropad
 {
-    // One key or character event to inject. Char != 0 means a Unicode character event.
+    // One key or character event to inject. Char != 0 means a Unicode character event. Scan is the
+    // key's scan code on the target window's keyboard layout; -1 leaves it to this thread's layout.
     public class KeyInput
     {
         public int Vk;
         public int Char;
         public bool Up;
         public bool Extended;
+        public int Scan = -1;
     }
 
     // SendInput wrapper. Every event is tagged with Interop.Signature.
@@ -104,7 +106,7 @@ namespace Macropad
                 }
                 else
                 {
-                    ushort scan = (ushort)MapVirtualKey((uint)k.Vk, 0);
+                    ushort scan = k.Scan >= 0 ? (ushort)k.Scan : (ushort)MapVirtualKey((uint)k.Vk, 0);
                     uint flags = up | (k.Extended ? KEYEVENTF_EXTENDEDKEY : 0);
                     list.Add(KeyEvent((ushort)k.Vk, scan, flags));
                 }
@@ -115,8 +117,15 @@ namespace Macropad
 
         public static void Key(int vk, bool up, bool extended)
         {
+            Key(vk, -1, up, extended);
+        }
+
+        // scan: the key's scan code on the target window's layout; -1 for this thread's layout.
+        public static void Key(int vk, int scan, bool up, bool extended)
+        {
             KeyInput k = new KeyInput();
             k.Vk = vk;
+            k.Scan = scan;
             k.Up = up;
             k.Extended = extended;
             Send(new KeyInput[] { k });

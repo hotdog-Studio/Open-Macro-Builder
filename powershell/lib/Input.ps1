@@ -107,10 +107,24 @@ function ConvertTo-KeyEvent {
     $events.ToArray()
 }
 
+# The scan code of the key Vk on a keyboard layout (MapVirtualKeyEx); 0 when the layout has no such
+# key, -1 when it cannot be read (the injection then uses the macropad's own layout).
+function Get-LayoutScanCode {
+    param([int]$Vk, [IntPtr]$Layout)
+    try { [int][Macropad.Native]::ScanCode($Vk, $Layout) } catch { -1 }
+}
+
+# A seam for tests: one tagged SendInput (lib/cs/Inject.cs), so the macropad's own hooks ignore it.
+function Invoke-KeyInjection {
+    param([int]$Vk, [int]$Scan, [bool]$Up, [bool]$Extended)
+    [Macropad.Inject]::Key($Vk, $Scan, $Up, $Extended)
+}
+
 function Send-KeyEvent {
     param([Parameter(Mandatory)]$Event)
-    # Tagged SendInput (lib/cs/Inject.cs), so the macropad's own hooks ignore it.
-    [Macropad.Inject]::Key([int]$Event.Vk, [bool]$Event.Up, (Test-ExtendedKey $Event.Vk))
+    # The scan code comes from the active window's layout, the one the key names were read from.
+    $scan = Get-LayoutScanCode $Event.Vk (Get-ForegroundKeyboardLayout)
+    Invoke-KeyInjection ([int]$Event.Vk) $scan ([bool]$Event.Up) (Test-ExtendedKey $Event.Vk)
 }
 
 <#

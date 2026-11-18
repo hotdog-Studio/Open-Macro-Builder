@@ -104,6 +104,12 @@ namespace Macropad
             return MapVirtualKeyEx((uint)vk, 2, layout);
         }
 
+        // MAPVK_VK_TO_VSC: the scan code of the key vk on the layout; 0 when the layout has no such key.
+        public static uint ScanCode(int vk, IntPtr layout)
+        {
+            return MapVirtualKeyEx((uint)vk, 0, layout);
+        }
+
         // Visible top-level windows owned by any of the pids, top of the Z-order first.
         public static IntPtr[] GetProcessWindows(int[] pids)
         {

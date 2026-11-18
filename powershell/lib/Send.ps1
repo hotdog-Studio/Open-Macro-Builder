@@ -15,12 +15,15 @@ function Get-HeldModifier {
 function ConvertTo-KeyInput {
     param([object[]]$Events)
     $list = [System.Collections.Generic.List[Macropad.KeyInput]]::new()
+    # Scan codes come from the active window's layout, the one the key names were read from.
+    $layout = Get-ForegroundKeyboardLayout
     foreach ($ev in @($Events)) {
         $k = [Macropad.KeyInput]::new()
         $k.Vk = [int]$ev.Vk
         $k.Char = [int]$ev.Char
         $k.Up = [bool]$ev.Up
         $k.Extended = ($k.Char -eq 0) -and (Test-ExtendedKey $k.Vk)
+        if ($k.Char -eq 0) { $k.Scan = Get-LayoutScanCode $k.Vk $layout } else { $k.Scan = 0 }
         $list.Add($k)
     }
     , $list.ToArray()

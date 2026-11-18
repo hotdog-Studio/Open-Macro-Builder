@@ -17,6 +17,14 @@ Describe 'ConvertTo-KeyInput' {
         $k[0].Vk | Should -Be 0x25; $k[0].Extended | Should -BeTrue
         $k[2].Char | Should -Be 0xE9; $k[2].Vk | Should -Be 0
     }
+    It 'gives each key the scan code it has on the keyboard layout of the active window' {
+        Mock Get-ForegroundKeyboardLayout { [IntPtr]0x111 }
+        Mock Get-LayoutScanCode { 0x29 } -ParameterFilter { $Vk -eq 0xDF -and $Layout -eq [IntPtr]0x111 }
+        Mock Get-LayoutScanCode { 0 } -ParameterFilter { -not ($Vk -eq 0xDF -and $Layout -eq [IntPtr]0x111) }
+        $k = ConvertTo-KeyInput @([pscustomobject]@{ Vk = 0xDF; Char = 0; Up = $false }, [pscustomobject]@{ Vk = 0; Char = 0x41; Up = $false })
+        $k[0].Scan | Should -Be 0x29
+        $k[1].Scan | Should -Be 0 -Because 'a character is sent as Unicode, with no key'
+    }
 }
 Describe 'Send-Ahk' {
     BeforeEach { $script:sent = $null; Mock Send-KeyInput { $script:sent = $Inputs } }

@@ -64,6 +64,50 @@ describe('the library of the opened folder', () => {
     expect(editor().libraryFiles.find((f) => f.name === 'Input')!.title).toBe('Library B')
   })
 
+  it("keeps a newer recheck's library over a reload's that read it earlier", async () => {
+    const { folder, app, editor } = await startCommands({ library: true })
+    const gates: (() => void)[] = []
+    const read = MemoryFolder.prototype.readBytes
+    vi.spyOn(MemoryFolder.prototype, 'readBytes').mockImplementation(async function (this: MemoryFolder, path: string) {
+      const bytes = await read.call(this, path)
+      if (path === INPUT) await new Promise<void>((done) => gates.push(done))
+      return bytes
+    })
+    await folder.writeBytes(INPUT, enc.encode('# Library A\nfunction Get-A {\n}\n'))
+    const reload = app().actions.reloadFromDisk()
+    await waitFor(() => expect(gates).toHaveLength(1))
+    await folder.writeBytes(INPUT, enc.encode('# Library B\nfunction Get-B {\n}\n'))
+    const recheck = app().actions.recheckCommands()
+    await waitFor(() => expect(gates).toHaveLength(2))
+    gates[1]()
+    await act(() => recheck)
+    expect(editor().libraryFiles.find((f) => f.name === 'Input')!.title).toBe('Library B')
+    gates[0]()
+    await act(() => reload)
+    expect(editor().libraryFiles.find((f) => f.name === 'Input')!.title).toBe('Library B')
+  })
+
+  it("takes a recheck's library when a reload that started after it fails", async () => {
+    const { folder, app, editor } = await startCommands({ library: true })
+    const gates: (() => void)[] = []
+    const read = MemoryFolder.prototype.readBytes
+    let configLocked = false
+    vi.spyOn(MemoryFolder.prototype, 'readBytes').mockImplementation(async function (this: MemoryFolder, path: string) {
+      if (configLocked && path.endsWith('config.json')) throw new Error(`${path} is locked`)
+      const bytes = await read.call(this, path)
+      if (path === INPUT) await new Promise<void>((done) => gates.push(done))
+      return bytes
+    })
+    await folder.writeBytes(INPUT, enc.encode('# Library A\nfunction Get-A {\n}\n'))
+    const recheck = app().actions.recheckCommands()
+    await waitFor(() => expect(gates).toHaveLength(1))
+    configLocked = true
+    await act(() => app().actions.reloadFromDisk())
+    gates[0]()
+    await act(() => recheck)
+    expect(editor().libraryFiles.find((f) => f.name === 'Input')!.title).toBe('Library A')
+  })
+
   it('does not read the functions of an unchanged library again on a recheck', async () => {
     const { app } = await startCommands({ library: true })
     const parse = vi.spyOn(LANGUAGES.ps, 'findFunctions')

@@ -610,14 +610,18 @@ export function createActions(
       // Command files the app saves or reloads during the read keep the app's entry (mergeAfterRead).
       const before = commandFiles
       const state = getState()
-      // This read is newer than any recheck's read of the library still in flight.
-      commands.dropLibraryReads()
+      // Numbered with the rechecks' reads of the library, so the newest read of it wins whichever ends first.
+      const libraryRead = commands.startLibraryRead()
       try {
         const read = await readSession(file.folder, file.configFile.path, state.screen === 'edit' ? state.libraryFiles : [])
         if (token !== loads || held !== file) return
         // Command files with unsaved edits keep the version they were edited on.
         const files = mergeAfterRead(before, commandFiles, read.commandFiles, commands.draftPaths())
-        const session = { ...read, commandFiles: files, catalog: commandCatalog(files) }
+        const now = getState()
+        // A recheck that started after this read has put a newer library in the state already.
+        const overtaken = !commands.takeLibraryRead(libraryRead) && now.screen === 'edit'
+        const libraryFiles = overtaken ? now.libraryFiles : read.libraryFiles
+        const session = { ...read, libraryFiles, commandFiles: files, catalog: commandCatalog(files) }
         dispatch({ type: 'reloaded', session })
         hold(session.folder, session.configFile, files)
       } catch (e) {

@@ -209,7 +209,7 @@ function ReplaceMe {
 .SYNOPSIS
 Shows a message box with an OK button and waits until it is closed. It works like AutoHotkey's MsgBox.
 .DESCRIPTION
-The macro waits until the box is closed. Message and ReplaceMe use it.
+The box comes to the front, in front of the window you were using, and the macro waits until the box is closed. Message and ReplaceMe use it.
 .PARAMETER Text
 The text in the box.
 .PARAMETER Title
@@ -219,7 +219,8 @@ Show-MessageBox 'The backup has finished.' 'Backup'
 #>
 function Show-MessageBox {
     param([string]$Text, [string]$Title = '')
-    [void][System.Windows.Forms.MessageBox]::Show($Text, $Title)
+    # MB_OK with MB_SETFOREGROUND (0x10000): without it the box opens behind the active window.
+    [void][Macropad.Native]::MessageBox([IntPtr]::Zero, $Text, $Title, 0x10000)
 }
 <#
 .SYNOPSIS

@@ -54,6 +54,9 @@ namespace Macropad
         public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
         [DllImport("user32.dll")]
         public static extern bool LockWorkStation();
+        // MessageBoxW. MB_SETFOREGROUND (0x10000) brings the box to the front, as AutoHotkey's MsgBox does.
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
         [DllImport("kernel32.dll")]
         public static extern IntPtr GetConsoleWindow();
         [DllImport("powrprof.dll")]

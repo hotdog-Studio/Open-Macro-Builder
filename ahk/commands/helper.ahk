@@ -5,7 +5,7 @@
  * Activates an existing Window or opens a Program if the Window does not exist.
  * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
- * @param {String} [Args=""] - Optional arguments to pass to the Program.
+ * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
  * @example ActivateOrOpen("ahk_exe notepad.exe", "notepad")
  */
 ActivateOrOpen(Window, Program, Args := "")
@@ -22,12 +22,7 @@ ActivateOrOpen(Window, Program, Args := "")
 	}
 	else
 	{   ; else start requested Program
-        if (Args) {
-            Run('cmd /c "start ^"^" ^"' Program '^" ^"' Args '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-        }
-        else {
-            Run('cmd /c "start ^"^" ^"' Program '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-        }
+        Run(ProgramCommandLine(Program, Args))
         WinWait(Window,,5)		; wait up to 5 seconds for Window to exist
 		
 		if WinActive(Window) {
@@ -44,17 +39,12 @@ ActivateOrOpen(Window, Program, Args := "")
  * Opens a Program and activates its Window.
  * @param {String} Window - The Window to wait for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run.
- * @param {String} [Args=""] - Optional arguments to pass to the Program.
+ * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
  * @example Open("ahk_exe notepad.exe", "notepad")
  */
 Open(Window, Program, Args := "")
 {
-    if (Args) {
-        Run('cmd /c "start ^"^" ^"' Program '^" ^"' Args '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
-    else {
-        Run('cmd /c "start ^"^" ^"' Program '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
+    Run(ProgramCommandLine(Program, Args))
     WinWait(Window,,5)		; wait up to 5 seconds for Window to exist
     
     WinActivate  ; Uses the last found Window.
@@ -64,7 +54,7 @@ Open(Window, Program, Args := "")
  * Ensures a Program is running and its Window is active.
  * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
- * @param {String} [Args=""] - Optional arguments to pass to the Program.
+ * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
  * @example EnsureActiveOrOpen("ahk_exe notepad.exe", "notepad", "")
  */
 EnsureActiveOrOpen(Window, Program, Args)
@@ -78,12 +68,7 @@ EnsureActiveOrOpen(Window, Program, Args)
 	}
 	else
 	{   ; else start requested Program
-        if (Args) {
-            Run('cmd /c "start ^"^" ^"' Program '^" ^"' Args '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-        }
-        else {
-            Run('cmd /c "start ^"^" ^"' Program '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-        }
+        Run(ProgramCommandLine(Program, Args))
 		WinWait(Window,,5)		; wait up to 5 seconds for Window to exist
 		
 		if !WinActive(Window) {
@@ -94,54 +79,61 @@ EnsureActiveOrOpen(Window, Program, Args)
 }
 
 /**
- * Runs a Python script with optional arguments.
+ * Runs a Python script with optional arguments: python, then the script's path in double quotes (spaces in it are fine), then Args.
  * @param {String} ScriptPath - The path to the Python script.
- * @param {String} [Args=""] - Optional arguments to pass to the script.
+ * @param {String} [Args=""] - Text that follows the script's path on its command line, as given. Put a path with spaces in double quotes.
  * @example RunPythonScript("C:\Scripts\backup.py")
  */
 RunPythonScript(ScriptPath, Args := "")
 {
-    if (Args) {
-        Run('cmd /c "start python ^"^" ^"' ScriptPath '^" ^"' Args '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
-    else {
-        Run('cmd /c "start python ^"^" ^"' ScriptPath '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
-    return
+    Run(ScriptCommandLine("python", ScriptPath, Args))
 }
 
 /**
- * Runs a PowerShell script with optional arguments.
+ * Runs a PowerShell script with optional arguments: Windows PowerShell without the user's profile and with the execution policy bypassed (unless Group Policy sets one), then the script's path in double quotes, then Args.
  * @param {String} ScriptPath - The path to the PowerShell script.
- * @param {String} [Args=""] - Optional arguments to pass to the script.
+ * @param {String} [Args=""] - Text that follows the script's path on its command line, as given. Put a path with spaces in double quotes.
  * @example RunPowerShellScript("C:\Scripts\cleanup.ps1")
  */
 RunPowerShellScript(ScriptPath, Args := "")
 {
-    if (Args) {
-        Run('cmd /c "start powershell -NoProfile -ExecutionPolicy Bypass -File ^"^" ^"' ScriptPath '^" ^"' Args '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
-    else {
-        Run('cmd /c "start powershell -NoProfile -ExecutionPolicy Bypass -File ^"^" ^"' ScriptPath '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
-    return
+    Run(ScriptCommandLine("powershell -NoProfile -ExecutionPolicy Bypass -File", ScriptPath, Args))
 }
 
 /**
  * Runs a batch script with optional arguments.
  * @param {String} ScriptPath - The path to the batch script.
- * @param {String} [Args=""] - Optional arguments to pass to the script.
+ * @param {String} [Args=""] - Text that follows the script's path on its command line, as given. Put a path with spaces in double quotes.
  * @example RunBatchScript("C:\Scripts\build.bat")
  */
 RunBatchScript(ScriptPath, Args := "")
 {
-    if (Args) {
-        Run('cmd /c "start ^"^" ^"' ScriptPath '^" ^"' Args '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
-    else {
-        Run('cmd /c "start ^"^" ^"' ScriptPath '^""',,"Hide") ;use cmd in hidden mode to launch requested Program
-    }
-    return
+    Run(ProgramCommandLine(ScriptPath, Args))
+}
+
+/**
+ * The command line that starts a program: its name or path in double quotes, then Args as given. The helpers that start programs run it.
+ * @param {String} Program - A program name such as "notepad", or the full path of a file; spaces are fine.
+ * @param {String} [Args=""] - Text that follows on the command line, as given. Put a path with spaces in double quotes.
+ * @returns {String} The command line.
+ * @example ProgramCommandLine("chrome.exe", "--new-window https://example.com/")
+ */
+ProgramCommandLine(Program, Args := "")
+{
+    return '"' Program '"' (Args != "" ? " " Args : "")
+}
+
+/**
+ * The command line that runs a script: the interpreter, the script's path in double quotes, then Args as given.
+ * @param {String} Interpreter - The program and its options, such as "python".
+ * @param {String} ScriptPath - The path of the script; spaces are fine.
+ * @param {String} [Args=""] - Text that follows the path on the command line, as given.
+ * @returns {String} The command line.
+ * @example ScriptCommandLine("python", "C:\Scripts\backup.py", "--quick")
+ */
+ScriptCommandLine(Interpreter, ScriptPath, Args := "")
+{
+    return Interpreter ' "' ScriptPath '"' (Args != "" ? " " Args : "")
 }
 
 /**

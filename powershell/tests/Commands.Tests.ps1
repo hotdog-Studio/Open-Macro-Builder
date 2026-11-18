@@ -11,7 +11,9 @@ BeforeAll {
 }
 Describe 'parity with ahk/commands' {
     It 'defines every core AHK command function' {
-        $expected = Get-AhkFunctionNames 'helper.ahk','media.ahk','power.ahk','windows.ahk' | Where-Object { $_ -ne 'EncodeInteger' }
+        # ProgramCommandLine and ScriptCommandLine build AutoHotkey's Run text; Start-Program takes the program and its arguments apart.
+        $ahkOnly = 'EncodeInteger', 'ProgramCommandLine', 'ScriptCommandLine'
+        $expected = Get-AhkFunctionNames 'helper.ahk','media.ahk','power.ahk','windows.ahk' | Where-Object { $_ -notin $ahkOnly }
         $missing = $expected | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) }
         $missing | Should -BeNullOrEmpty
     }

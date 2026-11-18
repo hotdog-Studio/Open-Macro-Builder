@@ -24,16 +24,12 @@ function Get-AhkFunctionSource {
     $result
 }
 
-# One line of AHK code without its ; comment (a ; that starts the line or follows a space, outside a string).
+# One line of AHK code without its ; comment. As in AutoHotkey, a ; that starts the line or follows
+# a space or tab starts a comment, even inside quotes (a string writes such a ; as `;).
 function Remove-AhkComment {
     param([string]$Line)
-    $quote = [char]0
     for ($k = 0; $k -lt $Line.Length; $k++) {
-        $c = $Line[$k]
-        if ($quote -ne [char]0) {
-            if ($c -eq '`') { $k++ } elseif ($c -eq $quote) { $quote = [char]0 }
-        } elseif ($c -eq '"' -or $c -eq "'") { $quote = $c }
-        elseif ($c -eq ';' -and ($k -eq 0 -or [char]::IsWhiteSpace($Line[$k - 1]))) { return $Line.Substring(0, $k).Trim() }
+        if ($Line[$k] -eq ';' -and ($k -eq 0 -or [char]::IsWhiteSpace($Line[$k - 1]))) { return $Line.Substring(0, $k).Trim() }
     }
     $Line.Trim()
 }

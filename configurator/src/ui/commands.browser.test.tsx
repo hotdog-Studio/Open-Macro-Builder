@@ -1,7 +1,7 @@
 import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { click, dirty, drag, hover, openTab, padKey, startApp, strip, unmount, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 
@@ -532,6 +532,51 @@ describe('Commands tab: docs on hover', () => {
     // The same name as a call does get one, so the silence above is not a broken hover.
     await hover(await pointAt(text().lastIndexOf('ActivateOrOpen') + 2))
     await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
+  })
+
+  it('shows no card with the pointer on the right half of the character before a name', async () => {
+    await start()
+    await openFile('windows')
+    replaceAll('    x(ActivateOrOpen("a", "b"))\n')
+    const open = text().indexOf('(')
+    const view = editorView()
+    const left = view.coordsAtPos(open)!
+    const right = view.coordsAtPos(open + 1)!
+    await hover({ x: left.left + (right.left - left.left) * 0.75, y: (left.top + left.bottom) / 2 })
+    await new Promise((r) => setTimeout(r, 700))
+    expect(card()).toBeNull()
+    // The name itself does get its card, so the silence above is not a broken hover.
+    await hover(await wordPoint('ActivateOrOpen'))
+    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
+  })
+
+  it('takes the card away when the text changes', async () => {
+    await start()
+    await openFile('windows')
+    await hover(await wordPoint('ActivateOrOpen'))
+    await waitFor(() => expect(card()).not.toBeNull())
+    editorView().dispatch({ changes: { from: 0, insert: '; typed\n' } })
+    await waitFor(() => expect(card()).toBeNull())
+  })
+
+  it('lets a card taller than the room for it scroll inside its box', async () => {
+    await page.viewport(1280, 250)
+    try {
+      await start()
+      await openFile('windows')
+      await hover(await wordPoint('ActivateOrOpen'))
+      await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen('))
+      const box = card()!
+      // CodeMirror sizes the box once React has drawn the card in it.
+      await waitFor(() => expect(box.scrollHeight).toBeGreaterThan(box.clientHeight))
+      expect(box.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
+      expect(getComputedStyle(box).overflowY).toBe('auto')
+      box.scrollTop = box.scrollHeight
+      const last = box.querySelector('p:last-child')!
+      expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(box.getBoundingClientRect().bottom + 1)
+    } finally {
+      await page.viewport(1280, 900)
+    }
   })
 
   it('shows the written docs of a library function, in the editor and in the list', async () => {

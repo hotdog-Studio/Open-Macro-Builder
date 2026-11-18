@@ -69,4 +69,23 @@ describe('the real scripts, as the Commands tab reads them', () => {
     )
     expect(bad.map((e) => e.fn.name)).toEqual([])
   })
+
+  it('gives every AutoHotkey function to call a summary and a note for each parameter', async () => {
+    const { functions } = await sections('ahk')
+    const entries = functions.flatMap((g) => g.entries)
+    expect(entries.length).toBeGreaterThan(0)
+    expect(entries.filter((e) => e.summary === '').map((e) => e.fn.name)).toEqual([])
+    expect(entries.filter((e) => e.fn.doc.params.some((p) => p.text === '')).map((e) => e.fn.name)).toEqual([])
+  })
+
+  it('gives every AutoHotkey command with a block a summary', async () => {
+    // Imported here so that the imports at the top of this file stay as they are.
+    const { isCommand } = await import('../languages')
+    const commandFiles = await scanCommands(folder)
+    const withBlock = commandFiles
+      .filter((f) => f.lang === 'ahk')
+      .flatMap((f) => f.functions.filter((fn) => isCommand(fn) && fn.doc.form === 'block').map((fn) => ({ fn, at: `${f.pair} ${fn.name}` })))
+    expect(withBlock.length).toBeGreaterThan(0)
+    expect(withBlock.filter(({ fn }) => fn.doc.summary === '').map(({ at }) => at)).toEqual([])
+  })
 })

@@ -102,7 +102,7 @@ function RunPythonScript {
 .SYNOPSIS
 Runs a PowerShell script in its own process and does not wait for it.
 .DESCRIPTION
-Starts Windows PowerShell with the script's path in double quotes (so spaces in the path are fine), followed by the arguments. The script runs without the user's profile, and even where the execution policy would otherwise refuse to run scripts. The macro carries on at once, without waiting for the script to finish.
+Starts Windows PowerShell with the script's path in double quotes (so spaces in the path are fine), followed by the arguments. The script runs without the user's profile and with the execution policy bypassed, unless Group Policy sets one: a policy set by Group Policy still applies. The macro carries on at once, without waiting for the script to finish.
 .PARAMETER ScriptPath
 The full path of the .ps1 file.
 .PARAMETER Arguments

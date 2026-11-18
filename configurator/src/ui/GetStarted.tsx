@@ -2,16 +2,11 @@ import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { LangId } from '../core/languages'
 import { LINKS } from '../core/links'
 import { useApp } from '../state/store'
+import { LINK, Strong } from './prose'
 
 // The guide for someone who has never seen code. Names of things on screen are bold, keys to press
 // are drawn as keys, and file names and anything typed are set in code, so a reader can tell
 // which words to look for and which to type.
-
-const LINK = 'text-sky-400 underline-offset-4 hover:underline'
-
-function Strong({ children }: Readonly<{ children: ReactNode }>) {
-  return <strong className="font-semibold text-zinc-100">{children}</strong>
-}
 
 function Kbd({ children }: Readonly<{ children: ReactNode }>) {
   return (
@@ -315,7 +310,7 @@ function useInstalled(): readonly LangId[] | null {
 }
 
 /**
- * `folderName` is null while no folder is open (the opening screen). `languages` are the versions
+ * `folderName` is null while no folder is open (the start screen). `languages` are the versions
  * ticked under I run; the instructions that differ between the two follow them.
  */
 export function GetStarted({

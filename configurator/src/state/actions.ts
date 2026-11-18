@@ -254,10 +254,10 @@ export function createActions(
    * other folder is opened or closed. Only that folder opens on Get started: one that already
    * held a setup opens on Pad shape.
    */
-  let fresh: FolderAccess | null = null
+  let freshSetup: FolderAccess | null = null
 
   function forget(): void {
-    fresh = null
+    freshSetup = null
     stopWatch?.()
     stopWatch = null
     held = null
@@ -298,7 +298,7 @@ export function createActions(
   /** The editor opens on a loaded session. */
   function opened(session: Session, settings: Settings): void {
     // Read before forget() clears it.
-    const tab = session.folder === fresh ? 'start' : undefined
+    const tab = session.folder === freshSetup ? 'start' : undefined
     dispatch({ type: 'loaded', session, settings, tab })
     forget()
     hold(session.folder, session.configFile, session.commandFiles)
@@ -458,7 +458,7 @@ export function createActions(
       copying = false
     }
     if (!copied || token !== loads) return
-    fresh = folder
+    freshSetup = folder
     await load(folder)
   }
 

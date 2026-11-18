@@ -131,10 +131,11 @@ export function usePadActions(): PadActions {
   return pad
 }
 
+/** The tabs that have a pad. The guide has none, so nothing is ever dragged there. */
+type PadTab = Exclude<Tab, 'start'>
+
 /** For someone using a screen reader or the keyboard: what to press instead of dragging. */
-const INSTRUCTIONS: Record<Tab, string> = {
-  // The guide has no pad, so nothing is ever dragged there.
-  start: '',
+const INSTRUCTIONS: Record<PadTab, string> = {
   shape:
     'Drag with the mouse, or hold Alt and press an arrow key to move the key one square. Shift, Alt and an arrow key resize it.',
   layers:
@@ -153,7 +154,7 @@ function editableLayer(ws: Workspace, layerId: string | null): string | null {
  * something outside the grid is dragged too (the command list, the parked-layer shelf), so both
  * sit in the same context.
  */
-export function PadDnd({ mode, children }: Readonly<{ mode: Tab; children: ReactNode }>) {
+export function PadDnd({ mode, children }: Readonly<{ mode: PadTab; children: ReactNode }>) {
   const { state, dispatch } = useEditor()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const labels = state.ws.options.showLabels ?? false
@@ -269,7 +270,7 @@ function ResizeHandle({ k }: Readonly<{ k: PadKey }>) {
 
 interface KeyBoxProps {
   k: PadKey
-  mode: Tab
+  mode: PadTab
   labels: boolean
   selected: boolean
   /** The drag id, or null when this key cannot be dragged here. */
@@ -345,7 +346,7 @@ function KeyBox({ k, mode, labels, selected, dragId, droppable, strip, onSelect,
 }
 
 export interface PadGridProps {
-  mode: Tab
+  mode: PadTab
   /** What to draw inside a key. The Fn key goes through here too. */
   renderKey: (k: PadKey) => ReactNode
   /** Draws one extra row and column of free cells, as drop targets for moving a key. */

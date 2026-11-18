@@ -121,12 +121,11 @@ describe('messages as toasts', () => {
     await openPad()
     vi.useFakeTimers()
     // The first layer has one macro past the last key, which the new key takes.
-    const first = Object.values(seen.state.ws.slots)[0]
-    const layers = { ...seen.state.ws.slots }
-    for (const [key, layer] of Object.entries(layers)) {
-      if (layer === first) layers[key] = { ...layer, overflowMacros: [{ action: 'Lock', name: 'Lock' }] }
-    }
-    act(() => seen.dispatch({ type: 'edit', ws: { ...seen.state.ws, slots: layers } }))
+    if (seen.state.screen !== 'edit') throw new Error('expected the editor')
+    const { ws } = seen.state
+    const [slot, first] = Object.entries(ws.slots)[0]
+    const overflowMacros = [{ action: 'Lock', name: 'Lock' }]
+    act(() => seen.dispatch({ type: 'edit', ws: { ...ws, slots: { ...ws.slots, [slot]: { ...first, overflowMacros } } } }))
     fireEvent.click(screen.getByRole('button', { name: '+ Add key' }))
     const text = `Layer "${first.title}" had a macro past the last key; it is now on F1.`
     expect(screen.getByText(text).parentElement!.tagName).toBe('OUTPUT')

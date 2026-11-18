@@ -5,6 +5,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { DownloadLink } from './DownloadLink'
 import { GetStarted } from './GetStarted'
 import { NewFolderDialog } from './NewFolderDialog'
+import { LINK, Strong } from './prose'
 
 const DISABLED = 'disabled:cursor-not-allowed disabled:opacity-50'
 const PRIMARY = `rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500 ${DISABLED}`
@@ -34,8 +35,6 @@ function Frame({
     </main>
   )
 }
-
-const LINK = 'text-sky-400 underline-offset-4 hover:underline'
 
 /** A browser that cannot open folders: the explanation, and the desktop app, which works everywhere on Windows. */
 export function Unsupported({ message }: Readonly<{ message: string }>) {
@@ -86,7 +85,7 @@ export function OpenScreen() {
   return (
     <Frame message={open?.message ?? null} guide={guide && <GetStarted folderName={null} languages={LANG_IDS} />}>
       <p className="max-w-xl text-center text-zinc-300">
-        Turn a spare keypad into a pad of shortcuts. New here? <strong className="font-semibold text-zinc-100">Get started</strong>{' '}
+        Turn a spare keypad into a pad of shortcuts. New here? <Strong>Get started</Strong>{' '}
         says what you need and takes you as far as your first key press.
       </p>
       <div className="flex gap-3">
@@ -140,7 +139,7 @@ export function OpenScreen() {
           <p>The configurator checks your macros against the commands of the version you run.</p>
           <p className="mt-3">
             AutoHotkey is a free program you install yourself. PowerShell is already part of Windows. You can change this
-            later under <strong className="font-semibold text-zinc-100">I run</strong>.
+            later under <Strong>I run</Strong>.
           </p>
         </ConfirmDialog>
       )}

@@ -81,7 +81,7 @@ describe('in a small window', () => {
     expect(inView(screen.getByRole('link', { name: 'contributing guide' }))).toBe(true)
   })
 
-  it('on the opening screen the guide scrolls and the buttons stay reachable', async () => {
+  it('on the start screen the guide scrolls and the buttons stay reachable', async () => {
     await page.viewport(760, 420)
     startOpenScreen()
     await click(await screen.findByRole('button', { name: 'Get started' }))

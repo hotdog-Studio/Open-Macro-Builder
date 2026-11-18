@@ -124,7 +124,7 @@ export async function startApp(tab: TabName = 'Pad shape', layout?: string): Pro
   return { folder }
 }
 
-/** The opening screen, with no folder open and none to reopen. */
+/** The start screen, with no folder open and none to reopen. */
 export function startOpenScreen(): void {
   mount({ kind: 'browser', openFolder: async () => null, createFolder: async () => null, restoreFolder: async () => null })
 }
@@ -274,7 +274,7 @@ export function carried(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.cursor-grabbing')
 }
 
-/** The error or notice above the editor, or null. */
+/** The message floating over the editor (a notice, a refused action or an error), or null. */
 export function banner(): string | null {
   return document.querySelector('[role="alert"] > span, output > span')?.textContent ?? null
 }

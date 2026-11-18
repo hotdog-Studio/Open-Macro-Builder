@@ -214,11 +214,11 @@ describe('opening a folder', () => {
   })
 })
 
-describe('the opening screen', () => {
+describe('the start screen', () => {
   const BLURB =
     'Turn a spare keypad into a pad of shortcuts. New here? Get started says what you need and takes you as far as your first key press.'
 
-  it('the opening screen says what the app is for and offers the guide', () => {
+  it('says what the app is for and offers the guide', () => {
     renderApp(fakePlatform(null))
     const main = screen.getByRole('main')
     const blurb = within(main)

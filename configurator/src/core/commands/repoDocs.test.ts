@@ -54,10 +54,7 @@ describe('the real scripts, as the Commands tab reads them', () => {
     const { functions } = await sections('ahk')
     const helper = functions.find((g) => g.group.label === 'helper')!
     expect(helper.entries.map((e) => e.fn.name)).toEqual(
-      [
-        'ActivateOrOpen', 'Open', 'EnsureActiveOrOpen', 'RunPythonScript', 'RunPowerShellScript', 'RunBatchScript',
-        'ProgramCommandLine', 'ScriptCommandLine',
-      ],
+      ['ActivateOrOpen', 'Open', 'EnsureActiveOrOpen', 'RunPythonScript', 'RunPowerShellScript', 'RunBatchScript'],
     )
   })
 

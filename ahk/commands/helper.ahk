@@ -22,7 +22,7 @@ ActivateOrOpen(Window, Program, Args := "")
 	}
 	else
 	{   ; else start requested Program
-        Run(ProgramCommandLine(Program, Args))
+        Run('"' Program '"' (Args != "" ? " " Args : ""))
         if WinWait(Window,,5)  ; 0 when no window appeared in 5 seconds
         {
             if WinActive(Window) {
@@ -45,7 +45,7 @@ ActivateOrOpen(Window, Program, Args := "")
  */
 Open(Window, Program, Args := "")
 {
-    Run(ProgramCommandLine(Program, Args))
+    Run('"' Program '"' (Args != "" ? " " Args : ""))
     if WinWait(Window,,5)  ; 0 when no window appeared in 5 seconds
         WinActivate  ; the window WinWait found
 }
@@ -63,7 +63,7 @@ EnsureActiveOrOpen(Window, Program, Args := "")
    ; check if Window exists
    if !WinExist(Window)
 	{   ; start requested Program
-        Run(ProgramCommandLine(Program, Args))
+        Run('"' Program '"' (Args != "" ? " " Args : ""))
         if !WinWait(Window,,5)  ; 0 when no window appeared in 5 seconds
             return false
 	}
@@ -80,7 +80,7 @@ EnsureActiveOrOpen(Window, Program, Args := "")
  */
 RunPythonScript(ScriptPath, Args := "")
 {
-    Run(ScriptCommandLine("python", ScriptPath, Args))
+    Run('python "' ScriptPath '"' (Args != "" ? " " Args : ""))
 }
 
 /**
@@ -91,7 +91,7 @@ RunPythonScript(ScriptPath, Args := "")
  */
 RunPowerShellScript(ScriptPath, Args := "")
 {
-    Run(ScriptCommandLine("powershell -NoProfile -ExecutionPolicy Bypass -File", ScriptPath, Args))
+    Run('powershell -NoProfile -ExecutionPolicy Bypass -File "' ScriptPath '"' (Args != "" ? " " Args : ""))
 }
 
 /**
@@ -102,32 +102,7 @@ RunPowerShellScript(ScriptPath, Args := "")
  */
 RunBatchScript(ScriptPath, Args := "")
 {
-    Run(ProgramCommandLine(ScriptPath, Args))
-}
-
-/**
- * The command line that starts a program: its name or path in double quotes, then Args as given. The helpers that start programs run it.
- * @param {String} Program - A program name such as "notepad", or the full path of a file; spaces are fine.
- * @param {String} [Args=""] - Text that follows on the command line, as given. Put a path with spaces in double quotes.
- * @returns {String} The command line.
- * @example ProgramCommandLine("chrome.exe", "--new-window https://example.com/")
- */
-ProgramCommandLine(Program, Args := "")
-{
-    return '"' Program '"' (Args != "" ? " " Args : "")
-}
-
-/**
- * The command line that runs a script: the interpreter, the script's path in double quotes, then Args as given.
- * @param {String} Interpreter - The program and its options, such as "python".
- * @param {String} ScriptPath - The path of the script; spaces are fine.
- * @param {String} [Args=""] - Text that follows the path on the command line, as given.
- * @returns {String} The command line.
- * @example ScriptCommandLine("python", "C:\Scripts\backup.py", "--quick")
- */
-ScriptCommandLine(Interpreter, ScriptPath, Args := "")
-{
-    return Interpreter ' "' ScriptPath '"' (Args != "" ? " " Args : "")
+    Run('"' ScriptPath '"' (Args != "" ? " " Args : ""))
 }
 
 /**

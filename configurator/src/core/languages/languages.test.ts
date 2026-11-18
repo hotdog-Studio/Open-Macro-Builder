@@ -236,7 +236,9 @@ describe('AutoHotkey findFunctions', () => {
     expect(fn.doc.params[0].text).toBe('The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.')
     expect(fn.doc.examples).toEqual(['ActivateOrOpen("ahk_exe notepad.exe", "notepad")'])
     expect(fn.doc.params[2]).toMatchObject({ name: 'Args', optional: true, default: '""' })
-    expect(fns.find((f) => f.name === 'ProgramCommandLine')!.doc.returns).toBe('The command line.')
+    expect(fns.find((f) => f.name === 'EnsureActiveOrOpen')!.doc.returns).toBe(
+      'True when a matching window is the active window at the end; false when no window appeared within 5 seconds or Windows did not let it come to the front. Check it before sending keys.',
+    )
   })
 })
 

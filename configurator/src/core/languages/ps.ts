@@ -31,33 +31,67 @@ const QUOTES = `'"`
 const PAREN: Record<string, number> = { '(': 1, ')': -1 }
 const BRACKET: Record<string, number> = { '[': 1, ']': -1 }
 
+/** Where a read of a parameter list is: in a quoted string or not, and how deep in parens and brackets. */
+interface ListScan {
+  quote: string
+  paren: number
+  bracket: number
+}
+
+/** What a character is to the list: before it (the open paren), its end (the close paren), a comma between two parameters, or text of one. */
+type ListPart = 'before' | 'end' | 'split' | 'text'
+
+/** What the character `ch` is to the list, the scan moved on past it. */
+function step(scan: ListScan, ch: string): ListPart {
+  if (scan.quote) {
+    if (ch === scan.quote) scan.quote = ''
+    return 'text'
+  }
+  if (QUOTES.includes(ch)) scan.quote = ch
+  const outside = scan.paren === 0
+  scan.paren += PAREN[ch] ?? 0
+  scan.bracket += BRACKET[ch] ?? 0
+  if (outside) return 'before'
+  if (scan.paren === 0) return 'end'
+  return ch === ',' && scan.paren === 1 && scan.bracket === 0 ? 'split' : 'text'
+}
+
+/** The index just past the comment that starts at `i` (`#` to the end of its line, or `<# ... #>`); `i` when none starts there. */
+function commentEnd(list: string, i: number): number {
+  if (list.startsWith('<#', i)) {
+    const close = list.indexOf('#>', i + 2)
+    return close === -1 ? list.length : close + 2
+  }
+  if (list[i] !== '#') return i
+  const eol = list.indexOf('\n', i)
+  return eol === -1 ? list.length : eol
+}
+
 /**
  * The pieces between the commas of a parameter list. `list` starts at its open paren; what comes
- * after the matching close paren is not read. A comma inside quotes or inner parens splits nothing.
+ * after the matching close paren is not read. A comma inside quotes, inner parens or brackets
+ * splits nothing, and comments are left out of the pieces.
  */
 function splitParams(list: string): string[] {
   const pieces: string[] = []
-  let depth = 0
-  let quote = ''
+  const scan: ListScan = { quote: '', paren: 0, bracket: 0 }
   let piece = ''
-  for (const ch of list) {
-    if (quote) {
-      piece += ch
-      if (ch === quote) quote = ''
+  let i = 0
+  while (i < list.length) {
+    const after = scan.quote ? i : commentEnd(list, i)
+    if (after > i) {
+      i = after
       continue
     }
-    if (QUOTES.includes(ch)) quote = ch
-    const outside = depth === 0
-    depth += PAREN[ch] ?? 0
-    // The paren that closes the list.
-    if (depth === 0) break
-    if (ch === ',' && depth === 1) {
+    const part = step(scan, list[i])
+    if (part === 'end') break
+    if (part === 'split') {
       pieces.push(piece)
       piece = ''
-    } else if (!outside) {
-      // Everything but the paren that opens the list.
-      piece += ch
+    } else if (part === 'text') {
+      piece += list[i]
     }
+    i++
   }
   pieces.push(piece)
   return pieces

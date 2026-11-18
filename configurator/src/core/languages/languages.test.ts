@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readRepoText } from '../../../test/repo'
 import { appendBlock } from '../commands/newCommand'
+import { paramMismatches } from '../commands/outline'
 import { LANGUAGES, LANG_IDS, emptyDoc, isCommand } from './index'
 
 describe('AutoHotkey findFunctions', () => {
@@ -410,6 +411,41 @@ describe('PowerShell findFunctions', () => {
   it('reads a note that starts with the letters of #region or #Requires', () => {
     expect(LANGUAGES.ps.findFunctions('#requirements: none\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'requirements: none' })
     expect(LANGUAGES.ps.findFunctions('#regional settings\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'regional settings' })
+  })
+
+  it('reads past comments inside the parameter list', () => {
+    const text = [
+      'function Send-Click {',
+      '    param(',
+      "        # the window's left edge",
+      '        [int]$X,',
+      '        <# the top, $Top in pixels #>',
+      '        [int]$Y,',
+      "        [string]$Button = 'Left' # which one",
+      '    )',
+      '}',
+    ].join('\n')
+    const [fn] = LANGUAGES.ps.findFunctions(text)
+    expect(fn.params).toEqual(['X', 'Y', 'Button'])
+    expect(fn.usage).toBe('Send-Click <X> <Y> [-Button <string>]')
+    expect(fn.doc.params.map((p) => [p.type, p.default])).toEqual([['int', ''], ['int', ''], ['string', "'Left'"]])
+  })
+
+  it('takes no parameter name from a comment', () => {
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param(\n        # Like $Path\n        $Name)\n}')[0].params).toEqual(['Name'])
+  })
+
+  it('reads a command whose parameter has a comment above it as a command', () => {
+    const ps = 'function OpenIt {\n    param(\n        # Uses $Window from the caller\n        $Macro)\n}\n'
+    const [fn] = LANGUAGES.ps.findFunctions(ps)
+    expect(isCommand(fn)).toBe(true)
+    expect(paramMismatches({ ahk: 'OpenIt(Macro) {\n}\n', ps })).toEqual([])
+  })
+
+  it('reads a type with a comma inside brackets, and a type after a comment', () => {
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param([Dictionary[string,int]]$Map, $B)\n}')[0].doc.params.map((p) => p.type))
+      .toEqual(['Dictionary[string,int]', ''])
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param(\n        # left\n        [int]$X)\n}')[0].doc.params[0].type).toBe('int')
   })
 
   it('reads no docs from a #> with no <# above it', () => {

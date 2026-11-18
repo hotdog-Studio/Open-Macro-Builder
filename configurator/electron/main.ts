@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, Menu } from 'electron'
+import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
 import { join } from 'node:path'
+import { isAllowedLink } from '../src/core/links'
 import { registerIpc } from './ipc'
 
 function createWindow(): void {
@@ -15,10 +16,17 @@ function createWindow(): void {
     },
   })
 
-  // The page never leaves the app and never opens other windows.
+  // The page never leaves the app and never opens other windows. The one exception is a short fixed
+  // list of addresses (src/core/links.ts): the page may ask for one of those, and the default
+  // browser opens it. Any other address is ignored.
   win.webContents.on('will-navigate', (event) => event.preventDefault())
   win.webContents.on('will-redirect', (event) => event.preventDefault())
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedLink(url)) {
+      shell.openExternal(url).catch((error: Error) => console.error(`[link] ${url}: ${error.message}`))
+    }
+    return { action: 'deny' }
+  })
 
   // The page asks before closing or reloading while it has unsaved edits (useUnsavedGuard);
   // Electron shows no question of its own, so ask here. Leave lets the page go.

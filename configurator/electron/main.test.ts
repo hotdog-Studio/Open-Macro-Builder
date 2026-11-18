@@ -1,5 +1,6 @@
 import { basename, join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { LINKS } from '../src/core/links'
 
 type Listener = (...args: unknown[]) => unknown
 
@@ -12,9 +13,10 @@ const electron = vi.hoisted(() => {
       options: { title: string; width: number; height: number; webPreferences: { preload: string; contextIsolation: boolean; nodeIntegration: boolean; sandbox: boolean } }
       listeners: Map<string, Listener>
       contents: Map<string, Listener>
-      handler: { current: (() => unknown) | null }
+      handler: { current: ((details: { url: string }) => unknown) | null }
       loaded: string[]
     }>,
+    openExternal: vi.fn(),
     ready: Promise.resolve(),
     packaged: false,
     setMenu: vi.fn(),
@@ -37,14 +39,14 @@ vi.mock('electron', () => {
         options,
         listeners: new Map<string, Listener>(),
         contents: new Map<string, Listener>(),
-        handler: { current: null as (() => unknown) | null },
+        handler: { current: null as ((details: { url: string }) => unknown) | null },
         loaded: [] as string[],
       }
       electron.windows.push(this.record as never)
       const record = this.record
       this.webContents = {
         on: (event: string, fn: Listener) => record.contents.set(event, fn),
-        setWindowOpenHandler: (fn: () => unknown) => (record.handler.current = fn),
+        setWindowOpenHandler: (fn: (details: { url: string }) => unknown) => (record.handler.current = fn),
       }
     }
     on(event: string, fn: Listener) {
@@ -72,6 +74,7 @@ vi.mock('electron', () => {
     BrowserWindow: FakeWindow,
     dialog: { showMessageBoxSync: electron.messageBox },
     Menu: { setApplicationMenu: electron.setMenu },
+    shell: { openExternal: electron.openExternal },
   }
 })
 
@@ -97,6 +100,8 @@ beforeEach(() => {
   ipc.dispose.mockReset()
   electron.setMenu.mockReset()
   electron.messageBox.mockReset()
+  electron.openExternal.mockReset()
+  electron.openExternal.mockResolvedValue(undefined)
   vi.restoreAllMocks()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -159,9 +164,25 @@ describe('keeping the page inside the app', () => {
     }
   })
 
-  it('denies every new window', async () => {
+  it('denies every new window, and opens nothing for an address off the list', async () => {
     const win = await start()
-    expect(win.handler.current!()).toEqual({ action: 'deny' })
+    expect(win.handler.current!({ url: 'https://example.com/' })).toEqual({ action: 'deny' })
+    expect(electron.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('opens a link from the fixed list in the default browser, and still opens no window', async () => {
+    const win = await start()
+    expect(win.handler.current!({ url: LINKS.autohotkey })).toEqual({ action: 'deny' })
+    expect(electron.openExternal).toHaveBeenCalledOnce()
+    expect(electron.openExternal).toHaveBeenCalledWith(LINKS.autohotkey)
+  })
+
+  it('a link that cannot be opened is reported, not thrown', async () => {
+    electron.openExternal.mockRejectedValue(new Error('no browser'))
+    const win = await start()
+    expect(win.handler.current!({ url: LINKS.contributing })).toEqual({ action: 'deny' })
+    await vi.waitFor(() => expect(console.error).toHaveBeenCalledOnce())
+    expect(console.error).toHaveBeenCalledWith(`[link] ${LINKS.contributing}: no browser`)
   })
 
   it('blocks webviews in any web contents', async () => {

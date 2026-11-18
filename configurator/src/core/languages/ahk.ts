@@ -5,15 +5,19 @@ const HEAD = /^(\w+)\(/
 const PARAM_NAME = /^[&*]?(\w+)/
 const NOT_FUNCTIONS = new Set(['if', 'while', 'for', 'loop', 'switch', 'catch', 'until', 'return', 'else'])
 
-/** Splits a parameter list on commas that are not inside a quoted string. */
+/** Splits a parameter list on commas that are not inside a quoted string. A backtick escapes the character after it. */
 function splitParams(list: string): string[] {
   const pieces: string[] = []
   let quote = ''
+  let escaped = false
   let start = 0
   for (let i = 0; i < list.length; i++) {
     const ch = list[i]
-    if (quote) {
-      if (ch === quote) quote = ''
+    if (escaped) {
+      escaped = false
+    } else if (quote) {
+      if (ch === '`') escaped = true
+      else if (ch === quote) quote = ''
     } else if (ch === '"' || ch === "'") {
       quote = ch
     } else if (ch === ',') {

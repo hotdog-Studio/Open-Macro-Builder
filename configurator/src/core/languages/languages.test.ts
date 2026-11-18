@@ -250,6 +250,10 @@ describe('AutoHotkey findFunctions', () => {
     expect(fns[2].usage).toBe('Bar(a := ")", b := "`"")')
   })
 
+  it('keeps the parameters after a default with an escaped quote', () => {
+    expect(LANGUAGES.ahk.findFunctions('Foo(a := "x`"y", b) {\n}')[0].params).toEqual(['a', 'b'])
+  })
+
   it('reads no docs from a plain /* */ comment above a function', () => {
     const fns = LANGUAGES.ahk.findFunctions('/**\n * A docs.\n */\nA() {\n}\n/* plain */\nB() {\n}')
     expect(fns[1].doc.form).toBe('none')

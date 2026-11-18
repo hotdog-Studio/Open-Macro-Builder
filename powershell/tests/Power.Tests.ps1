@@ -5,6 +5,25 @@ BeforeAll {
     foreach ($f in 'Native', 'Interop', 'Pump', 'Window', 'WinTitle', 'WindowOps') { . "$ps\lib\$f.ps1" }
     . "$ps\commands\power.ps1"
 }
+Describe 'Power commands reach Windows only through the wrappers the tests mock' {
+    It 'calls [Macropad.Native] only inside Lock-Workstation and Invoke-SuspendState' {
+        # A direct call in a command would lock, sleep or hibernate this PC during the tests, before any assertion.
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile("$ps\commands\power.ps1", [ref]$null, [ref]$null)
+        $bad = foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
+            if ($fn.Name -in 'Lock-Workstation', 'Invoke-SuspendState') { continue }
+            if ($fn.Body.Extent.Text -match '\[Macropad\.Native\]::') { $fn.Name }
+        }
+        $outside = $ast.EndBlock.Statements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] -and $_.Extent.Text -match '\[Macropad\.Native\]::' }
+        @($bad) + @($outside | ForEach-Object { $_.Extent.Text }) | Should -BeNullOrEmpty
+    }
+    It 'reads SetSuspendState''s one-byte BOOLEAN result as one byte' {
+        # Read as a four-byte BOOL, a refusal with junk in the upper bytes would look like success.
+        $method = [Macropad.Native].GetMethod('SetSuspendState')
+        $marshal = @($method.ReturnParameter.GetCustomAttributes([System.Runtime.InteropServices.MarshalAsAttribute], $false))
+        $marshal.Count | Should -Be 1
+        $marshal[0].Value | Should -Be ([System.Runtime.InteropServices.UnmanagedType]::U1)
+    }
+}
 Describe 'Power commands' {
     BeforeEach {
         Mock Start-Program {}

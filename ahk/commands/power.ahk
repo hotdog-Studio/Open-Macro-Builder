@@ -26,7 +26,7 @@ Lock(Macro)
  */
 WinSleep(Macro)
 {
-    if !DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0)
+    if !DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0, "UChar")  ; it returns a one-byte BOOLEAN
         throw Error("Windows did not go to sleep.")
 }
 
@@ -36,7 +36,7 @@ WinSleep(Macro)
  */
 Hibernate(Macro)
 {
-    if !DllCall("PowrProf\SetSuspendState", "Int", 1, "Int", 0, "Int", 0)
+    if !DllCall("PowrProf\SetSuspendState", "Int", 1, "Int", 0, "Int", 0, "UChar")  ; it returns a one-byte BOOLEAN
         throw Error("Windows did not hibernate. Is hibernation turned on (powercfg /hibernate on)?")
 }
 

@@ -57,7 +57,9 @@ namespace Macropad
         [DllImport("kernel32.dll")]
         public static extern IntPtr GetConsoleWindow();
         [DllImport("powrprof.dll")]
-        public static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
+        // BOOLEAN is one byte, in and out: read as a four-byte BOOL, a refusal could look like success.
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool SetSuspendState([MarshalAs(UnmanagedType.U1)] bool hibernate, [MarshalAs(UnmanagedType.U1)] bool forceCritical, [MarshalAs(UnmanagedType.U1)] bool disableWakeEvent);
 
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
         [DllImport("user32.dll")]

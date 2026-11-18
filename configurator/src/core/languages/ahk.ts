@@ -68,12 +68,10 @@ interface Tag {
   lines: string[]
 }
 
-// The patterns below never let two neighbouring parts match the same character, so a run of spaces
+// The two patterns below never let two neighbouring parts match the same character, so a run of spaces
 // has one way to be read: the text that ends each pattern starts at a non-space character, or is absent.
 /** `@name`, then the rest of the line: after one whitespace character (group 2), or from a non-word character (group 3). */
 const TAG = /^\s*@(\w+)(?:\s(.*)|([^\w\s].*))?$/
-/** `[{Type}] name [-] text`: the name is `[...]` or a run of non-spaces; a dash counts only before a space or the end. */
-const PARAM_TAG = /^(?:\{([^}]*)\}\s*)?(\[[^\]]*\]|\S+)\s*(?:-(?:\s+|$))?(\S.*)?$/
 /** `[{Type}] text` */
 const RETURNS_TAG = /^(?:\{[^}]*\}\s*)?(\S.*)?$/
 
@@ -91,15 +89,55 @@ function splitTags(block: string[]): { intro: string[]; tags: Tag[] } {
 
 const textOf = (lines: string[]): string => oneLine(lines.join(' '))
 
+/** What the first line of an `@param` says: `[{Type}] name [-] text`. */
+interface ParamParts {
+  type: string | undefined
+  name: string
+  text: string
+}
+
+/** The `{Type}` the line starts with, and what follows it. A `{...}` with nothing after it is the name, not a type. */
+function splitType(line: string): { type: string | undefined; rest: string } {
+  const close = line.indexOf('}')
+  if (!line.startsWith('{') || close === -1) return { type: undefined, rest: line }
+  const rest = line.slice(close + 1).trimStart()
+  return rest === '' ? { type: undefined, rest: line } : { type: line.slice(1, close), rest }
+}
+
+/** The name at the start of `text`, `[...]` or up to the next whitespace, and what follows it. */
+function splitName(text: string): { name: string; rest: string } {
+  const close = text.indexOf(']')
+  if (text.startsWith('[') && close !== -1) return { name: text.slice(0, close + 1), rest: text.slice(close + 1) }
+  const space = text.search(/\s/)
+  const end = space === -1 ? text.length : space
+  return { name: text.slice(0, end), rest: text.slice(end) }
+}
+
+/** `text` without a leading dash that stands alone: followed by whitespace, or by nothing. */
+function dropDash(text: string): string {
+  if (!text.startsWith('-')) return text
+  const after = text.slice(1)
+  const trimmed = after.trimStart()
+  return after === '' || trimmed !== after ? trimmed : text
+}
+
+/** The parts of the first line of an `@param`, already trimmed and free of line breaks (a line with one is no tag); null when it has no name. */
+function readParamParts(line: string): ParamParts | null {
+  const { type, rest } = splitType(line)
+  if (rest === '') return null
+  const { name, rest: after } = splitName(rest)
+  return { type, name, text: dropDash(after.trimStart()) }
+}
+
 /** An `@param` note onto the declared parameter it names, ignoring case; a name that matches none is dropped. */
 function readParamTag(tag: Tag, params: ParamDoc[]): void {
-  const match = PARAM_TAG.exec(tag.lines[0].trim())
-  if (!match) return
-  const name = match[2].replace(/^\[/, '').replace(/\]$/, '').split('=')[0].trim().toLowerCase()
+  const parts = readParamParts(tag.lines[0].trim())
+  if (!parts) return
+  const name = parts.name.replace(/^\[/, '').replace(/\]$/, '').split('=')[0].trim().toLowerCase()
   const param = params.find((p) => p.name.toLowerCase() === name)
   if (!param) return
-  param.type = match[1]?.trim() ?? ''
-  param.text = textOf([match[3] ?? '', ...tag.lines.slice(1)])
+  param.type = parts.type?.trim() ?? ''
+  param.text = textOf([parts.text, ...tag.lines.slice(1)])
 }
 
 /** An `@example`: its lines as written, the blank lines at its ends dropped. */

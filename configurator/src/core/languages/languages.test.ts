@@ -188,11 +188,37 @@ describe('AutoHotkey findFunctions', () => {
       expect(docOf(['@ param Name x']).summary).toBe('@ param Name x')
     })
 
-    it('reads a long run of spaces without slowing down', () => {
-      const spaces = ' '.repeat(50000)
-      const started = performance.now()
-      docOf([`@param {String}${spaces}Name${spaces}-${spaces}text ${spaces}!`, `@return {T}${spaces}x ${spaces}!`, `@example${spaces}!`])
-      expect(performance.now() - started).toBeLessThan(1000)
+    it('does not take a line with a line break inside it for a tag', () => {
+      // The tag pattern stops at the break, so the line is part of the summary and the tag readers never see it.
+      const doc = docOf(['@param Name text\rmore'])
+      expect(doc.params[0]).toMatchObject({ type: '', text: '' })
+      expect(doc.summary).toBe('@param Name text more')
+      expect(docOf(['@return {T}\rtext']).returns).toBe('')
+    })
+
+    describe('long lines', () => {
+      // A line with a line break inside is no tag (the tag pattern stops at it), so the readers only ever see
+      // lines without one. These runs are the worst shapes left for them; each must read in a few ms.
+      const SPACES = ' '.repeat(50000)
+      const LONG = 'a'.repeat(50000)
+      const timed = (tag: string) => {
+        const started = performance.now()
+        docOf([tag])
+        return performance.now() - started
+      }
+
+      it.each([
+        ['@param with spaces everywhere', `@param {String}${SPACES}Name${SPACES}-${SPACES}text b c`],
+        ['@param with spaces after the name', `@param Name${SPACES}b c`],
+        ['@param with a long name', `@param ${LONG} b c`],
+        ['@param with a long [name]', `@param [${LONG}] b c`],
+        ['@param with a long {type}', `@param {${LONG}} Name b c`],
+        ['@return with a type', `@return {T}${SPACES}b c`],
+        ['@example', `@example${SPACES}b c`],
+        ['a tag name', `@${LONG}${SPACES}b c`],
+      ])('%s', (_label, tag) => {
+        expect(timed(tag)).toBeLessThan(1000)
+      })
     })
   })
 

@@ -243,17 +243,23 @@ node {
         // versions, on a real desktop, driven by real key presses. It runs on every branch, so a
         // branch proves itself on the VM before it is merged. It needs a logged-in desktop that
         // the next build inherits: the test closes what it opens, also when a case fails. Its
-        // own limit is 20 minutes; the stage gives the wait for the agent and the run 45.
+        // own limit is 20 minutes; the stage gives the wait for the agent and the run 45. An abort
+        // or a timeout ends the test's process tree, so the stage runs the test's own clean-up
+        // (run.ps1 -EndToEndCleanup: leftover processes, windows, virtual desktops, held keys,
+        // the run's folder) before the test and again after it, whatever happened.
         def label = env.OMB_WINDOWS_DESKTOP_LABEL ?: 'windows-desktop'
+        def cleanUp = 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -EndToEndCleanup'
         if (!onAgent(label, 45) {
             try {
                 deleteDir()
                 checkout scm
+                bat cleanUp
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci -EndToEnd'
                 }
                 junit testResults: 'results/pester/end-to-end-results.xml', skipPublishingChecks: true, allowEmptyResults: true
             } finally {
+                try { bat cleanUp } catch (cleanUpFailed) { echo "the end-to-end clean-up failed: ${cleanUpFailed}" }
                 cleanWs(notFailBuild: true)
             }
         }) {

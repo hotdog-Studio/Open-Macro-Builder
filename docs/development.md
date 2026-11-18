@@ -62,16 +62,18 @@ Tests never read anything under `local/`.
 
 ### The end-to-end test
 
-`powershell\tests\EndToEnd.Tests.ps1` starts the real macropad, the AutoHotkey version and then the PowerShell one, with a test layout, presses the macro keys with `SendInput` as a keyboard would, and checks what happened: a program window that opened and is active, a file that a fixture script wrote, a window that moved, or the exact keys that a stand-in window received. Every command of `ahk/commands` and `powershell/commands` has a case or a reason why not (the power commands lock or shut down the PC); the table is `powershell/tests/helpers/EndToEndCases.ps1`, the fixtures are in `ahk/tests/e2e`. No real Chrome, PuTTY, VS Code or Visual Studio is used: small stand-in windows run under those programs' names.
+`powershell\tests\EndToEnd.Tests.ps1` starts the real macropad, the AutoHotkey version and then the PowerShell one, from a copy of `ahk`, `powershell` and `img` in a temporary folder (so your own commands in `local/` are not loaded), with a test layout, presses the macro keys with `SendInput` as a keyboard would, and checks what happened: a program window that opened and is active, a file that a fixture script wrote, a window that moved, or the exact keys that a stand-in window received. Every command of `ahk/commands` and `powershell/commands` is covered (its case runs wherever the test runs), conditional (its case needs something a PC may lack, such as a second monitor, and says what) or excluded with the reason (the power commands lock or shut down the PC); the table is `powershell/tests/helpers/EndToEndCases.ps1`, the fixtures are in `ahk/tests/e2e`. No real Chrome, PuTTY, VS Code or Visual Studio is used: small stand-in windows run under those programs' names.
 
 While it runs, for a few minutes, the test has the keyboard, the mouse and the screen. It:
 
 - shows a banner at the top of the screen for the whole run, three seconds before the first key;
-- stops the macropad that runs from this checkout, and starts it again at the end, also when a case fails (the banner process does it if the test process dies);
-- opens and closes small dark stand-in windows, File Explorer, PowerShell and Command Prompt, Calculator, Notepad, Control Panel and message boxes; snaps, maximizes and minimizes a stand-in; shows Task View, the desktop and the screen capture once each; makes a virtual desktop, switches to and fro, and closes it;
+- stops any macropad that runs, of either language, and starts each again at the end from its own command line and folder, also when a case fails (the banner process does it if the test process dies);
+- opens and closes small dark stand-in windows, File Explorer, PowerShell and Command Prompt, Calculator, Notepad, Control Panel and message boxes; snaps, maximizes and minimizes a stand-in; shows Task View and the screen capture once per macropad, and the desktop with two presses per macropad; makes a virtual desktop, switches to and fro, and closes it, once per macropad;
 - moves the mouse pointer for the delayed-click form, and puts it back.
 
-A case skips itself, saying why, where it would act on a window of yours: for example while your own File Explorer, Notepad or Settings window is open, and Task Manager and Services for an administrator (they would ask for or take elevation). Close those windows first for a full run.
+A case does not run, saying why, where it would act on a window of yours: for example while your own File Explorer, Notepad or Settings window is open. Close those windows first for a full run. Under `-Ci` such a window fails the case instead, since the CI desktop must be clean. A conditional case does not run where what it needs is missing (Task Manager and Services need a standard user: for an administrator they would ask for or take elevation). The run ends by listing every case that did not run, with the reason.
+
+A run that did not end itself (a crash, a Jenkins abort) is cleaned up by the next run, or at once by `powershell -NoProfile -File powershell\tests\run.ps1 -EndToEndCleanup`: it ends the run's processes, closes the windows and virtual desktops it opened, lets go of held keys, starts again the macropads it stopped and removes its folder. The Jenkins stage runs it before and after the test.
 
 ### Where a configurator test goes
 
@@ -119,9 +121,9 @@ Jenkins runs the `Jenkinsfile`:
 4. Builds the configurator.
 5. On `develop` only: runs the Pester suite on the Windows agent (`windows-x64`).
 6. On every branch: runs the end-to-end test on the Windows agent with a real desktop (`windows-desktop`).
-6. Sends everything to SonarQube, with the coverage of the unit and the browser tests, and waits for the quality gate.
-7. On `develop` only: packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).
-8. On `develop` only: publishes all of it as a release. [releasing.md](releasing.md) has the version scheme and the order of the steps.
+7. Sends everything to SonarQube, with the coverage of the unit and the browser tests, and waits for the quality gate.
+8. On `develop` only: packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).
+9. On `develop` only: publishes all of it as a release. [releasing.md](releasing.md) has the version scheme and the order of the steps.
 
 The `Jenkinsfile` header lists the globals, such as `OMB_NTFY_URL` for build notifications.
 

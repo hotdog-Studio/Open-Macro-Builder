@@ -150,7 +150,7 @@ The end-to-end test is left out of both, and runs alone:
 powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd
 ```
 
-It starts the real macropad, this version and the AutoHotkey one in turn, presses the macro keys and checks what every command did (see "The end-to-end test" in `docs/development.md`). It flashes more than the unit tests, at most three changes of the screen a second: it opens and closes File Explorer, consoles, Calculator, Notepad and small dark test windows, snaps and maximizes one, and shows Task View, the desktop, the screen capture and a second virtual desktop once each. It stops the macropad you run from this checkout and starts it again at the end. It needs AutoHotkey v2 and Python, and skips itself without AutoHotkey.
+It starts the real macropad, this version and the AutoHotkey one in turn, presses the macro keys and checks what every command did (see "The end-to-end test" in `docs/development.md`). It flashes more than the unit tests, at most three changes of the screen a second: it opens and closes File Explorer, consoles, Calculator, Notepad and small dark test windows, snaps and maximizes one, and shows Task View, the desktop, the screen capture and a second virtual desktop once per macropad (twice a run). It stops any macropad that runs and starts it again at the end, as it was started; the macropads it tests start from a copy that leaves out your own commands in `local/`. It needs AutoHotkey v2 and Python, and skips itself without AutoHotkey.
 
 `tools/spike-hotkeys.ps1` and `tools/preview-overlay.ps1` are manual checks for the hotkeys and the overlay.
 

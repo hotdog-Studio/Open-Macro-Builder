@@ -176,7 +176,6 @@ Everything specific to you lives in `local/`, which git ignores, so your hosts, 
 > [!WARNING]
 > **Photosensitivity warning.** Running the test suites opens, moves and closes windows in quick succession, which makes the screen flash and flicker. If you have photosensitive epilepsy, or flashing affects you, do not watch the screen while they run: look away, switch the monitor off, or let CI run them. [docs/development.md](docs/development.md#tests) says which suites do it.
 
-
 ## AI assistance
 
 The original AutoHotkey version was written by hand by the maintainer. Most of what came after was written with [Claude Code](https://claude.com/claude-code), Anthropic's coding assistant, working under the maintainer's direction: the configurator, the PowerShell version, the rework of the AutoHotkey version, the tests and the documentation.

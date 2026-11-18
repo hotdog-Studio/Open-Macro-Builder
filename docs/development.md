@@ -42,6 +42,11 @@ Press **Open folder** and pick this repository.
 
 ## Tests
 
+> [!WARNING]
+> **Photosensitivity warning.** Some of these suites open, move and close windows in quick succession, which makes the screen flash and flicker. If you have photosensitive epilepsy, or flashing affects you, do not watch the screen while they run: look away, switch the monitor off, or let CI run them.
+>
+> The ones that do it: the Pester suite (`powershell\tests\run.ps1`), which shows the overlay, tooltips, forms and test windows even when its Integration tests are left out, and more with them; and the desktop-app tests (`npm run test:electron`), which open and close the app's window. The configurator's unit tests and browser tests run without a visible window.
+
 | Command | From | What it runs |
 | --- | --- | --- |
 | `node --test "scripts/*.test.mjs"` | the repository root | The validator and the private-details check. |

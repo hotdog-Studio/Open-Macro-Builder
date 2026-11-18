@@ -132,6 +132,9 @@ A parameter's `.PARAMETER` line must give its name as the function declares it. 
 
 ## Test
 
+> [!WARNING]
+> **Photosensitivity warning.** These tests open, move and close windows in quick succession, which makes the screen flash and flicker, with or without the Integration tests. If you have photosensitive epilepsy, or flashing affects you, do not watch the screen while they run: look away, switch the monitor off, or let CI run them.
+
 From `macropad_ahk`:
 
 ```

@@ -208,12 +208,18 @@ describe('the list of a library, by language', () => {
     expect(within(row('Invoke-Demo')).getByText('Does a new thing.')).toBeTruthy()
   })
 
-  it("counts each group's rows and puts the card outside the panel", async () => {
-    const { user } = await startCommands({ files: { 'powershell/lib/Demo.ps1': DEMO } })
+  it("counts each group's listed rows and puts the card outside the panel", async () => {
+    const block = (name: string, summary: string) => `<#\n.SYNOPSIS\n${summary}\n.EXAMPLE\n${name}\n#>\nfunction ${name} {\n}\n\n`
+    // Three functions, two of them listed: the one with only a # note is not a tool.
+    const pair = `# Pair tools\n\n${block('Invoke-First', 'First tool.')}${block('Invoke-Second', 'Second tool.')}# Internal note.\nfunction Get-PairInternal {\n}\n`
+    const { user } = await startCommands({ files: { 'powershell/lib/Pair.ps1': pair } })
     await user.click(pairButton('windows'))
     await user.click(langButton('PowerShell'))
-    expect(group(/^Demo tools/).textContent).toMatch(/lib\/Demo\s*1$/)
-    await user.hover(row('Invoke-Demo'))
+    expect(group(/^Pair tools/).textContent).toMatch(/lib\/Pair\s*2$/)
+    // While filtering, the rows the filter leaves.
+    await user.type(within(other()).getByRole('textbox', { name: 'Filter other commands' }), 'second tool')
+    expect(group(/^Pair tools/).textContent).toMatch(/lib\/Pair\s*1$/)
+    await user.hover(row('Invoke-Second'))
     expect(screen.getByRole('tooltip').closest('aside')).toBeNull()
   })
 })

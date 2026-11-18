@@ -253,7 +253,7 @@ function listedBackwards(inner: FolderAccess): FolderAccess {
     readBytes: (path) => inner.readBytes(path),
     writeBytes: (path, data) => inner.writeBytes(path, data),
     remove: (path) => inner.remove(path),
-    list: async (dir) => (await inner.list(dir)).reverse(),
+    list: async (dir) => (await inner.list(dir)).toReversed(),
   }
 }
 

@@ -77,7 +77,7 @@ describe('DocCard', () => {
       'powershell/commands/helper.ps1 · line',
     ].map((part) => text.indexOf(part))
     expect(at.every((n) => n >= 0)).toBe(true)
-    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    expect(at.toSorted((a, b) => a - b)).toEqual(at)
   })
 
   it('says so when there is no description, and still says where it is', () => {

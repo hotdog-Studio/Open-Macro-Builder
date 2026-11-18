@@ -155,6 +155,7 @@ describe('messages as toasts', () => {
   })
 
   it('a message of another kind that replaces one under the resting pointer stays until the pointer leaves', async () => {
+    // A guard, not RED evidence: it already passed before the handlers moved to the frame, and it catches a hold that is lost with the replaced element.
     await openPad()
     vi.useFakeTimers()
     show({ text: 'That space is taken.', kind: 'warning' })
@@ -200,6 +201,27 @@ describe('messages as toasts', () => {
     show(notice)
     expect(document.activeElement).toBe(document.body)
     wait(toastLifetime(notice)!)
+    expect(screen.queryByText('Select a key first.')).toBeNull()
+  })
+
+  it('the focus that comes back to a replacement holds it, and its leaving starts the whole time again', async () => {
+    await openPad()
+    vi.useFakeTimers()
+    show({ text: 'That space is taken.', kind: 'warning' })
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus())
+    const notice: Banner = { text: 'Select a key first.', kind: 'info' }
+    show(notice)
+    expect(document.activeElement).toBe(document.body)
+    // The user tabs onto the new message's own button.
+    wait(1000)
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' })
+    act(() => dismiss.focus())
+    wait(toastLifetime(notice)! * 4)
+    expect(screen.queryByText('Select a key first.')).toBeTruthy()
+    act(() => dismiss.blur())
+    wait(toastLifetime(notice)! - 1)
+    expect(screen.queryByText('Select a key first.')).toBeTruthy()
+    wait(1)
     expect(screen.queryByText('Select a key first.')).toBeNull()
   })
 

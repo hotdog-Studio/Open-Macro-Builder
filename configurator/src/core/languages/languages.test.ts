@@ -231,6 +231,22 @@ describe('PowerShell findFunctions', () => {
     expect(fn.params[0]).toBe('Exe')
   })
 
+  it('stops an unclosed param list at the next function', () => {
+    const fns = LANGUAGES.ps.findFunctions('function B {\n    param([string]$Exe, [int]$N = (Get-X\n}\nfunction C {\n    param($Macro)\n}')
+    expect(fns.map((f) => f.params)).toEqual([['Exe', 'N'], ['Macro']])
+    expect(fns[0].doc.params[1].default).not.toContain('function C')
+  })
+
+  it('opens a help section only at a keyword of PowerShell help', () => {
+    const [fn] = LANGUAGES.ps.findFunctions('<#\n.SYNOPSIS\nReads a value.\n.NET types are fine.\n.Description\nMore.\n#>\nfunction A {\n}')
+    expect(fn.doc.summary).toBe('Reads a value. .NET types are fine. More.')
+  })
+
+  it('reads a note that starts with the letters of #region or #Requires', () => {
+    expect(LANGUAGES.ps.findFunctions('#requirements: none\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'requirements: none' })
+    expect(LANGUAGES.ps.findFunctions('#regional settings\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'regional settings' })
+  })
+
   it('builds the usage lines of real library functions', () => {
     const usage = (path: string, name: string) =>
       LANGUAGES.ps.findFunctions(readRepoText(path)).find((f) => f.name === name)!.usage

@@ -172,7 +172,9 @@ async function readSession(folder: FolderAccess, configPath: string): Promise<Se
   // A command file that is not UTF-8 is listed but never edited; the load notices say so.
   const ws = { ...parsed, notices: [...parsed.notices, ...commandFileNotices(commandFiles)] }
   const iconSets = await listIconSets(folder)
-  const libraryFiles = await scanLibrary(folder)
+  // A library file that cannot be read (locked, no permission) never stops the folder from
+  // opening: the session starts without the library, and the next recheck of the command files reads it.
+  const libraryFiles = await scanLibrary(folder).catch(() => [])
   return {
     folder,
     configFile,

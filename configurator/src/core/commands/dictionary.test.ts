@@ -38,7 +38,8 @@ const input = (over: Partial<DictInput> = {}): DictInput => ({
 
 describe('buildDictionary', () => {
   it('finds a name whatever its case, the owner\'s definition first', () => {
-    const hit = buildDictionary(input()).lookup('activateoropen')!
+    // The shared file comes first in the input, so only the yours-before-shared order picks the owner's.
+    const hit = buildDictionary(input({ commandFiles: [HELPER_PS, MINE_PS, WIN_AHK, WIN_PS] })).lookup('activateoropen')!
     expect(hit.source).toEqual({ kind: 'file', path: 'local/powershell/commands/mine.ps1', line: 5 })
     expect(hit.summary).toBe('Mine.')
   })

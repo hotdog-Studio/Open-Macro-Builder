@@ -53,36 +53,57 @@ export interface ListSections {
   commands: ListGroup[]
 }
 
+/** Reads the functions of a text in a language. */
+type Parse = (lang: LangId, text: string) => FunctionInfo[]
+
+/** A parse that reads each text once per language; made for one buildDictionary call and dropped after it. */
+function memoParse(): Parse {
+  const cache = new Map<LangId, Map<string, FunctionInfo[]>>()
+  return (lang, text) => {
+    let byText = cache.get(lang)
+    if (!byText) {
+      byText = new Map()
+      cache.set(lang, byText)
+    }
+    let found = byText.get(text)
+    if (!found) {
+      found = LANGUAGES[lang].findFunctions(text)
+      byText.set(text, found)
+    }
+    return found
+  }
+}
+
 /** The functions of a command file, from its unsaved text when it has some. */
-function functionsOf(file: CommandFile, drafts: Record<string, string>): FunctionInfo[] {
+function functionsOf(file: CommandFile, drafts: Record<string, string>, parse: Parse): FunctionInfo[] {
   const draft = drafts[file.file.path]
-  return draft === undefined ? file.functions : LANGUAGES[file.lang].findFunctions(draft)
+  return draft === undefined ? file.functions : parse(file.lang, draft)
 }
 
 /** The summary of the same-named function in the other language's file of the pair, and that language. */
 function twinSummary(
   file: CommandFile,
   fn: FunctionInfo,
-  commandFiles: CommandFile[],
-  drafts: Record<string, string>,
+  input: DictInput,
+  parse: Parse,
 ): { summary: string; lang: LangId } | null {
   const lower = fn.name.toLowerCase()
   for (const lang of LANG_IDS) {
     if (lang === file.lang) continue
-    const twin = commandFiles.find((f) => f.lang === lang && f.group === file.group && f.pair === file.pair)
-    const same = twin && functionsOf(twin, drafts).find((f) => f.name.toLowerCase() === lower)
+    const twin = input.commandFiles.find((f) => f.lang === lang && f.group === file.group && f.pair === file.pair)
+    const same = twin && functionsOf(twin, input.drafts, parse).find((f) => f.name.toLowerCase() === lower)
     if (same && same.doc.summary !== '') return { summary: same.doc.summary, lang }
   }
   return null
 }
 
-function commandEntries(input: DictInput, file: CommandFile, shown: boolean): DictEntry[] {
+function commandEntries(input: DictInput, file: CommandFile, shown: boolean, parse: Parse): DictEntry[] {
   const group: DictGroup = shown
     ? { key: 'shown', kind: 'shown', label: file.pair, file: null }
     : { key: `${file.group}:${file.pair}`, kind: file.group, label: file.pair, file: null }
-  return functionsOf(file, input.drafts).map((fn) => {
+  return functionsOf(file, input.drafts, parse).map((fn) => {
     const command = isCommand(fn)
-    const twin = command && fn.doc.summary === '' ? twinSummary(file, fn, input.commandFiles, input.drafts) : null
+    const twin = command && fn.doc.summary === '' ? twinSummary(file, fn, input, parse) : null
     return {
       fn,
       lang: file.lang,
@@ -96,7 +117,7 @@ function commandEntries(input: DictInput, file: CommandFile, shown: boolean): Di
 }
 
 function libraryEntries(file: LibraryFile): DictEntry[] {
-  const folder = file.path.split('/').slice(-2, -1)[0]
+  const folder = file.path.split('/').at(-2)
   const group: DictGroup = {
     key: `library:${file.path}`,
     kind: 'library',
@@ -122,8 +143,10 @@ export function buildDictionary(input: DictInput): Dictionary {
     ...own.filter((f) => !isShown(f) && f.group === 'yours'),
     ...own.filter((f) => !isShown(f) && f.group === 'shared'),
   ]
+  // Each draft is parsed once here, however many entries and twins read it.
+  const parse = memoParse()
   const entries = [
-    ...ordered.flatMap((f) => commandEntries(input, f, isShown(f))),
+    ...ordered.flatMap((f) => commandEntries(input, f, isShown(f), parse)),
     ...input.libraryFiles.filter((f) => f.lang === input.lang).flatMap(libraryEntries),
   ]
   const byName = new Map<string, DictEntry>()

@@ -15,8 +15,14 @@ function declaredParams(lines: string[], index: number): ParamDoc[] {
   }
   const startLine = window.findIndex((l) => PARAM_START.test(l))
   if (startLine === -1) return []
-  // Read to the matching close paren, which may be past the three-line window.
-  const rest = [lines[index + startLine].slice(lines[index + startLine].search(PARAM_START)), ...lines.slice(index + startLine + 1)]
+  // Read to the matching close paren, which may be past the three-line window, but an
+  // unclosed list stops at the line before the next definition.
+  const from = index + startLine + 1
+  const next = lines.findIndex((l, i) => i >= from && DEFINITION.test(l))
+  const rest = [
+    lines[index + startLine].slice(lines[index + startLine].search(PARAM_START)),
+    ...lines.slice(from, next === -1 ? lines.length : next),
+  ]
   const body = rest.join('\n')
   return splitParams(body.slice(body.indexOf('('))).flatMap((piece) => readParam(piece) ?? [])
 }
@@ -109,12 +115,20 @@ function usageLine(name: string, params: ParamDoc[]): string {
   return [name, ...parts].join(' ')
 }
 
-const NOT_A_NOTE = /^#(?:region|endregion|requires)/i
+const NOT_A_NOTE = /^#(?:region|endregion|requires)\b/i
 
 /** Whether a line belongs to a run of notes. A line that closes a block does not. */
 function isNote(line: string): boolean {
   const text = line.trim()
   return text.startsWith('#') && !text.startsWith('#>') && !NOT_A_NOTE.test(text)
+}
+
+/** The lines of a `<# ... #>` block without its `<#` and `#>`. */
+function blockText(block: string[]): string[] {
+  return block.map((l, n) => {
+    const opened = n === 0 ? l.trim().slice('<#'.length) : l
+    return n === block.length - 1 ? opened.replace(/#>\s*$/, '') : opened
+  })
 }
 
 /**
@@ -127,11 +141,7 @@ function docsAbove(lines: string[], index: number): { form: 'block' | 'note'; li
     let start = index - 1
     while (start >= 0 && !lines[start].trim().startsWith('<#')) start--
     if (start < 0) return null
-    const block = lines.slice(start, index).map((l, n, all) => {
-      const opened = n === 0 ? l.trim().slice('<#'.length) : l
-      return n === all.length - 1 ? opened.replace(/#>\s*$/, '') : opened
-    })
-    return { form: 'block', lines: block }
+    return { form: 'block', lines: blockText(lines.slice(start, index)) }
   }
   let start = index
   while (start > 0 && isNote(lines[start - 1])) start--
@@ -146,13 +156,19 @@ interface Section {
 }
 
 const KEYWORD = /^\.([A-Za-z]+)\b/
+/** PowerShell's own help keywords; a line starting with any other `.word` is text of its section. */
+const HELP_KEYWORDS = new Set([
+  'synopsis', 'description', 'parameter', 'example', 'inputs', 'outputs', 'notes', 'link', 'component', 'role',
+  'functionality', 'forwardhelptargetname', 'forwardhelpcategory', 'remotehelprunspace', 'externalhelp',
+])
 
 function sectionsOf(block: string[]): Section[] {
   const sections: Section[] = []
   for (const line of block) {
     const text = line.trim()
     const match = KEYWORD.exec(text)
-    if (match) sections.push({ keyword: match[1].toLowerCase(), lines: [text.slice(match[0].length).trim()] })
+    const keyword = match?.[1].toLowerCase() ?? ''
+    if (match && HELP_KEYWORDS.has(keyword)) sections.push({ keyword, lines: [text.slice(match[0].length).trim()] })
     else sections.at(-1)?.lines.push(line)
   }
   return sections

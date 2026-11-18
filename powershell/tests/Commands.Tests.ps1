@@ -22,7 +22,7 @@ Describe 'parity with ahk/commands' {
     }
 }
 Describe 'custom commands send the right chords' {
-    BeforeEach { Mock Send-Chord {}; Mock Send-Key {}; Mock EnsureActiveOrOpen {}; Mock ActivateOrOpenChrome {} }
+    BeforeEach { Mock Send-Chord {}; Mock Send-Key {}; Mock EnsureActiveOrOpen { $true }; Mock ActivateOrOpenChrome {} }
     It 'VsCodeSplitPanel' { VsCodeSplitPanel $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+\' } }
     It 'VsCodeRestartDebugging' { VsCodeRestartDebugging $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+Shift+F5' } }
     It 'ChromeNewTab' {

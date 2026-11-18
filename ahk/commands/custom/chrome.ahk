@@ -2,49 +2,26 @@
 
 ; *********************** Helper Functions *********************
 /**
- * Opens or activates Google Chrome. If a URL is provided, opens Chrome with that URL.
- * @param {(String)} Url (optional) If provided, opens Chrome with this URL.
+ * Switches to Google Chrome or starts it, or opens a web address in Chrome. Without Url, a Chrome window is activated (the bottom one when a Chrome window is already active, so pressing the key again steps through Chrome's windows), and Chrome is started only when it has no window. With Url, Chrome is started every time with the address on its command line, and a Chrome window is activated once one is there (up to 5 seconds).
+ * @param {String} [Url=""] - The web address to open, such as "https://www.google.com/"; & and % in it are fine. Leave it out to switch to Chrome.
  * @example ActivateOrOpenChrome("https://www.youtube.com/")
  */
 ActivateOrOpenChrome(Url := "")
 {
-    ; check if window exists
-    window := "ahk_exe chrome.exe"
-    program := "chrome.exe"
-    if !WinExist(window) || Url
-    {   ; else start requested program
-        if (Url)
-            Run('cmd /c "start ^"^" ^"' program '^" ' Url '"',,"Hide") ;use cmd in hidden mode to launch requested program
-        else
-            Run('cmd /c "start ^"^" ^"' program '^""',,"Hide") ;use cmd in hidden mode to launch requested program
-        WinWait(window,,,5)		; wait up to 5 seconds for window to exist
-        IfWinNotActive(window)
-        {
-            WinActivate  ; Uses the last found window.
-        }
-    }
+    if (Url != "")
+        Open("ahk_exe chrome.exe", "chrome.exe", '"' Url '"')
     else
-    {      
-        if WinActive(window) {
-            WinActivateBottom window ; Uses the last found window.
-        }
-        else {
-            WinActivate  ; Uses the last found window.
-        }
-    }
-   return
+        ActivateOrOpen("ahk_exe chrome.exe", "chrome.exe")
 }
 
 /**
- * Ensures Google Chrome is active or opens it if not already running.
+ * Makes a Google Chrome window the active window, starting Chrome when it has none.
  * @param {Macro} Macro - The macro object (not used in this function).
+ * @returns {Boolean} True when a Chrome window is the active window at the end; the Chrome commands send their keys only then.
  */
 EnsureActiveOrOpenChrome(Macro)
 {
-    ; check if window exists
-    window := "ahk_exe chrome.exe"
-    program := "chrome.exe"
-    EnsureActiveOrOpen(window, program, "")
+    return EnsureActiveOrOpen("ahk_exe chrome.exe", "chrome.exe")
 }
 
 ; *********************** Browsing/Chrome Functions *********************
@@ -79,8 +56,8 @@ ChromeOpen(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeNewTab(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Ctrl Down}t{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Ctrl Down}t{Ctrl Up}")
 }
 
 /**
@@ -88,8 +65,8 @@ ChromeNewTab(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeNewTabInGroup(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{LAlt Down}{Shift Down}t{Shift Up}{LAlt Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{LAlt Down}{Shift Down}t{Shift Up}{LAlt Up}")
 }
 
 /**
@@ -97,8 +74,8 @@ ChromeNewTabInGroup(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenNewWindow(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Ctrl Down}n{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Ctrl Down}n{Ctrl Up}")
 }
 
 /**
@@ -106,8 +83,8 @@ ChromeOpenNewWindow(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenIncognitoWindow(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Ctrl Down}{Shift Down}n{Shift Up}{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Ctrl Down}{Shift Down}n{Shift Up}{Ctrl Up}")
 }
 
 /**
@@ -115,8 +92,8 @@ ChromeOpenIncognitoWindow(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenDownloads(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Ctrl Down}j{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Ctrl Down}j{Ctrl Up}")
 }
 
 /**
@@ -124,8 +101,8 @@ ChromeOpenDownloads(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenHistory(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Ctrl Down}h{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Ctrl Down}h{Ctrl Up}")
 }
 
 /**
@@ -133,8 +110,8 @@ ChromeOpenHistory(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenBookmarks(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Ctrl Down}{Shift Down}o{Shift Up}{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Ctrl Down}{Shift Down}o{Shift Up}{Ctrl Up}")
 }
 
 /**
@@ -142,8 +119,8 @@ ChromeOpenBookmarks(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenExtensions(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Ctrl Down}{Shift Down}e{Shift Up}{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Ctrl Down}{Shift Down}e{Shift Up}{Ctrl Up}")
 }
 
 /**
@@ -151,8 +128,8 @@ ChromeOpenExtensions(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenSettings(Macro) {
-    EnsureActiveOrOpenChrome(Macro)
-    Send("{Alt Down}e{Alt Up}g")
+    if EnsureActiveOrOpenChrome(Macro)
+        Send("{Alt Down}e{Alt Up}g")
 }
 
 /**

@@ -18,7 +18,8 @@ function ActivateOrOpenChrome {
     if ($windows.Count -eq 0 -or $Url) {
         Start-Program 'chrome.exe' $Url
         $windows = Wait-ProcessWindow 'chrome.exe' 5
-        if ($windows.Count -gt 0 -and $windows -notcontains [Macropad.Native]::GetForegroundWindow()) {
+        # Test-WindowActive with no WinTitle gives the handle of the active window, whatever it is.
+        if ($windows.Count -gt 0 -and $windows -notcontains (Test-WindowActive)) {
             [void](Set-ActiveWindow $windows[0])
         }
     } else {
@@ -26,21 +27,23 @@ function ActivateOrOpenChrome {
     }
 }
 
+# True when a Chrome window is the active window at the end (Chrome is started when it has none).
+# The commands below send their keys only then, so the keys never go to another program.
 function EnsureActiveOrOpenChrome { param($Macro) EnsureActiveOrOpen 'chrome.exe' 'chrome.exe' }
 
 function OpenYoutube { param($Macro) ActivateOrOpenChrome 'https://www.youtube.com/' }
 function OpenGoogle { param($Macro) ActivateOrOpenChrome 'https://www.google.com/' }
 function ChromeOpen { param($Macro) ActivateOrOpenChrome }
 
-function ChromeNewTab { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Ctrl+t' }
-function ChromeNewTabInGroup { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'LAlt+Shift+t' }
-function ChromeOpenNewWindow { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Ctrl+n' }
-function ChromeOpenIncognitoWindow { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Ctrl+Shift+n' }
-function ChromeOpenDownloads { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Ctrl+j' }
-function ChromeOpenHistory { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Ctrl+h' }
-function ChromeOpenBookmarks { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Ctrl+Shift+o' }
-function ChromeOpenExtensions { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Ctrl+Shift+e' }
-function ChromeOpenSettings { param($Macro) EnsureActiveOrOpenChrome $Macro; Send-Chord 'Alt+e'; Send-Key 'g' }
+function ChromeNewTab { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+t' } }
+function ChromeNewTabInGroup { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'LAlt+Shift+t' } }
+function ChromeOpenNewWindow { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+n' } }
+function ChromeOpenIncognitoWindow { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+n' } }
+function ChromeOpenDownloads { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+j' } }
+function ChromeOpenHistory { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+h' } }
+function ChromeOpenBookmarks { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+o' } }
+function ChromeOpenExtensions { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+e' } }
+function ChromeOpenSettings { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Alt+e'; Send-Key 'g' } }
 
 function ChromePreviousTab { param($Macro) Send-Chord 'Ctrl+Shift+Tab' }
 function ChromeNextTab { param($Macro) Send-Chord 'Ctrl+Tab' }

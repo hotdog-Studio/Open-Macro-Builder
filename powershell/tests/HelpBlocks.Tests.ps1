@@ -3,6 +3,8 @@ BeforeAll {
     # '*' means every function of the file.
     $MustHave = [ordered]@{
         'commands\helper.ps1' = '*'
+        'commands\custom\chrome.ps1' = 'ActivateOrOpenChrome'
+        'commands\custom\ssh.ps1' = 'LoadPuttySession'
         'lib\Window.ps1'      = '*'
         'lib\Input.ps1'       = 'Send-Chord', 'Send-Key', 'Test-KeyPressed', 'Send-Click'
         'lib\Send.ps1'        = 'Send-Ahk', 'Send-Text', 'Wait-Key', 'Test-KeyToggled', 'Set-LockKeyState'
@@ -12,9 +14,9 @@ BeforeAll {
         'lib\Screen.ps1'      = 'Get-PixelColor', 'Find-Pixel', 'Find-Image', 'Move-Mouse', 'Get-MousePosition', 'ConvertTo-ScreenPoint', 'Show-ToolTip', 'Hide-ToolTip'
         'lib\Sound.ps1'       = 'Get-SoundVolume', 'Set-SoundVolume', 'Get-SoundMute', 'Set-SoundMute', 'Switch-SoundMute'
     }
-    # One object per top-level function of lib\*.ps1 and commands\helper.ps1:
+    # One object per top-level function of lib\*.ps1, commands\helper.ps1 and the two custom files above:
     # File (relative, as above), Name, Parameters (names), Help (GetHelpContent(), or $null), LineAbove (trimmed text).
-    $Functions = foreach ($file in @(Get-ChildItem "$ps\lib\*.ps1") + @(Get-Item "$ps\commands\helper.ps1")) {
+    $Functions = foreach ($file in @(Get-ChildItem "$ps\lib\*.ps1") + @(Get-Item "$ps\commands\helper.ps1", "$ps\commands\custom\chrome.ps1", "$ps\commands\custom\ssh.ps1")) {
         $lines = Get-Content $file.FullName
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$null)
         foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
@@ -85,6 +87,6 @@ Describe 'Help blocks of the functions for commands' {
             $Functions | Where-Object { $_.File -eq $file -and ($want -eq '*' -or $want -contains $_.Name) } | ForEach-Object Name
         }
         ($Functions | Where-Object { $_.Help -and $listed -notcontains $_.Name }).Name | Should -BeNullOrEmpty
-        @($listed).Count | Should -Be 62
+        @($listed).Count | Should -Be 64
     }
 }

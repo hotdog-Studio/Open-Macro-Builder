@@ -632,7 +632,7 @@ export function CommandsTab() {
   const pair = shownPair(pairs, state.commands.pair)
   const file = pair?.files[lang]
   // Kept across renders, so a keystroke in one file parses that file's text only.
-  const [cache] = useState(parseCache)
+  const cache = useMemo(() => parseCache(), [])
   // A dictionary per language: the editor and the list use the shown language's, and a row of the
   // outline is looked up in its pair's own files, whichever language has the command.
   const dicts = useMemo(() => {

@@ -124,6 +124,8 @@ describe('the dictionary behind the panel', () => {
     typeAt(0, '; one\n')
     typeAt(0, '; two\n')
     expect(parse.mock.calls.filter(([text]) => text.startsWith('; kept\n'))).toHaveLength(0)
+    // The dictionary was built again on the keystrokes: the shown draft was read.
+    expect(parse.mock.calls.some(([text]) => text.startsWith('; two\n'))).toBe(true)
   })
 })
 

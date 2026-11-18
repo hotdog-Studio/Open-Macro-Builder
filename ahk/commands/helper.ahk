@@ -51,7 +51,7 @@ Open(Window, Program, Args := "")
 }
 
 /**
- * Ensures a Program is running and its Window is active.
+ * Makes the Window active, first starting the Program when no such window exists.
  * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
  * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.

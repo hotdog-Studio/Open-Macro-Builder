@@ -5,6 +5,9 @@ import { createRoot } from 'react-dom/client'
 import { nameAt, type Dictionary } from '../../core/commands/dictionary'
 import { DocCard } from './DocCard'
 
+/** How long the pointer rests on a name before its card shows, in milliseconds (CodeMirror's own default). */
+export const HOVER_TIME = 300
+
 /** How long a hover may wait for the syntax tree to reach the pointer, in milliseconds. */
 const TREE_WAIT = 50
 
@@ -30,7 +33,7 @@ const scrollingCard = EditorView.theme({ '.cm-tooltip-hover': { overflowY: 'auto
  * docs it was made with.
  */
 export function hoverDocs(get: () => Dictionary | null): Extension {
-  const tooltip = hoverTooltip((view, pos, side) => docTooltipAt(view, pos, side, get()), { hideOnChange: true })
+  const tooltip = hoverTooltip((view, pos, side) => docTooltipAt(view, pos, side, get()), { hideOnChange: true, hoverTime: HOVER_TIME })
   return [tooltip, scrollingCard]
 }
 

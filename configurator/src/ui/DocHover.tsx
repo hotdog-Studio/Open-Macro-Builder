@@ -22,7 +22,7 @@ import { DocCard } from './code/DocCard'
 /** The gap between the card and the panel, and between the card and the window's edge, in pixels. */
 const GAP = 8
 /** How long the card stays after the pointer leaves its row, so the pointer can reach the card, in milliseconds. */
-const GRACE = 150
+export const GRACE = 150
 /** A card narrower than this beside the panel goes over the panel instead, in pixels. */
 const MIN_WIDTH = 240
 

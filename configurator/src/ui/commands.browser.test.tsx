@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { click, dirty, drag, hover, openTab, padKey, startApp, strip, unmount, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
+import { HOVER_TIME } from './code/hoverDocs'
+import { GRACE } from './DocHover'
 
 // The Commands tab in a real browser, where the code editor really types, selects, scrolls and
 // takes focus. The example repository has no files of "yours", so every pair is shared. The first
@@ -472,6 +474,14 @@ async function pointAt(pos: number): Promise<Point> {
 /** Two characters into the first place `needle` stands in the text. */
 const wordPoint = (needle: string) => pointAt(text().indexOf(needle) + 2)
 const card = () => document.querySelector<HTMLElement>('.cm-tooltip')
+const pause = (ms: number) => new Promise((done) => setTimeout(done, ms))
+/**
+ * How long to rest the pointer to show that no card comes: twice the hover delay, and a margin. A wait
+ * for a condition cannot prove that something does not appear, so this one is tied to the delay it outlasts.
+ */
+const NO_CARD = 2 * HOVER_TIME + 100
+/** How long to rest to show that the list's card stays: past the grace after which a card left behind goes. */
+const CARD_STAYS = 2 * GRACE + 100
 
 describe('Commands tab: docs on hover', () => {
   it('shows the docs of an AutoHotkey helper under the pointer', async () => {
@@ -510,7 +520,7 @@ describe('Commands tab: docs on hover', () => {
     // Five characters in is inside the name each time.
     for (const pos of [text().indexOf('aa Send-Chord') + 5, text().indexOf('cc Send-Chord') + 5, text().indexOf('$Send-Chord') + 3, text().indexOf('Not-Known') + 2]) {
       await hover(await pointAt(pos))
-      await new Promise((r) => setTimeout(r, 700))
+      await pause(NO_CARD)
       expect(card()).toBeNull()
     }
     // The same name as a call does get one, so the silence above is not a broken hover.
@@ -526,7 +536,7 @@ describe('Commands tab: docs on hover', () => {
     // Five characters in is inside the name each time; after the dot, two characters in.
     for (const pos of [text().indexOf('aa ActivateOrOpen') + 5, text().indexOf('bb ActivateOrOpen') + 5, text().indexOf('cc ActivateOrOpen') + 5, text().indexOf('obj.ActivateOrOpen') + 6]) {
       await hover(await pointAt(pos))
-      await new Promise((r) => setTimeout(r, 700))
+      await pause(NO_CARD)
       expect(card()).toBeNull()
     }
     // The same name as a call does get one, so the silence above is not a broken hover.
@@ -554,7 +564,7 @@ describe('Commands tab: docs on hover', () => {
     await waitFor(() => expect(card()).toBeNull())
     // The right half of the paren, the same position from the other side: no card, however long it rests.
     await hover({ x: left.left + width * 0.75, y })
-    await new Promise((r) => setTimeout(r, Math.max(700, 3 * shown)))
+    await pause(Math.max(NO_CARD, 3 * shown))
     expect(card()).toBeNull()
   })
 
@@ -623,7 +633,7 @@ describe('Commands tab: docs on hover', () => {
       expect(within(tip).getByText('More below. Scroll the card, or click the row.')).toBeTruthy()
       // The pointer can go from the row onto the card, and the card stays to be scrolled.
       await hover(tip)
-      await new Promise((r) => setTimeout(r, 400))
+      await pause(CARD_STAYS)
       expect(screen.getByRole('tooltip')).toBe(tip)
       // At the end of the scroll there is nothing more below.
       const scroller = tip.firstElementChild as HTMLElement
@@ -636,7 +646,7 @@ describe('Commands tab: docs on hover', () => {
       await hover(gap)
       expect(screen.getByRole('tooltip')).toBe(tip)
       await hover(row)
-      await new Promise((r) => setTimeout(r, 300))
+      await pause(CARD_STAYS)
       expect(screen.getByRole('tooltip')).toBe(tip)
       await hover(nav())
       await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
@@ -655,6 +665,9 @@ describe('Commands tab: docs on hover', () => {
       const other = screen.getByRole('region', { name: 'Other commands available' })
       const row = within(other).getByRole('button', { name: /^Tool\b/ })
       row.scrollIntoView({ block: 'end' })
+      await waitFor(() => expect(row.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight))
+      // From a known place, so that resting on the row is a move the page sees.
+      await hover(nav())
       await hover(row)
       const tip = await screen.findByRole('tooltip')
       await waitFor(() => expect(getComputedStyle(tip).pointerEvents).toBe('auto'))
@@ -667,8 +680,11 @@ describe('Commands tab: docs on hover', () => {
       // The card still takes the pointer: it is not taken away from under it.
       expect(getComputedStyle(tip).pointerEvents).toBe('auto')
       const fits = tip.getBoundingClientRect()
-      expect(tip.contains(document.elementFromPoint(fits.left + fits.width / 2, fits.top + fits.height / 2))).toBe(true)
-      // Once the pointer leaves it, the card goes.
+      const centre = { x: fits.left + fits.width / 2, y: fits.top + fits.height / 2 }
+      expect(tip.contains(document.elementFromPoint(centre.x, centre.y))).toBe(true)
+      // The pointer moves on the card where it now is, and the card stays; once it leaves, the card goes.
+      await hover(centre)
+      expect(screen.getByRole('tooltip')).toBe(tip)
       await hover(nav())
       await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
     } finally {

@@ -1,6 +1,6 @@
 # VS Code shortcuts (ahk/commands/custom/vscode.ahk).
-# VsCodeRestartDebugging, VsCodePauseDebugging and VsCodePeekImplementations send the F-key the AHK
-# version meant to send: its source typed the letters F,5 / F,1,2 because the braces were missing.
+# VsCodePauseDebugging sends F6, VS Code's Debug: Pause; both versions used to send Restart's chord.
+# Key names: see VS Code's default keyboard shortcuts (code.visualstudio.com/docs/reference/default-keybindings).
 
 function VsCodeToggleBottomPanel { param($Macro) Send-Chord 'Ctrl+j' }
 function VsCodeToggleSidebar { param($Macro) Send-Chord 'Ctrl+b' }
@@ -25,7 +25,7 @@ function VsCodeAddBreakpoint { param($Macro) Send-Chord 'F9' }
 function VsCodeAddInlineBreakpoint { param($Macro) Send-Chord 'Ctrl+F9' }
 function VsCodeStopDebugging { param($Macro) Send-Chord 'Shift+F5' }
 function VsCodeRestartDebugging { param($Macro) Send-Chord 'Ctrl+Shift+F5' }
-function VsCodePauseDebugging { param($Macro) Send-Chord 'Ctrl+Shift+F5' }
+function VsCodePauseDebugging { param($Macro) Send-Chord 'F6' }
 function VsCodeStepInto { param($Macro) Send-Chord 'F11' }
 function VsCodeStepOut { param($Macro) Send-Chord 'Shift+F11' }
 function VsCodeStepOver { param($Macro) Send-Chord 'F10' }

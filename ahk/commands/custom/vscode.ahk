@@ -88,7 +88,7 @@ VsCodeOpenSourceControl(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 VsCodeSplitPanel(Macro) {
-    Send("{Ctrl Down}{\\}{Ctrl Up}")
+    Send("{Ctrl Down}\{Ctrl Up}")
 }
 
 /**
@@ -126,11 +126,11 @@ VsCodeStopDebugging(Macro) {
 }
 
 VsCodeRestartDebugging(Macro) {
-    Send("{Ctrl Down}{Shift Down}F5{Shift Up}{Ctrl Up}")
+    Send("{Ctrl Down}{Shift Down}{F5}{Shift Up}{Ctrl Up}")
 }
 
 VsCodePauseDebugging(Macro) {
-    Send("{Ctrl Down}{Shift Down}F5{Shift Up}{Ctrl Up}")
+    Send("{F6}")
 }
 
 VsCodeStepInto(Macro) {
@@ -159,7 +159,7 @@ VsCodeGoToReferences(Macro) {
 }
 
 VsCodePeekImplementations(Macro) {
-    Send("{Ctrl Down}{Shift Down}F12{Shift Up}{Ctrl Up}")
+    Send("{Ctrl Down}{Shift Down}{F12}{Shift Up}{Ctrl Up}")
 }
 
 VsCodeGoToImplementation(Macro) {

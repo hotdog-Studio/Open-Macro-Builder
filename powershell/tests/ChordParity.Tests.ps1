@@ -53,6 +53,14 @@ BeforeDiscovery {
                 SshExample          = 'starts ssh'
             }
         }
+        @{ Name = 'custom\vscode'; Ahk = 'ahk\commands\custom\vscode.ahk'; Ps = 'powershell\commands\custom\vscode.ps1'; Skip = @{
+                VsCodeToggleZenMode  = 'two key presses with a pause between (Ctrl+K, Z)'
+                VsCodeNextGroup      = 'two key presses with a pause between (Ctrl+K, Ctrl+Right)'
+                VsCodePreviousGroup  = 'two key presses with a pause between (Ctrl+K, Ctrl+Left)'
+                VsCodeMoveGroupLeft  = 'two key presses with a pause between (Ctrl+K, Left)'
+                VsCodeMoveGroupRight = 'two key presses with a pause between (Ctrl+K, Right)'
+            }
+        }
     )
 }
 BeforeAll {

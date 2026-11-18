@@ -12,11 +12,12 @@ Open an issue with:
 
 ## Proposing a change
 
-1. Branch from `develop`, which is the branch pull requests go to.
-2. Make the change, with tests (see below).
-3. Run what CI runs for the part you touched. For the configurator, in `configurator/`: `npm run lint`, `npm test`, `npm run test:browser` and `npm run build`. For the scripts: `node --test "scripts/*.test.mjs"`. For the PowerShell version: `powershell -NoProfile -File powershell\tests\run.ps1`.
-4. Add a line under **Unreleased** in [CHANGELOG.md](CHANGELOG.md) if a user would notice the change.
-5. Open a pull request that says what changed and why.
+1. Fork the repository on GitHub and clone your fork. If you cloned this repository itself, add your fork as a second remote and push to that.
+2. Branch from `develop`, which is the branch pull requests go to.
+3. Make the change, with tests (see below).
+4. Run what CI runs for the part you touched. For the configurator, in `configurator/`: `npm run lint`, `npm test`, `npm run test:browser` and `npm run build`. For the scripts: `node --test "scripts/*.test.mjs"`. For the PowerShell version: `powershell -NoProfile -File powershell\tests\run.ps1`.
+5. Add a line under **Unreleased** in [CHANGELOG.md](CHANGELOG.md) if a user would notice the change.
+6. Open a pull request that says what changed and why.
 
 ## What a change needs
 

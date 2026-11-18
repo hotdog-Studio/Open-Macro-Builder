@@ -9,11 +9,17 @@ import type { Platform } from '../platform/types'
 import { createActions, type AppActions } from './actions'
 import { commandsReducer, initialCommands, type CommandAction, type CommandsView } from './commandsSlice'
 
-export type Tab = 'shape' | 'layers' | 'macros' | 'commands'
+export type Tab = 'start' | 'shape' | 'layers' | 'macros' | 'commands'
 
+/**
+ * The one message showing, as a floating toast: a notice (`info`), an action that was refused
+ * (`warning`) or something that failed (`error`, which stays until it is dismissed). A message
+ * that `stays` is not taken away by the clock whatever its kind.
+ */
 export interface Banner {
   text: string
-  kind: 'info' | 'error'
+  kind: 'info' | 'warning' | 'error'
+  stays?: boolean
 }
 
 /** Everything read from an opened folder. */
@@ -112,7 +118,8 @@ export type Action =
   | { type: 'setup'; folder: FolderAccess; writing: boolean }
   | { type: 'pick-config'; folder: FolderAccess }
   | { type: 'pick-language'; session: Session }
-  | { type: 'loaded'; session: Session; settings: Settings }
+  /** `tab` is the one to open on; a folder opens on Pad shape unless told otherwise. */
+  | { type: 'loaded'; session: Session; settings: Settings; tab?: Tab }
   /** Every tab dispatches the result of a pure op from core/config/ops. */
   | { type: 'edit'; ws: Workspace }
   /** Leaves out a field to keep its selection. */
@@ -135,16 +142,16 @@ export type Action =
 
 export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
 
-function loadedState(session: Session, settings: Settings): EditCore {
+function loadedState(session: Session, settings: Settings, tab: Tab = 'shape'): EditCore {
   const notices = session.ws.notices
   return {
     ...session,
     screen: 'edit',
     settings,
-    tab: 'shape',
+    tab,
     selectedKey: null,
     selectedLayer: null,
-    banner: notices.length > 0 ? { text: notices.join('\n'), kind: 'info' } : null,
+    banner: notices.length > 0 ? { text: notices.join('\n'), kind: 'info', stays: true } : null,
     saveDialog: null,
     outsideChange: null,
     commands: initialCommands(settings),
@@ -215,7 +222,7 @@ export function reducer(state: StoredState, action: Action): StoredState {
     case 'pick-language':
       return { screen: 'pick-language', session: action.session }
     case 'loaded':
-      return loadedState(action.session, action.settings)
+      return loadedState(action.session, action.settings, action.tab)
     default:
       return state.screen === 'edit' ? editReducer(state, action) : state
   }

@@ -1232,8 +1232,10 @@ describe('new and deleted files', () => {
   const HUB = 'local/ahk/commands.ahk'
   const HUB_HEADER =
     '#Requires AutoHotkey v2.0\n' +
-    '; Your own AutoHotkey commands. ahk\\config.ahk includes this file when it exists. The local folder\n' +
-    '; is ignored by git, so nothing here is ever committed.\n'
+    String.raw`; Your own AutoHotkey commands. ahk\config.ahk includes this file when it exists. The local folder` +
+    '\n' +
+    String.raw`; holds only what is yours; the commands that came with Open Macro Builder are in ahk\commands.` +
+    '\n'
   const AHK_STARTER = (pair: string) => `#Requires AutoHotkey v2.0\n\n; ${pair} commands.\n`
   const PS_STARTER = (pair: string) => `# ${pair} commands.\n`
   const newFileDialog = () => screen.getByRole('dialog', { name: 'New command file' })
@@ -1265,10 +1267,10 @@ describe('new and deleted files', () => {
       },
     })
     const dialog = await newFile(user, 'new')
-    expect((within(dialog).getByRole('radio', { name: 'Yours (local/, not committed)' }) as HTMLInputElement).checked).toBe(true)
+    expect((within(dialog).getByRole('radio', { name: 'Yours (kept in local/)' }) as HTMLInputElement).checked).toBe(true)
     expect((within(dialog).getByRole('checkbox', { name: 'AutoHotkey' }) as HTMLInputElement).checked).toBe(true)
     expect((within(dialog).getByRole('checkbox', { name: 'PowerShell' }) as HTMLInputElement).checked).toBe(true)
-    expect(within(dialog).queryByText(/committed to git\. Keep/)).toBeNull()
+    expect(within(dialog).queryByText(/Keep personal details out of them\./)).toBeNull()
     await user.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -1287,14 +1289,18 @@ describe('new and deleted files', () => {
     expect(folder.text('local/ahk/new.ahk')).toBe(`${AHK_STARTER('new')}New(Macro)\n{\n}\n`)
   })
 
-  it('creates a shared file in Custom Commands and says it will be committed', async () => {
+  it('creates a shared file in Custom Commands and says to keep personal details out', async () => {
     const { user, folder } = await start({ languages: ['ahk'] })
     const config = folder.text('ahk/config.ahk')!
     const dialog = await newFile(user, 'new')
     expect((within(dialog).getByRole('checkbox', { name: 'AutoHotkey' }) as HTMLInputElement).checked).toBe(true)
     expect((within(dialog).getByRole('checkbox', { name: 'PowerShell' }) as HTMLInputElement).checked).toBe(false)
-    await user.click(within(dialog).getByRole('radio', { name: 'Shared (committed to git)' }))
-    expect(within(dialog).getByText('Shared files are committed to git. Keep personal details out of them.')).toBeTruthy()
+    await user.click(within(dialog).getByRole('radio', { name: 'Shared (bundled in with the built-in commands)' }))
+    expect(
+      within(dialog).getByText(
+        'Shared files sit beside the built-in commands, where a command meant for other people goes. Keep personal details out of them.',
+      ),
+    ).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -1310,7 +1316,7 @@ describe('new and deleted files', () => {
     const bare = '#Requires AutoHotkey v2.0\n#Include commands\\helper.ahk\n'
     await folder.writeBytes('ahk/config.ahk', enc.encode(bare))
     const again = await newFile(user, 'other')
-    await user.click(within(again).getByRole('radio', { name: 'Shared (committed to git)' }))
+    await user.click(within(again).getByRole('radio', { name: 'Shared (bundled in with the built-in commands)' }))
     await user.click(within(again).getByRole('button', { name: 'Create' }))
     expect(
       await within(again).findByText(

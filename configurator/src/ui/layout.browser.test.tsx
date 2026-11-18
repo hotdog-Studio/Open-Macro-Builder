@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { size } from '../core/config/model'
-import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, startApp, unmount, ws } from '../../test/browser/harness'
+import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, repoFiles, startApp, startOpenScreen, unmount, ws } from '../../test/browser/harness'
 
 // Dragging when the layout is not the comfortable 1280×900 of the other suites: a small window
 // where the pad has to be scrolled to, a zoomed-in browser, a pad much bigger than the example, and
@@ -49,7 +49,7 @@ async function bring(...els: Element[]): Promise<void> {
 describe('at 1280 wide', () => {
   it('the page itself never scrolls: only the panels do', async () => {
     await startApp()
-    for (const tab of ['Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
+    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
       await click(screen.getByRole('tab', { name: tab }))
       const root = document.documentElement
       expect(root.scrollWidth, tab).toBeLessThanOrEqual(root.clientWidth)
@@ -66,12 +66,86 @@ describe('at 1280 wide', () => {
   })
 })
 
+/**
+ * Whether the header's controls (tabs, links, buttons) sit in one row. Each is centred in its row, so
+ * in one row their top edges differ by a pixel at most (their heights differ by a pixel or two); on a
+ * second row they are a whole line lower.
+ */
+const oneRow = () => {
+  const tops = [...document.querySelectorAll<HTMLElement>('header button, header a')].map((el) => el.getBoundingClientRect().top)
+  return Math.max(...tops) - Math.min(...tops) <= 2
+}
+/** The path of the layout file shown in the header, which is in the page whether or not there is room for it. */
+const layoutPath = () => screen.getByText('local/config.json')
+const shown = (el: Element) => el.getBoundingClientRect().width > 0
+
+describe('the header', () => {
+  it('is one row in the browser at 1280 wide, without the path of the layout file', async () => {
+    await startApp()
+    expect(screen.getByRole('link', { name: /Download/ })).toBeTruthy()
+    expect(oneRow()).toBe(true)
+    expect(shown(layoutPath())).toBe(false)
+  })
+
+  it('is one row in the desktop app at its default window width, with the folder name it gives a new folder', async () => {
+    // 1264 px: the default 1280 px window less its frame.
+    await page.viewport(1264, 900)
+    await startApp('Pad shape', undefined, { kind: 'electron', folderName: 'Open Macro Builder' })
+    expect(screen.queryByRole('link', { name: /Download/ })).toBeNull()
+    expect(oneRow()).toBe(true)
+    expect(shown(layoutPath())).toBe(false)
+  })
+
+  it('shows the path of the layout file when the window is wide', async () => {
+    await page.viewport(1700, 900)
+    await startApp('Pad shape', undefined, { folderName: 'Open Macro Builder' })
+    expect(oneRow()).toBe(true)
+    expect(shown(layoutPath())).toBe(true)
+  })
+})
+
 describe('in a small window', () => {
+  it('the guide scrolls inside its own panel, not the page', async () => {
+    await page.viewport(760, 420)
+    await startApp('Get started')
+    const guide = screen.getByRole('article', { name: 'Get started' }).parentElement!
+    expect(guide.tagName).toBe('MAIN')
+    expect(guide.scrollHeight).toBeGreaterThan(guide.clientHeight)
+    const root = document.documentElement
+    expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight)
+    // The end of the guide can be scrolled to.
+    guide.scrollTop = guide.scrollHeight
+    await settle()
+    expect(inView(screen.getByRole('link', { name: 'contributing guide' }))).toBe(true)
+  })
+
+  it('on the start screen the guide scrolls and the buttons stay reachable', async () => {
+    await page.viewport(760, 420)
+    startOpenScreen()
+    await click(await screen.findByRole('button', { name: 'Get started' }))
+    const main = screen.getByRole('main')
+    const root = document.documentElement
+    expect(main.scrollHeight).toBeGreaterThan(main.clientHeight)
+    expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight)
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth)
+    // The title and the buttons are not cut off above the window, and the mouse reaches them.
+    expect(screen.getByRole('heading', { level: 1, name: 'Open Macro Builder' }).getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
+    for (const name of ['Open folder', 'Create new folder…', 'Hide the guide']) {
+      const button = screen.getByRole('button', { name })
+      expect(inView(button), name).toBe(true)
+      expect(reachable(button), name).toBe(true)
+    }
+    // The end of the guide can be scrolled to.
+    main.scrollTop = main.scrollHeight
+    await settle()
+    expect(inView(screen.getByRole('link', { name: 'contributing guide' }))).toBe(true)
+  })
+
   it('the page itself still never scrolls, and the header wraps to fit', async () => {
     await page.viewport(760, 420)
     await startApp()
     const root = document.documentElement
-    for (const tab of ['Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
+    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
       await click(screen.getByRole('tab', { name: tab }))
       expect(root.scrollWidth, tab).toBeLessThanOrEqual(root.clientWidth)
       expect(root.scrollHeight, tab).toBeLessThanOrEqual(root.clientHeight)
@@ -150,6 +224,37 @@ describe('in a small window', () => {
   })
 })
 
+describe('messages', () => {
+  it('a message floats over the editor and moves nothing', async () => {
+    await startApp()
+    const keys = screen.getByRole('list', { name: 'Keys' })
+    const before = keys.getBoundingClientRect()
+    await drag(padKey('F13'), padKey('F14'))
+    await waitFor(() => expect(banner()).toBe('That space is taken.'))
+    const after = keys.getBoundingClientRect()
+    expect(after.top).toBe(before.top)
+    expect(after.left).toBe(before.left)
+    expect(after.width).toBe(before.width)
+    expect(after.height).toBe(before.height)
+    const root = document.documentElement
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth)
+    expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight)
+    // It lies over the editor: nothing is pushed down to make room.
+    expect(screen.getByRole('alert').getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      screen.getByRole('banner').getBoundingClientRect().bottom,
+    )
+  })
+
+  it('a message fits a small window', async () => {
+    await page.viewport(760, 420)
+    await startApp()
+    await bring(padKey('F13'), padKey('F14'))
+    await drag(padKey('F13'), padKey('F14'))
+    await waitFor(() => expect(banner()).toBe('That space is taken.'))
+    expect(inView(screen.getByRole('alert'))).toBe(true)
+  })
+})
+
 // Zooming a browser in shrinks the window as the page measures it: 150 % of 1280×900 lays out as 853×600.
 describe('a pad scrolled under the side panels', () => {
   it('a layer dragged to the shelf is parked, not dropped on a key hidden behind the panel', async () => {
@@ -199,6 +304,8 @@ describe('zoomed in to 150 %', () => {
     await bring(padKey('F13'), padKey('F14'))
     await drag(corner, offset(corner, 80, 0))
     await waitFor(() => expect(banner()).toBe('That space is taken.'))
+    // At this size the message floats over the keys the next drag reaches for: a user closes it first.
+    await click(screen.getByRole('button', { name: 'Dismiss' }))
 
     await click(screen.getByRole('tab', { name: 'Macros' }))
     await bring(padKey('F13'), padKey('F14'))
@@ -227,6 +334,69 @@ describe('a pad much bigger than the example', () => {
     await drag(padKey(last.key), target)
     await waitFor(() => expect(ws().keys[21]).toMatchObject({ row: rows + 1, col: size(last).col }))
     expect(dirty()).toBe(true)
+  })
+})
+
+/** The right-hand panel, found by the overlay preview it holds. */
+const previewPanel = () => screen.getByRole('region', { name: 'Overlay preview' }).closest('aside')!
+/** The box the preview scrolls in when it is wider than the panel. */
+const previewBox = () => screen.getByRole('region', { name: 'Overlay preview' }).querySelector<HTMLElement>('.overflow-auto')!
+
+/** The width of an element's own borders and padding, left and right, in px. */
+const frameWidth = (el: HTMLElement) => {
+  const s = getComputedStyle(el)
+  return [s.paddingLeft, s.paddingRight, s.borderLeftWidth, s.borderRightWidth].reduce((sum, v) => sum + Number.parseFloat(v), 0)
+}
+/** How wide the panel can be and still be sized by the preview alone: the preview, its frame, the panel's frame and its scrollbar. */
+const widestForPreview = () => {
+  const panel = previewPanel()
+  const scrollbar = panel.offsetWidth - panel.clientWidth - Number.parseFloat(getComputedStyle(panel).borderLeftWidth)
+  const section = screen.getByRole('region', { name: 'Overlay preview' })
+  // The preview's own size, which scrollWidth is not: a scroll box that is wider than its content reports its own width.
+  const preview = (previewBox().firstElementChild as HTMLElement).offsetWidth
+  return preview + frameWidth(section) + frameWidth(panel) + scrollbar
+}
+
+describe('the right panel', () => {
+  it('shows the whole overlay preview on Pad shape, Layers and Macros', async () => {
+    await startApp()
+    for (const tab of ['Pad shape', 'Layers', 'Macros'] as const) {
+      await click(screen.getByRole('tab', { name: tab }))
+      expect(previewBox().scrollWidth, tab).toBeLessThanOrEqual(previewBox().clientWidth)
+      expect(previewPanel().getBoundingClientRect().width, tab).toBeGreaterThanOrEqual(288)
+    }
+  })
+
+  it('is as wide as the overlay preview needs, not as wide as the longest line of its details', async () => {
+    await startApp()
+    // A selected key shows a note that is one long line (about 600 px) if nothing makes it wrap.
+    await click(padKey('F22'))
+    expect(previewPanel().getBoundingClientRect().width).toBeLessThanOrEqual(widestForPreview() + 1)
+  })
+
+  it('still shows it whole when the panel itself scrolls', async () => {
+    await page.viewport(1280, 420)
+    await startApp()
+    await click(padKey('F22'))
+    expect(previewPanel().scrollHeight).toBeGreaterThan(previewPanel().clientHeight)
+    expect(previewBox().scrollWidth).toBeLessThanOrEqual(previewBox().clientWidth)
+  })
+
+  it("keeps the Commands tab's right panel at its fixed width", async () => {
+    await startApp('Commands')
+    const aside = screen.getAllByRole('complementary').at(-1)!
+    expect(aside.getBoundingClientRect().width).toBe(288)
+  })
+
+  it('stops at half the window for a very wide pad, and the preview scrolls inside', async () => {
+    const example = JSON.parse(new TextDecoder().decode((await repoFiles())['config.json']))
+    // One key far to the right makes the pad twelve columns wide.
+    example.keys.find((k: { key: string }) => k.key === 'F24').col = 12
+    await startApp('Pad shape', JSON.stringify(example))
+    expect(previewPanel().getBoundingClientRect().width).toBeLessThanOrEqual(window.innerWidth / 2)
+    expect(previewBox().scrollWidth).toBeGreaterThan(previewBox().clientWidth)
+    const root = document.documentElement
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth)
   })
 })
 

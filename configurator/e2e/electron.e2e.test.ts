@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron, type ElectronApplication, type Locator, type Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { LINKS } from '../src/core/links'
 
 // Starts the real built desktop app (dist/ + dist-electron/) and drives its window. Slow, so it
 // has its own config (vitest.electron.config.ts) and is not part of `npm test`.
@@ -344,6 +345,31 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
     await page.getByRole('button', { name: 'Set up' }).click()
     await page.getByRole('dialog', { name: 'This folder has no local/config.json yet' }).waitFor()
     expect(existsSync(join(folder, 'ahk', 'main.ahk'))).toBe(true)
+  })
+
+  it('opens the AutoHotkey download page in the default browser, and nothing else', async () => {
+    const folder = await tempDir('omb-e2e-folder-')
+    const userData = await tempDir('omb-e2e-user-')
+    await copyExample(folder)
+
+    const { app, page } = await launch(userData, folder)
+    // No browser may really open: record what the main process hands to the system instead.
+    await app.evaluate(({ shell }) => {
+      const main = globalThis as unknown as { opened: string[] }
+      main.opened = []
+      shell.openExternal = ((url: string) => {
+        main.opened.push(url)
+        return Promise.resolve()
+      }) as never
+    })
+    await firstRun(page)
+    await page.getByRole('tab', { name: 'Get started' }).click()
+    await page.getByRole('link', { name: 'autohotkey.com/download' }).click()
+
+    await expect.poll(() => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened), { timeout: 5000 }).toEqual([LINKS.autohotkey])
+    // The link opened no window of the app's own, and the page stayed where it was.
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
+    expect(await page.getByRole('article', { name: 'Get started' }).isVisible()).toBe(true)
   })
 
   it('keeps the page sandboxed: no Node in the page, only the omb bridge', async () => {

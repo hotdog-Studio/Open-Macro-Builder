@@ -75,6 +75,11 @@ export interface AppActions {
   reloadFromDisk(): Promise<void>
   /** Shows the changed-on-disk banner when the file is not the version the app holds. */
   recheck(): Promise<void>
+  /**
+   * The versions of the macropad this PC can run, as the platform found them. null when the
+   * platform cannot tell (the browser) or the check failed; never throws.
+   */
+  installedLanguages(): Promise<LangId[] | null>
   /** Electron: restarts the running macropad from the after-save dialog; the dialog then shows what happened. */
   reloadMacropad(): Promise<void>
   /**
@@ -244,7 +249,15 @@ export function createActions(
     await saving?.catch(() => undefined)
   }
 
+  /**
+   * The folder the app has just filled with the starter, until the editor opens on it or any
+   * other folder is opened or closed. Only that folder opens on Get started: one that already
+   * held a setup opens on Pad shape.
+   */
+  let freshSetup: FolderAccess | null = null
+
   function forget(): void {
+    freshSetup = null
     stopWatch?.()
     stopWatch = null
     held = null
@@ -284,7 +297,9 @@ export function createActions(
 
   /** The editor opens on a loaded session. */
   function opened(session: Session, settings: Settings): void {
-    dispatch({ type: 'loaded', session, settings })
+    // Read before forget() clears it.
+    const tab = session.folder === freshSetup ? 'start' : undefined
+    dispatch({ type: 'loaded', session, settings, tab })
     forget()
     hold(session.folder, session.configFile, session.commandFiles)
   }
@@ -442,7 +457,9 @@ export function createActions(
     } finally {
       copying = false
     }
-    if (copied && token === loads) await load(folder)
+    if (!copied || token !== loads) return
+    freshSetup = folder
+    await load(folder)
   }
 
   /** Loads the starter, then writes it; false when either failed, and the open screen says why. */
@@ -637,6 +654,15 @@ export function createActions(
 
     reloadMacropad,
     reloadMacropadFor: commands.reloadMacropadFor,
+
+    async installedLanguages() {
+      if (!platform.installedLanguages) return null
+      try {
+        return await platform.installedLanguages()
+      } catch {
+        return null // Only the sentence about AutoHotkey is lost, so a failed check is not worth a message.
+      }
+    },
 
     editCommand: commands.editCommand,
     saveCommandFile: commands.saveCommandFile,

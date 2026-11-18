@@ -9,6 +9,7 @@ import type { Platform } from '../platform/types'
 import { AppProvider } from '../state/store'
 import { memoryFolderFromRepo, readRepoText } from '../../test/repo'
 import { App } from './App'
+import { Unsupported } from './OpenScreen'
 
 afterEach(cleanup)
 
@@ -86,7 +87,13 @@ describe('opening a folder', () => {
     const folder = repoFolder()
     await folder.writeBytes(SETTINGS_PATH, new TextEncoder().encode('{ "languages": ["ahk"] }\n'))
     const user = await openFolder(fakePlatform(folder))
-    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
+    const copyButton = await screen.findByRole('button', { name: 'Edit a copy in local/' })
+    expect(
+      screen.getByText(
+        'Your own layout lives in local/config.json, apart from the files that came with Open Macro Builder. It starts as a copy of the bundled example, config.json, which is left as it is.',
+      ),
+    ).toBeTruthy()
+    await user.click(copyButton)
     await screen.findByRole('list', { name: 'Keys' })
     expect(await folder.readBytes('local/config.json')).toEqual(await folder.readBytes('config.json'))
     expect(screen.getByText('local/config.json')).toBeTruthy()
@@ -204,6 +211,106 @@ describe('opening a folder', () => {
     }
     await openFolder(fakePlatform(await readyFolder(JSON.stringify(config, null, 2) + '\n')))
     expect(await screen.findByText('Layer "C" had no key, so it was parked.')).toBeTruthy()
+  })
+})
+
+describe('the start screen', () => {
+  const BLURB =
+    'Turn a spare keypad into a pad of shortcuts. New here? Get started says what you need and takes you as far as your first key press.'
+
+  it('says what the app is for and offers the guide', () => {
+    renderApp(fakePlatform(null))
+    const main = screen.getByRole('main')
+    const blurb = within(main)
+      .getAllByText((_, el) => el?.tagName === 'P' && el.textContent === BLURB)
+    expect(blurb).toHaveLength(1)
+    expect(within(blurb[0]).getByText('Get started').tagName).toBe('STRONG')
+    const button = screen.getByRole('button', { name: 'Get started' })
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('article')).toBeNull()
+  })
+
+  it('Get started shows the guide for both versions, and Hide the guide puts it away', async () => {
+    const user = renderApp(fakePlatform(null))
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    const guide = screen.getByRole('article', { name: 'Get started' })
+    expect(within(guide).getAllByText('main.ahk').length).toBeGreaterThan(0)
+    expect(within(guide).getAllByText('launch.vbs').length).toBeGreaterThan(0)
+    expect(within(guide).getByText((_, el) => el?.tagName === 'LI' && /Press Create new folder… and the app makes one/.test(el.textContent ?? ''))).toBeTruthy()
+    expect(guide.textContent).not.toContain('You have one open')
+    expect(guide.textContent).not.toContain('Tick the one you chose')
+    const hide = screen.getByRole('button', { name: 'Hide the guide' })
+    expect(hide.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByRole('button', { name: 'Get started' })).toBeNull()
+
+    await user.click(hide)
+    expect(screen.queryByRole('article')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Get started' }).getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('Open folder and Create new folder… still work with the guide open', async () => {
+    const folder = await readyFolder()
+    const created: string[] = []
+    const user = renderApp(
+      fakePlatform(folder, {
+        createFolder: async (name) => {
+          created.push(name)
+          return null
+        },
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    await user.click(screen.getByRole('button', { name: 'Create new folder…' }))
+    const dialog = screen.getByRole('dialog')
+    await user.clear(within(dialog).getByRole('textbox'))
+    await user.type(within(dialog).getByRole('textbox'), 'my-pad')
+    await user.click(within(dialog).getByRole('button', { name: 'Choose where…' }))
+    await waitFor(() => expect(created).toEqual(['my-pad']))
+
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    await screen.findByRole('list', { name: 'Keys' })
+  })
+
+  it('the message about a refused folder is still there when the guide is opened', async () => {
+    const refused = "This folder doesn't look like Open Macro Builder: it needs config.json and an ahk or powershell folder."
+    const folder = new MemoryFolder('projects', { 'README.md': 'x' })
+    const user = await openFolder(fakePlatform(folder))
+    expect((await screen.findByRole('alert')).textContent).toBe(refused)
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    expect(screen.getByRole('article', { name: 'Get started' })).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toBe(refused)
+    expect(screen.getByRole('button', { name: 'Open folder' })).toBeTruthy()
+  })
+
+  it('the Reopen button stays when the guide is opened', async () => {
+    const user = renderApp(fakePlatform(null, { restoreFolder: async () => ({ needsPermission: 'repo' }) }))
+    expect(await screen.findByRole('button', { name: 'Reopen repo' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    expect(screen.getByRole('article', { name: 'Get started' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reopen repo' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Hide the guide' })).toBeTruthy()
+  })
+
+  it('Which version do you run? says what each one needs', async () => {
+    const folder = repoFolder()
+    await folder.writeBytes('local/config.json', new TextEncoder().encode(EXAMPLE))
+    await openFolder(fakePlatform(folder))
+    const dialog = await screen.findByRole('dialog', { name: 'Which version do you run?' })
+    expect(within(dialog).getByText('The configurator checks your macros against the commands of the version you run.')).toBeTruthy()
+    const needs = within(dialog).getByText(
+      (_, el) =>
+        el?.tagName === 'P' &&
+        el.textContent ===
+          'AutoHotkey is a free program you install yourself. PowerShell is already part of Windows. You can change this later under I run.',
+    )
+    expect(within(needs).getByText('I run').tagName).toBe('STRONG')
+  })
+
+  it('a browser that cannot open folders gets no guide button', () => {
+    render(<Unsupported message="needs Chrome or Edge" />)
+    expect(screen.queryByRole('button', { name: 'Get started' })).toBeNull()
+    expect(screen.queryByText(/Turn a spare keypad/)).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe('needs Chrome or Edge')
   })
 })
 

@@ -23,6 +23,7 @@ Plain TypeScript with no React, no browser and no Node in it. ESLint enforces th
 - `languages/`: what the app knows about AutoHotkey and PowerShell: finding the command functions in a file, and building the catalog of commands from both languages' folders. The parsers also read a function's doc block (`/** */` in AutoHotkey, `<# #>` or a run of `#` notes in PowerShell) and build its usage line, and `scanLibrary` reads the library: the `.ps1` files directly in `powershell/lib`, not its subfolders (AutoHotkey has no library folder). It reads each file's functions with the same parser as a command file, and takes the file's title from its first line when that is a `#` comment other than `#requires`, `#region` or `#endregion`, else from the file name. Command files come in pairs: the AutoHotkey file and the PowerShell file of the same name, such as `media.ahk` and `media.ps1`. Library files are not matched up that way; each is read on its own.
 - `commands/dictionary.ts`: what a command file can call. `buildDictionary` lists the functions of the file shown, then your other command files, then the shared ones, then the library, and a name resolves to the first of them (unsaved text stands in for its file). `listSections` groups the same entries for the right panel. An entry's source is a file today (`DictSource`) and will be a bundled reference later.
 - `overlay.ts`: where each key sits on the overlay, shared by the grid and the preview.
+- `links.ts`: the addresses the desktop app may hand to the default browser, and `isAllowedLink`, which the desktop shell asks before it opens one.
 - `starter.ts`: `writeStarter` copies the starter files into an empty folder through `FolderAccess`, `config.json` last, so a copy that stopped part-way is not mistaken for a finished one. `repo.ts` (`inspectFolder`) tells an empty folder apart from a setup and from anything else.
 
 The starter is `config.json`, `ahk/`, `powershell/` and `img/` of the repository, without any `tests` or `local` folder and without `.xcf`, `.bak` and `.omb-tmp` files. `configurator/scripts/starter.mjs` is a Vite plugin that reads them at build time and serves them as the virtual module `virtual:omb-starter`; `state/starter.ts` (`loadStarter`) imports it on demand, so the page fetches that separate chunk (about 1.2 MB) only when a folder is set up.
@@ -40,13 +41,17 @@ The checks in `validate.ts` are the repository's own validator, `scripts/validat
 
 ### `src/state`: what is open
 
-`store.tsx` holds the state in one reducer: which screen is showing, the workspace being edited, the workspace as last saved, the selected key and layer, and the dialogs. `actions.ts` has everything that takes time: opening and restoring a folder, saving with a check that the file has not changed on disk, reloading. The command files have their own slice and actions.
+`store.tsx` holds the state in one reducer: which screen is showing, the workspace being edited, the workspace as last saved, the selected key and layer, and the dialogs. `actions.ts` has everything that takes time: opening and restoring a folder, saving with a check that the file has not changed on disk, reloading. The command files have their own slice and actions. The `loaded` action carries the tab the editor opens on: Pad shape, or Get started straight after a fresh setup.
 
 An edit is always `dispatch({ type: 'edit', ws: someOp(ws, ...) })`: an operation from `core/config/ops.ts` makes the next workspace, and the reducer keeps it.
 
 ### `src/ui`: what you see
 
-One file per tab (`ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsTab`), plus the pieces they share.
+One file per tab (`GetStarted`, `ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsTab`), plus the pieces they share.
+
+`GetStarted.tsx` is the guide for newcomers. `OpenScreen.tsx` shows it too, before any folder is open, so it reads only what `useApp()` gives and takes the folder's name and the versions to describe as props.
+
+`Toast.tsx` shows the one message the store holds (`banner`) as a floating toast. A notice or a refused action leaves by itself. A failure stays until dismissed, and so does a notice raised while a folder loads.
 
 `DocCard` (`code/DocCard.tsx`) is the one card of a function's docs. `hoverDocs` shows it over a name in the code editor, and `OtherCommands` shows it beside a row of the right panel's list of what a command can call.
 
@@ -57,7 +62,7 @@ One file per tab (`ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsTab`), plus the
 
 ### `electron/`: the desktop shell
 
-- `main.ts` creates the window: sandboxed, context-isolated, no Node in the page, navigation and new windows refused.
+- `main.ts` creates the window: sandboxed, context-isolated, no Node in the page, navigation and new windows refused. A link on the list in `src/core/links.ts` is passed to the default browser, and its window is refused like any other.
 - `preload.ts` exposes `window.omb`, a small fixed set of functions, and nothing else.
 - `ipc.ts` answers them. It accepts calls only from the app's own window, and file paths only inside the folder the user opened.
 - `nodeFolder.ts` is `FolderAccess` over the real file system. `macropad.ts` finds and reloads the running macropad, `syntax.ts` checks a command file with its own interpreter, and `watch.ts` reports files that change on disk.
@@ -74,4 +79,4 @@ Dragging a command onto a key on the Macros tab:
 
 ## What the page may not do
 
-The page never touches the file system or the macropad directly. In the browser it has only the folder handle the user granted. In the desktop app it has only `window.omb`, and `ipc.ts` refuses paths outside the opened folder. The image served by the Docker container adds a Content-Security-Policy that allows the page to load only its own files (`docker/Caddyfile`).
+The page never touches the file system or the macropad directly. In the browser it has only the folder handle the user granted. In the desktop app it has only `window.omb`, and `ipc.ts` refuses paths outside the opened folder. The image served by the Docker container adds a Content-Security-Policy that allows the page to load only its own files (`docker/Caddyfile`). The desktop window never leaves the app's own page. The only way out is a link on the fixed list in `src/core/links.ts`, which the shell hands to the default browser.

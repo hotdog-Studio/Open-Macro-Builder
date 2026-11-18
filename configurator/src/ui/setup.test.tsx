@@ -63,6 +63,13 @@ async function openFolder(platform: Platform) {
 const keyButtons = async () =>
   within(await screen.findByRole('list', { name: 'Keys' })).getAllByRole('button', { name: /^F\d+ \d×\d$/ })
 
+/** Answers the two first-run prompts of a folder without local/config.json. */
+async function answerFirstRun(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
+  const language = await screen.findByRole('dialog', { name: 'Which version do you run?' })
+  await user.click(within(language).getByRole('button', { name: 'AutoHotkey' }))
+}
+
 /** Opens the Create new folder dialog; gives its name field. */
 async function nameDialog(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Create new folder…' }))
@@ -94,10 +101,45 @@ describe('opening an empty folder', () => {
   it('then opens onto the tabs after the two first-run answers', async () => {
     const user = await openFolder(fakePlatform(empty()))
     await user.click(await screen.findByRole('button', { name: 'Set up' }))
-    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
-    const language = await screen.findByRole('dialog', { name: 'Which version do you run?' })
-    await user.click(within(language).getByRole('button', { name: 'AutoHotkey' }))
+    await answerFirstRun(user)
+    expect(await screen.findByRole('tab', { name: 'Get started', selected: true })).toBeTruthy()
+    await user.click(screen.getByRole('tab', { name: 'Pad shape' }))
     expect(await keyButtons()).toHaveLength(12)
+  })
+
+  it('in the desktop app a fresh setup is not asked which version, and opens on the guide for the one installed', async () => {
+    const user = await openFolder(fakePlatform(empty(), { kind: 'electron', installedLanguages: async () => ['ps'] }))
+    await user.click(await screen.findByRole('button', { name: 'Set up' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
+    const guide = await screen.findByRole('article', { name: 'Get started' })
+    expect(screen.getByRole('tab', { name: 'Get started', selected: true })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'Which version do you run?' })).toBeNull()
+    const step5 = within(guide).getByRole('heading', { name: '5. Start the macropad' }).parentElement!
+    expect(step5.textContent).toContain('launch.vbs')
+    expect(step5.textContent).not.toContain('main.ahk')
+    expect(guide.textContent).not.toContain('main.ahk')
+  })
+
+  it('a setup cancelled at a prompt, then opened with Open folder, opens on Pad shape', async () => {
+    const user = await openFolder(fakePlatform(empty()))
+    await user.click(await screen.findByRole('button', { name: 'Set up' }))
+    const prompt = await screen.findByRole('dialog', { name: 'This folder has no local/config.json yet' })
+    await user.click(within(prompt).getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    await answerFirstRun(user)
+    expect(await screen.findByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
+    expect(screen.queryByRole('article', { name: 'Get started' })).toBeNull()
+  })
+
+  it('a fresh setup with its prompt up, then another existing setup opened with Open folder, opens on Pad shape', async () => {
+    // The prompt only covers the screen: the Open folder button behind it can still be pressed.
+    const folders = [empty(), await readyFolder()]
+    const user = await openFolder(fakePlatform(null, { openFolder: async () => folders.shift() ?? null }))
+    await user.click(await screen.findByRole('button', { name: 'Set up' }))
+    await screen.findByRole('dialog', { name: 'This folder has no local/config.json yet' })
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    expect(await screen.findByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
+    expect(screen.queryByRole('article', { name: 'Get started' })).toBeNull()
   })
 
   it('Cancel goes back to the open screen with nothing written', async () => {
@@ -197,6 +239,15 @@ describe('Create new folder…', () => {
     expect(await folder.readBytes('ahk/main.ahk')).not.toBeNull()
   })
 
+  it('Create new folder… opens the editor on Get started', async () => {
+    const user = renderApp(fakePlatform(null, { createFolder: async () => empty() }))
+    const { dialog } = await nameDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Choose where…' }))
+    await answerFirstRun(user)
+    expect(await screen.findByRole('tab', { name: 'Get started', selected: true })).toBeTruthy()
+    expect(screen.getByRole('article', { name: 'Get started' })).toBeTruthy()
+  })
+
   it.each(['a/b', 'CON', 'name.', ''])('will not go on with the name %j', async (name) => {
     const createFolder = vi.fn<Platform['createFolder']>(async () => empty())
     const user = renderApp(fakePlatform(null, { createFolder }))
@@ -257,6 +308,15 @@ describe('Create new folder…', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Choose where…' }))
     expect(await keyButtons()).toHaveLength(12)
     expect(await snapshot(folder)).toEqual(before)
+  })
+
+  it('opening an existing setup of that name with Create new folder… opens on Pad shape', async () => {
+    const folder = await readyFolder()
+    const user = renderApp(fakePlatform(null, { createFolder: async () => folder }))
+    const { dialog } = await nameDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Choose where…' }))
+    expect(await screen.findByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
+    expect(screen.queryByRole('article', { name: 'Get started' })).toBeNull()
   })
 
   it('shows why when the folder could not be created', async () => {

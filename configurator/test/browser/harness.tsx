@@ -53,11 +53,11 @@ export function repoFiles(): Promise<Record<string, Uint8Array>> {
 }
 
 /** The files a folder opens straight into the editor with: the repository, a personal config and settings. */
-export async function editableFiles(): Promise<Record<string, Uint8Array>> {
+export async function editableFiles(config?: string): Promise<Record<string, Uint8Array>> {
   const files = await repoFiles()
   return {
     ...files,
-    'local/config.json': files['config.json'],
+    'local/config.json': config === undefined ? files['config.json'] : new TextEncoder().encode(config),
     [SETTINGS_PATH]: new TextEncoder().encode('{ "languages": ["ahk"] }\n'),
   }
 }
@@ -106,19 +106,32 @@ export function unmount(): void {
   document.getElementById('root')?.remove()
 }
 
-export type TabName = 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
+export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
 
 /** A real click, through the browser. */
 export const click = (el: Element) => userEvent.click(el)
 
-/** The example repository in memory, opened in the editor on a tab. */
-export async function startApp(tab: TabName = 'Pad shape'): Promise<{ folder: MemoryFolder }> {
-  const folder = new MemoryFolder('repo', await editableFiles())
-  mount({ kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null })
+/**
+ * The example repository in memory, opened in the editor on a tab. `layout` is the text of the
+ * personal config.json to open instead of the example's, for a pad of another shape. `how` says
+ * which look the app has (`electron` is the desktop app, with no Download link) and the folder's name.
+ */
+export async function startApp(
+  tab: TabName = 'Pad shape',
+  layout?: string,
+  how: { kind?: Platform['kind']; folderName?: string } = {},
+): Promise<{ folder: MemoryFolder }> {
+  const folder = new MemoryFolder(how.folderName ?? 'repo', await editableFiles(layout))
+  mount({ kind: how.kind ?? 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null })
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
   if (tab !== 'Pad shape') await openTab(tab)
   return { folder }
+}
+
+/** The start screen, with no folder open and none to reopen. */
+export function startOpenScreen(): void {
+  mount({ kind: 'browser', openFolder: async () => null, createFolder: async () => null, restoreFolder: async () => null })
 }
 
 export async function openTab(tab: TabName): Promise<void> {
@@ -266,7 +279,7 @@ export function carried(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.cursor-grabbing')
 }
 
-/** The error or notice above the editor, or null. */
+/** The message floating over the editor (a notice, a refused action or an error), or null. */
 export function banner(): string | null {
   return document.querySelector('[role="alert"] > span, output > span')?.textContent ?? null
 }

@@ -22,12 +22,23 @@ export function CentrePanel({ children }: Readonly<{ children?: ReactNode }>) {
   return <main className="flex min-w-0 flex-1 flex-col items-center-safe gap-3 overflow-auto p-5">{children}</main>
 }
 
-/** `preview` adds the overlay preview under the details (the Commands tab has none). */
+/**
+ * `preview` adds the overlay preview under the details (the Commands tab has none). With it the
+ * panel grows to the preview's real size, so a wide pad is not cut off: at least 288 px, at most
+ * half the window, and the preview scrolls inside once it is wider than that.
+ */
 export function RightPanel({ children, preview = true }: Readonly<{ children?: ReactNode; preview?: boolean }>) {
+  if (!preview) {
+    return <aside className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">{children}</aside>
+  }
+  // The details sit in a box that counts as no width at all (w-0, then as wide as the panel), so a
+  // long line of text in them never widens the panel: only the preview, outside that box, does.
+  // When the panel starts to scroll, the browser adds the scrollbar's width to the panel instead of
+  // taking it from the preview, so the preview still fits.
   return (
-    <aside className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">
-      {children}
-      {preview && <OverlayPreview />}
+    <aside className="w-max max-w-[50vw] min-w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">
+      <div className="w-0 min-w-full">{children}</div>
+      <OverlayPreview />
     </aside>
   )
 }

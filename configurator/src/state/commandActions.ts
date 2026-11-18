@@ -63,6 +63,8 @@ export type CommandActions = Pick<
   draftPaths(): string[]
   /** Forgets every draft: the folder was closed, replaced or loaded again. */
   clearDrafts(): void
+  /** Drops the result of every library read in flight: a reload is reading a newer library. */
+  dropLibraryReads(): void
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -151,6 +153,8 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
 
   /** Numbers the saves, so a background result of one save is never taken for another's. */
   let saveCount = 0
+  /** Numbers the reads of the library, so only the last one started can replace it. */
+  let libraryReads = 0
 
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
   const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
@@ -164,6 +168,13 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     await settled()
     const folder = deps.folder()
     if (!folder) return
+    await recheckCommandFiles(folder)
+    // Whatever became of the command files: the library has guards of its own.
+    await recheckLibrary(folder)
+  }
+
+  /** Reads the command files again and takes up what changed on disk. */
+  async function recheckCommandFiles(folder: FolderAccess): Promise<void> {
     const snapshot = files.get()
     let fresh: CommandFile[]
     try {
@@ -195,19 +206,24 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const list = same ? snapshot : next
     if (!same) files.set(list)
     dispatch({ type: 'command-files', files: list, changed })
-    await recheckLibrary(folder)
   }
 
-  /** Reads the library again; a failed read keeps the one the state holds. */
+  /**
+   * Reads the library again; a failed read keeps the one the state holds. Only the read that started
+   * last may replace it, so an older read that ends late never undoes a newer one. Files whose bytes
+   * did not change keep their entry, unparsed.
+   */
   async function recheckLibrary(folder: FolderAccess): Promise<void> {
+    const n = ++libraryReads
+    const before = deps.getState()
     let fresh: LibraryFile[]
     try {
-      fresh = await scanLibrary(folder)
+      fresh = await scanLibrary(folder, before.screen === 'edit' ? before.libraryFiles : [])
     } catch {
       return
     }
     const state = deps.getState()
-    if (deps.folder() !== folder || state.screen !== 'edit' || sameLibrary(state.libraryFiles, fresh)) return
+    if (n !== libraryReads || deps.folder() !== folder || state.screen !== 'edit' || sameLibrary(state.libraryFiles, fresh)) return
     dispatch({ type: 'library-files', files: fresh })
   }
 
@@ -475,6 +491,10 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     clearDrafts() {
       drafts.clear()
       written.clear()
+    },
+
+    dropLibraryReads() {
+      libraryReads++
     },
   }
 }

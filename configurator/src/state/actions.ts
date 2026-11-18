@@ -20,6 +20,7 @@ import {
   scanLibrary,
   type CommandFile,
   type LangId,
+  type LibraryFile,
 } from '../core/languages'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
@@ -163,8 +164,11 @@ function samePaths(a: CommandFile[], b: CommandFile[]): boolean {
   return b.every((f) => paths.has(f.file.path))
 }
 
-/** Reads the config, the command files and the icon sets of an opened folder. */
-async function readSession(folder: FolderAccess, configPath: string): Promise<Session> {
+/**
+ * Reads the config, the command files and the icon sets of an opened folder. `library` is the
+ * library already held (none for a folder being opened): kept when the library cannot be read.
+ */
+async function readSession(folder: FolderAccess, configPath: string, library: LibraryFile[] = []): Promise<Session> {
   const configFile = await readTextFile(folder, configPath)
   if (!configFile) throw new ConfigError(`${configPath} is missing.`)
   const parsed = parseConfig(configFile.text, configPath)
@@ -173,8 +177,9 @@ async function readSession(folder: FolderAccess, configPath: string): Promise<Se
   const ws = { ...parsed, notices: [...parsed.notices, ...commandFileNotices(commandFiles)] }
   const iconSets = await listIconSets(folder)
   // A library file that cannot be read (locked, no permission) never stops the folder from
-  // opening: the session starts without the library, and the next recheck of the command files reads it.
-  const libraryFiles = await scanLibrary(folder).catch(() => [])
+  // opening: the session keeps the library it held (none on opening), and the next recheck of the
+  // command files reads it.
+  const libraryFiles = await scanLibrary(folder, library).catch(() => library)
   return {
     folder,
     configFile,
@@ -604,8 +609,11 @@ export function createActions(
       const token = ++loads
       // Command files the app saves or reloads during the read keep the app's entry (mergeAfterRead).
       const before = commandFiles
+      const state = getState()
+      // This read is newer than any recheck's read of the library still in flight.
+      commands.dropLibraryReads()
       try {
-        const read = await readSession(file.folder, file.configFile.path)
+        const read = await readSession(file.folder, file.configFile.path, state.screen === 'edit' ? state.libraryFiles : [])
         if (token !== loads || held !== file) return
         // Command files with unsaved edits keep the version they were edited on.
         const files = mergeAfterRead(before, commandFiles, read.commandFiles, commands.draftPaths())

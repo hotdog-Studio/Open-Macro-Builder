@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { memoryFolderFromRepo } from '../../../test/repo'
 import { MemoryFolder } from '../folder/memory'
 import { compareText } from '../folder/path'
@@ -8,6 +8,7 @@ import {
   commandFileNotices,
   commandFilePath,
   definedNames,
+  LANGUAGES,
   libraryTitle,
   mergeRescan,
   readCommandFile,
@@ -279,6 +280,18 @@ describe('scanLibrary', () => {
     const lib = await scanLibrary(new MemoryFolder('lib', { 'powershell/lib/Z.ps1': bytes }))
     expect(lib[0].title).toBe('Café')
     expect(lib[0].functions[0].doc.summary).toBe('Café note.')
+  })
+
+  it('keeps a held file whose bytes did not change, without reading its functions again', async () => {
+    const folder = memoryFolderFromRepo(['powershell/lib'])
+    const held = await scanLibrary(folder)
+    await folder.writeBytes('powershell/lib/Input.ps1', new TextEncoder().encode('# Changed\nfunction Get-New {\n}\n'))
+    const parse = vi.spyOn(LANGUAGES.ps, 'findFunctions')
+    const fresh = await scanLibrary(folder, held)
+    expect(parse.mock.calls).toHaveLength(1)
+    parse.mockRestore()
+    expect(fresh.filter((f) => held.includes(f))).toHaveLength(held.length - 1)
+    expect(fresh.find((f) => f.name === 'Input')!.title).toBe('Changed')
   })
 
   it('sameLibrary compares paths and versions', async () => {

@@ -1,7 +1,8 @@
 import { functionNames } from '../../../../scripts/validate-config-core.mjs'
 import { compareText as compare } from '../folder/path'
 import type { FolderAccess } from '../folder/types'
-import { readTextFileLenient, type TextFile } from '../folder/textFile'
+import { hashBytes } from '../folder/hash'
+import { decodeLenient, readTextFileLenient, type TextFile } from '../folder/textFile'
 import { ahk } from './ahk'
 import { ps } from './ps'
 import { isCommand, type FunctionInfo, type LangId, type Language } from './types'
@@ -216,9 +217,17 @@ export function libraryTitle(lang: LangId, text: string, name: string): string {
   return first.slice(from).trim() || name
 }
 
-async function readLibraryFile(folder: FolderAccess, lang: Language, path: string): Promise<LibraryFile | null> {
-  const read = await readTextFileLenient(folder, path, NOT_UTF8[lang.id])
-  if (!read) return null
+/** One library file; `held` itself when its bytes are the ones it was read from, so nothing is decoded or parsed again. */
+async function readLibraryFile(
+  folder: FolderAccess,
+  lang: Language,
+  path: string,
+  held: LibraryFile | undefined,
+): Promise<LibraryFile | null> {
+  const raw = await folder.readBytes(path)
+  if (raw === null) return null
+  if (held && held.version === (await hashBytes(raw))) return held
+  const read = await decodeLenient(path, raw, NOT_UTF8[lang.id])
   const name = path.slice(path.lastIndexOf('/') + 1, path.length - lang.ext.length)
   return {
     lang: lang.id,
@@ -230,8 +239,12 @@ async function readLibraryFile(folder: FolderAccess, lang: Language, path: strin
   }
 }
 
-/** The files directly in each language's library folder, by name. Never throws for a missing folder. */
-export async function scanLibrary(folder: FolderAccess): Promise<LibraryFile[]> {
+/**
+ * The files directly in each language's library folder, by name. Never throws for a missing folder.
+ * A file of `held` (the library as last read) whose bytes did not change is given back as it is.
+ */
+export async function scanLibrary(folder: FolderAccess, held: LibraryFile[] = []): Promise<LibraryFile[]> {
+  const heldByPath = new Map(held.map((f) => [f.path, f]))
   const found = await Promise.all(
     ALL.map(async (lang) => {
       if (lang.libraryDir === null) return []
@@ -240,7 +253,7 @@ export async function scanLibrary(folder: FolderAccess): Promise<LibraryFile[]> 
       const paths = entries
         .filter((e) => e.kind === 'file' && e.name.toLowerCase().endsWith(lang.ext))
         .map((e) => `${dir}/${e.name}`)
-      return Promise.all(paths.map((path) => readLibraryFile(folder, lang, path)))
+      return Promise.all(paths.map((path) => readLibraryFile(folder, lang, path, heldByPath.get(path))))
     }),
   )
   return found

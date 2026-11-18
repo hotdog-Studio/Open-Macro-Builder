@@ -66,7 +66,11 @@ export async function readTextFileLenient(
   fallback = 'utf-8',
 ): Promise<{ file: TextFile; utf8: boolean } | null> {
   const raw = await folder.readBytes(path)
-  if (raw === null) return null
+  return raw === null ? null : decodeLenient(path, raw, fallback)
+}
+
+/** Bytes already read, decoded as readTextFileLenient decodes them. */
+export async function decodeLenient(path: string, raw: Uint8Array, fallback = 'utf-8'): Promise<{ file: TextFile; utf8: boolean }> {
   const strict = await decodeTextFile(path, raw, true)
   if (strict) return { file: strict, utf8: true }
   // A non-fatal decoder never fails.

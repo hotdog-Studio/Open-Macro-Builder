@@ -10,7 +10,11 @@
 ; one instruction per line:
 ;   kill <pid> <exe name>     end that process, if it still runs under that name
 ;   killdir <folder>          end every process whose program is in that folder (the run's own)
-;   run <command line>        start this (the macropad the test stopped)
+;   window <handle>           close that window (one a command opened)
+;   run <exe>TAB<args>TAB<dir> start this, in that folder (a macropad the test stopped)
+; It also lets go of Shift, Ctrl, Alt, the Windows keys and F24 where they are still down. The test's
+; own clean-up (Clear-E2eLeftovers in powershell\tests\helpers\EndToEnd.ps1) does the same and also
+; closes virtual desktops a run added; Jenkins runs it after every end-to-end stage.
 ;
 ;   AutoHotkey64.exe banner.ahk <test pid> <state file> <deadline, seconds since 1970 UTC>
 
@@ -60,13 +64,18 @@ BannerCleanUp() {
                         ProcessClose(p.ProcessId)
                 }
             }
-        } else if RegExMatch(A_LoopField, "^run (.+)$", &m) {
-            runs.Push(m[1])
+        } else if RegExMatch(A_LoopField, "^window (\d+)$", &m) {
+            try WinClose("ahk_id " m[1])
+        } else if RegExMatch(A_LoopField, "^run ([^\t]+)\t([^\t]*)\t(.*)$", &m) {
+            runs.Push(m)
         }
     }
+    for key in ["Shift", "LShift", "RShift", "Ctrl", "LCtrl", "RCtrl", "Alt", "LAlt", "RAlt", "LWin", "RWin", "F24"]
+        if GetKeyState(key)
+            Send("{Blind}{" key " up}")
     Sleep(500)
-    for line in runs
-        try Run(line)
+    for m in runs  ; a console program (powershell.exe) starts hidden; AutoHotkey shows its own windows
+        try Run('"' m[1] '" ' m[2], m[3], InStr(m[1], "powershell.exe") ? "Hide" : "")
     ; The run's folder (the state file is in it) goes last.
     SplitPath(stateFile, , &runDir)
     try DirDelete(runDir, true)

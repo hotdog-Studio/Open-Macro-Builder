@@ -72,33 +72,50 @@ Describe 'End-to-end pacing' -Tag EndToEnd {
     }
 }
 
+# Every command of a language's shared files is in one of three states: covered (a case runs it
+# wherever the suite runs), conditional (its only cases need something a machine may lack, said on the
+# row, such as a second monitor) or excluded (with the reason).
 Describe 'End-to-end accounting: <Title>' -Tag EndToEnd -ForEach $Langs {
     BeforeAll {
         $shared = Get-E2eSharedCommand $Lang
         $cases = @(Get-E2eCases -All | Where-Object { $_.File -ne 'e2e' -and (-not $_.Only -or $_.Only -eq $Lang) })
-        $covered = @($cases | ForEach-Object { $_.Command } | Sort-Object -Unique)
+        $covered = @($cases | Where-Object { -not $_.Needs } | ForEach-Object { $_.Command } | Sort-Object -Unique)
+        $conditional = @($cases | Where-Object { $_.Needs -and $covered -notcontains $_.Command } | ForEach-Object { $_.Command } | Sort-Object -Unique)
         $excluded = Get-E2eExclusions
     }
-    It 'covers every command of the shared command files, or excludes it with a reason' {
+    It 'covers every command of the shared command files, runs it where it can, or excludes it with a reason' {
         $bad = foreach ($name in $shared.Keys) {
-            if ($covered -notcontains $name -and -not $excluded.ContainsKey($name)) { "$name ($($shared[$name])) has no case and is not excluded" }
+            if ($covered -notcontains $name -and $conditional -notcontains $name -and -not $excluded.ContainsKey($name)) { "$name ($($shared[$name])) has no case and is not excluded" }
         }
         $bad | Should -BeNullOrEmpty
+        Write-Host ("End-to-end, {0}: {1} covered, {2} conditional, {3} excluded, of {4} commands." -f $Title, $covered.Count, $conditional.Count, $excluded.Count, $shared.Count)
+        foreach ($c in $cases | Where-Object { $conditional -contains $_.Command }) { Write-Host "  conditional: $($c.Command): $($c.Needs.Why)" }
+        foreach ($name in $excluded.Keys | Sort-Object) { Write-Host "  excluded: ${name}: $($excluded[$name])" }
     }
     It 'names only commands that exist, and excludes nothing it covers' {
         $bad = @(foreach ($c in $cases) { if (-not $shared.Contains($c.Command)) { "the case $($c.Command) names no command of the $Lang files" } elseif ($shared[$c.Command] -ne $c.File) { "the case $($c.Command) says $($c.File); the command is in $($shared[$c.Command])" } }) +
         @(foreach ($name in $excluded.Keys) {
                 if (-not $shared.Contains($name)) { "the exclusion $name names no command of the $Lang files" }
-                if ($covered -contains $name) { "$name is excluded and covered" }
+                if ($covered -contains $name -or $conditional -contains $name) { "$name is excluded and has a case" }
                 if ([string]::IsNullOrWhiteSpace($excluded[$name])) { "$name is excluded without a reason" }
             })
         $bad | Should -BeNullOrEmpty
     }
-    It 'gives every case for one language its reason' {
-        @(Get-E2eCases -All | Where-Object { $_.Only -and [string]::IsNullOrWhiteSpace($_.Why) } | ForEach-Object { $_.Command }) | Should -BeNullOrEmpty
+    It 'gives every case for one language, and every conditional case, its reason' {
+        @(Get-E2eCases -All | Where-Object { ($_.Only -and [string]::IsNullOrWhiteSpace($_.Why)) -or ($_.Needs -and ([string]::IsNullOrWhiteSpace($_.Needs.Why) -or $_.Needs.Met -isnot [scriptblock])) } | ForEach-Object { $_.Command }) | Should -BeNullOrEmpty
     }
 }
 
+Describe 'End-to-end layouts' -Tag EndToEnd {
+    It 'puts every case on a key, and goes on in another layout when one is full' {
+        $plan = Get-E2eSlotPlan 250 -KeyCount 11
+        $plan.Count | Should -Be 250
+        ($plan | Measure-Object Chunk -Maximum).Maximum | Should -Be 3 -Because '119 cases fit a layout of 11 layers of 11 keys beside the two harness keys'
+        @($plan | Where-Object { $_.Layer -lt 1 -or $_.Layer -gt 11 -or $_.Slot -lt 1 -or $_.Slot -gt 11 }).Count | Should -Be 0
+        @($plan | Where-Object { $_.Layer -eq 1 -and $_.Slot -le 2 }).Count | Should -Be 0 -Because 'the first two keys of each layout are the harness''s own'
+        @($plan | Group-Object { "$($_.Chunk) $($_.Layer) $($_.Slot)" } | Where-Object Count -gt 1).Count | Should -Be 0 -Because 'no two cases share a key'
+    }
+}
 Describe 'End-to-end parity of the two languages' -Tag EndToEnd {
     It 'covers a command in one language only where the other has none, or says why' {
         $ahk = Get-E2eSharedCommand 'ahk'
@@ -136,16 +153,18 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
         if ($script:E2eSkip) { return }
 
         Write-Host $script:E2eWarning
-        [void](New-E2eRun -LimitMinutes 20)
+        # What an earlier run that did not end itself left (a crash, a Jenkins abort) goes first.
+        [void](Clear-E2eLeftovers)
+        $limit = 20; if ($env:OMB_E2E_LIMIT) { $limit = [int]$env:OMB_E2E_LIMIT }
+        [void](New-E2eRun -LimitMinutes $limit)
+        Install-E2eApp
         $twins = Get-E2eTwinChords
         $script:E2eCaseTable = [ordered]@{}
         foreach ($c in Get-E2eCases) {
             if (-not $c.Name) { $c.Name = $c.Command }
             if (-not $c.Kind) { $c.Kind = 'Chord' }
-            if ($c.Kind -in 'Chord', 'Watch' -and -not $c.Chords) {
-                if (-not $twins.ContainsKey($c.Command)) { throw "$($c.Command) has no one-chord PowerShell twin; give its case Chords and Source." }
-                $c.Chords = $twins[$c.Command]
-            }
+            if (-not $c.Chords -and $twins.ContainsKey($c.Command)) { $c.Chords = $twins[$c.Command] }
+            if ($c.Kind -in 'Chord', 'Watch' -and -not $c.Chords) { throw "$($c.Command) has no one-chord PowerShell twin; give its case Chords and Source." }
             $script:E2eCaseTable[$c.Name] = $c
         }
         Write-E2eLayout @($script:E2eCaseTable.Values)
@@ -155,19 +174,18 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
         if (-not [OmbE2e.KeyWatch]::Start()) { throw 'Could not install the key watch (a low-level keyboard hook).' }
         Start-E2eBanner
         Wait-Pump 3000  # the banner is up three seconds before the first key
-        Stop-E2eOwnerMacropad
+        Stop-E2eOwnerMacropads
         [void](Start-E2eStandin 'A' -Exe 'chrome.exe' -X 40 -Y 120)
         [void](Start-E2eStandin 'B' -Exe 'e2eapp.exe' -X 500 -Y 120)
         [void](Start-E2eStandin 'C' -Exe 'e2eapp.exe' -X 500 -Y 320)
+        [void](Start-E2eStandin 'P' -Exe 'putty.exe' -X 40 -Y 320)
     }
     AfterAll {
         if (-not $script:E2eSkip) { Complete-E2eRun }
     }
 
     Describe '<Title>' -ForEach $Langs {
-        BeforeAll {
-            if (-not $script:E2eSkip) { [void](Start-E2eMacropad $Lang) }
-        }
+        # Each case starts the macropad with the layout it is on when it is not already running.
         AfterAll {
             if (-not $script:E2eSkip) { Stop-E2eMacropad }
         }

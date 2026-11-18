@@ -52,6 +52,7 @@ function E2eOpenSpaces {
     param($Macro)
     $dir = E2eTestDir
     ActivateOrOpen 'e2e app.exe' "$dir\e2e app.exe" -Arguments "`"$dir\note a.txt`""
+    E2eWrite 'marks.log' 'spaces done'
 }
 
 # PS-8: EnsureActiveOrOpen says whether the window is active at the end.

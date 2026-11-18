@@ -81,6 +81,7 @@ E2eAmpersand(Macro) {
  */
 E2eOpenSpaces(Macro) {
     ActivateOrOpen("ahk_exe e2e app.exe", E2eTestDir() "\e2e app.exe", '"' E2eTestDir() '\note a.txt"')
+    E2eWrite("marks.log", "spaces done")
 }
 
 /**

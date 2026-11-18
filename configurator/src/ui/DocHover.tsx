@@ -177,6 +177,35 @@ function useScrollState(scroller: RefObject<HTMLDivElement | null>) {
 }
 
 /**
+ * Whether the pointer is on the card, from the card's own native mouseenter and mouseleave, which
+ * call `onEnter` and `onLeave`. Not React's onMouseLeave: React builds it from a mouseout that reaches
+ * the page's root, and when a re-render has just taken away the line under the pointer, the browser
+ * sends that mouseout to the line, off the page, and React never sees the pointer leave.
+ */
+function usePointerOn(box: RefObject<HTMLDivElement | null>, onEnter: () => void, onLeave: () => void): boolean {
+  const [on, setOn] = useState(false)
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const enter = () => {
+      setOn(true)
+      onEnter()
+    }
+    const leave = () => {
+      setOn(false)
+      onLeave()
+    }
+    el.addEventListener('mouseenter', enter)
+    el.addEventListener('mouseleave', leave)
+    return () => {
+      el.removeEventListener('mouseenter', enter)
+      el.removeEventListener('mouseleave', leave)
+    }
+  }, [box, onEnter, onLeave])
+  return on
+}
+
+/**
  * The card beside the panel, portalled into the page. A card taller than the window takes the
  * pointer, so that it can be scrolled, and its last line says so while there is more below; a card
  * that fits lets the pointer through to what lies under it.
@@ -192,8 +221,10 @@ function FloatingCard({
   const scroller = useRef<HTMLDivElement>(null)
   const { tall, more, measure } = useScrollState(scroller)
   // A card the pointer is on keeps it until the pointer leaves, even when its docs change and fit.
-  const [pointerOn, setPointerOn] = useState(false)
+  const pointerOn = usePointerOn(box, onEnter, onLeave)
   const update = useCallback(() => {
+    // A row that has just left the page (filtered out, its group closed) waits for useDropGoneRows to drop its card.
+    if (!row.isConnected) return
     if (box.current) place(box.current, row)
     measure()
   }, [row, measure])
@@ -208,14 +239,6 @@ function FloatingCard({
       role="tooltip"
       style={{ maxHeight: `calc(100vh - ${2 * GAP}px)`, pointerEvents: tall || pointerOn ? 'auto' : 'none' }}
       className="fixed z-50 flex flex-col rounded-md border border-zinc-700 bg-zinc-900 shadow-xl"
-      onMouseEnter={() => {
-        setPointerOn(true)
-        onEnter()
-      }}
-      onMouseLeave={() => {
-        setPointerOn(false)
-        onLeave()
-      }}
     >
       <div ref={scroller} className="min-h-0 overflow-y-auto">
         <DocCard entry={entry} />

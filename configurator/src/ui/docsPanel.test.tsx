@@ -11,6 +11,7 @@ import { LANGUAGES } from '../core/languages'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 const other = () => screen.getByRole('region', { name: 'Other commands available' })
@@ -64,6 +65,42 @@ describe('the floating card of the panel', () => {
     act(() => within(other()).getByRole('textbox', { name: 'Filter other commands' }).focus())
     await user.keyboard('zzz')
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+  })
+
+  it('places nothing for a row the filter took away while a resize frame was pending', async () => {
+    // The observer that drops a gone row's card renders later than the row goes; a frame can run in
+    // between. This observer never reports, so the frame below always comes first.
+    vi.stubGlobal(
+      'MutationObserver',
+      class {
+        observe() {}
+        disconnect() {}
+        takeRecords() {
+          return []
+        }
+      },
+    )
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    await user.hover(rows('ActivateOrOpen')[0])
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    act(() => within(other()).getByRole('textbox', { name: 'Filter other commands' }).focus())
+    await user.keyboard('zzz')
+    expect(within(other()).queryByRole('button', { name: /^ActivateOrOpen\b/ })).toBeNull()
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent) => {
+      errors.push(String(e.error))
+      e.preventDefault()
+    }
+    window.addEventListener('error', onError)
+    try {
+      window.dispatchEvent(new Event('resize'))
+      // The card's frame was asked for first, so it has run by the time this one does.
+      await new Promise((done) => requestAnimationFrame(done))
+    } finally {
+      window.removeEventListener('error', onError)
+    }
+    expect(errors).toEqual([])
   })
 
   it('shows what is typed in the docs of the row it is up for', async () => {

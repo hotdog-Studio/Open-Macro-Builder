@@ -655,38 +655,96 @@ describe('Commands tab: docs on hover', () => {
     }
   })
 
-  it('keeps the pointer on a tall card of the list whose docs shrink under it', async () => {
+  /**
+   * In a 300 px window, the card of a tool of the shown file with 30 examples: taller than the window,
+   * so it takes the pointer. `shrink` replaces the docs with one line, which fits.
+   */
+  async function tallToolCard(): Promise<{ tip: HTMLElement; shrink: () => Promise<void> }> {
     await page.viewport(1280, 300)
-    try {
-      await start()
-      await openFile('windows')
-      const examples = Array.from({ length: 30 }, (_, i) => ` * @example Tool(${i})`)
-      replaceAll(['/**', ' * A tool.', ...examples, ' */', 'Tool(A)', '{', '}', ''].join('\n'))
-      const other = screen.getByRole('region', { name: 'Other commands available' })
-      const row = within(other).getByRole('button', { name: /^Tool\b/ })
-      row.scrollIntoView({ block: 'end' })
-      await waitFor(() => expect(row.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight))
-      // From a known place, so that resting on the row is a move the page sees.
-      await hover(nav())
-      await hover(row)
-      const tip = await screen.findByRole('tooltip')
-      await waitFor(() => expect(getComputedStyle(tip).pointerEvents).toBe('auto'))
-      const tall = tip.getBoundingClientRect()
-      await hover({ x: tall.left + tall.width / 2, y: tall.bottom - 10 })
-      // The docs change while the pointer rests on the card, and now fit.
+    await start()
+    await openFile('windows')
+    const examples = Array.from({ length: 30 }, (_, i) => ` * @example Tool(${i})`)
+    replaceAll(['/**', ' * A tool.', ...examples, ' */', 'Tool(A)', '{', '}', ''].join('\n'))
+    const other = screen.getByRole('region', { name: 'Other commands available' })
+    const row = within(other).getByRole('button', { name: /^Tool\b/ })
+    row.scrollIntoView({ block: 'end' })
+    await waitFor(() => expect(row.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight))
+    // From a known place, so that resting on the row is a move the page sees.
+    await hover(nav())
+    await hover(row)
+    const tip = await screen.findByRole('tooltip')
+    await waitFor(() => expect(getComputedStyle(tip).pointerEvents).toBe('auto'))
+    const shrink = async () => {
       replaceAll('/**\n * A tool.\n */\nTool(A)\n{\n}\n')
       await waitFor(() => expect(tip.textContent).not.toContain('Tool(29)'))
       await waitFor(() => expect(within(tip).queryByText('More below. Scroll the card, or click the row.')).toBeNull())
-      // The card still takes the pointer: it is not taken away from under it.
-      expect(getComputedStyle(tip).pointerEvents).toBe('auto')
-      const fits = tip.getBoundingClientRect()
-      const centre = { x: fits.left + fits.width / 2, y: fits.top + fits.height / 2 }
-      expect(tip.contains(document.elementFromPoint(centre.x, centre.y))).toBe(true)
-      // The pointer moves on the card where it now is, and the card stays; once it leaves, the card goes.
-      await hover(centre)
+    }
+    return { tip, shrink }
+  }
+
+  it('keeps the pointer on a tall card of the list whose docs shrink under it, until it leaves', async () => {
+    try {
+      const { tip, shrink } = await tallToolCard()
+      // Near the bottom of the card, on an example line the shrink takes away; the shrunk card still covers it.
+      const tall = tip.getBoundingClientRect()
+      const rest = { x: tall.left + tall.width / 2, y: tall.bottom - 10 }
+      await hover(rest)
+      const line = document.elementFromPoint(rest.x, rest.y)!
+      expect(tip.contains(line)).toBe(true)
+      await shrink()
+      expect(line.isConnected).toBe(false)
+      // The card still lies under the resting pointer and takes it, past the grace a card left behind waits.
+      expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
+      await pause(CARD_STAYS)
       expect(screen.getByRole('tooltip')).toBe(tip)
+      expect(getComputedStyle(tip).pointerEvents).toBe('auto')
+      // Straight off it, with nothing entering the card again: the card goes.
       await hover(nav())
       await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    } finally {
+      await page.viewport(1280, 900)
+    }
+  })
+
+  it('lets the card go when the pointer leaves right after the line under it was taken away, every time', async () => {
+    // The line under the resting pointer goes with the shrink. When the pointer moves before the browser
+    // has looked again at what lies under it, the browser's mouseout goes to that line, now off the page,
+    // so React's own leave never comes; only the card's native mouseleave does. That race goes either way
+    // from one try to the next, so the test makes several.
+    try {
+      const { tip } = await tallToolCard()
+      const row = () => within(screen.getByRole('region', { name: 'Other commands available' })).getByRole('button', { name: /^Tool\b/ })
+      let card = tip
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const tall = card.getBoundingClientRect()
+        await hover({ x: tall.left + tall.width / 2, y: tall.bottom - 10 })
+        replaceAll('/**\n * A tool.\n */\nTool(A)\n{\n}\n')
+        await hover(nav())
+        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+        // The tall card again, for the next try.
+        replaceAll(['/**', ' * A tool.', ...Array.from({ length: 30 }, (_, i) => ` * @example Tool(${i})`), ' */', 'Tool(A)', '{', '}', ''].join('\n'))
+        await hover(row())
+        card = await screen.findByRole('tooltip')
+        await waitFor(() => expect(getComputedStyle(card).pointerEvents).toBe('auto'))
+      }
+    } finally {
+      await page.viewport(1280, 900)
+    }
+  })
+
+  it('lets go of the pointer when the shrunk card is no longer under it', async () => {
+    try {
+      const { tip, shrink } = await tallToolCard()
+      // Near the top of the tall card, where the shrunk card, placed level with its row, no longer is.
+      const tall = tip.getBoundingClientRect()
+      const rest = { x: tall.left + tall.width / 2, y: tall.top + 10 }
+      await hover(rest)
+      expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
+      await shrink()
+      await waitFor(() => expect(tip.getBoundingClientRect().top).toBeGreaterThan(rest.y))
+      // The pointer has not moved: the card goes, and blocks no click where the pointer rests.
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(false)
     } finally {
       await page.viewport(1280, 900)
     }

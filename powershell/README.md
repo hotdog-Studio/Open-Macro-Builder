@@ -174,6 +174,5 @@ The twelve macro keys (F13 to F24) still use `RegisterHotKey` with `MOD_NOREPEAT
 
 - The overlay never takes focus, so clicking it leaves keys going to the app you were in.
 - Keys are sent as chords (`'LWin+Left'`) instead of AutoHotkey `Send` syntax.
-- `VsCodeRestartDebugging`, `VsCodePauseDebugging` and `VsCodePeekImplementations` send the F-key the AutoHotkey version meant to send. The AutoHotkey source typed the letters because of missing braces.
 - `Restart` uses `shutdown /r /t 1`.
 - The fluent `Layout` methods (`AddLayer`, `RemoveLayer`, `ShowLabel` and so on) are not ported.

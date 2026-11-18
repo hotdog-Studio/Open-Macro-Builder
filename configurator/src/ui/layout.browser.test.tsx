@@ -235,6 +235,21 @@ const previewPanel = () => screen.getByRole('region', { name: 'Overlay preview' 
 /** The box the preview scrolls in when it is wider than the panel. */
 const previewBox = () => screen.getByRole('region', { name: 'Overlay preview' }).querySelector<HTMLElement>('.overflow-auto')!
 
+/** The width of an element's own borders and padding, left and right, in px. */
+const frameWidth = (el: HTMLElement) => {
+  const s = getComputedStyle(el)
+  return [s.paddingLeft, s.paddingRight, s.borderLeftWidth, s.borderRightWidth].reduce((sum, v) => sum + Number.parseFloat(v), 0)
+}
+/** How wide the panel can be and still be sized by the preview alone: the preview, its frame, the panel's frame and its scrollbar. */
+const widestForPreview = () => {
+  const panel = previewPanel()
+  const scrollbar = panel.offsetWidth - panel.clientWidth - Number.parseFloat(getComputedStyle(panel).borderLeftWidth)
+  const section = screen.getByRole('region', { name: 'Overlay preview' })
+  // The preview's own size, which scrollWidth is not: a scroll box that is wider than its content reports its own width.
+  const preview = (previewBox().firstElementChild as HTMLElement).offsetWidth
+  return preview + frameWidth(section) + frameWidth(panel) + scrollbar
+}
+
 describe('the right panel', () => {
   it('shows the whole overlay preview on Pad shape, Layers and Macros', async () => {
     await startApp()
@@ -243,6 +258,13 @@ describe('the right panel', () => {
       expect(previewBox().scrollWidth, tab).toBeLessThanOrEqual(previewBox().clientWidth)
       expect(previewPanel().getBoundingClientRect().width, tab).toBeGreaterThanOrEqual(288)
     }
+  })
+
+  it('is as wide as the overlay preview needs, not as wide as the longest line of its details', async () => {
+    await startApp()
+    // A selected key shows a note that is one long line (about 600 px) if nothing makes it wrap.
+    await click(padKey('F22'))
+    expect(previewPanel().getBoundingClientRect().width).toBeLessThanOrEqual(widestForPreview() + 1)
   })
 
   it('still shows it whole when the panel itself scrolls', async () => {

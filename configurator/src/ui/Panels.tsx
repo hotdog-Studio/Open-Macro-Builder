@@ -31,12 +31,12 @@ export function RightPanel({ children, preview = true }: Readonly<{ children?: R
   if (!preview) {
     return <aside className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">{children}</aside>
   }
-  // The gutter is kept even when nothing scrolls, so a scrollbar appearing later cannot narrow the
-  // preview's box after it was measured. The details sit in a box that counts as no width at all
-  // (w-0, then as wide as the panel), so a long line of text in them never widens the panel: only
-  // the preview, outside that box, does.
+  // The details sit in a box that counts as no width at all (w-0, then as wide as the panel), so a
+  // long line of text in them never widens the panel: only the preview, outside that box, does.
+  // When the panel starts to scroll, the browser adds the scrollbar's width to the panel instead of
+  // taking it from the preview, so the preview still fits.
   return (
-    <aside className="w-max max-w-[50vw] min-w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3 [scrollbar-gutter:stable]">
+    <aside className="w-max max-w-[50vw] min-w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-3">
       <div className="w-0 min-w-full">{children}</div>
       <OverlayPreview />
     </aside>

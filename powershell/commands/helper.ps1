@@ -207,7 +207,7 @@ function ReplaceMe {
 
 <#
 .SYNOPSIS
-Shows a message box with an OK button and waits until it is closed, like AutoHotkey's MsgBox.
+Shows a message box with an OK button and waits until it is closed. It works like AutoHotkey's MsgBox.
 .DESCRIPTION
 The macro waits until the box is closed. Message and ReplaceMe use it.
 .PARAMETER Text

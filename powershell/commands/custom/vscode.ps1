@@ -22,7 +22,7 @@ function VsCodeOpenCommandPalette { param($Macro) Send-Chord 'Ctrl+Shift+p' }
 function VsCodeOpenTerminal { param($Macro) Send-Chord "Ctrl+Shift+'" }
 function VsCodeDebug { param($Macro) Send-Chord 'F5' }
 function VsCodeAddBreakpoint { param($Macro) Send-Chord 'F9' }
-function VsCodeAddInlineBreakpoint { param($Macro) Send-Chord 'Ctrl+F9' }
+function VsCodeAddInlineBreakpoint { param($Macro) Send-Chord 'Shift+F9' }
 function VsCodeStopDebugging { param($Macro) Send-Chord 'Shift+F5' }
 function VsCodeRestartDebugging { param($Macro) Send-Chord 'Ctrl+Shift+F5' }
 function VsCodePauseDebugging { param($Macro) Send-Chord 'F6' }

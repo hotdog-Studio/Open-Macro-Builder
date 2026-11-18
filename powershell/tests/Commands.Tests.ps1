@@ -26,6 +26,7 @@ Describe 'custom commands send the right chords' {
     It 'VsCodeSplitPanel' { VsCodeSplitPanel $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+\' } }
     It 'VsCodeRestartDebugging' { VsCodeRestartDebugging $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+Shift+F5' } }
     It 'VsCodePauseDebugging presses F6, VS Code''s Pause' { VsCodePauseDebugging $null; Should -Invoke Send-Chord -Times 1 -Exactly -ParameterFilter { $Chord -eq 'F6' } }
+    It 'VsCodeAddInlineBreakpoint presses Shift+F9, VS Code''s Inline Breakpoint' { VsCodeAddInlineBreakpoint $null; Should -Invoke Send-Chord -Times 1 -Exactly -ParameterFilter { $Chord -eq 'Shift+F9' } }
     It 'VsCodePeekImplementations presses Ctrl+Shift+F12' { VsCodePeekImplementations $null; Should -Invoke Send-Chord -Times 1 -Exactly -ParameterFilter { $Chord -eq 'Ctrl+Shift+F12' } }
     It 'ChromeNewTab' {
         ChromeNewTab $null

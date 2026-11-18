@@ -118,7 +118,7 @@ VsCodeAddBreakpoint(Macro) {
 }
 
 VsCodeAddInlineBreakpoint(Macro) {
-    Send("{Ctrl Down}{F9}{Ctrl Up}")
+    Send("{Shift Down}{F9}{Shift Up}")
 }
 
 VsCodeStopDebugging(Macro) {

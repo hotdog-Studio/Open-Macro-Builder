@@ -3,9 +3,10 @@
 ; ************************* Helper Functions *********************
 /**
  * Activates an existing Window or opens a Program if the Window does not exist.
- * @param {String} Window - The Window title or class to check for.
+ * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
  * @param {String} [Args=""] - Optional arguments to pass to the Program.
+ * @example ActivateOrOpen("ahk_exe notepad.exe", "notepad")
  */
 ActivateOrOpen(Window, Program, Args := "")
 {
@@ -41,9 +42,10 @@ ActivateOrOpen(Window, Program, Args := "")
 
 /**
  * Opens a Program and activates its Window.
- * @param {String} Window - The Window title or class to wait for.
+ * @param {String} Window - The Window to wait for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run.
  * @param {String} [Args=""] - Optional arguments to pass to the Program.
+ * @example Open("ahk_exe notepad.exe", "notepad")
  */
 Open(Window, Program, Args := "")
 {
@@ -60,9 +62,10 @@ Open(Window, Program, Args := "")
 
 /**
  * Ensures a Program is running and its Window is active.
- * @param {String} Window - The Window title or class to check for.
+ * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
  * @param {String} [Args=""] - Optional arguments to pass to the Program.
+ * @example EnsureActiveOrOpen("ahk_exe notepad.exe", "notepad", "")
  */
 EnsureActiveOrOpen(Window, Program, Args)
 {
@@ -94,6 +97,7 @@ EnsureActiveOrOpen(Window, Program, Args)
  * Runs a Python script with optional arguments.
  * @param {String} ScriptPath - The path to the Python script.
  * @param {String} [Args=""] - Optional arguments to pass to the script.
+ * @example RunPythonScript("C:\Scripts\backup.py")
  */
 RunPythonScript(ScriptPath, Args := "")
 {
@@ -110,6 +114,7 @@ RunPythonScript(ScriptPath, Args := "")
  * Runs a PowerShell script with optional arguments.
  * @param {String} ScriptPath - The path to the PowerShell script.
  * @param {String} [Args=""] - Optional arguments to pass to the script.
+ * @example RunPowerShellScript("C:\Scripts\cleanup.ps1")
  */
 RunPowerShellScript(ScriptPath, Args := "")
 {
@@ -126,6 +131,7 @@ RunPowerShellScript(ScriptPath, Args := "")
  * Runs a batch script with optional arguments.
  * @param {String} ScriptPath - The path to the batch script.
  * @param {String} [Args=""] - Optional arguments to pass to the script.
+ * @example RunBatchScript("C:\Scripts\build.bat")
  */
 RunBatchScript(ScriptPath, Args := "")
 {

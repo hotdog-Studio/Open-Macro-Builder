@@ -7,6 +7,7 @@
 /**
  * Load a putty session by name
  * @param {(String)} Name String - Name of the putty session to load
+ * @example LoadPuttySession("my-server")
  */
 LoadPuttySession(Name) {
     window := "ahk_exe putty.exe"

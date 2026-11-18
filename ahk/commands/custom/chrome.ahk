@@ -4,6 +4,7 @@
 /**
  * Opens or activates Google Chrome. If a URL is provided, opens Chrome with that URL.
  * @param {(String)} Url (optional) If provided, opens Chrome with this URL.
+ * @example ActivateOrOpenChrome("https://www.youtube.com/")
  */
 ActivateOrOpenChrome(Url := "")
 {

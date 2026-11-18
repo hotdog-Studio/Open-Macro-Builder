@@ -17,11 +17,11 @@ async function sections(lang: LangId) {
 }
 
 describe('the real scripts, as the Commands tab reads them', () => {
-  // 60 functions have a help block; Message and ReplaceMe of helper.ps1 are commands, so 58 are functions to call.
-  it('lists the 58 documented PowerShell functions to call, each with a summary and an example', async () => {
+  // 62 functions have a help block; Message and ReplaceMe of helper.ps1 are commands, so 60 are functions to call.
+  it('lists the 60 documented PowerShell functions to call, each with a summary and an example', async () => {
     const { functions } = await sections('ps')
     const entries = functions.flatMap((g) => g.entries)
-    expect(entries).toHaveLength(58)
+    expect(entries).toHaveLength(60)
     expect(entries.filter((e) => e.summary === '' || e.fn.doc.examples.length === 0).map((e) => e.fn.name)).toEqual([])
     expect(entries.filter((e) => e.fn.doc.params.some((p) => p.text === '')).map((e) => e.fn.name)).toEqual([])
   })
@@ -29,6 +29,8 @@ describe('the real scripts, as the Commands tab reads them', () => {
   it('heads the library groups with their titles and keeps internals out', async () => {
     const { functions } = await sections('ps')
     expect(functions.map((g) => [g.group.label, g.group.file])).toEqual([
+      ['custom/chrome', null],
+      ['custom/ssh', null],
       ['helper', null],
       ['Keys and mouse clicks', 'lib/Input'],
       ['Pausing', 'lib/Pump'],
@@ -54,5 +56,17 @@ describe('the real scripts, as the Commands tab reads them', () => {
     expect(helper.entries.map((e) => e.fn.name)).toEqual(
       ['ActivateOrOpen', 'Open', 'EnsureActiveOrOpen', 'RunPythonScript', 'RunPowerShellScript', 'RunBatchScript', 'EncodeInteger'],
     )
+  })
+
+  it('gives every AutoHotkey helper to call a one-line example of a call to it, but EncodeInteger', async () => {
+    const { functions } = await sections('ahk')
+    const groups = functions.filter((g) => ['helper', 'custom/chrome', 'custom/ssh'].includes(g.group.label))
+    expect(groups).toHaveLength(3)
+    const entries = groups.flatMap((g) => g.entries).filter((e) => e.fn.name !== 'EncodeInteger')
+    expect(entries.map((e) => e.fn.name)).toEqual(expect.arrayContaining(['ActivateOrOpenChrome', 'LoadPuttySession']))
+    const bad = entries.filter(
+      (e) => e.fn.doc.examples.length === 0 || e.fn.doc.examples.some((x) => x.includes('\n') || !x.startsWith(`${e.fn.name}(`)),
+    )
+    expect(bad.map((e) => e.fn.name)).toEqual([])
   })
 })

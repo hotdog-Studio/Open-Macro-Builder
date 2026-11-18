@@ -97,7 +97,7 @@ describe('Other commands available', () => {
     const before = editorView().state.doc.toString()
     await user.click(row('ActivateOrOpen'))
     expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('true')
-    expect(within(other()).getByText('ahk/commands/helper.ahk · line 10')).toBeTruthy()
+    expect(within(other()).getByText('ahk/commands/helper.ahk · line 11')).toBeTruthy()
     expect(editorView().state.doc.toString()).toBe(before)
     expect(pairButton('windows').getAttribute('aria-current')).toBe('true')
     await user.click(row('ActivateOrOpen'))

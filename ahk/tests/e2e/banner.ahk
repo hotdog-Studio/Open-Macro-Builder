@@ -67,6 +67,9 @@ BannerCleanUp() {
     Sleep(500)
     for line in runs
         try Run(line)
+    ; The run's folder (the state file is in it) goes last.
+    SplitPath(stateFile, , &runDir)
+    try DirDelete(runDir, true)
 }
 
 SetTimer(BannerWatch, 500)

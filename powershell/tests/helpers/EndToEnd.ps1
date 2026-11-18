@@ -620,6 +620,7 @@ function Start-E2eStandin {
     if ($null -eq $standin) { throw "The stand-in '$Name' did not start within 10 s." }
     Wait-ScreenChange -Observed
     $standin | Add-Member Process $p
+    $standin | Add-Member Rect (Get-WindowRect $standin.Hwnd)
     $script:E2eRun.Standins[$Name] = $standin
     $standin
 }
@@ -679,9 +680,13 @@ function ConvertTo-E2eTap {
     $keys = [System.Collections.Generic.List[object]]::new()
     $text = [System.Text.StringBuilder]::new()
     $flushKeys = { if ($keys.Count -gt 0) { foreach ($t in (ConvertTo-ChordTap $keys.ToArray())) { $taps.Add($t) }; $keys.Clear() } }
+    # A down of a key already down in these events is an auto-repeat. (Windows' own repeat bit is not
+    # used: it says what the system thought before, which a key let go elsewhere can leave wrong.)
+    $down = [System.Collections.Generic.HashSet[int]]::new()
     foreach ($e in @($Events)) {
         if ($e.Kind -eq 'char') { & $flushKeys; [void]$text.Append($e.Char); continue }
-        if ($e.Repeat -or $e.Vk -eq 0xE8 -or ($e.Vk -ge 0x7C -and $e.Vk -le 0x87)) { continue }
+        if ($e.Vk -eq 0xE8 -or ($e.Vk -ge 0x7C -and $e.Vk -le 0x87)) { continue }
+        if ($e.Up) { [void]$down.Remove([int]$e.Vk) } elseif (-not $down.Add([int]$e.Vk)) { continue }
         if ($text.Length -gt 0) { $taps.Add("text:$text"); [void]$text.Clear() }
         $keys.Add($e)
     }
@@ -776,8 +781,13 @@ function Stop-E2eMacropad {
 
 # The macropad's visible windows (its overlay while Fn is held, a form, a message box).
 function Get-E2eMacropadWindows {
+    param([switch]$Overlay, [switch]$Others)
     $m = $script:E2eRun.Macropad
-    , @([Macropad.Native]::GetProcessWindows([int[]]@($m.Process.Id)))
+    $all = @([Macropad.Native]::GetProcessWindows([int[]]@($m.Process.Id)))
+    # The overlay is the one without a title; forms and message boxes have one.
+    if ($Overlay) { return , @($all | Where-Object { [Macropad.WindowApi]::Title($_) -eq '' }) }
+    if ($Others) { return , @($all | Where-Object { [Macropad.WindowApi]::Title($_) -ne '' }) }
+    , $all
 }
 
 # Selects a layer as a person does: hold Fn, press the layer's key, let Fn go. The overlay shows and
@@ -788,12 +798,12 @@ function Select-E2eLayer {
     if ($m.Layer -eq $Index) { return }
     Wait-ScreenChange
     Send-E2eKey $script:E2eFnVk
-    $shown = Wait-E2eCondition { (Get-E2eMacropadWindows).Count -gt 0 } -TimeoutMs 3000
+    $shown = Wait-E2eCondition { (Get-E2eMacropadWindows -Overlay).Count -gt 0 } -TimeoutMs 3000
     Send-E2eTap ($script:E2eFirstKeyVk + $Index - 1)
     Wait-ScreenChange
     Send-E2eKey $script:E2eFnVk -Up
     if (-not $shown) { throw "The overlay did not show while Fn was held (layer $Index)." }
-    $hidden = Wait-E2eCondition { (Get-E2eMacropadWindows).Count -eq 0 } -TimeoutMs 3000
+    $hidden = Wait-E2eCondition { (Get-E2eMacropadWindows -Overlay).Count -eq 0 } -TimeoutMs 3000
     if (-not $hidden) { throw "The overlay did not hide when Fn was let go (layer $Index)." }
     Wait-ScreenChange -Observed
     $m.Layer = $Index
@@ -931,6 +941,7 @@ function Invoke-E2eCase {
     if ($Case.Assert) { $assert = $Case.Assert }
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         $ctx = @{ Case = $Case; Lang = $Lang; Run = $script:E2eRun }
+        $caught = $false
         try {
             Select-E2eLayer $Case.Layer
             $errorsBefore = @(Get-E2eErrorLines).Count
@@ -944,6 +955,7 @@ function Invoke-E2eCase {
             $errors -join "`n" | Should -BeNullOrEmpty -Because 'the macropad must not report an error'
             return $null
         } catch {
+            $caught = $true
             $foreign = Get-E2eForeignForeground $Case
             if ($attempt -eq 1 -and $foreign) {
                 Write-Host "End-to-end: $($Case.Command) failed while $foreign had the focus, a window the test did not open; trying once more. The failure was: $($_.Exception.Message)"
@@ -953,6 +965,11 @@ function Invoke-E2eCase {
         } finally {
             [OmbE2e.KeyWatch]::Swallow = $false
             if ($Case.CleanUp) { & $Case.CleanUp $ctx }
+            # A form or message box of the macropad's that the case left open would stand in the way
+            # of the next case: it is closed, and the case fails (unless it failed already).
+            $left = Get-E2eMacropadWindows -Others  # already a list
+            foreach ($w in $left) { Close-E2eWindow $w }
+            if ($left.Count -gt 0 -and -not $caught) { throw "The macropad still showed $($left.Count) window(s) after $($Case.Command): $(($left | ForEach-Object { "'$([Macropad.WindowApi]::Title($_))'" }) -join ', ')" }
         }
     }
 }

@@ -72,6 +72,62 @@ Describe 'End-to-end pacing' -Tag EndToEnd {
     }
 }
 
+Describe 'End-to-end accounting: <Title>' -Tag EndToEnd -ForEach $Langs {
+    BeforeAll {
+        $shared = Get-E2eSharedCommand $Lang
+        $cases = @(Get-E2eCases -All | Where-Object { $_.File -ne 'e2e' -and (-not $_.Only -or $_.Only -eq $Lang) })
+        $covered = @($cases | ForEach-Object { $_.Command } | Sort-Object -Unique)
+        $excluded = Get-E2eExclusions
+    }
+    It 'covers every command of the shared command files, or excludes it with a reason' {
+        $bad = foreach ($name in $shared.Keys) {
+            if ($covered -notcontains $name -and -not $excluded.ContainsKey($name)) { "$name ($($shared[$name])) has no case and is not excluded" }
+        }
+        $bad | Should -BeNullOrEmpty
+    }
+    It 'names only commands that exist, and excludes nothing it covers' {
+        $bad = @(foreach ($c in $cases) { if (-not $shared.Contains($c.Command)) { "the case $($c.Command) names no command of the $Lang files" } elseif ($shared[$c.Command] -ne $c.File) { "the case $($c.Command) says $($c.File); the command is in $($shared[$c.Command])" } }) +
+        @(foreach ($name in $excluded.Keys) {
+                if (-not $shared.Contains($name)) { "the exclusion $name names no command of the $Lang files" }
+                if ($covered -contains $name) { "$name is excluded and covered" }
+                if ([string]::IsNullOrWhiteSpace($excluded[$name])) { "$name is excluded without a reason" }
+            })
+        $bad | Should -BeNullOrEmpty
+    }
+    It 'gives every case for one language its reason' {
+        @(Get-E2eCases -All | Where-Object { $_.Only -and [string]::IsNullOrWhiteSpace($_.Why) } | ForEach-Object { $_.Command }) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'End-to-end parity of the two languages' -Tag EndToEnd {
+    It 'covers a command in one language only where the other has none, or says why' {
+        $ahk = Get-E2eSharedCommand 'ahk'
+        $ps = Get-E2eSharedCommand 'ps'
+        $oneLanguage = Get-E2eOneLanguageCommands
+        $excluded = Get-E2eExclusions
+        $all = Get-E2eCases -All | Where-Object { $_.File -ne 'e2e' }
+        $coveredIn = @{
+            ahk = @($all | Where-Object { -not $_.Only -or $_.Only -eq 'ahk' } | ForEach-Object { $_.Command })
+            ps  = @($all | Where-Object { -not $_.Only -or $_.Only -eq 'ps' } | ForEach-Object { $_.Command })
+        }
+        $names = @(@($ahk.Keys) + @($ps.Keys) | Sort-Object -Unique)
+        $bad = foreach ($n in $names) {
+            $inAhk = $ahk.Contains($n); $inPs = $ps.Contains($n)
+            if ($inAhk -ne $inPs) {
+                if (-not $oneLanguage.ContainsKey($n)) { "$n is a command of the $(if ($inAhk) { 'AutoHotkey' } else { 'PowerShell' }) files only, and Get-E2eOneLanguageCommands does not say why" }
+                continue
+            }
+            if ($excluded.ContainsKey($n)) { continue }
+            $a = $coveredIn.ahk -contains $n; $p = $coveredIn.ps -contains $n
+            if ($a -ne $p) {
+                $only = @($all | Where-Object { $_.Command -eq $n -and $_.Only })
+                if (-not ($only | Where-Object { $_.Why })) { "$n is covered for $(if ($a) { 'AutoHotkey' } else { 'PowerShell' }) only, with no reason on its case" }
+            }
+        }
+        $bad | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'End-to-end on the desktop' -Tag EndToEnd {
     BeforeAll {
         $script:E2eSkip = $null

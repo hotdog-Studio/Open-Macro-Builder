@@ -90,6 +90,87 @@ function Get-E2eExplorerFolder {
 
 $script:E2eStopLaunched = { param($ctx) Stop-E2eLaunched }
 
+# A message box of the macropad's with this title came forward and says Text.
+function Assert-E2eMessageBox {
+    param($ctx, [string]$Title, [string]$Text)
+    $winTitle = "$Title ahk_class #32770 ahk_pid $($ctx.Run.Macropad.Process.Id)"
+    $ctx.Window = Wait-E2eNewWindow $winTitle -TimeoutMs 5000
+    $ctx.Window | Should -Not -BeNullOrEmpty -Because "a message box titled '$Title' must open"
+    $active = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $ctx.Window } -TimeoutMs 3000
+    $active | Should -BeTrue -Because "the message box must come forward, where the keyboard is (in front: $(Get-E2eForegroundText))"
+    Get-E2eStatusText $ctx.Window $Text | Should -BeExactly $Text
+}
+
+# True when Show Desktop is in effect: the window is minimized, or the desktop itself is in front.
+function Test-E2eDesktopShown {
+    param([IntPtr]$Hwnd)
+    if ([Macropad.WindowApi]::IsMinimized($Hwnd)) { return $true }
+    (Get-WindowInfo ([Macropad.WindowApi]::Foreground())).Class -in 'WorkerW', 'Progman'
+}
+
+# The work area (the screen less the taskbar) of the monitor a window is on.
+function Get-E2eWorkArea {
+    param([IntPtr]$Hwnd)
+    [System.Windows.Forms.Screen]::FromHandle($Hwnd).WorkingArea
+}
+
+# True when the window's rectangle is the part of its monitor's work area that Part names (Left,
+# Right, Top, Bottom: that half), give or take the invisible borders Windows puts round a window.
+function Test-E2eSnapped {
+    param([IntPtr]$Hwnd, [ValidateSet('Left', 'Right', 'Top', 'Bottom')][string]$Part)
+    $w = Get-E2eWorkArea $Hwnd
+    $r = Get-WindowRect $Hwnd
+    $want = switch ($Part) {
+        'Left' { @($w.X, $w.Y, [int]($w.Width / 2), $w.Height) }
+        'Right' { @(($w.X + [int]($w.Width / 2)), $w.Y, [int]($w.Width / 2), $w.Height) }
+        'Top' { @($w.X, $w.Y, $w.Width, [int]($w.Height / 2)) }
+        'Bottom' { @($w.X, ($w.Y + [int]($w.Height / 2)), $w.Width, [int]($w.Height / 2)) }
+    }
+    $got = @($r.X, $r.Y, $r.Width, $r.Height)
+    for ($i = 0; $i -lt 4; $i++) { if ([math]::Abs($got[$i] - $want[$i]) -gt 24) { return $false } }
+    $true
+}
+
+# Puts A back where the run placed it, as a normal window, and in front.
+function Reset-E2eStandinA {
+    $a = $script:E2eRun.Standins['A']
+    if ((Get-WindowState $a.Hwnd) -ne 'Normal') { Wait-ScreenChange; Set-WindowState $a.Hwnd Restore }
+    $r = Get-WindowRect $a.Hwnd
+    if ($r.X -ne $a.Rect.X -or $r.Y -ne $a.Rect.Y -or $r.Width -ne $a.Rect.Width -or $r.Height -ne $a.Rect.Height) {
+        Wait-ScreenChange
+        Move-Window $a.Hwnd $a.Rect.X $a.Rect.Y $a.Rect.Width $a.Rect.Height
+    }
+    [void](Use-E2eStandin 'A')
+}
+
+# Something of Windows' own shell that a key brought up over A (Snap Assist, Task View, the screen
+# capture), closed with Escape as a person would.
+function Close-E2eShellOverlay {
+    $a = $script:E2eRun.Standins['A'].Hwnd
+    for ($i = 0; $i -lt 3 -and [Macropad.WindowApi]::Foreground() -ne $a; $i++) {
+        $exe = (Get-WindowInfo ([Macropad.WindowApi]::Foreground())).Exe
+        if ($exe -notin 'explorer.exe', 'ScreenClippingHost.exe', 'SnippingTool.exe', 'ShellExperienceHost.exe', 'ShellHost.exe') { break }
+        Wait-ScreenChange
+        Send-E2eChord 'Escape'
+        [void](Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $a } -TimeoutMs 1500)
+    }
+}
+
+# A window-placement case on A: the key must leave A as Test says, then A goes back.
+function New-E2ePlacementCase {
+    param([string]$Command, [scriptblock]$Test, [string]$Expect, [scriptblock]$SkipIf, [string]$Covers)
+    @{ Command = $Command; File = 'windows'; Kind = 'Custom'; SkipIf = $SkipIf; Covers = $Covers; Expect = $Expect; Test = $Test; Targets = 'explorer.exe'
+        Arrange = { param($ctx) Reset-E2eStandinA }
+        Assert  = {
+            param($ctx)
+            $a = $ctx.Run.Standins['A'].Hwnd
+            (Wait-E2eCondition { & $ctx.Case.Test $a } -TimeoutMs 4000) | Should -BeTrue -Because "the active window must be $($ctx.Case.Expect) (now: $((Get-WindowRect $a) | Out-String) state $(Get-WindowState $a))"
+            Wait-ScreenChange -Observed
+        }
+        CleanUp = { param($ctx) Close-E2eShellOverlay; Reset-E2eStandinA }
+    }
+}
+
 # The form a command opened (the macropad's own window with this title), active.
 function Wait-E2eForm {
     param([string]$Title)
@@ -165,7 +246,9 @@ $script:E2eExplorer = 'ahk_class CabinetWClass'
 
 # ---- The table ----
 
+# -All gives every case, also when OMB_E2E_CASE (run.ps1 -Case) picks some.
 function Get-E2eCases {
+    param([switch]$All)
     $cases = @(
         # ======== The fixes no test proved (fix-scripts-1-report.md and fix-scripts-2-report.md) ========
 
@@ -443,9 +526,199 @@ function Get-E2eCases {
             }
             CleanUp = { param($ctx) if ($ctx.Mouse) { [void][OmbE2e.Input]::MoveMouse($ctx.Mouse[0], $ctx.Mouse[1]) } }
         }
+
+        # ======== The rest of the shared commands, file by file ========
+
+        # ---- helper ----
+        @{ Command = 'Message'; File = 'helper'; Kind = 'Custom'; Macro = @{ name = 'E2E message'; description = 'Message shows this text' }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B') }
+            Assert  = { param($ctx) Assert-E2eMessageBox $ctx 'E2E message' 'Message shows this text' }
+            CleanUp = { param($ctx) if ($ctx.Window) { Close-E2eWindow $ctx.Window } }
+        }
+        @{ Command = 'ReplaceMe'; File = 'helper'; Kind = 'Custom'; Macro = @{ name = 'E2E replace' }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B') }
+            Assert  = { param($ctx) Assert-E2eMessageBox $ctx 'E2E replace' 'Replace E2E replace with your own!' }
+            CleanUp = { param($ctx) if ($ctx.Window) { Close-E2eWindow $ctx.Window } }
+        }
+
+        # ---- media: Windows acts on these keys itself (it would play, pause or change the volume), so
+        # the key watch sees them and keeps them from Windows ----
+        foreach ($c in 'PreviousTrack', 'PlayPause', 'NextTrack', 'VolumeDown', 'VolumeUp') { @{ Command = $c; File = 'media'; Kind = 'Watch' } }
+
+        # ---- windows ----
+        (New-E2eOpenerCase 'OpenTaskManager' 'windows' 'ahk_exe taskmgr.exe' -Targets 'taskmgr.exe' -SkipIf {
+                if (Test-E2eAdministrator) { return 'Task Manager starts elevated for an administrator, and the test, which is not, could not close it again' }
+                if ((Get-E2eForeignWindows 'ahk_exe taskmgr.exe').Count -gt 0) { 'a Task Manager the test did not open is on the desktop' }
+            })
+        (New-E2eOpenerCase 'OpenControlPanel' 'windows' $script:E2eExplorer -Targets 'explorer.exe')
+        (New-E2eOpenerCase 'OpenSettings' 'windows' 'Settings ahk_class ApplicationFrameWindow' -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -SkipIf {
+                if ((Get-E2eForeignWindows 'Settings ahk_class ApplicationFrameWindow').Count -gt 0) { 'a Settings window the test did not open is on the desktop; the key would bring it forward' }
+            })
+        (New-E2eOpenerCase 'OpenServices' 'windows' 'ahk_exe mmc.exe' -Targets 'mmc.exe' -SkipIf {
+                if (Test-E2eAdministrator) { return 'mmc.exe asks for the highest rights the user has, so for an administrator Windows would show its elevation prompt' }
+                if ((Get-E2eForeignWindows 'ahk_exe mmc.exe').Count -gt 0) { 'a management console the test did not open is on the desktop' }
+            })
+        (New-E2ePlacementCase 'SnapWindowLeft' { param($h) Test-E2eSnapped $h Left } 'the left half of the screen (Win+Left)')
+        (New-E2ePlacementCase 'SnapWindowRight' { param($h) Test-E2eSnapped $h Right } 'the right half of the screen (Win+Right)')
+        (New-E2ePlacementCase 'SnapWindowTop' { param($h) Test-E2eSnapped $h Top } 'the top half of the screen (Win+Alt+Up)' -SkipIf {
+                if ([Environment]::OSVersion.Version.Build -lt 26100) { 'Windows 11 24H2 brings Win+Alt+Up; this Windows is older' }
+            })
+        (New-E2ePlacementCase 'SnapWindowBottom' { param($h) Test-E2eSnapped $h Bottom } 'the bottom half of the screen (Win+Alt+Down)' -SkipIf {
+                if ([Environment]::OSVersion.Version.Build -lt 26100) { 'Windows 11 24H2 brings Win+Alt+Down; this Windows is older' }
+            })
+        # Win+Alt+Left and Win+Alt+Right are not in Microsoft's list of Windows shortcuts: what they do
+        # depends on the PC (a window manager such as PowerToys), so the keys are checked, not a place.
+        @{ Command = 'SnapThirdsLeft'; File = 'windows'; Kind = 'Watch' }
+        @{ Command = 'SnapThirdsRight'; File = 'windows'; Kind = 'Watch' }
+        (New-E2ePlacementCase 'MoveWindowUp' { param($h) (Get-WindowState $h) -eq 'Maximized' } 'maximized (Win+Up)')
+        (New-E2ePlacementCase 'MoveWindowDown' { param($h) (Get-WindowState $h) -eq 'Minimized' } 'minimized (Win+Down)')
+        # Win+Home minimizes every other window, a person's too, and on Windows 11 does so only with
+        # "Title bar window shake" turned on (it is off by default), so the keys are checked.
+        @{ Command = 'FocusWindow'; File = 'windows'; Kind = 'Watch' }
+        @{ Command = 'CloseWindow'; File = 'windows' }
+        @{ Command = 'CreateDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+            SkipIf  = { if ($script:E2eRun.DesktopCount -gt 1) { "the desktop has $($script:E2eRun.DesktopCount) virtual desktops; the desktop cases start from one" } }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'A') }
+            Assert  = {
+                param($ctx)
+                (Wait-E2eCondition { (Get-E2eDesktopCount) -eq $ctx.Run.DesktopCount + 1 -and -not [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) } -TimeoutMs 4000) | Should -BeTrue -Because 'a new virtual desktop must be made and shown'
+                Wait-ScreenChange -Observed
+            }
+        }
+        @{ Command = 'PreviousDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+            SkipIf  = { if ((Get-E2eDesktopCount) -ne $script:E2eRun.DesktopCount + 1) { 'CreateDesktop did not leave a second virtual desktop to switch between' } }
+            Arrange = { param($ctx) }
+            Assert  = {
+                param($ctx)
+                (Wait-E2eCondition { [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) } -TimeoutMs 4000) | Should -BeTrue -Because 'the desktop to the left, where A is, must be shown'
+                Wait-ScreenChange -Observed
+            }
+        }
+        @{ Command = 'NextDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+            SkipIf  = { if ((Get-E2eDesktopCount) -ne $script:E2eRun.DesktopCount + 1) { 'CreateDesktop did not leave a second virtual desktop to switch between' } }
+            Arrange = { param($ctx) }
+            Assert  = {
+                param($ctx)
+                (Wait-E2eCondition { -not [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) } -TimeoutMs 4000) | Should -BeTrue -Because 'the desktop to the right, the new one, must be shown'
+                Wait-ScreenChange -Observed
+            }
+        }
+        @{ Command = 'CloseDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+            SkipIf  = { if ((Get-E2eDesktopCount) -ne $script:E2eRun.DesktopCount + 1) { 'CreateDesktop did not leave a second virtual desktop to close' } }
+            Arrange = { param($ctx) }
+            Assert  = {
+                param($ctx)
+                (Wait-E2eCondition { (Get-E2eDesktopCount) -eq $ctx.Run.DesktopCount -and [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) } -TimeoutMs 4000) | Should -BeTrue -Because 'the desktop in use must close, back to the one A is on'
+                Wait-ScreenChange -Observed
+            }
+            CleanUp = { param($ctx) Restore-E2eDesktops; [void](Use-E2eStandin 'A') }
+        }
+        @{ Command = 'ShowDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+            Arrange = { param($ctx) Reset-E2eStandinA }
+            Assert  = {
+                param($ctx)
+                $a = $ctx.Run.Standins['A'].Hwnd
+                (Wait-E2eCondition { Test-E2eDesktopShown $a } -TimeoutMs 4000) | Should -BeTrue -Because "the desktop must show (in front: $(Get-E2eForegroundText))"
+                Wait-ScreenChange
+                Invoke-E2eMacroKey $ctx.Case.Slot
+                # Which window gets the keyboard back is Windows' choice; the windows must be back.
+                (Wait-E2eCondition { -not (Test-E2eDesktopShown $a) } -TimeoutMs 4000) | Should -BeTrue -Because "a second press brings the windows back (in front: $(Get-E2eForegroundText))"
+                Wait-ScreenChange -Observed
+            }
+            CleanUp = {
+                param($ctx)
+                if (Test-E2eDesktopShown $ctx.Run.Standins['A'].Hwnd) { Wait-ScreenChange; Send-E2eChord 'LWin+d'; [void](Wait-E2eCondition { -not (Test-E2eDesktopShown $ctx.Run.Standins['A'].Hwnd) } -TimeoutMs 3000) }
+                Reset-E2eStandinA
+            }
+        }
+        foreach ($c in 'NextScreen', 'PreviousScreen') {
+            @{ Command = $c; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+                SkipIf  = { if ([System.Windows.Forms.Screen]::AllScreens.Count -lt 2) { 'needs a second monitor' } }
+                Arrange = { param($ctx) Reset-E2eStandinA; $ctx.Screen = [System.Windows.Forms.Screen]::FromHandle($ctx.Run.Standins['A'].Hwnd).DeviceName }
+                Assert  = {
+                    param($ctx)
+                    (Wait-E2eCondition { [System.Windows.Forms.Screen]::FromHandle($ctx.Run.Standins['A'].Hwnd).DeviceName -ne $ctx.Screen } -TimeoutMs 4000) | Should -BeTrue -Because 'the active window must move to another monitor'
+                    Wait-ScreenChange -Observed
+                }
+                CleanUp = { param($ctx) Reset-E2eStandinA }
+            }
+        }
+        @{ Command = 'TaskView'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+            Arrange = { param($ctx) Reset-E2eStandinA }
+            Assert  = {
+                param($ctx)
+                $shown = Wait-E2eCondition { $i = Get-WindowInfo ([Macropad.WindowApi]::Foreground()); if ($i.Exe -eq 'explorer.exe' -and $i.Class -ne 'CabinetWClass') { $i } } -TimeoutMs 4000
+                $shown | Should -Not -BeNullOrEmpty -Because "Task View must open (in front: $(Get-E2eForegroundText))"
+                Wait-ScreenChange -Observed
+            }
+            CleanUp = { param($ctx) Close-E2eShellOverlay; Reset-E2eStandinA }
+        }
+        # Print Screen opens the screen capture over the whole screen or copies a screenshot to the
+        # clipboard (a setting chooses), Alt+Print Screen replaces the clipboard: the keys are checked.
+        @{ Command = 'PrintScreen'; File = 'windows'; Kind = 'Watch' }
+        @{ Command = 'PrintActiveWindow'; File = 'windows'; Kind = 'Watch' }
+        @{ Command = 'SnippingTool'; File = 'windows'; Kind = 'Custom'; Targets = 'ScreenClippingHost.exe', 'SnippingTool.exe'
+            SkipIf  = { if (-not (Test-Path 'Registry::HKEY_CLASSES_ROOT\ms-screenclip')) { 'no app on this Windows opens ms-screenclip: (the Snipping Tool is not installed)' } }
+            Arrange = { param($ctx) Reset-E2eStandinA }
+            Assert  = {
+                param($ctx)
+                $shown = Wait-E2eCondition { $i = Get-WindowInfo ([Macropad.WindowApi]::Foreground()); if ($i.Exe -in 'ScreenClippingHost.exe', 'SnippingTool.exe') { $i } } -TimeoutMs 8000
+                $shown | Should -Not -BeNullOrEmpty -Because "the screen capture must open (in front: $(Get-E2eForegroundText))"
+                Wait-ScreenChange -Observed
+            }
+            CleanUp = { param($ctx) Close-E2eShellOverlay; Reset-E2eStandinA }
+        }
+        foreach ($c in 'MoveFocusLeft', 'MoveFocusRight', 'Enter', 'Escape') { @{ Command = $c; File = 'windows' } }
+
+        # ---- custom\chrome ----
+        @{ Command = 'EnsureActiveOrOpenChrome'; File = 'custom\chrome'; Kind = 'Custom'
+            Arrange = $script:E2eFromB
+            Assert  = {
+                param($ctx)
+                $a = $ctx.Run.Standins['A'].Hwnd
+                (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $a } -TimeoutMs 6000) | Should -BeTrue -Because "Chrome's window comes forward (in front: $(Get-E2eForegroundText))"
+                @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 0 -Because 'Chrome is not started again while it has a window'
+            }
+        }
+        @{ Command = 'OpenYoutube'; File = 'custom\chrome'; Kind = 'Custom'; Targets = 'chrome.exe'; Arrange = $script:E2eFromB; Assert = { param($ctx) Assert-E2eChromeUrl $ctx 'https://www.youtube.com/' }; CleanUp = $script:E2eStopLaunched }
+        @{ Command = 'OpenGoogle'; File = 'custom\chrome'; Kind = 'Custom'; Targets = 'chrome.exe'; Arrange = $script:E2eFromB; Assert = { param($ctx) Assert-E2eChromeUrl $ctx 'https://www.google.com/' }; CleanUp = $script:E2eStopLaunched }
+        foreach ($c in 'ChromePreviousTab', 'ChromeNextTab', 'ChromeDevTools', 'ChromeCloseTab', 'ChromeReopenClosedTab', 'ChromeBookmarkPage', 'ActivateOrCycleChromeAddressBar') { @{ Command = $c; File = 'custom\chrome' } }
+
+        # ---- custom\examples ----
+        @{ Command = 'ExampleOpenWebsite'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'chrome.exe'; Arrange = $script:E2eFromB; Assert = { param($ctx) Assert-E2eChromeUrl $ctx 'https://example.com/' }; CleanUp = $script:E2eStopLaunched }
+        (New-E2eOpenerCase 'ExampleOpenProgram' 'custom\examples' 'ahk_exe notepad.exe' -Targets 'notepad.exe' -SkipIf {
+                if ((Get-E2eForeignWindows 'ahk_exe notepad.exe').Count -gt 0) { 'a Notepad the test did not open is on the desktop; the key would bring it forward' }
+            })
+
+        # ---- custom\ssh ----
+        @{ Command = 'SshMacroDescription'; File = 'custom\ssh'; Kind = 'Custom'; Macro = @{ name = 'SSH'; description = 'e2e desc test' }; Targets = 'putty.exe'
+            Arrange = $script:E2eFromB
+            Assert  = { param($ctx) Assert-E2eLaunch $ctx 'putty.exe' '-load "e2e desc test"' -TimeoutMs 16000 }
+            CleanUp = $script:E2eStopLaunched
+        }
+        @{ Command = 'SshExample'; File = 'custom\ssh'; Kind = 'Custom'; Targets = 'ssh.exe'
+            Arrange = $script:E2eFromB
+            Assert  = { param($ctx) Assert-E2eLaunch $ctx 'ssh.exe' 'user@server.example.com' }
+            CleanUp = $script:E2eStopLaunched
+        }
+
+        # ---- custom\vscode (no VS Code is used: the stand-in receives the keys) ----
+        foreach ($c in 'VsCodeToggleBottomPanel', 'VsCodeToggleSidebar', 'VsCodeCloseEditor', 'VsCodeReopenClosedEditor', 'VsCodeNextEditor', 'VsCodePreviousEditor',
+            'VsCodeSearchInFiles', 'VsCodeMovePanelRight', 'VsCodeMovePanelLeft', 'VsCodeOpenSourceControl', 'VsCodeOpenCommandPalette', 'VsCodeDebug',
+            'VsCodeAddBreakpoint', 'VsCodeStopDebugging', 'VsCodeStepInto', 'VsCodeStepOut', 'VsCodeStepOver', 'VsCodeGoToDefinition',
+            'VsCodePeekDefinition', 'VsCodeGoToReferences', 'VsCodeGoToImplementation') { @{ Command = $c; File = 'custom\vscode' } }
+        # Two presses with a pause between: no one-chord twin, so the keys are written here.
+        @{ Command = 'VsCodeToggleZenMode'; File = 'custom\vscode'; Chords = @('Ctrl+k', 'z'); Source = $script:E2eDocs.VsCode }
+        @{ Command = 'VsCodeNextGroup'; File = 'custom\vscode'; Chords = @('Ctrl+k', 'Ctrl+Right'); Source = $script:E2eDocs.VsCode }
+        @{ Command = 'VsCodePreviousGroup'; File = 'custom\vscode'; Chords = @('Ctrl+k', 'Ctrl+Left'); Source = $script:E2eDocs.VsCode }
+        @{ Command = 'VsCodeMoveGroupLeft'; File = 'custom\vscode'; Chords = @('Ctrl+k', 'Left'); Source = $script:E2eDocs.VsCode }
+        @{ Command = 'VsCodeMoveGroupRight'; File = 'custom\vscode'; Chords = @('Ctrl+k', 'Right'); Source = $script:E2eDocs.VsCode }
+
+        # ---- custom\vsstudio (no Visual Studio is used) ----
+        foreach ($c in 'VsStudioShowSolutionExplorer', 'VsStudioSplitPanel', 'VsStudioBuild', 'VsStudioGoToDefinition') { @{ Command = $c; File = 'custom\vsstudio' } }
     )
     $cases = @($cases | ForEach-Object { $_ })
-    if ($env:OMB_E2E_CASE) { $cases = @($cases | Where-Object { $(if ($_.Name) { $_.Name } else { $_.Command }) -match $env:OMB_E2E_CASE }) }
+    if ($env:OMB_E2E_CASE -and -not $All) { $cases = @($cases | Where-Object { $(if ($_.Name) { $_.Name } else { $_.Command }) -match $env:OMB_E2E_CASE }) }
     $cases
 }
 
@@ -460,4 +733,10 @@ function Get-E2eExclusions {
         Restart         = 'restarts the computer'
         Shutdown        = 'shuts the computer down'
     }
+}
+
+# Commands that are in one language's shared command files and not the other's, each with the reason.
+# None today: both languages have the same commands.
+function Get-E2eOneLanguageCommands {
+    @{}
 }

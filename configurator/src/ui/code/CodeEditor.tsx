@@ -12,8 +12,10 @@ import {
   lineNumbers,
 } from '@codemirror/view'
 import { useEffect, useRef, type RefObject } from 'react'
+import type { Dictionary } from '../../core/commands/dictionary'
 import type { LangId } from '../../core/languages'
 import { HIGHLIGHT } from './highlight'
+import { hoverDocs } from './hoverDocs'
 
 export interface CodeEditorProps {
   /** The file path. A new key gives a new document with a fresh undo history. */
@@ -30,6 +32,8 @@ export interface CodeEditorProps {
   jump?: { line: number; n: number } | null
   /** Runs on Ctrl+S (Cmd+S on a Mac). */
   onSave?(): void
+  /** What the names in the text can be looked up in; the docs of a name show when the pointer rests on it. */
+  docs?: Dictionary | null
 }
 
 const THEME = EditorView.theme({
@@ -37,7 +41,7 @@ const THEME = EditorView.theme({
   '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, Consolas, monospace' },
 })
 
-type Latest = Pick<CodeEditorProps, 'value' | 'lang' | 'label' | 'onChange' | 'onSave'> & { readOnly: boolean }
+type Latest = Pick<CodeEditorProps, 'value' | 'lang' | 'label' | 'onChange' | 'onSave' | 'docs'> & { readOnly: boolean }
 
 interface Compartments {
   lang: Compartment
@@ -85,6 +89,7 @@ function createState(
       c.lang.of(HIGHLIGHT[now.lang]()),
       c.readOnly.of(readOnlyExtensions(now.readOnly)),
       c.label.of(EditorView.contentAttributes.of({ 'aria-label': now.label })),
+      hoverDocs(() => latest.current.docs ?? null),
       // A `value` it is given arrives as a new state, never as a transaction, so every change seen here is the user's.
       EditorView.updateListener.of((update) => {
         if (update.docChanged) latest.current.onChange(update.state.doc.toString())
@@ -103,6 +108,7 @@ export function CodeEditor({
   readOnly = false,
   jump = null,
   onSave,
+  docs,
 }: Readonly<CodeEditorProps>) {
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -113,9 +119,9 @@ export function CodeEditor({
   })
 
   // The editor outlives renders, so its callbacks read the latest props from here.
-  const latest = useRef<Latest>({ value, lang, label, readOnly, onChange, onSave })
+  const latest = useRef<Latest>({ value, lang, label, readOnly, onChange, onSave, docs })
   useEffect(() => {
-    latest.current = { value, lang, label, readOnly, onChange, onSave }
+    latest.current = { value, lang, label, readOnly, onChange, onSave, docs }
   })
 
   // One editor state per document: a new key starts again, with an empty undo history.

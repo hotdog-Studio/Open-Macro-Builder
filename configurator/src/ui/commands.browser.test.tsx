@@ -1,8 +1,9 @@
+import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { userEvent } from 'vitest/browser'
-import { click, dirty, drag, openTab, padKey, startApp, strip, unmount } from '../../test/browser/harness'
-import { editorView } from '../../test/codeEditor'
+import { click, dirty, drag, hover, openTab, padKey, startApp, strip, unmount, type Point } from '../../test/browser/harness'
+import { editorView, replaceAll } from '../../test/codeEditor'
 
 // The Commands tab in a real browser, where the code editor really types, selects, scrolls and
 // takes focus. The example repository has no files of "yours", so every pair is shared. The first
@@ -454,5 +455,66 @@ describe('Commands tab: files', () => {
     await click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(folder.text(MEDIA)).toBeNull())
     await waitFor(() => expect(pairButton('media').textContent).toContain('AHK —'))
+  })
+})
+
+/** Where the character at `pos` is drawn, once the editor has scrolled it into view. */
+async function pointAt(pos: number): Promise<Point> {
+  const view = editorView()
+  view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) })
+  const c = await waitFor(() => {
+    const at = view.coordsAtPos(pos)
+    if (!at) throw new Error('not drawn yet')
+    return at
+  })
+  return { x: c.left + 1, y: (c.top + c.bottom) / 2 }
+}
+/** Two characters into the first place `needle` stands in the text. */
+const wordPoint = (needle: string) => pointAt(text().indexOf(needle) + 2)
+const card = () => document.querySelector<HTMLElement>('.cm-tooltip')
+
+describe('Commands tab: docs on hover', () => {
+  it('shows the docs of an AutoHotkey helper under the pointer', async () => {
+    await start()
+    await openFile('windows')
+    await hover(await wordPoint('ActivateOrOpen'))
+    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
+    expect(card()!.textContent).toContain('Activates an existing Window or opens a Program if the Window does not exist.')
+    expect(card()!.textContent).toContain('ahk/commands/helper.ahk · line')
+  })
+
+  it('shows a PowerShell library function with how to call it', async () => {
+    await start()
+    await click(pairButton('windows'))
+    await click(toolbarButton('PowerShell'))
+    await waitFor(() => expect(text()).toContain('Send-Chord'))
+    await hover(await wordPoint('Send-Chord'))
+    await waitFor(() => expect(card()?.textContent).toContain('Send-Chord <Chord>'))
+    expect(card()!.textContent).toContain('powershell/lib/Input.ps1 · line')
+  })
+
+  it('follows what is typed', async () => {
+    await start()
+    await openFile('media')
+    replaceAll('/**\n * Brand new.\n */\nJustTyped(Macro)\n{\n}\nOther(Macro)\n{\n    JustTyped(Macro)\n}\n')
+    await hover(await pointAt(text().lastIndexOf('JustTyped') + 2))
+    await waitFor(() => expect(card()?.textContent).toContain('Brand new.'))
+  })
+
+  it('shows nothing over a comment, a string, a variable or an unknown name', async () => {
+    await start()
+    await click(pairButton('windows'))
+    await click(toolbarButton('PowerShell'))
+    await waitFor(() => expect(text()).toContain('Send-Chord'))
+    replaceAll("# aa Send-Chord\n$bb = 'cc Send-Chord'\n$Send-Chord\nNot-Known 1\nSend-Chord 'Ctrl+c'\n")
+    // Five characters in is inside the name each time.
+    for (const pos of [text().indexOf('aa Send-Chord') + 5, text().indexOf('cc Send-Chord') + 5, text().indexOf('$Send-Chord') + 3, text().indexOf('Not-Known') + 2]) {
+      await hover(await pointAt(pos))
+      await new Promise((r) => setTimeout(r, 700))
+      expect(card()).toBeNull()
+    }
+    // The same name as a call does get one, so the silence above is not a broken hover.
+    await hover(await pointAt(text().lastIndexOf('Send-Chord') + 2))
+    await waitFor(() => expect(card()?.textContent).toContain('Send-Chord <Chord>'))
   })
 })

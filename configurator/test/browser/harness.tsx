@@ -28,6 +28,7 @@ const urls = import.meta.glob<string>(
     '../../../ahk/main.ahk',
     '../../../ahk/commands/**/*.ahk',
     '../../../powershell/commands/**/*.ps1',
+    '../../../powershell/lib/*.ps1',
     '../../../img/**/*.png',
   ],
   { query: '?url', import: 'default', eager: true },
@@ -193,6 +194,11 @@ export function dragNoWait(from: Element | Point, to: Element | Point, steps = 1
 /** Like drag, but keeps the button down, so a test can look at the page mid-drag. End with drop(). */
 export function carry(from: Element | Point, to: Element | Point, steps = 10): Promise<void> {
   return path([point(from), point(to)], true, false, steps)
+}
+
+/** Moves the real mouse to `to` without pressing, as a hand resting the pointer on something. */
+export function hover(to: Element | Point): Promise<void> {
+  return path([point(to), point(to)], false, false, 1)
 }
 
 /** Moves the mouse on to `to`, the button still down from carry(). */

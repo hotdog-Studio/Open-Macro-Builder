@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { buildDictionary, type Dictionary } from '../core/commands/dictionary'
 import { checkNewFile } from '../core/commands/files'
 import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
@@ -226,7 +227,7 @@ function SaveStatus({
 }
 
 /** The toolbar's file controls and the editor of one command file. */
-function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFile }>) {
+function FileView({ pair, file, dict }: Readonly<{ pair: CommandPair; file: CommandFile; dict: Dictionary }>) {
   const { state, dispatch, actions } = useEditor()
   const { drafts, saved, jump, outside } = state.commands
   const [confirmReload, setConfirmReload] = useState(false)
@@ -298,6 +299,7 @@ function FileView({ pair, file }: Readonly<{ pair: CommandPair; file: CommandFil
           readOnly={!file.editable}
           jump={jump?.path === path ? { line: jump.line, n: jump.n } : null}
           onSave={() => void actions.saveCommandFile(path)}
+          docs={dict}
         />
       </div>
       {saved[path] && <SaveStatus pair={pair} path={path} label={label} after={saved[path]} />}
@@ -597,12 +599,17 @@ function Outline({ pair }: Readonly<{ pair: CommandPair }>) {
 /** The Commands tab: each command file pair, and an editor for one language of the chosen pair. */
 export function CommandsTab() {
   const { state } = useEditor()
-  const { commandFiles } = state
-  const { lang, dialog } = state.commands
+  const { commandFiles, libraryFiles } = state
+  const { lang, dialog, drafts } = state.commands
   const [newFile, setNewFile] = useState(false)
   const pairs = useMemo(() => commandPairs(commandFiles), [commandFiles])
   const pair = shownPair(pairs, state.commands.pair)
   const file = pair?.files[lang]
+  const shown = file?.file.path ?? null
+  const dict = useMemo(
+    () => buildDictionary({ lang, shown, commandFiles, libraryFiles, drafts }),
+    [lang, shown, commandFiles, libraryFiles, drafts],
+  )
   return (
     <>
       <LeftPanel>
@@ -615,7 +622,7 @@ export function CommandsTab() {
         </button>
       </LeftPanel>
       <main className="flex min-w-0 flex-1 flex-col">
-        {pair && file && <FileView key={file.file.path} pair={pair} file={file} />}
+        {pair && file && <FileView key={file.file.path} pair={pair} file={file} dict={dict} />}
         {pair && !file && <MissingFile key={`${pair.key}\0${lang}`} pair={pair} />}
         {!pair && <p className="p-5 text-zinc-500">There are no command files yet.</p>}
       </main>

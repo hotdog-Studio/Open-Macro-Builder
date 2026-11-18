@@ -4,7 +4,8 @@
 # compared as the taps they make, such as 'Alt+Shift+Tab'. Two sources written apart must agree,
 # so a wrong or mistyped chord on one side shows. A command that is not one chord on both sides
 # (it starts a program, sends more than once, branches) must be in its pair's Skip list with the
-# reason; the test fails on a command that is neither compared nor listed.
+# reason; the test fails on a command that is neither compared nor listed. A chord sent only when a
+# guard such as EnsureActiveOrOpenChrome says so is compared too, and so is the guard's name.
 #
 # To add a file pair, add an entry to $Pairs: Ahk and Ps are paths from the repository root.
 BeforeDiscovery {
@@ -37,6 +38,15 @@ BeforeDiscovery {
                 ExampleOpenFolder  = 'opens a folder in File Explorer'
             }
         }
+        @{ Name = 'custom\chrome'; Ahk = 'ahk\commands\custom\chrome.ahk'; Ps = 'powershell\commands\custom\chrome.ps1'; Skip = @{
+                EnsureActiveOrOpenChrome = 'activates or opens Chrome'
+                OpenYoutube              = 'opens a web address in Chrome'
+                OpenGoogle               = 'opens a web address in Chrome'
+                ChromeOpen               = 'activates or opens Chrome'
+                ChromeOpenExtensions     = 'types an address into the address bar after a chord and a pause'
+                ChromeOpenSettings       = 'types an address into the address bar after a chord and a pause'
+            }
+        }
     )
 }
 BeforeAll {
@@ -52,10 +62,10 @@ BeforeAll {
         $names = @(@($a.Keys | Where-Object { $a[$_].Params -eq 'Macro' }) + @($p.Keys | Where-Object { $p[$_].Params -eq 'Macro' })) | Sort-Object -Unique
         $result = [ordered]@{}
         foreach ($n in $names) {
-            $sendText = $null; $chord = $null
-            if ($a.Contains($n)) { $sendText = Get-AhkSingleSend $a[$n] }
-            if ($p.Contains($n)) { $chord = $p[$n].Chord }
-            $result[$n] = [pscustomobject]@{ Ahk = $sendText; Ps = $chord }
+            $sendText = $null; $chord = $null; $ahkGuard = ''; $psGuard = ''
+            if ($a.Contains($n)) { $sendText = Get-AhkSingleSend $a[$n]; $ahkGuard = Get-AhkGuard $a[$n] }
+            if ($p.Contains($n)) { $chord = $p[$n].Chord; $psGuard = $p[$n].Guard }
+            $result[$n] = [pscustomobject]@{ Ahk = $sendText; Ps = $chord; AhkGuard = $ahkGuard; PsGuard = $psGuard }
         }
         $result
     }
@@ -82,6 +92,7 @@ Describe 'The two languages press the same keys: <Name>' -ForEach $Pairs {
                 $ahkTaps = (ConvertTo-ChordTap (ConvertFrom-AhkSend $c.Ahk).Events) -join ', '
                 $psTaps = (ConvertTo-ChordTap (ConvertTo-KeyEvent $c.Ps)) -join ', '
                 if ($ahkTaps -ne $psTaps) { "$n`: AutoHotkey Send(`"$($c.Ahk)`") presses $ahkTaps; PowerShell '$($c.Ps)' presses $psTaps" }
+                if ($c.AhkGuard -ne $c.PsGuard) { "$n`: AutoHotkey sends only if '$($c.AhkGuard)' says so; PowerShell only if '$($c.PsGuard)' says so" }
             } catch { "$n`: $($_.Exception.Message)" }
         }
         $bad | Should -BeNullOrEmpty

@@ -60,16 +60,40 @@ function ConvertFrom-AhkStringLiteral {
     $sb.ToString()
 }
 
-# The keys of an AHK function whose whole body is one Send("...") with a string literal; else $null.
+# The guard of an AHK function whose body is 'if Name(Macro)' followed by one statement, such as
+# 'if EnsureActiveOrOpenChrome(Macro)' then a Send: the name, or '' when the body has no such guard.
+function Get-AhkGuard {
+    param($Function)
+    if (@($Function.Body).Count -ne 2) { return '' }
+    if ($Function.Body[0] -notmatch '^if\s*\(?\s*(\w+)\(Macro\)\s*\)?$') { return '' }
+    $Matches[1]
+}
+
+# The keys of an AHK function whose whole body is one Send("...") with a string literal, perhaps
+# under a guard (Get-AhkGuard); else $null.
 function Get-AhkSingleSend {
     param($Function)
-    if (@($Function.Body).Count -ne 1) { return $null }
-    if ($Function.Body[0] -notmatch '^Send\((.*)\)$') { return $null }
+    $body = @($Function.Body)
+    if ((Get-AhkGuard $Function) -ne '') { $body = @($body[1]) }
+    if ($body.Count -ne 1) { return $null }
+    if ($body[0] -notmatch '^Send\((.*)\)$') { return $null }
     ConvertFrom-AhkStringLiteral $Matches[1].Trim()
 }
 
-# PowerShell functions of a file: name -> @{ Params = 'Macro'; Chord = text or $null }. Chord is
-# set when the whole body (after param) is one Send-Chord or Send-Key with a literal argument.
+# The one command of a list of statements: a CommandAst when the list is exactly one pipeline of one
+# command; else $null.
+function Get-PsSingleCommand {
+    param($Statements)
+    $statements = @($Statements)
+    if ($statements.Count -ne 1 -or $statements[0] -isnot [System.Management.Automation.Language.PipelineAst] -or $statements[0].PipelineElements.Count -ne 1) { return $null }
+    $cmd = $statements[0].PipelineElements[0]
+    if ($cmd -isnot [System.Management.Automation.Language.CommandAst]) { return $null }
+    $cmd
+}
+
+# PowerShell functions of a file: name -> @{ Params = 'Macro'; Chord = text or $null; Guard }. Chord
+# is set when the whole body (after param) is one Send-Chord or Send-Key with a literal argument, or
+# that send alone inside 'if (Name $Macro) { ... }' with no else; Guard is then Name, otherwise ''.
 function Get-PsFunctionSource {
     param([Parameter(Mandatory)][string]$Path)
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$null)
@@ -77,16 +101,22 @@ function Get-PsFunctionSource {
     foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
         $params = ''
         if ($fn.Body.ParamBlock) { $params = (@($fn.Body.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })) -join ', ' }
-        $chord = $null
+        $chord = $null; $guard = ''
         $statements = @($fn.Body.EndBlock.Statements)
-        if ($statements.Count -eq 1 -and $statements[0] -is [System.Management.Automation.Language.PipelineAst] -and $statements[0].PipelineElements.Count -eq 1) {
-            $cmd = $statements[0].PipelineElements[0]
-            if ($cmd -is [System.Management.Automation.Language.CommandAst] -and $cmd.GetCommandName() -in 'Send-Chord', 'Send-Key' -and
-                $cmd.CommandElements.Count -eq 2 -and $cmd.CommandElements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-                $chord = $cmd.CommandElements[1].Value
+        if ($statements.Count -eq 1 -and $statements[0] -is [System.Management.Automation.Language.IfStatementAst] -and
+            $statements[0].Clauses.Count -eq 1 -and $null -eq $statements[0].ElseClause) {
+            $test = Get-PsSingleCommand @($statements[0].Clauses[0].Item1)
+            if ($null -ne $test -and $test.CommandElements.Count -eq 2 -and $test.CommandElements[1].Extent.Text -eq '$Macro') {
+                $guard = $test.GetCommandName()
+                $statements = @($statements[0].Clauses[0].Item2.Statements)
             }
         }
-        $result[$fn.Name] = [pscustomobject]@{ Params = $params; Chord = $chord }
+        $cmd = Get-PsSingleCommand $statements
+        if ($null -ne $cmd -and $cmd.GetCommandName() -in 'Send-Chord', 'Send-Key' -and
+            $cmd.CommandElements.Count -eq 2 -and $cmd.CommandElements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+            $chord = $cmd.CommandElements[1].Value
+        } else { $guard = '' }
+        $result[$fn.Name] = [pscustomobject]@{ Params = $params; Chord = $chord; Guard = $guard }
     }
     $result
 }

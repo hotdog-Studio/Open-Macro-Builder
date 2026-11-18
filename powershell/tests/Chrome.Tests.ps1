@@ -85,6 +85,20 @@ Describe 'Chrome commands send their keys only to Chrome' {
         & $Command $null
         $script:sent -join ' | ' | Should -Be $Expected
     }
+    It '<Command> sends <Expected> to the active window' -ForEach @(
+        @{ Command = 'ChromePreviousTab'; Expected = 'chord Ctrl+Shift+Tab' }
+        @{ Command = 'ChromeNextTab'; Expected = 'chord Ctrl+Tab' }
+        @{ Command = 'ChromeDevTools'; Expected = 'chord Ctrl+Shift+i' }
+        @{ Command = 'ChromeCloseTab'; Expected = 'chord Ctrl+w' }
+        @{ Command = 'ChromeReopenClosedTab'; Expected = 'chord Ctrl+Shift+t' }
+        @{ Command = 'ChromeBookmarkPage'; Expected = 'chord Ctrl+d' }
+        @{ Command = 'ActivateOrCycleChromeAddressBar'; Expected = 'chord Ctrl+l' }
+    ) {
+        Mock EnsureActiveOrOpen { $true }
+        & $Command $null
+        $script:sent -join ' | ' | Should -Be $Expected
+        Should -Invoke EnsureActiveOrOpen -Times 0 -Exactly
+    }
     It '<Command> goes to <Address> through the address bar, with a pause for the address bar to take the keys' -ForEach @(
         @{ Command = 'ChromeOpenSettings'; Address = 'chrome://settings' }
         @{ Command = 'ChromeOpenExtensions'; Address = 'chrome://extensions' }

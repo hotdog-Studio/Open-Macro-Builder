@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { size } from '../core/config/model'
-import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, startApp, unmount, ws } from '../../test/browser/harness'
+import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, repoFiles, startApp, unmount, ws } from '../../test/browser/harness'
 
 // Dragging when the layout is not the comfortable 1280×900 of the other suites: a small window
 // where the pad has to be scrolled to, a zoomed-in browser, a pad much bigger than the example, and
@@ -227,6 +227,47 @@ describe('a pad much bigger than the example', () => {
     await drag(padKey(last.key), target)
     await waitFor(() => expect(ws().keys[21]).toMatchObject({ row: rows + 1, col: size(last).col }))
     expect(dirty()).toBe(true)
+  })
+})
+
+/** The right-hand panel, found by the overlay preview it holds. */
+const previewPanel = () => screen.getByRole('region', { name: 'Overlay preview' }).closest('aside')!
+/** The box the preview scrolls in when it is wider than the panel. */
+const previewBox = () => screen.getByRole('region', { name: 'Overlay preview' }).querySelector<HTMLElement>('.overflow-auto')!
+
+describe('the right panel', () => {
+  it('shows the whole overlay preview on Pad shape, Layers and Macros', async () => {
+    await startApp()
+    for (const tab of ['Pad shape', 'Layers', 'Macros'] as const) {
+      await click(screen.getByRole('tab', { name: tab }))
+      expect(previewBox().scrollWidth, tab).toBeLessThanOrEqual(previewBox().clientWidth)
+      expect(previewPanel().getBoundingClientRect().width, tab).toBeGreaterThanOrEqual(288)
+    }
+  })
+
+  it('still shows it whole when the panel itself scrolls', async () => {
+    await page.viewport(1280, 420)
+    await startApp()
+    await click(padKey('F22'))
+    expect(previewPanel().scrollHeight).toBeGreaterThan(previewPanel().clientHeight)
+    expect(previewBox().scrollWidth).toBeLessThanOrEqual(previewBox().clientWidth)
+  })
+
+  it("keeps the Commands tab's right panel at its fixed width", async () => {
+    await startApp('Commands')
+    const aside = screen.getAllByRole('complementary').at(-1)!
+    expect(aside.getBoundingClientRect().width).toBe(288)
+  })
+
+  it('stops at half the window for a very wide pad, and the preview scrolls inside', async () => {
+    const example = JSON.parse(new TextDecoder().decode((await repoFiles())['config.json']))
+    // One key far to the right makes the pad twelve columns wide.
+    example.keys.find((k: { key: string }) => k.key === 'F24').col = 12
+    await startApp('Pad shape', JSON.stringify(example))
+    expect(previewPanel().getBoundingClientRect().width).toBeLessThanOrEqual(window.innerWidth / 2)
+    expect(previewBox().scrollWidth).toBeGreaterThan(previewBox().clientWidth)
+    const root = document.documentElement
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth)
   })
 })
 

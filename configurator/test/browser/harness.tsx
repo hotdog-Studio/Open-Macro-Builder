@@ -53,11 +53,11 @@ export function repoFiles(): Promise<Record<string, Uint8Array>> {
 }
 
 /** The files a folder opens straight into the editor with: the repository, a personal config and settings. */
-export async function editableFiles(): Promise<Record<string, Uint8Array>> {
+export async function editableFiles(config?: string): Promise<Record<string, Uint8Array>> {
   const files = await repoFiles()
   return {
     ...files,
-    'local/config.json': files['config.json'],
+    'local/config.json': config === undefined ? files['config.json'] : new TextEncoder().encode(config),
     [SETTINGS_PATH]: new TextEncoder().encode('{ "languages": ["ahk"] }\n'),
   }
 }
@@ -111,9 +111,12 @@ export type TabName = 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
 /** A real click, through the browser. */
 export const click = (el: Element) => userEvent.click(el)
 
-/** The example repository in memory, opened in the editor on a tab. */
-export async function startApp(tab: TabName = 'Pad shape'): Promise<{ folder: MemoryFolder }> {
-  const folder = new MemoryFolder('repo', await editableFiles())
+/**
+ * The example repository in memory, opened in the editor on a tab. `layout` is the text of the
+ * personal config.json to open instead of the example's, for a pad of another shape.
+ */
+export async function startApp(tab: TabName = 'Pad shape', layout?: string): Promise<{ folder: MemoryFolder }> {
+  const folder = new MemoryFolder('repo', await editableFiles(layout))
   mount({ kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null })
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })

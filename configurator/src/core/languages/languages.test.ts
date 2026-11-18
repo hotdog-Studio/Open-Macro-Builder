@@ -106,6 +106,96 @@ describe('AutoHotkey findFunctions', () => {
     expect(fn.doc.params[0]).toMatchObject({ text: 'the word', type: '' })
   })
 
+  describe('doc tag shapes', () => {
+    const docOf = (tagLines: string[], head = 'F(Name)') =>
+      LANGUAGES.ahk.findFunctions(['/**', ...tagLines.map((l) => ` * ${l}`), ' */', `${head} {`, '}'].join('\n'))[0].doc
+    const param = (tag: string) => docOf([tag]).params[0]
+
+    it('reads an @param with a type and no dash', () => {
+      expect(param('@param {String} Name the text')).toMatchObject({ type: 'String', text: 'the text' })
+    })
+
+    it('reads an @param with a dash and no type', () => {
+      expect(param('@param Name - the text')).toMatchObject({ type: '', text: 'the text' })
+    })
+
+    it('reads an @param with only a name', () => {
+      expect(param('@param Name')).toMatchObject({ type: '', text: '' })
+      expect(param('@param {Integer} Name')).toMatchObject({ type: 'Integer', text: '' })
+    })
+
+    it('reads an @param with a dash and nothing after it', () => {
+      expect(param('@param Name -')).toMatchObject({ type: '', text: '' })
+    })
+
+    it('keeps a dash that is not followed by a space as text', () => {
+      expect(param('@param Name -x flag')).toMatchObject({ text: '-x flag' })
+      expect(param('@param Name --verbose')).toMatchObject({ text: '--verbose' })
+    })
+
+    it('reads a [Name] without a default, with and without text', () => {
+      expect(param('@param {String} [Name] - the text')).toMatchObject({ type: 'String', text: 'the text' })
+      expect(param('@param [Name]')).toMatchObject({ type: '', text: '' })
+    })
+
+    it('reads a [Name=default] and a [Name] that has no space before its text', () => {
+      expect(param('@param [Name="x y"] the text')).toMatchObject({ text: 'the text' })
+      expect(param('@param [Name]the text')).toMatchObject({ text: 'the text' })
+      expect(param('@param [Name]- the text')).toMatchObject({ text: 'the text' })
+    })
+
+    it('reads a type with spaces and a name after several spaces', () => {
+      expect(param('@param   {Map | String}    Name     -     the   text')).toMatchObject({ type: 'Map | String', text: 'the text' })
+    })
+
+    it('reads @return and @returns, with and without a type', () => {
+      expect(docOf(['@return {Integer} The id.']).returns).toBe('The id.')
+      expect(docOf(['@return The id.']).returns).toBe('The id.')
+      expect(docOf(['@returns   {Integer}   The id.']).returns).toBe('The id.')
+      expect(docOf(['@returns The id.']).returns).toBe('The id.')
+      expect(docOf(['@return {Integer}']).returns).toBe('')
+      expect(docOf(['@return']).returns).toBe('')
+    })
+
+    it('adds the lines after a tag to its text', () => {
+      expect(docOf(['@return {Integer} The id,', '  and more.']).returns).toBe('The id, and more.')
+      expect(param('@param Name -\n *   the text')).toMatchObject({ text: 'the text' })
+    })
+
+    it('reads a tag whose name is followed by a character other than a space', () => {
+      expect(docOf(['@return: The id.']).returns).toBe(': The id.')
+      expect(docOf(['@example(F("a"))']).examples).toEqual(['(F("a"))'])
+    })
+
+    it('reads a tag with several spaces after its name', () => {
+      expect(docOf(['@example     F("a")']).examples).toEqual(['F("a")'])
+      expect(docOf(['@description     Does it.']).summary).toBe('Does it.')
+    })
+
+    it('reads an @example that has spaces before the @', () => {
+      expect(docOf(['   @example F("a")']).examples).toEqual(['F("a")'])
+      expect(docOf(['Does it.', '   @param Name the text']).params[0].text).toBe('the text')
+    })
+
+    it('reads a tag line with nothing after its name', () => {
+      expect(docOf(['@example', '  F("a")', '  F("b")']).examples).toEqual(['  F("a")\n  F("b")'])
+      expect(docOf(['@description', 'Does it.']).summary).toBe('Does it.')
+      expect(docOf(['@param', '@returns']).returns).toBe('')
+    })
+
+    it('does not take an @ in the middle of a line, or a bare @, for a tag', () => {
+      expect(docOf(['Mail me @param Name']).summary).toBe('Mail me @param Name')
+      expect(docOf(['@ param Name x']).summary).toBe('@ param Name x')
+    })
+
+    it('reads a long run of spaces without slowing down', () => {
+      const spaces = ' '.repeat(50000)
+      const started = performance.now()
+      docOf([`@param {String}${spaces}Name${spaces}-${spaces}text ${spaces}!`, `@return {T}${spaces}x ${spaces}!`, `@example${spaces}!`])
+      expect(performance.now() - started).toBeLessThan(1000)
+    })
+  })
+
   it('lists a function under a half-typed block without docs', () => {
     const [fn] = LANGUAGES.ahk.findFunctions('/**\n * Half typed\nThing(Macro) {\n}')
     expect(fn.name).toBe('Thing')

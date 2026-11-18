@@ -68,9 +68,14 @@ interface Tag {
   lines: string[]
 }
 
-const TAG = /^\s*@(\w+)\s?(.*)$/
-const PARAM_TAG = /^(?:\{([^}]*)\}\s*)?(\[[^\]]*\]|\S+)\s*(?:-(?:\s+|$))?(.*)$/
-const RETURNS_TAG = /^(?:\{[^}]*\}\s*)?(.*)$/
+// The patterns below never let two neighbouring parts match the same character, so a run of spaces
+// has one way to be read: the text that ends each pattern starts at a non-space character, or is absent.
+/** `@name`, then the rest of the line: after one whitespace character (group 2), or from a non-word character (group 3). */
+const TAG = /^\s*@(\w+)(?:\s(.*)|([^\w\s].*))?$/
+/** `[{Type}] name [-] text`: the name is `[...]` or a run of non-spaces; a dash counts only before a space or the end. */
+const PARAM_TAG = /^(?:\{([^}]*)\}\s*)?(\[[^\]]*\]|\S+)\s*(?:-(?:\s+|$))?(\S.*)?$/
+/** `[{Type}] text` */
+const RETURNS_TAG = /^(?:\{[^}]*\}\s*)?(\S.*)?$/
 
 /** The lines before the first tag, and the tags. */
 function splitTags(block: string[]): { intro: string[]; tags: Tag[] } {
@@ -78,7 +83,7 @@ function splitTags(block: string[]): { intro: string[]; tags: Tag[] } {
   const tags: Tag[] = []
   for (const line of block) {
     const match = TAG.exec(line)
-    if (match) tags.push({ name: match[1].toLowerCase(), lines: [match[2]] })
+    if (match) tags.push({ name: match[1].toLowerCase(), lines: [match[2] ?? match[3] ?? ''] })
     else (tags.at(-1)?.lines ?? intro).push(line)
   }
   return { intro, tags }
@@ -94,7 +99,7 @@ function readParamTag(tag: Tag, params: ParamDoc[]): void {
   const param = params.find((p) => p.name.toLowerCase() === name)
   if (!param) return
   param.type = match[1]?.trim() ?? ''
-  param.text = textOf([match[3], ...tag.lines.slice(1)])
+  param.text = textOf([match[3] ?? '', ...tag.lines.slice(1)])
 }
 
 /** An `@example`: its lines as written, the blank lines at its ends dropped. */

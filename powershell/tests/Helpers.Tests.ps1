@@ -52,6 +52,44 @@ Describe 'EnsureActiveOrOpen' {
         Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]5 }
     }
 }
+Describe 'ActivateOrOpenWindow' {
+    BeforeEach {
+        Mock Start-Program {}; Mock Set-ActiveWindow { $true }; Mock Wait-Pump {}; Mock Test-WindowActive { [IntPtr]99 }
+    }
+    It 'activates the topmost window that fits, without starting the program' {
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) } -ParameterFilter { $WinTitle -eq 'Calculator ahk_exe ApplicationFrameHost.exe' -and $All }
+        ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe'
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]5 }
+        Should -Invoke Start-Program -Times 0 -Exactly
+    }
+    It 'brings the bottom window forward when one that fits is already active' {
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) } -ParameterFilter { $WinTitle -eq 'Calculator ahk_exe ApplicationFrameHost.exe' -and $All }
+        Mock Test-WindowActive { [IntPtr]5 }
+        ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe'
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]7 }
+    }
+    It 'starts the program when no window fits and activates the window that appears' {
+        $script:finds = 0
+        Mock Find-Window { $script:finds++; if ($script:finds -lt 3) { , [IntPtr[]]@() } else { , [IntPtr[]]@([IntPtr]8) } } -ParameterFilter { $WinTitle -eq 'Calculator ahk_exe ApplicationFrameHost.exe' -and $All }
+        ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe' -Arguments '-x'
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'calc.exe' -and $Arguments -eq '-x' }
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]8 }
+    }
+    It 'gives up after about 5 seconds when no window appears' {
+        Mock Find-Window { , [IntPtr[]]@() } -ParameterFilter { $All }
+        ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe'
+        Should -Invoke Wait-Pump -Times 50 -Exactly -ParameterFilter { $Milliseconds -eq 100 }
+        Should -Invoke Set-ActiveWindow -Times 0 -Exactly
+    }
+    It 'takes the windows of several WinTitles topmost first, as they lie on the screen' {
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]7) } -ParameterFilter { $WinTitle -eq 'ahk_exe powershell.exe' -and $All }
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5) } -ParameterFilter { $WinTitle -eq 'PowerShell ahk_exe WindowsTerminal.exe' -and $All }
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5, [IntPtr]6, [IntPtr]7) } -ParameterFilter { $WinTitle -eq '' -and $All }
+        Mock Test-WindowActive { [IntPtr]5 }
+        ActivateOrOpenWindow -WinTitle 'ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe' -Program 'powershell'
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]7 }
+    }
+}
 Describe 'Script helpers' {
     BeforeEach { Mock Start-Program {} }
     It 'RunPythonScript quotes the path and adds the arguments' {

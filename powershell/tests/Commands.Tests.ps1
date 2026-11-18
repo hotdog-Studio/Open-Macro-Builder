@@ -47,8 +47,25 @@ Describe 'core commands send the right chords' {
     BeforeEach { Mock Send-Chord {}; Mock Send-Key {}; Mock Start-Program {}; Mock ActivateOrOpen {} }
     It 'SnapWindowLeft' { SnapWindowLeft $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'LWin+Left' } }
     It 'NextDesktop' { NextDesktop $null; Should -Invoke Send-Chord -ParameterFilter { $Chord -eq 'Ctrl+LWin+Right' } }
+    It 'NextWindow goes where Alt+Tab goes' { NextWindow $null; Should -Invoke Send-Chord -Times 1 -Exactly -ParameterFilter { $Chord -eq 'Alt+Tab' } }
+    It 'PreviousWindow goes the other way' { PreviousWindow $null; Should -Invoke Send-Chord -Times 1 -Exactly -ParameterFilter { $Chord -eq 'Alt+Shift+Tab' } }
     It 'PlayPause' { PlayPause $null; Should -Invoke Send-Key -ParameterFilter { $Name -eq 'Media_Play_Pause' } }
     It 'Shutdown' { Shutdown $null; Should -Invoke Start-Program -ParameterFilter { $Program -eq 'shutdown' -and $Arguments -eq '/s /t 1' } }
+}
+Describe 'Shell commands' {
+    BeforeEach { Mock ActivateOrOpenWindow {}; Mock ActivateOrOpen {} }
+    It 'OpenPowershell finds a PowerShell console or a Windows Terminal window running PowerShell' {
+        OpenPowershell $null
+        Should -Invoke ActivateOrOpenWindow -Times 1 -Exactly -ParameterFilter {
+            ($WinTitle -join '|') -eq 'ahk_exe powershell.exe|PowerShell ahk_exe WindowsTerminal.exe' -and $Program -eq 'powershell'
+        }
+    }
+    It 'OpenCommandPrompt finds a Command Prompt console or a Windows Terminal window running it' {
+        OpenCommandPrompt $null
+        Should -Invoke ActivateOrOpenWindow -Times 1 -Exactly -ParameterFilter {
+            ($WinTitle -join '|') -eq 'ahk_exe cmd.exe|Command Prompt ahk_exe WindowsTerminal.exe|cmd.exe ahk_exe WindowsTerminal.exe' -and $Program -eq 'cmd'
+        }
+    }
 }
 Describe 'Get-KeyNameFromKeys' {
     It 'maps WinForms key codes back to chord names' {

@@ -2,27 +2,40 @@
 
 ; *********************** Windows Functions *********************
 /**
- * Opens or activates File Explorer.
+ * Opens or activates a File Explorer window. When one is already active, the bottom one comes forward instead, so pressing the key again steps through them.
  * @param {Macro} Macro - The macro object (not used).
  */
 OpenFileExplorer(Macro) {
-    ActivateOrOpen("ahk_exe explorer.exe",'explorer', "")
+    ActivateOrOpen("ahk_class CabinetWClass", "explorer", "")  ; File Explorer windows only: explorer.exe also owns the taskbar and the desktop
 }
 
 /**
- * Opens or activates Windows PowerShell.
+ * Opens or activates Windows PowerShell: a PowerShell console, or a Windows Terminal window whose title names PowerShell (Windows 11 shows shells in Windows Terminal by default). Best effort: a title that was changed or translated is not found, and the key opens another shell.
  * @param {Macro} Macro - The macro object (not used).
  */
 OpenPowershell(Macro) {
-    ActivateOrOpen("ahk_exe powershell.exe",'powershell', "")
+    static grouped := false
+    if !grouped {
+        GroupAdd("MacropadPowerShell", "ahk_exe powershell.exe")
+        GroupAdd("MacropadPowerShell", "PowerShell ahk_exe WindowsTerminal.exe")
+        grouped := true
+    }
+    ActivateOrOpen("ahk_group MacropadPowerShell", "powershell", "")
 }
 
 /**
- * Opens or activates Command Prompt.
+ * Opens or activates Command Prompt: a cmd console, or a Windows Terminal window whose title is "Command Prompt" or names cmd.exe (Windows 11 shows shells in Windows Terminal by default). Best effort: a title that was changed or translated is not found, and the key opens another Command Prompt.
  * @param {Macro} Macro - The macro object (not used).
  */
 OpenCommandPrompt(Macro) {
-    ActivateOrOpen("ahk_exe cmd.exe",'cmd', "")
+    static grouped := false
+    if !grouped {
+        GroupAdd("MacropadCommandPrompt", "ahk_exe cmd.exe")
+        GroupAdd("MacropadCommandPrompt", "Command Prompt ahk_exe WindowsTerminal.exe")
+        GroupAdd("MacropadCommandPrompt", "cmd.exe ahk_exe WindowsTerminal.exe")
+        grouped := true
+    }
+    ActivateOrOpen("ahk_group MacropadCommandPrompt", "cmd", "")
 }
 
 /**
@@ -106,7 +119,7 @@ SnapThirdsRight(Macro) {
 }
 
 /**
- * Moves the active window up
+ * Maximizes the active window (Win+Up).
  * @param {Macro} Macro - The macro object (not used).
  */
 MoveWindowUp(Macro) {
@@ -114,7 +127,7 @@ MoveWindowUp(Macro) {
 }
 
 /**
- * Moves the active window down
+ * Minimizes the active window (Win+Down).
  * @param {Macro} Macro - The macro object (not used).
  */
 MoveWindowDown(Macro) {
@@ -122,23 +135,23 @@ MoveWindowDown(Macro) {
 }
 
 /**
- * Alt Tab to the next window
+ * Switches to the next window, the one Alt+Tab goes to.
  * @param {Macro} Macro - The macro object (not used).
  */
 NextWindow(Macro) {
-    Send("{Alt Down}{Shift Down}{Tab}{Shift Up}{Alt Up}")
-}
-
-/**
- * Alt Shift Tab to the previous window
- * @param {Macro} Macro - The macro object (not used).
- */
-PreviousWindow(Macro) {
     Send("{Alt Down}{Tab}{Alt Up}")
 }
 
 /**
- * Focuses the current window (restores if minimized)
+ * Switches windows the other way through the list (Alt+Shift+Tab).
+ * @param {Macro} Macro - The macro object (not used).
+ */
+PreviousWindow(Macro) {
+    Send("{Alt Down}{Shift Down}{Tab}{Shift Up}{Alt Up}")
+}
+
+/**
+ * Minimizes every window except the active one, or restores them on the next press (Win+Home).
  * @param {Macro} Macro - The macro object (not used).
  */
 FocusWindow(Macro) {
@@ -194,7 +207,7 @@ ShowDesktop(Macro) {
 }
 
 /**
- * Switch to the next screen (for multi-monitor setups)
+ * Moves the active window to the monitor on the right (Win+Shift+Right).
  * @param {Macro} Macro - The macro object (not used).
  */
 NextScreen(Macro) {
@@ -202,7 +215,7 @@ NextScreen(Macro) {
 }
 
 /**
- * Switch to the previous screen (for multi-monitor setups)
+ * Moves the active window to the monitor on the left (Win+Shift+Left).
  * @param {Macro} Macro - The macro object (not used).
  */
 PreviousScreen(Macro) {

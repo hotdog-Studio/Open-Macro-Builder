@@ -27,6 +27,44 @@ function ActivateOrOpen {
 
 <#
 .SYNOPSIS
+Brings forward a window that fits a WinTitle, or starts a program when none does.
+.DESCRIPTION
+ActivateOrOpen for windows that are found by title or class rather than by the program that starts them, such as Calculator (its window belongs to ApplicationFrameHost.exe) or a shell that Windows Terminal shows. When a window fits, the topmost one is activated; when one of them is already active, the bottom one comes forward instead, so pressing the key again steps through them. When none fits, the program is started, up to 5 seconds are given for a fitting window to appear, and it is activated.
+.PARAMETER WinTitle
+Describes the windows, as Find-Window reads it, such as 'Calculator ahk_exe ApplicationFrameHost.exe'. Give several to accept a window that fits any of them.
+.PARAMETER Program
+What to start when no window fits: a program name such as 'calc.exe', or the full path of a file.
+.PARAMETER Arguments
+Text given to the program on its command line when it is started. Not used when a window already fits.
+.EXAMPLE
+ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe'
+.EXAMPLE
+ActivateOrOpenWindow -WinTitle 'ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe' -Program 'cmd'
+#>
+function ActivateOrOpenWindow {
+    param([Parameter(Mandatory)][string[]]$WinTitle, [Parameter(Mandatory)][string]$Program, [string]$Arguments = '')
+    $find = {
+        $fit = @(foreach ($title in $WinTitle) { foreach ($h in (Find-Window $title -All)) { $h } })
+        if ($WinTitle.Count -gt 1 -and $fit.Count -gt 1) {
+            # Topmost first across all the WinTitles: every visible window, in the order they lie on the screen.
+            $fit = @(foreach ($h in (Find-Window '' -All)) { if ($fit -contains $h) { $h } })
+        }
+        , [IntPtr[]]$fit
+    }
+    $windows = & $find
+    if ($windows.Count -eq 0) {
+        Start-Program $Program $Arguments
+        for ($i = 0; $i -lt 50 -and $windows.Count -eq 0; $i++) {
+            Wait-Pump 100
+            $windows = & $find
+        }
+        if ($windows.Count -eq 0) { return }
+    }
+    # Test-WindowActive with no WinTitle gives the handle of the active window, whatever it is.
+    [void](Set-ActiveWindow (Select-WindowToActivate $windows (Test-WindowActive)))
+}
+<#
+.SYNOPSIS
 Starts a program and brings its window to the front.
 .DESCRIPTION
 Starts the program every time, even when it is already running, then waits up to 5 seconds until the program has a visible window (at once if it already has one) and activates the topmost of its windows. If no window appears in time, nothing is activated.

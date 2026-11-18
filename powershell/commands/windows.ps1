@@ -6,8 +6,12 @@ function OpenFileExplorer {
     if ($windows.Count -gt 0) { [void](Set-ActiveWindow (Select-WindowToActivate $windows ([Macropad.Native]::GetForegroundWindow()))) }
     else { Open-ExplorerWindow }
 }
-function OpenPowershell { param($Macro) ActivateOrOpen 'powershell.exe' 'powershell' }
-function OpenCommandPrompt { param($Macro) ActivateOrOpen 'cmd.exe' 'cmd' }
+# Windows 11 shows a shell in Windows Terminal by default, and then its window belongs to WindowsTerminal.exe:
+# such a window counts when its title (the shell's, or its tab's) names the shell. Best effort: a title the
+# shell or the user changed, or a translated one, is not found, and the key opens another shell.
+
+function OpenPowershell { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe' -Program 'powershell' }
+function OpenCommandPrompt { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe' -Program 'cmd' }
 function OpenTaskManager { param($Macro) ActivateOrOpen 'taskmgr.exe' 'taskmgr' }
 function OpenControlPanel { param($Macro) Start-Program 'control' }
 function OpenSettings { param($Macro) Start-Program 'ms-settings:' }
@@ -22,8 +26,10 @@ function SnapWindowRight { param($Macro) Send-Chord 'LWin+Right' }
 function SnapThirdsRight { param($Macro) Send-Chord 'LWin+LAlt+Right' }
 function MoveWindowUp { param($Macro) Send-Chord 'LWin+Up' }
 function MoveWindowDown { param($Macro) Send-Chord 'LWin+Down' }
-function NextWindow { param($Macro) Send-Chord 'Alt+Shift+Tab' }
-function PreviousWindow { param($Macro) Send-Chord 'Alt+Tab' }
+# Next goes where Alt+Tab goes; previous goes the other way through the list.
+
+function NextWindow { param($Macro) Send-Chord 'Alt+Tab' }
+function PreviousWindow { param($Macro) Send-Chord 'Alt+Shift+Tab' }
 function FocusWindow { param($Macro) Send-Chord 'LWin+Home' }
 function CloseWindow { param($Macro) Send-Chord 'Alt+F4' }
 function CreateDesktop { param($Macro) Send-Chord 'LWin+Ctrl+d' }

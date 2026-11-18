@@ -63,6 +63,9 @@ const RELOAD_SENTENCE =
 const STEP_5 = 'Open your folder in File Explorer.'
 const STEP_5_AHK = 'For AutoHotkey, open the ahk folder and double-click main.ahk.'
 const STEP_5_PS = 'For PowerShell, open the powershell folder and double-click launch.vbs.'
+const HIDE_AHK = 'Windows may hide the ending and show the file as main.'
+const HIDE_PS = 'Windows may hide the ending and show the file as launch.'
+const HIDE_BOTH = 'Windows may hide the endings and show the files as main and launch.'
 const NOTEPAD =
   'Double-clicking main.ahk opens Notepad, or Windows asks which app to use. That means Windows does not know the file, usually because AutoHotkey is not installed.'
 const step8 = (file: string) =>
@@ -129,7 +132,7 @@ describe('the Get started tab', () => {
         'A key does nothing. Check that the hotdog icon is beside the clock, and that the key on your keypad sends one of F13 to F24.',
         'You switched version and the keys still act as before. Both versions may be running. Right-click each hotdog icon and choose Exit, then start the one you want.',
         'The Commands tab shows the code behind every command, and you can write your own there. If you write one that other people could use, the project would like to have it.',
-        'A folder this app set up is a plain copy, so it cannot send changes back. To contribute, clone the project with git:',
+        'A folder this app set up is a plain copy, so it cannot send changes back. To contribute you need git, the tool the project uses to keep and share its changes. Clone the project with it:',
         'Drop your local folder into the clone, and your layout and your own commands come with you. Open the clone here with Open folder, create your command with New file as a Shared file, and send it as a pull request on GitHub. The contributing guide says how.',
       ]),
     )
@@ -165,20 +168,20 @@ describe('the Get started tab', () => {
     // Choosing a version always shows both, whatever is ticked.
     expect(blocks(guide)).toContain(AUTOHOTKEY_PARAGRAPH)
     expect(blocks(guide)).toContain('PowerShell is already part of Windows. There is nothing to install.')
-    expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_AHK}`)
+    expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_AHK} ${HIDE_AHK}`)
     expect(blocks(guide)).toContain(step8('main.ahk'))
     expect(blocks(guide)).toContain(NOTEPAD)
     expect(guide.textContent).not.toContain('launch.vbs')
 
     // Tick PowerShell too: both versions' sentences, and step 8 names both files.
     await user.click(screen.getByRole('checkbox', { name: 'PowerShell' }))
-    await waitFor(() => expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_AHK} ${STEP_5_PS}`))
+    await waitFor(() => expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_AHK} ${STEP_5_PS} ${HIDE_BOTH}`))
     expect(blocks(guide)).toContain(step8('main.ahk (or launch.vbs)'))
     expect(blocks(guide)).toContain(NOTEPAD)
 
     // Untick AutoHotkey: PowerShell alone.
     await user.click(screen.getByRole('checkbox', { name: 'AutoHotkey' }))
-    await waitFor(() => expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_PS}`))
+    await waitFor(() => expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_PS} ${HIDE_PS}`))
     expect(blocks(guide)).toContain(step8('launch.vbs'))
     expect(blocks(guide)).not.toContain(NOTEPAD)
     expect(guide.textContent).not.toContain('Notepad')
@@ -187,7 +190,7 @@ describe('the Get started tab', () => {
 
   it('shows PowerShell alone for a folder run with PowerShell', async () => {
     const { guide } = await startGuide(['ps'])
-    expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_PS}`)
+    expect(blocks(guide)).toContain(`${STEP_5} ${STEP_5_PS} ${HIDE_PS}`)
     expect(blocks(guide)).toContain(step8('launch.vbs'))
     expect(guide.textContent).not.toContain('main.ahk')
     expect(guide.textContent).not.toContain('Notepad')
@@ -219,6 +222,34 @@ describe('the Get started tab', () => {
     expect(await within(missing.guide).findByText(NOT_FOUND)).toBeTruthy()
     expect(blocks(missing.guide)).not.toContain(FOUND)
     expect(blocks(missing.guide).some((text) => text?.endsWith(RELOAD_SENTENCE))).toBe(true)
+  })
+
+  it('after AutoHotkey is installed, the "was not found" sentence becomes "already installed" when the window gets the focus back', async () => {
+    let found: LangId[] = ['ps']
+    const { guide } = await startGuide(['ps'], { kind: 'electron', installedLanguages: async () => found })
+    expect(await within(guide).findByText(NOT_FOUND)).toBeTruthy()
+    found = ['ahk', 'ps']
+    fireEvent.focus(window)
+    expect(await within(guide).findByText(FOUND)).toBeTruthy()
+    expect(blocks(guide)).not.toContain(NOT_FOUND)
+  })
+
+  it('keeps the newer answer when an older check answers last', async () => {
+    const answers: Array<(languages: LangId[]) => void> = []
+    const installedLanguages = vi.fn(() => new Promise<LangId[]>((done) => answers.push(done)))
+    const { guide } = await startGuide(['ps'], { kind: 'electron', installedLanguages })
+    await waitFor(() => expect(answers).toHaveLength(1))
+    fireEvent.focus(window)
+    await waitFor(() => expect(answers).toHaveLength(2))
+    await act(async () => {
+      answers[1](['ahk'])
+    })
+    expect(await within(guide).findByText(FOUND)).toBeTruthy()
+    await act(async () => {
+      answers[0](['ps'])
+    })
+    expect(blocks(guide)).toContain(FOUND)
+    expect(blocks(guide)).not.toContain(NOT_FOUND)
   })
 
   it('in the browser, says nothing about what is installed or about Reload macropad', async () => {

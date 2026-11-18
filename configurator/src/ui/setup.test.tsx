@@ -107,6 +107,19 @@ describe('opening an empty folder', () => {
     expect(await keyButtons()).toHaveLength(12)
   })
 
+  it('in the desktop app a fresh setup is not asked which version, and opens on the guide for the one installed', async () => {
+    const user = await openFolder(fakePlatform(empty(), { kind: 'electron', installedLanguages: async () => ['ps'] }))
+    await user.click(await screen.findByRole('button', { name: 'Set up' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
+    const guide = await screen.findByRole('article', { name: 'Get started' })
+    expect(screen.getByRole('tab', { name: 'Get started', selected: true })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'Which version do you run?' })).toBeNull()
+    const step5 = within(guide).getByRole('heading', { name: '5. Start the macropad' }).parentElement!
+    expect(step5.textContent).toContain('launch.vbs')
+    expect(step5.textContent).not.toContain('main.ahk')
+    expect(guide.textContent).not.toContain('main.ahk')
+  })
+
   it('a setup cancelled at a prompt, then opened with Open folder, opens on Pad shape', async () => {
     const user = await openFolder(fakePlatform(empty()))
     await user.click(await screen.findByRole('button', { name: 'Set up' }))

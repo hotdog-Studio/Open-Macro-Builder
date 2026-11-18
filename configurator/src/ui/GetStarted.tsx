@@ -141,6 +141,22 @@ function DesignPad() {
   )
 }
 
+/** Explorer hides known file endings by default, so the files read main and launch there. */
+function HiddenEndings({ choice }: Readonly<{ choice: Choice }>) {
+  if (choice.ahk && choice.ps) {
+    return (
+      <>
+        Windows may hide the endings and show the files as <Code>main</Code> and <Code>launch</Code>.
+      </>
+    )
+  }
+  return (
+    <>
+      Windows may hide the ending and show the file as <Code>{choice.ps ? 'launch' : 'main'}</Code>.
+    </>
+  )
+}
+
 function StartMacropad({ choice }: Readonly<{ choice: Choice }>) {
   return (
     <Step title="5. Start the macropad">
@@ -157,7 +173,8 @@ function StartMacropad({ choice }: Readonly<{ choice: Choice }>) {
             {' '}
             For PowerShell, open the <Code>powershell</Code> folder and double-click <Code>launch.vbs</Code>.
           </>
-        )}
+        )}{' '}
+        <HiddenEndings choice={choice} />
       </p>
       <p>
         A hotdog icon appears beside the clock, at the right-hand end of the taskbar. It may be hidden behind the small ^
@@ -251,8 +268,8 @@ function ShareCommand() {
         write one that other people could use, the project would like to have it.
       </p>
       <p>
-        A folder this app set up is a plain copy, so it cannot send changes back. To contribute, clone the project with
-        git:
+        A folder this app set up is a plain copy, so it cannot send changes back. To contribute you need git, the tool
+        the project uses to keep and share its changes. Clone the project with it:
       </p>
       <p>
         <code className="block select-all overflow-x-auto rounded bg-zinc-800 px-3 py-2 font-mono text-[12px] whitespace-nowrap text-zinc-100">
@@ -270,19 +287,28 @@ function ShareCommand() {
 }
 
 /**
- * What the desktop app found installed, asked once. A browser cannot tell and a failed check gives
- * nothing, so both leave null; an answer that comes after the guide is gone is dropped.
+ * What the desktop app found installed, asked when the guide shows and again whenever the window
+ * gets the focus back, because the reader may have gone off to install AutoHotkey. A browser cannot
+ * tell and a failed check gives nothing, so both leave null. An answer that comes after the guide is
+ * gone, or after a newer answer was asked for, is dropped.
  */
 function useInstalled(): readonly LangId[] | null {
   const { actions } = useApp()
   const [installed, setInstalled] = useState<readonly LangId[] | null>(null)
   useEffect(() => {
     let gone = false
-    void actions.installedLanguages().then((found) => {
-      if (!gone) setInstalled(found)
-    })
+    let asked = 0
+    const ask = () => {
+      const mine = ++asked
+      void actions.installedLanguages().then((found) => {
+        if (!gone && mine === asked) setInstalled(found)
+      })
+    }
+    ask()
+    window.addEventListener('focus', ask)
     return () => {
       gone = true
+      window.removeEventListener('focus', ask)
     }
   }, [actions])
   return installed

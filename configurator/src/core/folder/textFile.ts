@@ -24,13 +24,16 @@ export class EncodingError extends Error {
   }
 }
 
-/** UTF-8 bytes as a TextFile; null when `fatal` and the bytes are not UTF-8 (otherwise they become U+FFFD). */
-async function decodeTextFile(path: string, raw: Uint8Array, fatal: boolean): Promise<TextFile | null> {
+/**
+ * Bytes as a TextFile, read as UTF-8 unless `encoding` names another; null when `fatal` and the bytes
+ * are not in that encoding (otherwise they become U+FFFD).
+ */
+async function decodeTextFile(path: string, raw: Uint8Array, fatal: boolean, encoding = 'utf-8'): Promise<TextFile | null> {
   const bom = BOM.every((byte, i) => raw[i] === byte)
   let decoded: string
   try {
     // Exactly one leading BOM is stripped here; ignoreBOM stops the decoder stripping another.
-    decoded = new TextDecoder('utf-8', { fatal, ignoreBOM: true }).decode(bom ? raw.subarray(BOM.length) : raw)
+    decoded = new TextDecoder(encoding, { fatal, ignoreBOM: true }).decode(bom ? raw.subarray(BOM.length) : raw)
   } catch {
     return null
   }
@@ -53,19 +56,21 @@ export async function readTextFile(folder: FolderAccess, path: string): Promise<
 }
 
 /**
- * Reads a text file only to look at it, never to write it back: bytes that are not UTF-8
- * become U+FFFD instead of failing. `utf8` says whether the file was valid UTF-8.
+ * Reads a text file only to look at it, never to write it back: bytes that are not UTF-8 are read
+ * in `fallback` (UTF-8, where they become U+FFFD, unless it names another encoding) instead of
+ * failing. `utf8` says whether the file was valid UTF-8.
  */
 export async function readTextFileLenient(
   folder: FolderAccess,
   path: string,
+  fallback = 'utf-8',
 ): Promise<{ file: TextFile; utf8: boolean } | null> {
   const raw = await folder.readBytes(path)
   if (raw === null) return null
   const strict = await decodeTextFile(path, raw, true)
   if (strict) return { file: strict, utf8: true }
   // A non-fatal decoder never fails.
-  return { file: (await decodeTextFile(path, raw, false))!, utf8: false }
+  return { file: (await decodeTextFile(path, raw, false, fallback))!, utf8: false }
 }
 
 export async function currentVersion(folder: FolderAccess, path: string): Promise<string | null> {

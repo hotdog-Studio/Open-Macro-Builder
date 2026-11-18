@@ -9,6 +9,13 @@ import { isCommand, type FunctionInfo, type LangId, type Language } from './type
 const ALL: Language[] = [ahk, ps]
 const BY_ID: Record<LangId, Language> = { ahk, ps }
 
+/**
+ * How a file that is not UTF-8 is shown, only to look at: Windows PowerShell 5.1 reads a script
+ * without a byte order mark in the ANSI code page, so a .ps1 saved as ANSI is shown as
+ * Windows-1252; the bytes of any other file that are not UTF-8 show as U+FFFD.
+ */
+const NOT_UTF8: Record<LangId, string> = { ahk: 'utf-8', ps: 'windows-1252' }
+
 export interface CommandFile {
   lang: LangId
   group: 'yours' | 'shared'
@@ -73,7 +80,7 @@ export function commandFilePath(lang: LangId, group: 'yours' | 'shared', pair: s
 export async function readCommandFile(folder: FolderAccess, path: string): Promise<CommandFile | null> {
   const at = commandFileAt(path)
   if (!at) return null
-  const read = await readTextFileLenient(folder, path)
+  const read = await readTextFileLenient(folder, path, NOT_UTF8[at.lang])
   if (!read) return null
   return {
     lang: at.lang,
@@ -210,7 +217,7 @@ export function libraryTitle(lang: LangId, text: string, name: string): string {
 }
 
 async function readLibraryFile(folder: FolderAccess, lang: Language, path: string): Promise<LibraryFile | null> {
-  const read = await readTextFileLenient(folder, path)
+  const read = await readTextFileLenient(folder, path, NOT_UTF8[lang.id])
   if (!read) return null
   const name = path.slice(path.lastIndexOf('/') + 1, path.length - lang.ext.length)
   return {

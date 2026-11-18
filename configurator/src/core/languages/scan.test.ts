@@ -86,6 +86,14 @@ describe('a file that is not UTF-8', () => {
       'ahk/commands/latin.ahk is not UTF-8 text; its commands are listed, but the configurator will not edit it.',
     ])
   })
+
+  it('shows a PowerShell command file that is not UTF-8 as Windows-1252, and still does not edit it', async () => {
+    const latin = new Uint8Array([...new TextEncoder().encode('# Caf'), 0xe9, ...new TextEncoder().encode('\nfunction LatinCmd { param($Macro) }\n')])
+    const [file] = await scanCommands(new MemoryFolder('ps', { 'powershell/commands/latin.ps1': latin }))
+    expect(file.file.text).toBe('# Café\nfunction LatinCmd { param($Macro) }\n')
+    expect(file.functions[0].description).toBe('Café')
+    expect(file.editable).toBe(false)
+  })
 })
 
 describe('shared library', () => {
@@ -264,6 +272,13 @@ describe('scanLibrary', () => {
     const bytes = new Uint8Array([...new TextEncoder().encode('function Z {\n}\n# caf'), 0xe9, 0x0a])
     const lib = await scanLibrary(new MemoryFolder('lib', { 'powershell/lib/Z.ps1': bytes }))
     expect(lib[0].functions.map((f) => f.name)).toEqual(['Z'])
+  })
+
+  it('reads a library file that is not UTF-8 as Windows-1252, as Windows PowerShell does', async () => {
+    const bytes = new Uint8Array([...new TextEncoder().encode('# Caf'), 0xe9, ...new TextEncoder().encode('\n\n# Caf'), 0xe9, ...new TextEncoder().encode(' note.\nfunction Z {\n}\n')])
+    const lib = await scanLibrary(new MemoryFolder('lib', { 'powershell/lib/Z.ps1': bytes }))
+    expect(lib[0].title).toBe('Café')
+    expect(lib[0].functions[0].doc.summary).toBe('Café note.')
   })
 
   it('sameLibrary compares paths and versions', async () => {

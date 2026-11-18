@@ -65,6 +65,11 @@ BeforeDiscovery {
                 VsStudioShowTestExplorer = 'two key presses (Ctrl+E, then T); Commands.Tests checks the PowerShell steps'
             }
         }
+        @{ Name = 'custom\automation'; Ahk = 'ahk\commands\custom\automation.ahk'; Ps = 'powershell\commands\custom\automation.ps1'; Skip = @{
+                ShowDelayedKeyForm   = 'opens a form; the key is chosen there'
+                ShowDelayedClickForm = 'opens a form; the click is recorded there'
+            }
+        }
     )
 }
 BeforeAll {

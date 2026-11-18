@@ -34,9 +34,9 @@ The left edge of the rectangle, in pixels from the left edge of the screen. Leav
 .PARAMETER Y1
 The top edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, the top edge of the screen.
 .PARAMETER X2
-The right edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, which is not a usable rectangle unless X1 is 0 too (then it is one pixel wide).
+The right edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, so X1 must then be 0 or less. X1 is less than 0 only on a monitor to the left of the main one.
 .PARAMETER Y2
-The bottom edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, which is not a usable rectangle unless Y1 is 0 too (then it is one pixel high).
+The bottom edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, so Y1 must then be 0 or less. Y1 is less than 0 only on a monitor above the main one.
 .PARAMETER Color
 The colour to look for, as 0xRRGGBB (the red, green and blue amounts, so 0xFF0000 is pure red). Leaving it out looks for black.
 .PARAMETER Variation
@@ -69,9 +69,9 @@ The left edge of the rectangle, in pixels from the left edge of the screen. Leav
 .PARAMETER Y1
 The top edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, the top edge of the screen.
 .PARAMETER X2
-The right edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, which is not a usable rectangle unless X1 is 0 too (then it is one pixel wide).
+The right edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, so X1 must then be 0 or less. X1 is less than 0 only on a monitor to the left of the main one.
 .PARAMETER Y2
-The bottom edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, which is not a usable rectangle unless Y1 is 0 too (then it is one pixel high).
+The bottom edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, so Y1 must then be 0 or less. Y1 is less than 0 only on a monitor above the main one.
 .PARAMETER Path
 The full path of the image file to look for, such as a PNG, BMP or JPEG file. An error is raised when there is no file at that path. Leaving it out raises an error too. The path in the example is only a placeholder: use the path of an image file of your own.
 .PARAMETER Variation

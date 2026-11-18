@@ -13,5 +13,5 @@ export function validateConfig(config: unknown, checks?: ValidateChecks): string
 /** Lower-cased names of the functions defined in a command file, in file order. */
 export function functionNames(text: string, ext: '.ahk' | '.ps1'): string[];
 
-/** The scopes a PowerShell function can be defined in: `global:`, `script:`, `local:`, `private:`. */
+/** The scopes a PowerShell function can be defined in, lower-cased with their colon: the list in validate-config-core.mjs. */
 export const PS_SCOPES: readonly string[];

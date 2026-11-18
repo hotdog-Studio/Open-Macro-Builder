@@ -58,8 +58,10 @@ const CLOSES = /\*\/\s*$/
  */
 function blockStart(lines: string[], end: number): number {
   for (let i = end; i >= 0; i--) {
+    // Another comment's end first: a one-line `/** ... */` above is a whole block of its own.
+    if (i < end && CLOSES.test(lines[i])) return -1
     if (/^\s*\/\*\*/.test(lines[i])) return i
-    if (/^\s*\/\*/.test(lines[i]) || (i < end && CLOSES.test(lines[i]))) return -1
+    if (/^\s*\/\*/.test(lines[i])) return -1
   }
   return -1
 }

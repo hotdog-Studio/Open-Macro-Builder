@@ -259,6 +259,12 @@ describe('AutoHotkey findFunctions', () => {
     expect(LANGUAGES.ahk.findFunctions('x := 1 */\nB() {\n}')[0].doc.form).toBe('none')
   })
 
+  it("does not take an earlier function's one-line block for a stray */ above another", () => {
+    const fns = LANGUAGES.ahk.findFunctions('/** A docs. */\nA() {\n}\n */\nB() {\n}')
+    expect(fns[0].doc.summary).toBe('A docs.')
+    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
+  })
+
   it("does not take an earlier function's block for a stray */ above another", () => {
     const fns = LANGUAGES.ahk.findFunctions('/**\n * A docs.\n */\nA() {\n}\n */\nB() {\n}')
     expect(fns[0].doc.summary).toBe('A docs.')
@@ -462,6 +468,12 @@ describe('PowerShell findFunctions', () => {
 
   it('reads no docs from a #> with no <# above it', () => {
     expect(LANGUAGES.ps.findFunctions('#>\nfunction A {\n}')[0].doc.form).toBe('none')
+  })
+
+  it("does not take an earlier function's one-line block for a stray #> above another", () => {
+    const fns = LANGUAGES.ps.findFunctions('<# .SYNOPSIS A. #>\nfunction A {\n}\n#>\nfunction B {\n}')
+    expect(fns[0].doc.summary).toBe('A.')
+    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
   })
 
   it("does not take an earlier function's block for a stray #> above another", () => {

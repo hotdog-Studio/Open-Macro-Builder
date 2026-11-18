@@ -202,8 +202,9 @@ function blockText(block: string[]): string[] {
 function helpStart(lines: string[], end: number): number {
   for (let i = end; i >= 0; i--) {
     const text = lines[i].trim()
-    if (text.startsWith('<#')) return i
+    // Another block's end first: a one-line `<# ... #>` above is a whole block of its own.
     if (i < end && text.endsWith('#>')) return -1
+    if (text.startsWith('<#')) return i
   }
   return -1
 }

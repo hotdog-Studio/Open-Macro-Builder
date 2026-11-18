@@ -127,7 +127,7 @@ MoveWindowUp(Macro) {
 }
 
 /**
- * Minimizes the active window (Win+Down).
+ * Minimizes the active window (Win+Down). A maximized window is restored first, so it takes a second press.
  * @param {Macro} Macro - The macro object (not used).
  */
 MoveWindowDown(Macro) {
@@ -151,7 +151,7 @@ PreviousWindow(Macro) {
 }
 
 /**
- * Minimizes every window except the active one, or restores them on the next press (Win+Home).
+ * Minimizes every window except the active one, or restores them on the next press (Win+Home). On Windows 11 this may need Settings > System > Multitasking > Title bar window shake turned on.
  * @param {Macro} Macro - The macro object (not used).
  */
 FocusWindow(Macro) {

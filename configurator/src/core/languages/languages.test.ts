@@ -259,6 +259,12 @@ describe('AutoHotkey findFunctions', () => {
     expect(fns[1].doc.form).toBe('none')
   })
 
+  it('reads no docs from a plain /* */ comment under a half-typed /** block', () => {
+    const fns = LANGUAGES.ahk.findFunctions('/** half typed\nA() {\n}\n/* plain\n */\nB() {\n}')
+    expect(fns.map((f) => f.name)).toEqual(['A', 'B'])
+    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
+  })
+
   it('reads no docs from a */ with no /** above it', () => {
     expect(LANGUAGES.ahk.findFunctions('x := 1 */\nB() {\n}')[0].doc.form).toBe('none')
   })
@@ -502,6 +508,37 @@ describe('PowerShell findFunctions', () => {
 
   it('reads a help block whose last text line closes it', () => {
     expect(LANGUAGES.ps.findFunctions('<#\n.SYNOPSIS\nDoes it. #>\nfunction A {\n}')[0].doc).toMatchObject({ form: 'block', summary: 'Does it.' })
+  })
+
+  it('keeps a help block without a synopsis a block', () => {
+    expect(LANGUAGES.ps.findFunctions('<#\n.DESCRIPTION\nMore.\n#>\nfunction A {\n}')[0].doc).toMatchObject({ form: 'block', summary: 'More.' })
+  })
+
+  it('reads a help block on one line', () => {
+    expect(LANGUAGES.ps.findFunctions('<# .SYNOPSIS Does it. #>\nfunction A {\n}')[0].doc).toMatchObject({ form: 'block', summary: 'Does it.' })
+  })
+
+  it("reads a .PARAMETER named in another case, and text on the keyword's line", () => {
+    const [fn] = LANGUAGES.ps.findFunctions(
+      '<#\n.SYNOPSIS\nS.\n.PARAMETER window The window.\n.PARAMETER count\nHow many.\n#>\nfunction A {\n    param($Window, [int]$Count)\n}',
+    )
+    expect(fn.doc.params.map((p) => p.text)).toEqual(['The window.', 'How many.'])
+  })
+
+  it('reads ValidateSet values in double quotes', () => {
+    const [fn] = LANGUAGES.ps.findFunctions('function A {\n    param([ValidateSet("Left", "Right")][string]$Button = "Left")\n}')
+    expect(fn.doc.params[0]).toMatchObject({ values: ['Left', 'Right'], default: '"Left"', optional: true })
+  })
+
+  it('reads no note from bare marks, no parameter from an empty param(), and no help from inside the body', () => {
+    expect(LANGUAGES.ps.findFunctions('#\n##\nfunction A {\n}')[0].doc.form).toBe('none')
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param()\n}')[0].params).toEqual([])
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param($X,)\n}')[0].params).toEqual(['X'])
+    expect(LANGUAGES.ps.findFunctions('function A {\n<#\n.SYNOPSIS\nIn.\n#>\n}')[0].doc.form).toBe('none')
+  })
+
+  it('lists a parameter whose attribute was never closed', () => {
+    expect(LANGUAGES.ps.findFunctions("function A {\n    param([ValidateSet('a', $X)\n}")[0].params).toEqual(['X'])
   })
 
   it('reads an indented help block without its indentation', () => {

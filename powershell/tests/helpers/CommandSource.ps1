@@ -91,9 +91,10 @@ function Get-PsSingleCommand {
     $cmd
 }
 
-# PowerShell functions of a file: name -> @{ Params = 'Macro'; Chord = text or $null; Guard }. Chord
-# is set when the whole body (after param) is one Send-Chord or Send-Key with a literal argument, or
-# that send alone inside 'if (Name $Macro) { ... }' with no else; Guard is then Name, otherwise ''.
+# PowerShell functions of a file: name -> @{ Params = 'Macro'; Chord = chords or $null; Guard }. Chord
+# is set when the whole body (after param) is Send-Chord or Send-Key calls with literal arguments and
+# nothing else (no wait between them), one per statement, in order; or those sends alone inside
+# 'if (Name $Macro) { ... }' with no else, and Guard is then Name, otherwise ''.
 function Get-PsFunctionSource {
     param([Parameter(Mandatory)][string]$Path)
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$null)
@@ -111,11 +112,14 @@ function Get-PsFunctionSource {
                 $statements = @($statements[0].Clauses[0].Item2.Statements)
             }
         }
-        $cmd = Get-PsSingleCommand $statements
-        if ($null -ne $cmd -and $cmd.GetCommandName() -in 'Send-Chord', 'Send-Key' -and
-            $cmd.CommandElements.Count -eq 2 -and $cmd.CommandElements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-            $chord = $cmd.CommandElements[1].Value
-        } else { $guard = '' }
+        $sends = [System.Collections.Generic.List[string]]::new()
+        foreach ($statement in $statements) {
+            $cmd = Get-PsSingleCommand @($statement)
+            if ($null -eq $cmd -or $cmd.GetCommandName() -notin 'Send-Chord', 'Send-Key' -or $cmd.CommandElements.Count -ne 2 -or
+                $cmd.CommandElements[1] -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { $sends = $null; break }
+            $sends.Add($cmd.CommandElements[1].Value)
+        }
+        if ($null -ne $sends -and $sends.Count -gt 0) { $chord = $sends.ToArray() } else { $guard = '' }
         $result[$fn.Name] = [pscustomobject]@{ Params = $params; Chord = $chord; Guard = $guard }
     }
     $result

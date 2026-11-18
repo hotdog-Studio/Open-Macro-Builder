@@ -2,9 +2,11 @@
 # the AutoHotkey Send string and the PowerShell chord are read from the source text, turned into key
 # events (ConvertFrom-AhkSend reads AutoHotkey's syntax, ConvertTo-KeyEvent reads a chord) and
 # compared as the taps they make, such as 'Alt+Shift+Tab'. Two sources written apart must agree,
-# so a wrong or mistyped chord on one side shows. A command that is not one chord on both sides
+# so a wrong or mistyped chord on one side shows. (A PowerShell command that is several sends in a row, with
+# nothing between them, counts as the taps of all of them.) A command that is not one chord on both sides
 # (it starts a program, sends more than once, branches) must be in its pair's Skip list with the
-# reason; the test fails on a command that is neither compared nor listed. A chord sent only when a
+# reason; the test fails on a command that is neither compared nor listed, and on a listed one whose
+# version in either language only presses keys, so a skip cannot hide a disagreement. A chord sent only when a
 # guard such as EnsureActiveOrOpenChrome says so is compared too, and so is the guard's name.
 #
 # To add a file pair, add an entry to $Pairs: Ahk and Ps are paths from the repository root.
@@ -61,10 +63,7 @@ BeforeDiscovery {
                 VsCodeMoveGroupRight = 'two key presses with a pause between (Ctrl+K, Right)'
             }
         }
-        @{ Name = 'custom\vsstudio'; Ahk = 'ahk\commands\custom\vsstudio.ahk'; Ps = 'powershell\commands\custom\vsstudio.ps1'; Skip = @{
-                VsStudioShowTestExplorer = 'two key presses (Ctrl+E, then T); Commands.Tests checks the PowerShell steps'
-            }
-        }
+        @{ Name = 'custom\vsstudio'; Ahk = 'ahk\commands\custom\vsstudio.ahk'; Ps = 'powershell\commands\custom\vsstudio.ps1'; Skip = @{} }
         @{ Name = 'custom\automation'; Ahk = 'ahk\commands\custom\automation.ahk'; Ps = 'powershell\commands\custom\automation.ps1'; Skip = @{
                 ShowDelayedKeyForm   = 'opens a form; the key is chosen there'
                 ShowDelayedClickForm = 'opens a form; the click is recorded there'
@@ -100,6 +99,11 @@ Describe 'The two languages press the same keys: <Name>' -ForEach $Pairs {
             $comparable = $null -ne $commands[$n].Ahk -and $null -ne $commands[$n].Ps
             if (-not $comparable -and -not $Skip.ContainsKey($n)) { "$n is not one chord in both languages and is not in the Skip list" }
             if ($comparable -and $Skip.ContainsKey($n)) { "$n is one chord in both languages; take it out of the Skip list" }
+            elseif ($Skip.ContainsKey($n) -and ($null -ne $commands[$n].Ahk -or $null -ne $commands[$n].Ps)) {
+                # A skip must not hide a command that became a chord on one side only.
+                $side = if ($null -ne $commands[$n].Ahk) { "AutoHotkey Send(`"$($commands[$n].Ahk)`")" } else { "PowerShell '$($commands[$n].Ps -join "', '")'" }
+                "$n is skipped, but its $side only presses keys; compare it instead"
+            }
         }
         $bad += foreach ($n in $Skip.Keys) { if (-not $commands.Contains($n)) { "$n in the Skip list is not a command of the pair" } }
         $bad | Should -BeNullOrEmpty
@@ -113,8 +117,8 @@ Describe 'The two languages press the same keys: <Name>' -ForEach $Pairs {
             $compared++
             try {
                 $ahkTaps = (ConvertTo-ChordTap (ConvertFrom-AhkSend $c.Ahk).Events) -join ', '
-                $psTaps = (ConvertTo-ChordTap (ConvertTo-KeyEvent $c.Ps)) -join ', '
-                if ($ahkTaps -ne $psTaps) { "$n`: AutoHotkey Send(`"$($c.Ahk)`") presses $ahkTaps; PowerShell '$($c.Ps)' presses $psTaps" }
+                $psTaps = (@(foreach ($chord in $c.Ps) { foreach ($tap in (ConvertTo-ChordTap (ConvertTo-KeyEvent $chord))) { $tap } })) -join ', '
+                if ($ahkTaps -ne $psTaps) { "$n`: AutoHotkey Send(`"$($c.Ahk)`") presses $ahkTaps; PowerShell '$($c.Ps -join "', '")' presses $psTaps" }
                 if ($c.AhkGuard -ne $c.PsGuard) { "$n`: AutoHotkey sends only if '$($c.AhkGuard)' says so; PowerShell only if '$($c.PsGuard)' says so" }
             } catch { "$n`: $($_.Exception.Message)" }
         }

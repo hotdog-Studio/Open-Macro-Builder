@@ -21,30 +21,34 @@ Lock(Macro)
 }
 
 /**
- * Send the Sleep command
+ * Puts the computer to sleep. Shows an error when Windows refuses.
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 WinSleep(Macro)
 {
-    DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0)
+    if !DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0)
+        throw Error("Windows did not go to sleep.")
 }
 
 /**
- * Send the Hibernate command
+ * Hibernates the computer. Shows an error when Windows refuses, as it does when hibernation is turned off.
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 Hibernate(Macro)
 {
-    DllCall("PowrProf\SetSuspendState", "Int", 1, "Int", 0, "Int", 0)
+    if !DllCall("PowrProf\SetSuspendState", "Int", 1, "Int", 0, "Int", 0)
+        throw Error("Windows did not hibernate. Is hibernation turned on (powercfg /hibernate on)?")
 }
 
 /**
- * Send the Restart command
+ * Restarts the computer (shutdown /r /t 1).
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 Restart(Macro)
 {
-   DllCall("ExitWindowsEx", "UInt", 2, "UInt", 0)
+   ; shutdown.exe: ExitWindowsEx needs the shutdown privilege, which this script does not enable. Not the
+   ; built-in Shutdown either: the Shutdown command below hides it, and would turn the PC off.
+   Run("shutdown /r /t 1")
 }
 
 /**

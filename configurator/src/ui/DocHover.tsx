@@ -96,11 +96,19 @@ function useDropGoneRows(up: boolean, setHover: Dispatch<SetStateAction<Hover>>)
   }, [up, setHover])
 }
 
+/** Where the pointer was last seen, in the window's coordinates; null once it has left the window. */
+type Seen = { x: number; y: number } | null
+
 /** What the rows' handlers do to the hover state. */
 interface HoverActions {
   set: (change: Partial<Hover>) => void
-  /** After the grace, hides the pointer's card unless the pointer is then on its row or on the card. */
-  leaveRow: () => void
+  /** Records where the pointer is now. */
+  see: (at: Seen) => void
+  /**
+   * Looks where the pointer is: on the pointer's row or on the card, its card stays; on neither, the
+   * card goes once the grace has passed, unless by then the pointer is on one of them again.
+   */
+  check: () => void
   /** Stops a hide that waits for the grace to pass. */
   stay: () => void
   hideAll: () => void
@@ -110,10 +118,11 @@ interface HoverActions {
 function rowHandlers(entry: DictEntry, onClick: () => void, actions: HoverActions, describedBy: string | undefined): RowHover {
   return {
     onMouseEnter: (e) => {
+      actions.see({ x: e.clientX, y: e.clientY })
       actions.stay()
       actions.set({ pointer: { id: entry.id, el: e.currentTarget } })
     },
-    onMouseLeave: actions.leaveRow,
+    onMouseLeave: actions.check,
     onFocus: (e) => actions.set({ focus: { id: entry.id, el: e.currentTarget } }),
     onBlur: () => actions.set({ focus: null }),
     onClick: () => {
@@ -216,7 +225,8 @@ function FloatingCard({
   row,
   onEnter,
   onLeave,
-}: Readonly<{ id: string; entry: DictEntry; row: HTMLElement; onEnter: () => void; onLeave: () => void }>) {
+  onMoved,
+}: Readonly<{ id: string; entry: DictEntry; row: HTMLElement; onEnter: () => void; onLeave: () => void; onMoved: () => void }>) {
   const box = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const { tall, more, measure } = useScrollState(scroller)
@@ -227,7 +237,9 @@ function FloatingCard({
     if (!row.isConnected) return
     if (box.current) place(box.current, row)
     measure()
-  }, [row, measure])
+    // Placed and sized again, the card may no longer lie under a pointer that has not moved.
+    onMoved()
+  }, [row, measure, onMoved])
   // After every render: the docs may have changed, and with them the card's height. The card's own
   // scroll reaches useFollow too, so the last line follows it.
   useLayoutEffect(update)
@@ -253,34 +265,92 @@ function FloatingCard({
   )
 }
 
-/** Whether the pointer is on `row` or on the card with the id `cardId` at this moment, as the page itself tells it. */
-function pointerOver(row: HTMLElement | undefined, cardId: string): boolean {
-  return Boolean(row?.matches(':hover') || document.getElementById(cardId)?.matches(':hover'))
+/**
+ * Whether what lies at `seen` is `row` or the card with the id `cardId`, as the page's own hit test
+ * tells it: not `:hover`, which a held mouse button freezes, and not enter and leave events, which can
+ * come in either order or not at all. A card that lets the pointer through is not hit.
+ */
+function onRowOrCard(seen: Seen, row: HTMLElement | undefined, cardId: string): boolean {
+  const at = seen && document.elementFromPoint(seen.x, seen.y)
+  return Boolean(at && (row?.contains(at) || document.getElementById(cardId)?.contains(at)))
 }
 
 /**
- * What the rows' handlers do to the hover state, the same functions on every render. Leaving a row
- * or the card hides the pointer's card after the grace, unless the pointer is then on its row or the
- * card. That is asked of the page when the grace ends, so it holds whatever order the enter and leave
- * events of the row and the card came in. Entering a row or the card cancels a hide still waiting.
+ * What the rows' handlers do to the hover state, the same functions on every render. Whether the
+ * pointer's card goes rests on one thing, where the pointer is: each look (`check`) that finds it on
+ * neither its row nor the card starts the grace, and when the grace ends the card goes only if the
+ * pointer is still on neither. Enter and leave events only ask for a look, so their order never decides.
  */
-function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: string): HoverActions {
+function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: string, pointerRow: RefObject<HTMLElement | null>): HoverActions {
   const grace = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const actions = useMemo<HoverActions>(
-    () => ({
+  const seen = useRef<Seen>(null)
+  const actions = useMemo<HoverActions>(() => {
+    const stay = () => {
+      clearTimeout(grace.current)
+      grace.current = undefined
+    }
+    const hideUnlessBack = () => {
+      grace.current = undefined
+      setHover((was) => (was.pointer && !onRowOrCard(seen.current, was.pointer.el, cardId) ? { ...was, pointer: null } : was))
+    }
+    return {
       set: (change) => setHover((was) => ({ ...was, ...change })),
-      leaveRow: () => {
-        clearTimeout(grace.current)
-        grace.current = setTimeout(() => setHover((was) => (pointerOver(was.pointer?.el, cardId) ? was : { ...was, pointer: null })), GRACE)
+      see: (at) => {
+        seen.current = at
       },
-      stay: () => clearTimeout(grace.current),
-      hideAll: () => setHover(NONE),
-    }),
-    [setHover, cardId],
-  )
+      check: () => {
+        const row = pointerRow.current
+        if (!row) return
+        if (onRowOrCard(seen.current, row, cardId)) stay()
+        // The grace counts from the first look that found the pointer on neither.
+        else grace.current ??= setTimeout(hideUnlessBack, GRACE)
+      },
+      stay,
+      hideAll: () => {
+        stay()
+        setHover(NONE)
+      },
+    }
+  }, [setHover, cardId, pointerRow])
   // No hide may land once the lists are gone.
   useEffect(() => actions.stay, [actions])
   return actions
+}
+
+/**
+ * While a card is up for the row under the pointer, follows the pointer over the whole page and looks
+ * where it is (HoverActions.check) whenever that may have changed without an enter or leave of the row
+ * or the card: a move, the button let go, the pointer leaving the window, a scroll, a resize. The
+ * listeners go when that card goes, and when the lists do.
+ */
+function useFollowPointer(up: boolean, actions: HoverActions): void {
+  useEffect(() => {
+    if (!up) return
+    const move = (e: PointerEvent) => {
+      actions.see({ x: e.clientX, y: e.clientY })
+      actions.check()
+    }
+    // A mouseout to nothing: the pointer has left the window.
+    const out = (e: globalThis.MouseEvent) => {
+      if (e.relatedTarget !== null) return
+      actions.see(null)
+      actions.check()
+    }
+    const look = () => actions.check()
+    const passive = { capture: true, passive: true }
+    document.addEventListener('pointermove', move, passive)
+    document.addEventListener('pointerup', move, passive)
+    document.addEventListener('mouseout', out, passive)
+    document.addEventListener('scroll', look, passive)
+    window.addEventListener('resize', look)
+    return () => {
+      document.removeEventListener('pointermove', move, { capture: true })
+      document.removeEventListener('pointerup', move, { capture: true })
+      document.removeEventListener('mouseout', out, { capture: true })
+      document.removeEventListener('scroll', look, { capture: true })
+      window.removeEventListener('resize', look)
+    }
+  }, [up, actions])
 }
 
 /**
@@ -291,13 +361,19 @@ function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: stri
 export function DocHoverProvider({ dicts, children }: Readonly<{ dicts: Dictionary[]; children: ReactNode }>) {
   const [hover, setHover] = useState<Hover>(NONE)
   const id = useId()
-  const actions = useHoverActions(setHover, id)
+  // The row of the pointer's card as last rendered, for a look between renders; the hide itself reads the state.
+  const pointerRow = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    pointerRow.current = hover.pointer?.el ?? null
+  })
+  const actions = useHoverActions(setHover, id, pointerRow)
   const shown = hover.pointer ?? hover.focus
   // Undefined once the entry is gone from the dictionaries (renamed, deleted, another file shown): no card then.
   const entry = shown ? findEntry(dicts, shown.id) : undefined
   const shownId = entry?.id
   useEscape(shown !== null, actions.hideAll)
   useDropGoneRows(shown !== null, setHover)
+  useFollowPointer(hover.pointer !== null, actions)
 
   // The same function until another entry's card is up, so the lists re-render only then.
   const row = useCallback<RowHoverFor>(
@@ -311,7 +387,7 @@ export function DocHoverProvider({ dicts, children }: Readonly<{ dicts: Dictiona
   return (
     <HoverContext.Provider value={row}>
       {children}
-      {shown && entry && <FloatingCard id={id} entry={entry} row={shown.el} onEnter={actions.stay} onLeave={actions.leaveRow} />}
+      {shown && entry && <FloatingCard id={id} entry={entry} row={shown.el} onEnter={actions.stay} onLeave={actions.check} onMoved={actions.check} />}
     </HoverContext.Provider>
   )
 }

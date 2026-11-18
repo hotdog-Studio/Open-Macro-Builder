@@ -201,6 +201,17 @@ export function hover(to: Element | Point): Promise<void> {
   return path([point(to), point(to)], false, false, 1)
 }
 
+/**
+ * Moves the real mouse through `points` in one command, straight from each to the next with no step
+ * between: a point on the way is a stop, as short as the browser makes two moves. Resolves to how long
+ * the whole command took in the page, in milliseconds, which is longer than any one stop in it.
+ */
+export async function hoverPath(points: (Element | Point)[]): Promise<number> {
+  const started = performance.now()
+  await path(points.map(point), false, false, 1)
+  return performance.now() - started
+}
+
 /** Moves the mouse on to `to`, the button still down from carry(). */
 export function carryOn(to: Element | Point, steps = 10): Promise<void> {
   return path([point(to), point(to)], false, false, steps)

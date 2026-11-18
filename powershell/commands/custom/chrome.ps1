@@ -1,6 +1,17 @@
 # Chrome commands (ahk/commands/custom/chrome.ahk).
 
-# Opens the URL in Chrome (or just Chrome), or brings an existing Chrome window forward.
+<#
+.SYNOPSIS
+Switches to Chrome or starts it, or opens a web address in Chrome.
+.DESCRIPTION
+Without Url: when Chrome has a visible window, that window is activated; when one of Chrome's windows is already active, the bottom one comes forward instead, so pressing the key again steps through Chrome's windows. When Chrome has no visible window, Chrome is started. With Url, Chrome is started every time, with the address on its command line. After a start, up to 5 seconds are given for a Chrome window to appear, and the topmost one is activated unless one of Chrome's windows is already the active window.
+.PARAMETER Url
+The web address to open, such as 'https://www.google.com/'. Leave it out to switch to Chrome, or start it when it has no window.
+.EXAMPLE
+ActivateOrOpenChrome
+.EXAMPLE
+ActivateOrOpenChrome -Url 'https://www.youtube.com/'
+#>
 function ActivateOrOpenChrome {
     param([string]$Url = '')
     $windows = Get-ProcessWindow 'chrome.exe'

@@ -4,17 +4,22 @@ BeforeAll {
     $ps = Split-Path $PSScriptRoot -Parent
     foreach ($f in 'Native', 'Interop', 'Pump', 'Window', 'WinTitle', 'WindowOps') { . "$ps\lib\$f.ps1" }
     . "$ps\commands\power.ps1"
-}
-Describe 'Power commands reach Windows only through the wrappers the tests mock' {
-    It 'calls [Macropad.Native] only inside Lock-Workstation and Invoke-SuspendState' {
-        # A direct call in a command would lock, sleep or hibernate this PC during the tests, before any assertion.
+    # The functions of power.ps1 other than Lock-Workstation and Invoke-SuspendState that call
+    # [Macropad.Native] themselves, and any such call outside a function. The tests cannot mock those.
+    function Get-DirectNativeCall {
         $ast = [System.Management.Automation.Language.Parser]::ParseFile("$ps\commands\power.ps1", [ref]$null, [ref]$null)
-        $bad = foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
+        foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
             if ($fn.Name -in 'Lock-Workstation', 'Invoke-SuspendState') { continue }
             if ($fn.Body.Extent.Text -match '\[Macropad\.Native\]::') { $fn.Name }
         }
-        $outside = $ast.EndBlock.Statements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] -and $_.Extent.Text -match '\[Macropad\.Native\]::' }
-        @($bad) + @($outside | ForEach-Object { $_.Extent.Text }) | Should -BeNullOrEmpty
+        $ast.EndBlock.Statements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] -and $_.Extent.Text -match '\[Macropad\.Native\]::' } |
+            ForEach-Object { $_.Extent.Text }
+    }
+}
+Describe 'Power commands reach Windows only through the wrappers the tests mock' {
+    It 'calls [Macropad.Native] only inside Lock-Workstation and Invoke-SuspendState' {
+        # When this fails, the block 'Power commands' below runs none of its tests (its BeforeAll stops it).
+        Get-DirectNativeCall | Should -BeNullOrEmpty
     }
     It 'reads SetSuspendState''s one-byte BOOLEAN result as one byte' {
         # Read as a four-byte BOOL, a refusal with junk in the upper bytes would look like success.
@@ -25,6 +30,12 @@ Describe 'Power commands reach Windows only through the wrappers the tests mock'
     }
 }
 Describe 'Power commands' {
+    BeforeAll {
+        # A direct call in a command would lock, sleep or hibernate this PC during the tests, before any
+        # assertion. Pester runs none of this block's tests when its BeforeAll throws.
+        $direct = @(Get-DirectNativeCall)
+        if ($direct) { throw "power.ps1 calls [Macropad.Native] outside the mocked wrappers, so no power test runs: $($direct -join ', ')" }
+    }
     BeforeEach {
         Mock Start-Program {}
         Mock Lock-Workstation { $true }

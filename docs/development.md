@@ -93,6 +93,8 @@ jsdom does not lay anything out, so every element measures 0 by 0 there and a dr
 npx vitest run --config vitest.browser.config.ts src/ui/visual.browser.test.tsx --update
 ```
 
+A change to the width of a side panel can move the pad by half a pixel at the tests' window size, which makes every picture one pixel wider. Run this suite after such a change too.
+
 ## Icons and logo
 
 `img/icon.svg` is the hotdog; `img/logo.svg` is the hotdog on a key. `img/icon.ico` (the tray icon of both macropad versions, and the icon of the desktop app and its installer) and `img/logo.png` are made from them. After editing an SVG:

@@ -11,9 +11,13 @@ import { commandsReducer, initialCommands, type CommandAction, type CommandsView
 
 export type Tab = 'start' | 'shape' | 'layers' | 'macros' | 'commands'
 
+/**
+ * The one message showing, as a floating toast: a notice (`info`), an action that was refused
+ * (`warning`) or something that failed (`error`, which stays until it is dismissed).
+ */
 export interface Banner {
   text: string
-  kind: 'info' | 'error'
+  kind: 'info' | 'warning' | 'error'
 }
 
 /** Everything read from an opened folder. */

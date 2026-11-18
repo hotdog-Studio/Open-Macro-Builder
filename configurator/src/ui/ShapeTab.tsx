@@ -122,13 +122,13 @@ function KeyDetails({ k }: Readonly<{ k: PadKey }>) {
   const ask = () => {
     const result = removeKey(ws, k.id)
     if (result.ok) setConfirming(true)
-    else dispatch({ type: 'banner', banner: { text: result.reason, kind: 'error' } })
+    else dispatch({ type: 'banner', banner: { text: result.reason, kind: 'warning' } })
   }
   const remove = () => {
     const result = removeKey(ws, k.id)
     setConfirming(false)
     if (!result.ok) {
-      dispatch({ type: 'banner', banner: { text: result.reason, kind: 'error' } })
+      dispatch({ type: 'banner', banner: { text: result.reason, kind: 'warning' } })
       return
     }
     dispatch({ type: 'edit', ws: result.ws })

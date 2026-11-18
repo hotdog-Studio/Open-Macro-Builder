@@ -186,6 +186,37 @@ describe('in a small window', () => {
   })
 })
 
+describe('messages', () => {
+  it('a message floats over the editor and moves nothing', async () => {
+    await startApp()
+    const keys = screen.getByRole('list', { name: 'Keys' })
+    const before = keys.getBoundingClientRect()
+    await drag(padKey('F13'), padKey('F14'))
+    await waitFor(() => expect(banner()).toBe('That space is taken.'))
+    const after = keys.getBoundingClientRect()
+    expect(after.top).toBe(before.top)
+    expect(after.left).toBe(before.left)
+    expect(after.width).toBe(before.width)
+    expect(after.height).toBe(before.height)
+    const root = document.documentElement
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth)
+    expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight)
+    // It lies over the editor: nothing is pushed down to make room.
+    expect(screen.getByRole('alert').getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      screen.getByRole('banner').getBoundingClientRect().bottom,
+    )
+  })
+
+  it('a message fits a small window', async () => {
+    await page.viewport(760, 420)
+    await startApp()
+    await bring(padKey('F13'), padKey('F14'))
+    await drag(padKey('F13'), padKey('F14'))
+    await waitFor(() => expect(banner()).toBe('That space is taken.'))
+    expect(inView(screen.getByRole('alert'))).toBe(true)
+  })
+})
+
 // Zooming a browser in shrinks the window as the page measures it: 150 % of 1280×900 lays out as 853×600.
 describe('a pad scrolled under the side panels', () => {
   it('a layer dragged to the shelf is parked, not dropped on a key hidden behind the panel', async () => {
@@ -235,6 +266,8 @@ describe('zoomed in to 150 %', () => {
     await bring(padKey('F13'), padKey('F14'))
     await drag(corner, offset(corner, 80, 0))
     await waitFor(() => expect(banner()).toBe('That space is taken.'))
+    // At this size the message floats over the keys the next drag reaches for: a user closes it first.
+    await click(screen.getByRole('button', { name: 'Dismiss' }))
 
     await click(screen.getByRole('tab', { name: 'Macros' }))
     await bring(padKey('F13'), padKey('F14'))

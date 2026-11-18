@@ -116,7 +116,7 @@ const collide: CollisionDetection = (args) => {
 
 /** What a tab's drag and drop offers to the keyboard: the same edits, without the mouse. */
 export interface PadActions {
-  /** Runs a drop. A refusal shows its reason in the banner. True when the edit was made. */
+  /** Runs a drop. A refusal shows its reason as a message. True when the edit was made. */
   run(action: DropAction): boolean
   /** Alt + arrow on a key: moves it (Pad shape) or swaps it with its neighbour; with `resize`, Shift is held too. */
   nudge(id: string, dir: Direction, resize: boolean): void
@@ -161,7 +161,7 @@ export function PadDnd({ mode, children }: Readonly<{ mode: Tab; children: React
   const commit = useCallback(
     (result: OpResult): boolean => {
       if (result.ok) dispatch({ type: 'edit', ws: result.ws })
-      else dispatch({ type: 'banner', banner: { text: result.reason, kind: 'error' } })
+      else dispatch({ type: 'banner', banner: { text: result.reason, kind: 'warning' } })
       return result.ok
     },
     [dispatch],

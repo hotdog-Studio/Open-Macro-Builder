@@ -19,9 +19,12 @@ ToggleLayerSelection(Keyname)
    mode := 1 
    selectionGui.Show()
 
-   ; disable layer selection mode on Keyname release
+   ; disable layer selection mode on Keyname release. AutoHotkey's hook counts only a key pressed on a
+   ; keyboard as physically held, not one another program sends (an on-screen keyboard, a remapper),
+   ; so wait for the physical release, then for the logical one, as the PowerShell version does.
    KeyWait(Keyname)
-   mode := 0 
+   KeyWait(Keyname, "L")
+   mode := 0
    selectionGui.Hide()
 }
 

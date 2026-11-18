@@ -154,6 +154,90 @@ describe('PowerShell findFunctions', () => {
     const fns = LANGUAGES.ps.findFunctions('function T {\n    param([string]$Exe, $Arguments = (Get-X))\n}')
     expect(fns[0].params).toEqual(['Exe', 'Arguments'])
   })
+
+  const HELP = [
+    '<#',
+    '.SYNOPSIS',
+    'Clicks a mouse button at a point on the screen.',
+    '.description',
+    'Stands in for AutoHotkey Click.',
+    '.PARAMETER X',
+    'Pixels from the left edge',
+    'of the screen.',
+    '.PARAMETER Button',
+    'Which button to click.',
+    '.PARAMETER Nobody',
+    'Names no parameter.',
+    '.OUTPUTS',
+    'Nothing.',
+    '.EXAMPLE',
+    'Send-Click 200 300',
+    '.EXAMPLE',
+    'Send-Click 200 300 -Button Right',
+    '#>',
+    'function Send-Click {',
+    "    param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y, [ValidateSet('Left', 'Right')][string]$Button = 'Left', [switch]$Twice)",
+    '}',
+  ].join('\n')
+
+  it('reads a help block and builds the usage line', () => {
+    const [fn] = LANGUAGES.ps.findFunctions(HELP)
+    expect(fn.usage).toBe('Send-Click <X> <Y> [-Button <string>] [-Twice]')
+    expect(fn.description).toBe('Clicks a mouse button at a point on the screen. Stands in for AutoHotkey Click.')
+    expect(fn.doc).toEqual({
+      form: 'block',
+      summary: 'Clicks a mouse button at a point on the screen. Stands in for AutoHotkey Click.',
+      params: [
+        { name: 'X', text: 'Pixels from the left edge of the screen.', type: 'int', optional: false, default: '', values: [] },
+        { name: 'Y', text: '', type: 'int', optional: false, default: '', values: [] },
+        { name: 'Button', text: 'Which button to click.', type: 'string', optional: true, default: "'Left'", values: ['Left', 'Right'] },
+        { name: 'Twice', text: '', type: 'switch', optional: true, default: '', values: [] },
+      ],
+      returns: 'Nothing.',
+      examples: ['Send-Click 200 300', 'Send-Click 200 300 -Button Right'],
+    })
+  })
+
+  it('joins a run of # lines into the summary', () => {
+    const text = '# Posts WM_CLOSE and waits,\n# and with -Force ends its process.\nfunction Close-Window {\n    param($Window, [switch]$Force, [int]$TimeoutMs = 2000)\n}'
+    const [fn] = LANGUAGES.ps.findFunctions(text)
+    expect(fn.doc.form).toBe('note')
+    expect(fn.description).toBe('Posts WM_CLOSE and waits, and with -Force ends its process.')
+    expect(fn.usage).toBe('Close-Window <Window> [-Force] [-TimeoutMs <int>]')
+  })
+
+  it('writes an untyped default as <value>, and a function without parameters as its name', () => {
+    const fns = LANGUAGES.ps.findFunctions("function C { param($Url = '') }\nfunction Get-Things {\n    $x\n}")
+    expect(fns.map((f) => f.usage)).toEqual(['C [-Url <value>]', 'Get-Things'])
+  })
+
+  it('keeps an array type and skips attributes with arguments', () => {
+    const [fn] = LANGUAGES.ps.findFunctions('function S {\n    param([IntPtr[]]$Windows, [Parameter(Mandatory)][AllowEmptyString()][string]$Name)\n}')
+    expect(fn.doc.params.map((p) => p.type)).toEqual(['IntPtr[]', 'string'])
+    expect(fn.usage).toBe('S <Windows> <Name>')
+  })
+
+  it('reads no docs across a blank line, from #region or from #Requires', () => {
+    const none = (text: string) => LANGUAGES.ps.findFunctions(text)[0].doc.form
+    expect(none('<#\n.SYNOPSIS\nOld.\n#>\n\nfunction A {\n}')).toBe('none')
+    expect(none('#region Helpers\nfunction A {\n}')).toBe('none')
+    expect(none('#Requires -Version 5\nfunction A {\n}')).toBe('none')
+  })
+
+  it('lists a function under half-typed docs or with an unclosed param list', () => {
+    expect(LANGUAGES.ps.findFunctions('<#\n.SYNOPSIS\nHalf typed\nfunction A {\n}')[0].doc.form).toBe('none')
+    const [fn] = LANGUAGES.ps.findFunctions('function B {\n    param([string]$Exe, [int]$N = (Get-X')
+    expect(fn.name).toBe('B')
+    expect(fn.params[0]).toBe('Exe')
+  })
+
+  it('builds the usage lines of real library functions', () => {
+    const usage = (path: string, name: string) =>
+      LANGUAGES.ps.findFunctions(readRepoText(path)).find((f) => f.name === name)!.usage
+    expect(usage('powershell/lib/WindowOps.ps1', 'Wait-Window')).toBe('Wait-Window <WinTitle> [-Active] [-TimeoutMs <int>]')
+    expect(usage('powershell/commands/helper.ps1', 'ActivateOrOpen')).toBe('ActivateOrOpen <Exe> <Program> [-Arguments <string>]')
+    expect(usage('powershell/lib/Input.ps1', 'Send-Click')).toBe('Send-Click <X> <Y> [-Button <string>]')
+  })
 })
 
 describe('language table', () => {

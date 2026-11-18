@@ -214,11 +214,16 @@ function New-E2eOpenerCase {
             $ctx.Window = Wait-E2eNewWindow $ctx.Case.WinTitle -Before $ctx.Before -Active -TimeoutMs $ctx.Case.TimeoutMs
             $ctx.Window | Should -Not -BeNullOrEmpty -Because "a window that fits '$($ctx.Case.WinTitle -join "' or '")' must open and come forward (in front: $(Get-E2eForegroundText))"
             if ($ctx.Case.SecondPress) {
+                # A program that is still starting may swap or cloak its first window: wait until the window
+                # has stayed on the screen for a second.
+                $steady = Wait-E2eCondition { if ([Macropad.WindowApi]::Exists($ctx.Window) -and -not [OmbE2e.Dwm]::Cloaked($ctx.Window)) { Wait-Pump 1000; [Macropad.WindowApi]::Exists($ctx.Window) -and -not [OmbE2e.Dwm]::Cloaked($ctx.Window) } } -TimeoutMs 6000
+                $steady | Should -BeTrue -Because "the window that came forward must stay on the screen ($(Get-E2eWindowReport $ctx.Case.WinTitle))"
+                $ctx.AfterFirst = "the first press's window $($ctx.Window); after the first press: $(Get-E2eWindowReport $ctx.Case.WinTitle)"
                 [void](Use-E2eStandin 'B')
                 Wait-ScreenChange
                 Invoke-E2eMacroKey $ctx.Case.Slot
                 $again = Wait-E2eCondition { if ([Macropad.WindowApi]::Foreground() -eq $ctx.Window) { $true } } -TimeoutMs 6000
-                $again | Should -BeTrue -Because "a second press must bring the same window forward (in front: $(Get-E2eForegroundText); windows that fit, hidden ones too: $(Get-E2eWindowReport $ctx.Case.WinTitle))"
+                $again | Should -BeTrue -Because "a second press must bring the same window forward (in front: $(Get-E2eForegroundText); windows that fit, hidden ones too: $(Get-E2eWindowReport $ctx.Case.WinTitle); $($ctx.AfterFirst))"
                 Wait-Pump 1000
                 # PseudoConsoleWindow is the helper window Windows makes for a shell that Windows Terminal
                 # shows (ConPTY); it belongs to the first press's shell, not to a second one.

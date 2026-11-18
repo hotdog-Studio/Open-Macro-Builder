@@ -471,11 +471,13 @@ function Stop-E2eLaunched {
 # ---------------------------------------------------------------------------------------------------
 # Windows that commands open.
 
-# The visible windows that fit any of the WinTitles (Find-Window's form), as a list of handles.
+# The windows on the screen that fit any of the WinTitles (Find-Window's form), as a list of handles.
 function Get-E2eWindows {
-    param([string[]]$WinTitle)
+    param([string[]]$WinTitle, [switch]$IncludeCloaked)
     $seen = [System.Collections.Generic.List[IntPtr]]::new()
-    foreach ($t in $WinTitle) { foreach ($h in (Find-Window $t -All)) { if (-not $seen.Contains($h)) { $seen.Add($h) } } }
+    # A cloaked window (another virtual desktop, a Store app's frame that is starting or closing) counts as
+    # visible to Windows but is not on the screen; it is left out.
+    foreach ($t in $WinTitle) { foreach ($h in (Find-Window $t -All)) { if (-not $seen.Contains($h) -and ($IncludeCloaked -or -not [OmbE2e.Dwm]::Cloaked($h))) { $seen.Add($h) } } }
     , $seen.ToArray()
 }
 
@@ -483,7 +485,8 @@ function Get-E2eWindows {
 function Get-E2eForeignWindows {
     param([string[]]$WinTitle)
     $ours = @($script:E2eRun.Processes | ForEach-Object { $_.Pid }) + @(Get-E2eRunProcesses | ForEach-Object { [int]$_.ProcessId })
-    , @(foreach ($h in (Get-E2eWindows $WinTitle)) {
+    # A person's window counts even while Windows cloaks it (a suspended Store app, another desktop).
+    , @(foreach ($h in (Get-E2eWindows $WinTitle -IncludeCloaked)) {
             if ($script:E2eRun.Windows -contains $h) { continue }
             $i = Get-WindowInfo $h
             if ($ours -notcontains $i.Pid) { "'$($i.Title)' ($($i.Exe))" }

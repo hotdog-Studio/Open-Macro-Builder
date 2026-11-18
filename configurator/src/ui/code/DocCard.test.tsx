@@ -109,6 +109,12 @@ describe('DocCard', () => {
     expect(items.map((li) => li.textContent)).toEqual(['X int'])
   })
 
+  it('leaves out a type that is the same word as the name', () => {
+    const text = '/**\n * Opens it.\n * @param {Macro} Macro - The macro object.\n */\nOpenIt(Macro)\n{\n}\n'
+    const { container } = render(<DocCard entry={entryOf('ahk/commands/helper.ahk', text, 'OpenIt')} />)
+    expect(container.querySelector('li')!.firstElementChild!.textContent).toBe('Macro')
+  })
+
   it('says what a default means in plain words', () => {
     const text = [
       'function Set-It {',

@@ -24,12 +24,16 @@ function paramNotes(p: ParamDoc): string[] {
   return notes
 }
 
+/** The type worth showing beside the name: none when it is the same word as the name (`{Macro} Macro`). */
+const typeOf = (p: ParamDoc): string => (p.type.toLowerCase() === p.name.toLowerCase() ? '' : p.type)
+
 function ParamRow({ param, notes }: Readonly<{ param: ParamDoc; notes: string[] }>) {
+  const type = typeOf(param)
   return (
     <li className="flex flex-col">
       <span>
         <span className="font-mono text-[12px] text-sky-200">{param.name}</span>
-        {param.type !== '' && <span className="font-mono text-[11px] text-zinc-500">{` ${param.type}`}</span>}
+        {type !== '' && <span className="font-mono text-[11px] text-zinc-500">{` ${type}`}</span>}
       </span>
       {param.text !== '' && <span className="text-zinc-300">{param.text}</span>}
       {notes.map((note) => (
@@ -47,7 +51,7 @@ export function DocCard({ entry }: Readonly<{ entry: DictEntry }>) {
   // A parameter gets a row when anything is known of it: a note, a type, a default or its values.
   const rows = fn.doc.params
     .map((param) => ({ param, notes: paramNotes(param) }))
-    .filter(({ param, notes }) => param.text !== '' || param.type !== '' || notes.length > 0)
+    .filter(({ param, notes }) => param.text !== '' || typeOf(param) !== '' || notes.length > 0)
   return (
     <div className="max-w-md select-text space-y-2 p-3 text-[12px] text-zinc-300">
       <p className={CODE}>{fn.usage}</p>

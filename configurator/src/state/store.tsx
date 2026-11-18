@@ -13,11 +13,13 @@ export type Tab = 'start' | 'shape' | 'layers' | 'macros' | 'commands'
 
 /**
  * The one message showing, as a floating toast: a notice (`info`), an action that was refused
- * (`warning`) or something that failed (`error`, which stays until it is dismissed).
+ * (`warning`) or something that failed (`error`, which stays until it is dismissed). A message
+ * that `stays` is not taken away by the clock whatever its kind.
  */
 export interface Banner {
   text: string
   kind: 'info' | 'warning' | 'error'
+  stays?: boolean
 }
 
 /** Everything read from an opened folder. */
@@ -149,7 +151,7 @@ function loadedState(session: Session, settings: Settings, tab: Tab = 'shape'): 
     tab,
     selectedKey: null,
     selectedLayer: null,
-    banner: notices.length > 0 ? { text: notices.join('\n'), kind: 'info' } : null,
+    banner: notices.length > 0 ? { text: notices.join('\n'), kind: 'info', stays: true } : null,
     saveDialog: null,
     outsideChange: null,
     commands: initialCommands(settings),

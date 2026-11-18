@@ -16,7 +16,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 - Configurator: a folder without `local/config.json` is now offered only a copy in `local/`. The option to edit the shared example `config.json` itself is gone, so the example stays as everyone gets it.
 - Configurator: the right-hand panel on Pad shape, Layers and Macros grows to fit the overlay preview, so the preview shows whole without a sideways scrollbar of its own. The panel stops at half the window, and a preview wider than that scrolls as before.
-- Configurator: messages float over the editor and no longer push it down. Notices are blue and refused actions amber, and both leave by themselves after a few seconds. Failures are red and stay until dismissed.
+- Configurator: messages float over the editor and no longer push it down. Notices are blue and refused actions amber, and both leave by themselves after a few seconds. Failures are red and stay until dismissed, and so do the notices shown when a folder is opened.
 - Configurator: the New command file dialog and the `local/config.json` prompt no longer mention git, because a folder the configurator sets up is a plain copy and not a clone. The comment at the top of a new `local/ahk/commands.ahk` changed with them.
 - Desktop app: the two links in the Get started guide, to the AutoHotkey download page and to the contributing guide, open in the default browser. Every other address is still refused.
 

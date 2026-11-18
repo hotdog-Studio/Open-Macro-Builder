@@ -51,7 +51,7 @@ One file per tab (`GetStarted`, `ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsT
 
 `GetStarted.tsx` is the guide for newcomers. `OpenScreen.tsx` shows it too, before any folder is open, so it reads only what `useApp()` gives and takes the folder's name and the versions to describe as props.
 
-`Toast.tsx` shows the one message the store holds (`banner`) as a floating toast. A notice or a refused action leaves by itself, and a failure stays until dismissed.
+`Toast.tsx` shows the one message the store holds (`banner`) as a floating toast. A notice or a refused action leaves by itself. A failure stays until dismissed, and so does a notice raised while a folder loads.
 
 `DocCard` (`code/DocCard.tsx`) is the one card of a function's docs. `hoverDocs` shows it over a name in the code editor, and `OtherCommands` shows it beside a row of the right panel's list of what a command can call.
 

@@ -25,14 +25,17 @@ function Probe() {
 }
 
 const enc = new TextEncoder()
+const NOT_UTF8 = 'ahk/commands/broken.ahk is not UTF-8 text; its commands are listed, but the configurator will not edit it.'
 
 /**
  * The example pad open on the Pad shape tab, with real timers; the test turns fake ones on when time
  * matters. From then on it acts with fireEvent: Testing Library's own waiting after a user-event
  * action never ends under Vitest's fake timers.
  */
-async function openPad(options: { failWrites?: boolean } = {}) {
+async function openPad(options: { failWrites?: boolean; brokenCommand?: boolean } = {}) {
   const folder = memoryFolderFromRepo(['config.json', 'ahk/main.ahk', 'ahk/commands', 'powershell/commands', 'img'])
+  // A command file that is not UTF-8 makes the folder open with a notice.
+  if (options.brokenCommand) await folder.writeBytes('ahk/commands/broken.ahk', new Uint8Array([0x4f, 0x6b, 0xe9, 0x0a]))
   await folder.writeBytes('local/config.json', enc.encode(readRepoText('config.json')))
   await folder.writeBytes(SETTINGS_PATH, enc.encode('{ "languages": ["ahk"] }\n'))
   if (options.failWrites) {
@@ -48,7 +51,10 @@ async function openPad(options: { failWrites?: boolean } = {}) {
     </AppProvider>,
   )
   const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'Open folder' }))
+  // With timers faked from the start, the timer of a notice raised while the folder opens is a fake
+  // one too. user-event never finishes its waits under fake timers, so that case clicks with fireEvent.
+  if (options.brokenCommand) fireEvent.click(screen.getByRole('button', { name: 'Open folder' }))
+  else await user.click(screen.getByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
   return { user }
 }
@@ -75,6 +81,10 @@ describe('toastLifetime', () => {
   it('a long notice leaves after fifteen seconds at most', () => {
     expect(toastLifetime({ text: 'x'.repeat(400), kind: 'info' })).toBe(15000)
   })
+
+  it('a notice that stays has no time, however short', () => {
+    expect(toastLifetime({ text: 'Short.', kind: 'info', stays: true })).toBeNull()
+  })
 })
 
 describe('messages as toasts', () => {
@@ -91,6 +101,37 @@ describe('messages as toasts', () => {
     expect(screen.queryByRole('alert')).toBeTruthy()
     wait(1)
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a notice raised when a folder opens stays until it is dismissed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await openPad({ brokenCommand: true })
+    const notice = screen.getByText(NOT_UTF8).parentElement!
+    expect(notice.tagName).toBe('OUTPUT')
+    expect(notice.className).toContain('border-sky-500')
+    // Let the message start its countdown, if it has one: its effect runs once the page is idle.
+    await act(async () => {})
+    wait(10 * 60 * 1000)
+    expect(screen.queryByText(NOT_UTF8)).toBeTruthy()
+    fireEvent.click(within(notice).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByText(NOT_UTF8)).toBeNull()
+  })
+
+  it('a notice raised by adding a key still leaves by itself', async () => {
+    await openPad()
+    vi.useFakeTimers()
+    // The first layer has one macro past the last key, which the new key takes.
+    const first = Object.values(seen.state.ws.slots)[0]
+    const layers = { ...seen.state.ws.slots }
+    for (const [key, layer] of Object.entries(layers)) {
+      if (layer === first) layers[key] = { ...layer, overflowMacros: [{ action: 'Lock', name: 'Lock' }] }
+    }
+    act(() => seen.dispatch({ type: 'edit', ws: { ...seen.state.ws, slots: layers } }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Add key' }))
+    const text = `Layer "${first.title}" had a macro past the last key; it is now on F1.`
+    expect(screen.getByText(text).parentElement!.tagName).toBe('OUTPUT')
+    wait(15000)
+    expect(screen.queryByText(text)).toBeNull()
   })
 
   it('a failed save shows a red message that stays until dismissed', async () => {

@@ -3,7 +3,7 @@ import { useApp, type Action, type Banner } from '../state/store'
 
 /** Milliseconds until a message leaves by itself, or null when it stays until it is dismissed. */
 export function toastLifetime(banner: Banner): number | null {
-  if (banner.kind === 'error') return null
+  if (banner.kind === 'error' || banner.stays) return null
   return Math.min(15000, 4000 + 40 * banner.text.length)
 }
 

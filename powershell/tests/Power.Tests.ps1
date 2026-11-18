@@ -3,9 +3,9 @@
 BeforeAll {
     $ps = Split-Path $PSScriptRoot -Parent
     foreach ($f in 'Native', 'Interop', 'Pump', 'Window', 'WinTitle', 'WindowOps') { . "$ps\lib\$f.ps1" }
-    . "$ps\commands\power.ps1"
     # The functions of power.ps1 other than Lock-Workstation and Invoke-SuspendState that call
     # [Macropad.Native] themselves, and any such call outside a function. The tests cannot mock those.
+    # It reads the file as text and runs none of it.
     function Get-DirectNativeCall {
         $ast = [System.Management.Automation.Language.Parser]::ParseFile("$ps\commands\power.ps1", [ref]$null, [ref]$null)
         foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
@@ -15,6 +15,9 @@ BeforeAll {
         $ast.EndBlock.Statements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] -and $_.Extent.Text -match '\[Macropad\.Native\]::' } |
             ForEach-Object { $_.Extent.Text }
     }
+    # Loaded only when it calls Windows through the wrappers alone: a call outside any function would
+    # run as the file is loaded, before anything could stop it.
+    if (-not @(Get-DirectNativeCall)) { . "$ps\commands\power.ps1" }
 }
 Describe 'Power commands reach Windows only through the wrappers the tests mock' {
     It 'calls [Macropad.Native] only inside Lock-Workstation and Invoke-SuspendState' {

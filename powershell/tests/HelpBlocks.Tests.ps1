@@ -85,6 +85,6 @@ Describe 'Help blocks of the functions for commands' {
             $Functions | Where-Object { $_.File -eq $file -and ($want -eq '*' -or $want -contains $_.Name) } | ForEach-Object Name
         }
         ($Functions | Where-Object { $_.Help -and $listed -notcontains $_.Name }).Name | Should -BeNullOrEmpty
-        @($listed).Count | Should -Be 60
+        @($listed).Count | Should -Be 61
     }
 }

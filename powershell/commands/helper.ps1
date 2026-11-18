@@ -52,15 +52,19 @@ function Open {
 .SYNOPSIS
 Makes a program's window the active one, starting the program if needed.
 .DESCRIPTION
-If the program has no visible window, it is started and up to 5 seconds are given for a window to appear. Then, unless one of the program's windows is already the active window, its topmost window is activated. Unlike ActivateOrOpen, it never moves on to another window of the program when one is already active.
+If the program has no visible window, it is started and up to 5 seconds are given for a window to appear. Then, unless one of the program's windows is already the active window, its topmost window is activated. Unlike ActivateOrOpen, it never moves on to another window of the program when one is already active. Check the result before sending keys, so that they never go to another program.
 .PARAMETER Exe
 The program's executable name as Task Manager shows it, such as 'code.exe'. It is how the program's windows are found.
 .PARAMETER Program
 What to start when the program has no window: a program name, or the full path of a file.
 .PARAMETER Arguments
 Text given to the program on its command line when it is started. Not used when a window already exists.
+.OUTPUTS
+True when one of the program's windows is the active window at the end. False when no window appeared within 5 seconds, or when Windows did not let the window come to the front.
 .EXAMPLE
 EnsureActiveOrOpen 'notepad.exe' 'notepad'
+.EXAMPLE
+if (EnsureActiveOrOpen 'notepad.exe' 'notepad') { Send-Chord 'Ctrl+s' }
 #>
 function EnsureActiveOrOpen {
     param([string]$Exe, [string]$Program, [string]$Arguments = '')
@@ -69,9 +73,10 @@ function EnsureActiveOrOpen {
         Start-Program $Program $Arguments
         $windows = Wait-ProcessWindow $Exe 5
     }
-    if ($windows.Count -gt 0 -and $windows -notcontains [Macropad.Native]::GetForegroundWindow()) {
-        [void](Set-ActiveWindow $windows[0])
-    }
+    if ($windows.Count -eq 0) { return $false }
+    # Test-WindowActive with no WinTitle gives the handle of the active window, whatever it is.
+    if ($windows -contains (Test-WindowActive)) { return $true }
+    [bool](Set-ActiveWindow $windows[0])
 }
 
 <#
@@ -143,7 +148,7 @@ Message $Macro
 #>
 function Message {
     param($Macro)
-    [void][System.Windows.Forms.MessageBox]::Show($Macro.Description, $Macro.Name)
+    Show-MessageBox $Macro.Description $Macro.Name
 }
 
 <#
@@ -158,9 +163,25 @@ ReplaceMe $Macro
 #>
 function ReplaceMe {
     param($Macro)
-    [void][System.Windows.Forms.MessageBox]::Show("Replace $($Macro.Name) with your own!", $Macro.Name)
+    Show-MessageBox "Replace $($Macro.Name) with your own!" $Macro.Name
 }
 
+<#
+.SYNOPSIS
+Shows a message box with an OK button and waits until it is closed, like AutoHotkey's MsgBox.
+.DESCRIPTION
+The macro waits until the box is closed. Message and ReplaceMe use it.
+.PARAMETER Text
+The text in the box.
+.PARAMETER Title
+The title of the box. Leave it out for none.
+.EXAMPLE
+Show-MessageBox 'The backup has finished.' 'Backup'
+#>
+function Show-MessageBox {
+    param([string]$Text, [string]$Title = '')
+    [void][System.Windows.Forms.MessageBox]::Show($Text, $Title)
+}
 <#
 .SYNOPSIS
 Lists the open File Explorer windows.

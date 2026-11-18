@@ -55,24 +55,21 @@ Open(Window, Program, Args := "")
  * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
  * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
+ * @returns {Boolean} True when a matching window is the active window at the end; false when no window appeared within 5 seconds or Windows did not let it come to the front. Check it before sending keys.
  * @example EnsureActiveOrOpen("ahk_exe notepad.exe", "notepad")
  */
 EnsureActiveOrOpen(Window, Program, Args := "")
 {
    ; check if Window exists
-   if WinExist(Window)
-	{
-		if !WinActive(Window) {
-            WinActivate  ; Uses the last found Window.
-        }
-	}
-	else
-	{   ; else start requested Program
+   if !WinExist(Window)
+	{   ; start requested Program
         Run(ProgramCommandLine(Program, Args))
-        if WinWait(Window,,5) && !WinActive(Window)  ; WinWait gives 0 when no window appeared in 5 seconds
-            WinActivate  ; the window WinWait found
+        if !WinWait(Window,,5)  ; 0 when no window appeared in 5 seconds
+            return false
 	}
-	return
+	if !WinActive(Window)
+        WinActivate  ; the window WinExist or WinWait found
+	return WinActive(Window) != 0
 }
 
 /**

@@ -64,7 +64,7 @@ function editing(): StoredState {
   const configFile = { path: 'config.json', text: '', eol: '\n' as const, bom: false, version: 'v1' }
   return reducer(initialState, {
     type: 'loaded',
-    session: { folder, configFile, saved: ws, ws, catalog: [], commandFiles: [], iconSets: [] },
+    session: { folder, configFile, saved: ws, ws, catalog: [], commandFiles: [], iconSets: [], libraryFiles: [] },
     settings: { languages: ['ahk'] },
   })
 }

@@ -16,11 +16,14 @@ import {
   LANGUAGES,
   mergeRescan,
   readCommandFile,
+  sameLibrary,
   scanCommands,
+  scanLibrary,
   withCommandFile,
   type CommandFile,
   type LangId,
   type Language,
+  type LibraryFile,
 } from '../core/languages'
 import type { Platform, SyntaxReport } from '../platform/types'
 import type { AppActions, SaveResult } from './actions'
@@ -192,6 +195,20 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const list = same ? snapshot : next
     if (!same) files.set(list)
     dispatch({ type: 'command-files', files: list, changed })
+    await recheckLibrary(folder)
+  }
+
+  /** Reads the library again; a failed read keeps the one the state holds. */
+  async function recheckLibrary(folder: FolderAccess): Promise<void> {
+    let fresh: LibraryFile[]
+    try {
+      fresh = await scanLibrary(folder)
+    } catch {
+      return
+    }
+    const state = deps.getState()
+    if (deps.folder() !== folder || state.screen !== 'edit' || sameLibrary(state.libraryFiles, fresh)) return
+    dispatch({ type: 'library-files', files: fresh })
   }
 
   /** The platform's syntax check of a saved file; null without one. A check that fails says why. */

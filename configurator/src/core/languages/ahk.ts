@@ -295,6 +295,8 @@ export const ahk: Language = {
   sharedDir: 'ahk/commands',
   personalDir: 'local/ahk',
   ignore: ['local/ahk/commands.ahk'],
+  libraryDir: null,
+  lineComment: ';',
   findFunctions,
   renameParam,
   starterFile: (pair) => `#Requires AutoHotkey v2.0\n\n; ${pair} commands.\n`,

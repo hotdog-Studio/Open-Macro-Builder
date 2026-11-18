@@ -60,6 +60,10 @@ export interface Language {
   personalDir: string
   /** Files under the personal folder that hold no commands (include hubs). */
   ignore: string[]
+  /** The folder of functions for commands, relative to the opened folder; null when the language has none. */
+  libraryDir: string | null
+  /** What starts a comment line. */
+  lineComment: '#' | ';'
   findFunctions(text: string): FunctionInfo[]
   /**
    * Renames the parameter of `fn` to `to`: on its definition line and, as a whole word, in its

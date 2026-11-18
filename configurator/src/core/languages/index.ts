@@ -10,13 +10,16 @@ export {
   commandFileNotices,
   commandFilePath,
   definedNames,
+  libraryTitle,
   mergeRescan,
   readCommandFile,
+  sameLibrary,
   scanCommands,
+  scanLibrary,
   sortCommandFiles,
   withCommandFile,
 } from './scan'
-export type { CatalogEntry, CommandFile } from './scan'
+export type { CatalogEntry, CommandFile, LibraryFile } from './scan'
 
 export const LANGUAGES: Record<LangId, Language> = { ahk, ps }
 export const LANG_IDS: LangId[] = ['ahk', 'ps']

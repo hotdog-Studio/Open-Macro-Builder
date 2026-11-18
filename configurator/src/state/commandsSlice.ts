@@ -1,5 +1,12 @@
 import { commandPairs, type CommandPair } from '../core/commands/pairs'
-import { commandCatalog, mergeRescan, withCommandFile, type CommandFile, type LangId } from '../core/languages'
+import {
+  commandCatalog,
+  mergeRescan,
+  withCommandFile,
+  type CommandFile,
+  type LangId,
+  type LibraryFile,
+} from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { TextFile } from '../core/folder/textFile'
 import type { SyntaxReport } from '../platform/types'
@@ -72,6 +79,8 @@ export type CommandAction =
    * edits keep theirs), and the kept files whose version on disk differs (null: the file is gone).
    */
   | { type: 'command-files'; files: CommandFile[]; changed: { path: string; version: string | null }[] }
+  /** A recheck of the folder read the library again and found it changed. */
+  | { type: 'library-files'; files: LibraryFile[] }
   /** Hides the changed-on-disk banner of a file until it changes again. */
   | { type: 'command-dismiss'; path: string }
   | { type: 'command-dialog'; dialog: CommandDialog | null }
@@ -236,6 +245,8 @@ export function commandsReducer(state: EditCore, action: CommandAction): EditCor
       }
     case 'command-files':
       return filesRechecked(state, action)
+    case 'library-files':
+      return { ...state, libraryFiles: action.files }
     case 'command-dismiss': {
       const was = c.outside[action.path]
       if (!was) return state

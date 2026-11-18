@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { memoryFolderFromRepo } from '../../../test/repo'
 import { MemoryFolder } from '../folder/memory'
+import { compareText } from '../folder/path'
 import {
   commandCatalog,
   commandFileAt,
   commandFileNotices,
   commandFilePath,
   definedNames,
+  libraryTitle,
   mergeRescan,
   readCommandFile,
+  sameLibrary,
   scanCommands,
+  scanLibrary,
   sortCommandFiles,
   withCommandFile,
 } from './index'
@@ -221,5 +225,67 @@ describe('memoryFolderFromRepo', () => {
   it('refuses paths under local/', () => {
     expect(() => memoryFolderFromRepo(['local/config.json'])).toThrow(/local/)
     expect(() => memoryFolderFromRepo(['Local\\ahk'])).toThrow(/local/)
+  })
+})
+
+describe('scanLibrary', () => {
+  it('reads the PowerShell library by file name, and nothing of AutoHotkey', async () => {
+    const lib = await scanLibrary(memoryFolderFromRepo(['powershell/lib', 'ahk/lib']))
+    expect(lib.every((f) => f.lang === 'ps')).toBe(true)
+    expect(lib.map((f) => f.name)).toEqual([...lib.map((f) => f.name)].sort(compareText))
+    expect(lib.some((f) => f.path.includes('/cs/'))).toBe(false)
+    const input = lib.find((f) => f.name === 'Input')!
+    expect(input.path).toBe('powershell/lib/Input.ps1')
+    expect(input.functions.map((f) => f.name)).toContain('Send-Chord')
+  })
+
+  it('gives no library for a folder without one', async () => {
+    expect(await scanLibrary(new MemoryFolder('empty', {}))).toEqual([])
+  })
+
+  it('titles a file by its first comment line, else by its name', async () => {
+    const enc = new TextEncoder()
+    const folder = new MemoryFolder('lib', {
+      'powershell/lib/A.ps1': enc.encode('# Keys and mouse clicks\n# More.\nfunction X {\n}\n'),
+      'powershell/lib/B.ps1': enc.encode('function Y {\n}\n'),
+      'powershell/lib/C.ps1': enc.encode('#Requires -Version 5\n'),
+      'powershell/lib/D.ps1': enc.encode('<#\n.SYNOPSIS\nA script.\n#>\n'),
+      'powershell/lib/notes.txt': enc.encode('# Not a script\n'),
+    })
+    expect((await scanLibrary(folder)).map((f) => [f.name, f.title])).toEqual([
+      ['A', 'Keys and mouse clicks'],
+      ['B', 'B'],
+      ['C', 'C'],
+      ['D', 'D'],
+    ])
+  })
+
+  it('still reads a library file that is not UTF-8', async () => {
+    const bytes = new Uint8Array([...new TextEncoder().encode('function Z {\n}\n# caf'), 0xe9, 0x0a])
+    const lib = await scanLibrary(new MemoryFolder('lib', { 'powershell/lib/Z.ps1': bytes }))
+    expect(lib[0].functions.map((f) => f.name)).toEqual(['Z'])
+  })
+
+  it('sameLibrary compares paths and versions', async () => {
+    const a = await scanLibrary(memoryFolderFromRepo(['powershell/lib']))
+    expect(sameLibrary(a, [...a])).toBe(true)
+    expect(sameLibrary(a, a.slice(1))).toBe(false)
+    expect(sameLibrary(a, [{ ...a[0], version: 'other' }, ...a.slice(1)])).toBe(false)
+  })
+})
+
+describe('libraryTitle', () => {
+  it('drops every leading comment mark and the spaces around them, in either language', () => {
+    expect(libraryTitle('ps', '## Keys\n', 'N')).toBe('Keys')
+    expect(libraryTitle('ps', '  #   Keys  \n', 'N')).toBe('Keys')
+    expect(libraryTitle('ahk', ';; Keys\n', 'N')).toBe('Keys')
+    expect(libraryTitle('ahk', '# Keys\n', 'N')).toBe('N')
+  })
+
+  it('falls back to the name for a mark alone, #region, #endregion and an empty file', () => {
+    expect(libraryTitle('ps', '#\n', 'N')).toBe('N')
+    expect(libraryTitle('ps', '#Region Keys\n', 'N')).toBe('N')
+    expect(libraryTitle('ps', '#endregion\n', 'N')).toBe('N')
+    expect(libraryTitle('ps', '', 'N')).toBe('N')
   })
 })

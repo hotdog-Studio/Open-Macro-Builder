@@ -235,6 +235,8 @@ export const ps: Language = {
   sharedDir: 'powershell/commands',
   personalDir: 'local/powershell/commands',
   ignore: [],
+  libraryDir: 'powershell/lib',
+  lineComment: '#',
   findFunctions,
   renameParam,
   starterFile: (pair) => `# ${pair} commands.\n`,

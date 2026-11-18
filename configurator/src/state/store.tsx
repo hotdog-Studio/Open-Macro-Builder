@@ -3,7 +3,7 @@ import type { Workspace } from '../core/config/model'
 import { writeConfig } from '../core/config/write'
 import type { TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import type { CatalogEntry, CommandFile, LangId } from '../core/languages'
+import type { CatalogEntry, CommandFile, LangId, LibraryFile } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { Platform } from '../platform/types'
 import { createActions, type AppActions } from './actions'
@@ -28,6 +28,8 @@ export interface Session {
   catalog: CatalogEntry[]
   commandFiles: CommandFile[]
   iconSets: string[]
+  /** The files of the library folder (powershell/lib), by name. */
+  libraryFiles: LibraryFile[]
 }
 
 /** The open screen: nothing loaded. */
@@ -191,6 +193,7 @@ function editReducer(state: EditCore, action: Action): EditCore {
     case 'command-after-save':
     case 'command-file':
     case 'command-files':
+    case 'library-files':
     case 'command-dismiss':
     case 'command-dialog':
     case 'jump':

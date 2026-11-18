@@ -179,3 +179,70 @@ export function definedNames(files: CommandFile[], lang: LangId): Set<string> {
   }
   return names
 }
+
+/** One file of a language's library folder: functions that commands call. */
+export interface LibraryFile {
+  lang: LangId
+  /** 'powershell/lib/Input.ps1' */
+  path: string
+  /** The file name without its extension: 'Input'. */
+  name: string
+  title: string
+  /** The TextFile's. */
+  version: string | null
+  functions: FunctionInfo[]
+}
+
+/**
+ * First lines that open a script or a region instead of describing the file. A `<#` line does not
+ * start with the PowerShell mark, so it needs no check.
+ */
+const NOT_A_TITLE = /^#(?:requires|region|endregion)\b/i
+
+/** The file's first line without its comment mark when that line is a comment; else `name`. */
+export function libraryTitle(lang: LangId, text: string, name: string): string {
+  const mark = BY_ID[lang].lineComment
+  const first = text.split('\n', 1)[0].trim()
+  if (!first.startsWith(mark) || NOT_A_TITLE.test(first)) return name
+  let from = 0
+  while (first[from] === mark) from++
+  return first.slice(from).trim() || name
+}
+
+async function readLibraryFile(folder: FolderAccess, lang: Language, path: string): Promise<LibraryFile | null> {
+  const read = await readTextFileLenient(folder, path)
+  if (!read) return null
+  const name = path.slice(path.lastIndexOf('/') + 1, path.length - lang.ext.length)
+  return {
+    lang: lang.id,
+    path,
+    name,
+    title: libraryTitle(lang.id, read.file.text, name),
+    version: read.file.version,
+    functions: lang.findFunctions(read.file.text),
+  }
+}
+
+/** The files directly in each language's library folder, by name. Never throws for a missing folder. */
+export async function scanLibrary(folder: FolderAccess): Promise<LibraryFile[]> {
+  const found = await Promise.all(
+    ALL.map(async (lang) => {
+      if (lang.libraryDir === null) return []
+      const dir = lang.libraryDir
+      const entries = await folder.list(dir)
+      const paths = entries
+        .filter((e) => e.kind === 'file' && e.name.toLowerCase().endsWith(lang.ext))
+        .map((e) => `${dir}/${e.name}`)
+      return Promise.all(paths.map((path) => readLibraryFile(folder, lang, path)))
+    }),
+  )
+  return found
+    .flat()
+    .filter((file) => file !== null)
+    .sort((a, b) => compare(a.name, b.name))
+}
+
+/** True when both lists hold the same paths and versions in the same order. */
+export function sameLibrary(a: LibraryFile[], b: LibraryFile[]): boolean {
+  return a.length === b.length && a.every((f, i) => f.path === b[i].path && f.version === b[i].version)
+}

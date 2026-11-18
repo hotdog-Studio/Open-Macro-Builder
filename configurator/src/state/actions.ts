@@ -17,6 +17,7 @@ import {
   definedNames,
   LANG_IDS,
   scanCommands,
+  scanLibrary,
   type CommandFile,
   type LangId,
 } from '../core/languages'
@@ -171,7 +172,17 @@ async function readSession(folder: FolderAccess, configPath: string): Promise<Se
   // A command file that is not UTF-8 is listed but never edited; the load notices say so.
   const ws = { ...parsed, notices: [...parsed.notices, ...commandFileNotices(commandFiles)] }
   const iconSets = await listIconSets(folder)
-  return { folder, configFile, saved: ws, ws, catalog: commandCatalog(commandFiles), commandFiles, iconSets }
+  const libraryFiles = await scanLibrary(folder)
+  return {
+    folder,
+    configFile,
+    saved: ws,
+    ws,
+    catalog: commandCatalog(commandFiles),
+    commandFiles,
+    iconSets,
+    libraryFiles,
+  }
 }
 
 /**

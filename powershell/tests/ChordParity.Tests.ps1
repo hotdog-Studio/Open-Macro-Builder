@@ -64,7 +64,10 @@ BeforeDiscovery {
             }
         }
         @{ Name = 'custom\vsstudio'; Ahk = 'ahk\commands\custom\vsstudio.ahk'; Ps = 'powershell\commands\custom\vsstudio.ps1'; Skip = @{} }
-        @{ Name = 'custom\automation'; Ahk = 'ahk\commands\custom\automation.ahk'; Ps = 'powershell\commands\custom\automation.ps1'; Skip = @{
+        # This pair compares no keys: both of its commands open a form and press nothing themselves, so
+        # both are skipped. It is listed so that a new command in either file must be compared or skipped
+        # with a reason. The forms' keys are tested in Automation.Tests.ps1.
+        @{ Name = 'custom\automation'; Ahk ='ahk\commands\custom\automation.ahk'; Ps = 'powershell\commands\custom\automation.ps1'; Skip = @{
                 ShowDelayedKeyForm   = 'opens a form; the key is chosen there'
                 ShowDelayedClickForm = 'opens a form; the click is recorded there'
             }

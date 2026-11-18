@@ -99,6 +99,13 @@ function useDropGoneRows(up: boolean, setHover: Dispatch<SetStateAction<Hover>>)
 /** Where the pointer was last seen, in the window's coordinates; null once it has left the window. */
 type Seen = { x: number; y: number } | null
 
+/**
+ * Where a leave left the pointer: nowhere when it went to no element (out of the window), whatever point
+ * the event gives. The browser's leave then has no relatedTarget; React's has the window.
+ */
+const pointLeftAt = (e: { clientX: number; clientY: number; relatedTarget: EventTarget | null }): Seen =>
+  e.relatedTarget instanceof Node ? { x: e.clientX, y: e.clientY } : null
+
 /** What the rows' handlers do to the hover state. */
 interface HoverActions {
   set: (change: Partial<Hover>) => void
@@ -120,7 +127,7 @@ interface HoverActions {
 function rowHandlers(entry: DictEntry, onClick: () => void, actions: HoverActions, describedBy: string | undefined): RowHover {
   return {
     onMouseEnter: (e) => actions.enterRow(entry.id, e.currentTarget, { x: e.clientX, y: e.clientY }),
-    onMouseLeave: (e) => actions.lookAt({ x: e.clientX, y: e.clientY }),
+    onMouseLeave: (e) => actions.lookAt(pointLeftAt(e)),
     onFocus: (e) => actions.set({ focus: { id: entry.id, el: e.currentTarget } }),
     onBlur: () => actions.set({ focus: null }),
     onClick: () => {
@@ -200,7 +207,7 @@ function usePointerOn(box: RefObject<HTMLDivElement | null>, onPointer: (at: See
     }
     const leave = (e: globalThis.MouseEvent) => {
       setOn(false)
-      onPointer({ x: e.clientX, y: e.clientY })
+      onPointer(pointLeftAt(e))
     }
     el.addEventListener('mouseenter', enter)
     el.addEventListener('mouseleave', leave)

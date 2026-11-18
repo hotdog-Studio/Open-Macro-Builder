@@ -975,6 +975,27 @@ describe('Commands tab: docs on hover', () => {
       }
     })
 
+    it.each<[string, From]>([
+      ['row', 'row'],
+      ['card', 'card'],
+    ])('%s → out of the window, with a leave whose own point is still on it: the card goes', async (_name, from) => {
+      // Dispatched: a real move out of the window gives its events the outside point, so it cannot show a
+      // browser that reports the leave at the last point inside. These are the events of leaving the window,
+      // in the browser's order: a mouseout to nothing (relatedTarget null), then the left element's mouseleave.
+      try {
+        const { spot, tip } = await startFrom(from)
+        const at = spot(from)
+        const under = document.elementFromPoint(at.x, at.y)!
+        const left = from === 'row' ? under.closest('button')! : tip!
+        const init = { clientX: at.x, clientY: at.y, relatedTarget: null }
+        under.dispatchEvent(new MouseEvent('mouseout', { ...init, bubbles: true }))
+        left.dispatchEvent(new MouseEvent('mouseleave', init))
+        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      } finally {
+        await page.viewport(1280, 900)
+      }
+    })
+
     it('a card shown by the keyboard stays wherever the pointer goes, until the row loses the focus or Escape', async () => {
       try {
         const { row, spot } = await startFrom('elsewhere')

@@ -66,7 +66,8 @@ function step(scan: ListScan, ch: string): ListPart {
   if (QUOTES.includes(ch)) scan.quote = ch
   const outside = scan.paren === 0
   scan.paren += PAREN[ch] ?? 0
-  scan.bracket += BRACKET[ch] ?? 0
+  // A `]` too many, while a type is being typed, closes nothing.
+  scan.bracket = Math.max(0, scan.bracket + (BRACKET[ch] ?? 0))
   if (outside) return 'before'
   if (scan.paren === 0) return 'end'
   return ch === ',' && scan.paren === 1 && scan.bracket === 0 ? 'split' : 'text'
@@ -285,6 +286,8 @@ function findFunctions(text: string): FunctionInfo[] {
     const match = DEFINITION.exec(line)
     if (!match) return
     const name = withoutScope(match[1])
+    // `function global:` half typed: no name yet.
+    if (name === '') return
     const params = declaredParams(lines, i, match[0].length)
     const docs = docsAbove(lines, i)
     let doc: FunctionDoc = { ...emptyDoc([]), params }

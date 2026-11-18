@@ -435,6 +435,14 @@ describe('PowerShell findFunctions', () => {
     expect(isCommand(fns[2])).toBe(true)
   })
 
+  it('reads no function from a half-typed scope with no name after it', () => {
+    expect(LANGUAGES.ps.findFunctions('function global:\n    param($Macro)\n}\nfunction B {\n}').map((f) => f.name)).toEqual(['B'])
+  })
+
+  it('keeps the parameters after a stray ] while a type is typed', () => {
+    expect(LANGUAGES.ps.findFunctions('function F {\n    param([int]]$X, $Y, $Z)\n}')[0].params).toEqual(['X', 'Y', 'Z'])
+  })
+
   it('reads past comments inside the parameter list', () => {
     const text = [
       'function Send-Click {',

@@ -28,7 +28,7 @@ Picks which of a program's windows to bring to the front.
 .DESCRIPTION
 Gives the top window of the list, or the bottom one when one of the windows is already the active window, so that repeated presses step through all of a program's windows. This is what AutoHotkey's WinActivateBottom does. It only chooses; it does not activate anything.
 .PARAMETER Windows
-The program's window handles, topmost first, as Get-ProcessWindow returns them.
+The program's window handles, topmost first, as Get-ProcessWindow returns them. A window handle is the number Windows uses to name one window.
 .PARAMETER Foreground
 The handle of the window that is active now. [Macropad.Native]::GetForegroundWindow() gives it.
 .OUTPUTS
@@ -83,7 +83,7 @@ The window handle of the window to activate, such as one from Get-ProcessWindow.
 True when the window is the active one afterwards, False when it is not (or the handle is zero).
 .EXAMPLE
 $windows = Get-ProcessWindow 'notepad.exe'
-Set-ActiveWindow $windows[0]
+if ($windows.Count -gt 0) { Set-ActiveWindow $windows[0] }
 #>
 function Set-ActiveWindow {
     param([Parameter(Mandatory)][IntPtr]$Hwnd)
@@ -118,7 +118,7 @@ Activates the top window of the program, or the bottom one when one of its windo
 .PARAMETER Exe
 The program's executable name as Task Manager shows it, such as 'chrome.exe'.
 .OUTPUTS
-True when the program has a visible window, which is then brought forward; False when it has none.
+True when the program has a visible window and the switch to it was attempted; the result does not say whether Windows allowed it. False when the program has no visible window.
 .EXAMPLE
 Invoke-WindowActivation 'chrome.exe'
 .EXAMPLE

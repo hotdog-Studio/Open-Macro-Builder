@@ -172,7 +172,7 @@ A list of window handles, one for each open File Explorer window; empty when the
 Get-ExplorerWindows
 .EXAMPLE
 $windows = Get-ExplorerWindows
-Set-ActiveWindow $windows[0]
+if ($windows.Count -gt 0) { Set-ActiveWindow $windows[0] }
 #>
 function Get-ExplorerWindows {
     $windows = Find-Window 'ahk_class CabinetWClass' -All

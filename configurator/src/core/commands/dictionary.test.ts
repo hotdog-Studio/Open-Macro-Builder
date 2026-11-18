@@ -62,6 +62,22 @@ describe('buildDictionary', () => {
 
   it('holds only the shown language', () => {
     expect(buildDictionary(input()).entries.every((e) => e.lang === 'ps')).toBe(true)
+    // The only library is PowerShell's: shown in AutoHotkey, none of it may come in.
+    const ahk = buildDictionary(input({ lang: 'ahk', shown: WIN_AHK.file.path }))
+    expect(ahk.entries.length).toBeGreaterThan(0)
+    expect(ahk.entries.every((e) => e.lang === 'ahk')).toBe(true)
+  })
+
+  it('leaves out the library of another language', () => {
+    const dict = buildDictionary(input({ lang: 'ahk', shown: WIN_AHK.file.path }))
+    expect(dict.entries.some((e) => e.group.kind === 'library')).toBe(false)
+    expect(dict.lookup('Set-SoundVolume')).toBeUndefined()
+  })
+
+  it('lists every file as yours or shared when the pair has no file in the shown language', () => {
+    const dict = buildDictionary(input({ shown: null }))
+    expect(dict.entries.some((e) => e.group.kind === 'shown')).toBe(false)
+    expect(listSections(dict).commands.map((g) => g.group.label)).toEqual(['mine', 'helper', 'windows'])
   })
 
   it('follows unsaved text, of the shown file and of another', () => {
@@ -79,6 +95,42 @@ describe('buildDictionary', () => {
   it('gives a command without docs its twin\'s summary, and says whose', () => {
     expect(buildDictionary(input()).lookup('OpenThing')).toMatchObject({ summary: 'Opens the thing.', borrowed: 'ahk', command: true })
     expect(buildDictionary(input()).lookup('Message')).toMatchObject({ summary: '', borrowed: null })
+    // A twin that exists but has no docs of its own lends nothing either.
+    const bareTwin = cmd('ahk/commands/helper.ahk', 'Message(Macro)\n{\n}\n')
+    const dict = buildDictionary(input({ commandFiles: [MINE_PS, HELPER_PS, bareTwin, WIN_AHK, WIN_PS] }))
+    expect(dict.lookup('Message')).toMatchObject({ summary: '', borrowed: null })
+  })
+
+  it("gives an AutoHotkey command without docs its PowerShell twin's summary", () => {
+    const bare = cmd('ahk/commands/windows.ahk', 'OpenThing(Macro)\n{\n}\n')
+    const noted = cmd('powershell/commands/windows.ps1', '# Opens the thing from PowerShell.\nfunction OpenThing {\n    param($Macro)\n}\n')
+    const dict = buildDictionary({ lang: 'ahk', shown: bare.file.path, commandFiles: [bare, noted], libraryFiles: [], drafts: {} })
+    expect(dict.lookup('openthing')).toMatchObject({ summary: 'Opens the thing from PowerShell.', borrowed: 'ps' })
+  })
+
+  it('parses each unsaved text once, however many entries read it', () => {
+    const ahkDraft = '/**\n * Opens the thing.\n */\nOpenThing(Macro)\n{\n}\nOpenOther(Macro)\n{\n}\n'
+    const ps = cmd(
+      'powershell/commands/windows.ps1',
+      'function OpenThing {\n    param($Macro)\n}\nfunction OpenOther {\n    param($Macro)\n}\nfunction OpenThird {\n    param($Macro)\n}\n',
+    )
+    const parse = vi.spyOn(LANGUAGES.ahk, 'findFunctions')
+    try {
+      const dict = buildDictionary(input({ shown: ps.file.path, commandFiles: [WIN_AHK, ps], drafts: { [WIN_AHK.file.path]: ahkDraft } }))
+      expect(dict.lookup('OpenThing')).toMatchObject({ summary: 'Opens the thing.', borrowed: 'ahk' })
+      expect(parse).toHaveBeenCalledTimes(1)
+    } finally {
+      parse.mockRestore()
+    }
+  })
+
+  it('keeps a library function that takes a lone Macro among the functions to call', () => {
+    const tool = lib('Tool', '<#\n.SYNOPSIS\nWorks on a macro.\n.EXAMPLE\nInvoke-Tool $Macro\n#>\nfunction Invoke-Tool {\n    param($Macro)\n}\n')
+    const dict = buildDictionary(input({ libraryFiles: [tool] }))
+    expect(dict.lookup('Invoke-Tool')).toMatchObject({ command: false, group: { kind: 'library' } })
+    const { functions, commands } = listSections(dict)
+    expect(functions.flatMap((g) => g.entries.map((e) => e.fn.name))).toContain('Invoke-Tool')
+    expect(commands.flatMap((g) => g.entries.map((e) => e.fn.name))).not.toContain('Invoke-Tool')
   })
 
   it('reads the twin from its unsaved text', () => {
@@ -153,6 +205,39 @@ describe('buildDictionary', () => {
     } finally {
       parse.mockRestore()
     }
+  })
+})
+
+describe('the twin rule', () => {
+  const dictOf = (lang: 'ahk' | 'ps', ...files: CommandFile[]) =>
+    buildDictionary({ lang, shown: null, commandFiles: files, libraryFiles: [], drafts: {} })
+
+  it("keeps a command's own summary over its twin's", () => {
+    const own = cmd('powershell/commands/windows.ps1', '# Mine.\nfunction OpenThing {\n    param($Macro)\n}\n')
+    expect(dictOf('ps', own, WIN_AHK).lookup('OpenThing')).toMatchObject({ summary: 'Mine.', borrowed: null })
+  })
+
+  it('borrows only from the same group and pair', () => {
+    const yours = cmd('local/ahk/windows.ahk', '/**\n * Yours.\n */\nOpenThing(Macro)\n{\n}\n')
+    expect(dictOf('ps', WIN_PS, yours).lookup('OpenThing')).toMatchObject({ summary: '', borrowed: null })
+    const otherPair = cmd('ahk/commands/media.ahk', '/**\n * Another pair.\n */\nOpenThing(Macro)\n{\n}\n')
+    expect(dictOf('ps', WIN_PS, otherPair).lookup('OpenThing')).toMatchObject({ summary: '', borrowed: null })
+  })
+
+  it('borrows nothing from a twin without docs', () => {
+    const bare = cmd('ahk/commands/windows.ahk', 'OpenThing(Macro)\n{\n}\n')
+    expect(dictOf('ps', WIN_PS, bare).lookup('OpenThing')).toMatchObject({ summary: '', borrowed: null })
+  })
+
+  it('lends nothing to a function that is not a command', () => {
+    const ps = cmd('powershell/commands/windows.ps1', 'function GetThing {\n    param($A, $B)\n}\n')
+    const ahk = cmd('ahk/commands/windows.ahk', '/**\n * Gets the thing.\n */\nGetThing(A, B)\n{\n}\n')
+    expect(dictOf('ps', ps, ahk).lookup('GetThing')).toMatchObject({ summary: '', borrowed: null })
+  })
+
+  it('finds the twin whatever its case', () => {
+    const ahk = cmd('ahk/commands/windows.ahk', '/**\n * Opens the thing.\n */\nopenthing(Macro)\n{\n}\n')
+    expect(dictOf('ps', WIN_PS, ahk).lookup('OpenThing')).toMatchObject({ summary: 'Opens the thing.', borrowed: 'ahk' })
   })
 })
 

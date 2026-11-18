@@ -126,6 +126,27 @@ const withMine = { files: { [MINE]: MINE_TEXT } }
 /** The version of a held command file, for starting a draft on it. */
 const versionOf = (h: { edit(): EditState }, path: string) => h.edit().commandFiles.find((f) => f.file.path === path)!.file.version
 
+describe('asking which versions of the macropad this PC can run', () => {
+  it('gives what the platform found', async () => {
+    const h = harness({ installedLanguages: async () => ['ps'] })
+    expect(await h.actions.installedLanguages()).toEqual(['ps'])
+  })
+
+  it('gives null when the platform cannot tell', async () => {
+    const h = harness()
+    expect(await h.actions.installedLanguages()).toBeNull()
+  })
+
+  it('gives null, and does not throw, when the check fails', async () => {
+    const h = harness({
+      installedLanguages: async () => {
+        throw new Error('no PowerShell here')
+      },
+    })
+    expect(await h.actions.installedLanguages()).toBeNull()
+  })
+})
+
 describe('restoring the remembered folder', () => {
   it('says why the folder could not be restored', async () => {
     const h = harness({

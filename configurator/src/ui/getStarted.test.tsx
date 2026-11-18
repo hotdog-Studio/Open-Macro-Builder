@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryFolder } from '../core/folder/memory'
@@ -223,8 +223,8 @@ describe('the Get started tab', () => {
 
   it('in the browser, says nothing about what is installed or about Reload macropad', async () => {
     const { guide } = await startGuide(['ahk'])
-    // Give a late answer the time it would have taken.
-    await new Promise((done) => setTimeout(done, 20))
+    // The browser platform has no installedLanguages, so nothing is asked and there is no answer to
+    // wait for: once the guide has rendered, the sentences are either there or they never will be.
     expect(guide.textContent).not.toContain('AutoHotkey v2 is already installed')
     expect(guide.textContent).not.toContain('AutoHotkey v2 was not found')
     expect(guide.textContent).not.toContain('Reload macropad')
@@ -234,13 +234,19 @@ describe('the Get started tab', () => {
     const installedLanguages = vi.fn().mockRejectedValue(new Error('no PowerShell here'))
     const { guide } = await startGuide(['ahk'], { kind: 'electron', installedLanguages })
     await waitFor(() => expect(installedLanguages).toHaveBeenCalled())
-    await new Promise((done) => setTimeout(done, 20))
+    // The check has failed once the promise it was given has rejected; let React finish what follows.
+    await act(async () => {
+      await installedLanguages.mock.results[0].value.catch(() => {})
+    })
     expect(screen.queryByRole('alert')).toBeNull()
     expect(guide.textContent).not.toContain('AutoHotkey v2 is already installed')
     expect(guide.textContent).not.toContain('AutoHotkey v2 was not found')
   })
 
-  it('asks once, and drops an answer that arrives after the guide is gone', async () => {
+  // React itself drops an update that comes after unmount, without a word, so this test cannot tell
+  // whether the guard in GetStarted is there. It checks that the guide asks once, and that an answer
+  // arriving after the reader has left the tab makes no error.
+  it('asks once, and a late answer after leaving the tab causes no error', async () => {
     let answer: (languages: LangId[]) => void = () => {}
     const installedLanguages = vi.fn(() => new Promise<LangId[]>((done) => (answer = done)))
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -248,8 +254,9 @@ describe('the Get started tab', () => {
     expect(installedLanguages).toHaveBeenCalledTimes(1)
     // Leaving the tab takes the guide away before the answer comes.
     await user.click(screen.getByRole('tab', { name: 'Pad shape' }))
-    answer(['ahk'])
-    await new Promise((done) => setTimeout(done, 20))
+    await act(async () => {
+      answer(['ahk'])
+    })
     expect(error).not.toHaveBeenCalled()
     error.mockRestore()
   })

@@ -95,14 +95,30 @@ Describe 'Help blocks of the functions for commands' {
         ($named | Where-Object { $_.Help -and $listed -notcontains $_.Name }).Name | Should -BeNullOrEmpty
         @($listed).Count | Should -Be 64
     }
-    It 'writes each example as a call that parses and names only parameters the function has' {
+    It 'writes each example as a call that parses, calls only commands that exist and names only parameters the function has' {
         # Every documented function, by name, so a call to another one inside an example is checked too.
         $byName = @{}
         foreach ($f in $Functions | Where-Object Help) { $byName[$f.Name] = $f }
+        # Any other command an example calls must be a function of these files (documented or not) or a
+        # cmdlet of Windows PowerShell 5.1 itself, so a renamed function leaves no example calling its old name.
+        $projectNames = @{}
+        foreach ($f in $Functions) { $projectNames[$f.Name] = $true }
+        $builtIn = @{}
         $bad = foreach ($f in $Functions | Where-Object Help) {
             foreach ($example in $f.Help.Examples) {
                 $errors = $null
                 $ast = [System.Management.Automation.Language.Parser]::ParseInput($example, [ref]$null, [ref]$errors)
+                foreach ($name in @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })) {
+                    if ($projectNames.ContainsKey($name)) { continue }
+                    if (-not $builtIn.ContainsKey($name)) {
+                        $command = Get-Command -Name $name -CommandType Cmdlet, Alias -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($command -is [System.Management.Automation.AliasInfo]) { $command = $command.ResolvedCommand }
+                        # A cmdlet of PowerShell's core, or of a module that comes with it (in $PSHOME).
+                        $builtIn[$name] = $null -ne $command -and $command.CommandType -eq 'Cmdlet' -and
+                            ($command.PSSnapIn -or ($command.Module -and $command.Module.ModuleBase.StartsWith($PSHOME, [StringComparison]::OrdinalIgnoreCase)))
+                    }
+                    if (-not $builtIn[$name]) { "$($f.Name): calls $name, which no script of the project defines and Windows PowerShell 5.1 does not have" }
+                }
                 $calls = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $byName.ContainsKey([string]$n.GetCommandName()) }, $true))
                 if ($errors.Count -gt 0 -or -not ($calls | Where-Object { $_.GetCommandName() -eq $f.Name })) { "$($f.Name): does not parse or does not call it"; continue }
                 foreach ($call in $calls) {
@@ -110,7 +126,11 @@ Describe 'Help blocks of the functions for commands' {
                     $els = @($call.CommandElements)
                     for ($i = 1; $i -lt $els.Count; $i++) {
                         $el = $els[$i]
-                        if ($el -is [System.Management.Automation.Language.CommandParameterAst] -and $callee.Parameters -notcontains $el.ParameterName) { "$($f.Name): $($callee.Name) has no -$($el.ParameterName)" }
+                        # Stricter than PowerShell, which takes a short form such as -Win: a novice copies the
+                        # example, and the usage line shows whole names.
+                        if ($el -is [System.Management.Automation.Language.CommandParameterAst] -and $callee.Parameters -notcontains $el.ParameterName) {
+                            "$($f.Name): $($callee.Name) has no parameter named -$($el.ParameterName); an example writes each parameter's whole name"
+                        }
                         # 'Send-Click 200, 300' passes one array, not two values; after a parameter name a list is meant.
                         $named = $els[$i - 1] -is [System.Management.Automation.Language.CommandParameterAst]
                         if ($el -is [System.Management.Automation.Language.ArrayLiteralAst] -and -not $named) { "$($f.Name): commas in $($call.Extent.Text)" }
@@ -123,6 +143,9 @@ Describe 'Help blocks of the functions for commands' {
     It 'says what a function gives back when it returns a value' {
         $bad = foreach ($f in $Functions | Where-Object Help) {
             # A return with a value, outside any script block the function passes on (those return from the block).
+            # It cannot see a value given back without return: a bare expression or a command whose output
+            # is not caught, on the last line or anywhere else. A rule that guessed which of those give
+            # something back would be wrong too often, so such a function needs its .OUTPUTS by hand.
             $returns = @($f.Ast.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.ReturnStatementAst] -and $n.Pipeline }, $false))
             if ($returns.Count -gt 0 -and $f.Help.Outputs.Count -eq 0) { $f.Name }
         }

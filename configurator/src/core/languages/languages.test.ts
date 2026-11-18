@@ -231,6 +231,24 @@ describe('AutoHotkey findFunctions', () => {
     })
   })
 
+  it('takes a call at the left edge for a call, not a definition', () => {
+    const fns = LANGUAGES.ahk.findFunctions('/**\n * Real docs\n */\nFoo(a) {\n}\nFoo(1)\nSetTitleMatchMode(2)\nx := 1\n')
+    expect(fns.map((f) => [f.name, f.line])).toEqual([['Foo', 4]])
+    expect(fns[0].description).toBe('Real docs')
+  })
+
+  it('finds a definition whose brace is on a later line', () => {
+    const fns = LANGUAGES.ahk.findFunctions('Foo(a)\n\n{\n}\nBar(b)\n; a comment\n{\n}\nFoo(1)')
+    expect(fns.map((f) => [f.name, f.line])).toEqual([['Foo', 1], ['Bar', 5]])
+  })
+
+  it('finds a one-line function, a comment after the list, and a ) inside a default', () => {
+    const fns = LANGUAGES.ahk.findFunctions('Double(x) => x * 2\nFoo(Macro) ; comment\n{\n}\nBar(a := ")", b := "`"") {\n}')
+    expect(fns.map((f) => [f.name, f.params])).toEqual([['Double', ['x']], ['Foo', ['Macro']], ['Bar', ['a', 'b']]])
+    expect(isCommand(fns[1])).toBe(true)
+    expect(fns[2].usage).toBe('Bar(a := ")", b := "`"")')
+  })
+
   it('lists a function under a half-typed block without docs', () => {
     const [fn] = LANGUAGES.ahk.findFunctions('/**\n * Half typed\nThing(Macro) {\n}')
     expect(fn.name).toBe('Thing')

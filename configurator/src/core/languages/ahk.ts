@@ -1,6 +1,7 @@
 import { emptyDoc, exampleOf, oneLine, rewriteBody, textOf, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
-const DEFINITION = /^(\w+)\(([^)]*)\)\s*(?:\{\s*)?$/
+/** A name and an open paren at the left edge: a definition, or a call at the top of the file. */
+const HEAD = /^(\w+)\(/
 const PARAM_NAME = /^[&*]?(\w+)/
 const NOT_FUNCTIONS = new Set(['if', 'while', 'for', 'loop', 'switch', 'catch', 'until', 'return', 'else'])
 
@@ -158,13 +159,63 @@ function readDoc(block: string[], declared: Declared[]): FunctionDoc {
   return doc
 }
 
+/** The index of the quote that closes the string opening at `start`, or the line's length. A backtick escapes the character after it. */
+function stringEnd(line: string, start: number): number {
+  let i = start + 1
+  while (i < line.length && line[i] !== line[start]) i += line[i] === '`' ? 2 : 1
+  return Math.min(i, line.length)
+}
+
+/** The index of the paren that closes the one at `open`, outside quoted strings; -1 when the line has none. */
+function closingParen(line: string, open: number): number {
+  let depth = 0
+  let i = open
+  while (i < line.length) {
+    const ch = line[i]
+    if (ch === '"' || ch === "'") {
+      i = stringEnd(line, i)
+    } else if (ch === '(') {
+      depth++
+    } else if (ch === ')') {
+      depth--
+      if (depth === 0) return i
+    }
+    i++
+  }
+  return -1
+}
+
+/**
+ * Whether a body follows a head's close paren: `{` or `=>` after it on the line, or, with nothing
+ * there but a comment, `{` first on the next line that holds code. Anything else makes it a call.
+ */
+function opensBody(lines: string[], index: number, after: string): boolean {
+  if (after.startsWith('{') || after.startsWith('=>')) return true
+  if (after !== '' && !after.startsWith(';')) return false
+  for (const line of lines.slice(index + 1)) {
+    const code = line.trim()
+    if (code !== '' && !code.startsWith(';')) return code.startsWith('{')
+  }
+  return false
+}
+
+/** The name and the parameter list of the definition on line `index`; null when the line defines nothing. */
+function definitionAt(lines: string[], index: number): { name: string; list: string } | null {
+  const line = lines[index]
+  const head = HEAD.exec(line)
+  if (!head || NOT_FUNCTIONS.has(head[1].toLowerCase())) return null
+  const close = closingParen(line, head[1].length)
+  if (close === -1 || !opensBody(lines, index, line.slice(close + 1).trim())) return null
+  return { name: head[1], list: line.slice(head[0].length, close) }
+}
+
 function findFunctions(text: string): FunctionInfo[] {
-  const lines = text.split('\n')
+  const lines = text.split('\n').map((l) => l.replace(/\r$/, ''))
   const found: FunctionInfo[] = []
-  lines.forEach((raw, i) => {
-    const match = DEFINITION.exec(raw.replace(/\r$/, ''))
-    if (!match || NOT_FUNCTIONS.has(match[1].toLowerCase())) return
-    const declared = declaredParams(match[2])
+  lines.forEach((_, i) => {
+    const match = definitionAt(lines, i)
+    if (!match) return
+    const declared = declaredParams(match.list)
     const block = docBlockAbove(lines, i)
     const doc = block ? readDoc(block, declared) : emptyDoc(declared.map((d) => d.name))
     doc.params.forEach((param, n) => {
@@ -172,11 +223,11 @@ function findFunctions(text: string): FunctionInfo[] {
       param.default = declared[n].default
     })
     found.push({
-      name: match[1],
+      name: match.name,
       line: i + 1,
       params: declared.map((d) => d.name),
       description: doc.summary,
-      usage: `${match[1]}(${match[2]})`,
+      usage: `${match.name}(${match.list})`,
       doc,
     })
   })

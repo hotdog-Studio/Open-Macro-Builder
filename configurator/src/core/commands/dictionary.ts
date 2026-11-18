@@ -4,16 +4,24 @@ import { isCommand, LANG_IDS, LANGUAGES, type CommandFile, type FunctionInfo, ty
 export type DictSource = { kind: 'file'; path: string; line: number }
 
 export interface DictGroup {
-  /** `shown`, `yours:<pair>`, `shared:<pair>` or `library:<path>`. */
+  /** `shown:<group>:<pair>`, `yours:<pair>`, `shared:<pair>` or `library:<path>`. */
   key: string
   kind: 'shown' | 'yours' | 'shared' | 'library'
-  /** A command file's pair name; a library file's title. */
+  /**
+   * A command file's pair name, with ` · yours` or ` · shared` when a pair of the other group has
+   * the same name; a library file's title.
+   */
   label: string
   /** `lib/<name>` for a library file; null otherwise. */
   file: string | null
 }
 
 export interface DictEntry {
+  /**
+   * Names the entry among every entry of every build: its source, its name ignoring case, and how
+   * many entries of that source and name come before it. A line moved by an edit keeps it.
+   */
+  id: string
   fn: FunctionInfo
   lang: LangId
   command: boolean
@@ -31,6 +39,8 @@ export interface Dictionary {
   entries: DictEntry[]
   /** Ignores case; the first entry in that order. */
   lookup(name: string): DictEntry | undefined
+  /** Ignores case; the first entry of that name defined in the file at `path`. */
+  lookupIn(path: string, name: string): DictEntry | undefined
 }
 
 export interface DictInput {
@@ -56,21 +66,30 @@ export interface ListSections {
 /** Reads the functions of a text in a language. */
 type Parse = (lang: LangId, text: string) => FunctionInfo[]
 
-/** A parse that reads each text once per language; made for one buildDictionary call and dropped after it. */
-function memoParse(): Parse {
-  const cache = new Map<LangId, Map<string, FunctionInfo[]>>()
-  return (lang, text) => {
-    let byText = cache.get(lang)
-    if (!byText) {
-      byText = new Map()
-      cache.set(lang, byText)
-    }
-    let found = byText.get(text)
-    if (!found) {
-      found = LANGUAGES[lang].findFunctions(text)
-      byText.set(text, found)
-    }
-    return found
+/** A parse that reads each text once per language, for as long as the cache is kept. */
+export interface ParseCache {
+  parse: Parse
+  /** Forgets every text but the unsaved texts in `drafts`, the only texts a build parses. */
+  keep(drafts: Record<string, string>): void
+}
+
+export function parseCache(): ParseCache {
+  const cache = new Map<string, FunctionInfo[]>()
+  const textOf = (key: string) => key.slice(key.indexOf('\0') + 1)
+  return {
+    parse(lang, text) {
+      const key = `${lang}\0${text}`
+      let found = cache.get(key)
+      if (!found) {
+        found = LANGUAGES[lang].findFunctions(text)
+        cache.set(key, found)
+      }
+      return found
+    },
+    keep(drafts) {
+      const texts = new Set(Object.values(drafts))
+      for (const key of cache.keys()) if (!texts.has(textOf(key))) cache.delete(key)
+    },
   }
 }
 
@@ -97,10 +116,14 @@ function twinSummary(
   return null
 }
 
-function commandEntries(input: DictInput, file: CommandFile, shown: boolean, parse: Parse): DictEntry[] {
+/** An entry before buildDictionary gives it its id. */
+type Unnamed = Omit<DictEntry, 'id'>
+
+function commandEntries(input: DictInput, file: CommandFile, shown: boolean, label: string, parse: Parse): Unnamed[] {
+  // The shown group is keyed by its file, so the state a list keeps for it stays with that file.
   const group: DictGroup = shown
-    ? { key: 'shown', kind: 'shown', label: file.pair, file: null }
-    : { key: `${file.group}:${file.pair}`, kind: file.group, label: file.pair, file: null }
+    ? { key: `shown:${file.group}:${file.pair}`, kind: 'shown', label, file: null }
+    : { key: `${file.group}:${file.pair}`, kind: file.group, label, file: null }
   return functionsOf(file, input.drafts, parse).map((fn) => {
     const command = isCommand(fn)
     const twin = command && fn.doc.summary === '' ? twinSummary(file, fn, input, parse) : null
@@ -116,7 +139,7 @@ function commandEntries(input: DictInput, file: CommandFile, shown: boolean, par
   })
 }
 
-function libraryEntries(file: LibraryFile): DictEntry[] {
+function libraryEntries(file: LibraryFile): Unnamed[] {
   const folder = file.path.split('/').at(-2)
   const group: DictGroup = {
     key: `library:${file.path}`,
@@ -135,7 +158,35 @@ function libraryEntries(file: LibraryFile): DictEntry[] {
   }))
 }
 
-export function buildDictionary(input: DictInput): Dictionary {
+/** What names a source in an id. The follow-up's bundled reference is a kind of source of its own. */
+const sourceKey = (source: DictSource) => `${source.kind}:${source.path}`
+
+/** The entries with their ids: the second entry of a name in one source is numbered 1, and so on. */
+function withIds(entries: Unnamed[]): DictEntry[] {
+  const seen = new Map<string, number>()
+  return entries.map((entry) => {
+    const base = `${sourceKey(entry.source)}\0${entry.fn.name.toLowerCase()}`
+    const n = seen.get(base) ?? 0
+    seen.set(base, n + 1)
+    return { ...entry, id: `${base}\0${n}` }
+  })
+}
+
+/** A command file group's heading: its pair name, with its group when the other group has a pair of that name. */
+function groupLabels(files: CommandFile[]): (file: CommandFile) => string {
+  const groups = new Map<string, Set<string>>()
+  for (const f of files) {
+    const pair = f.pair.toLowerCase()
+    groups.set(pair, (groups.get(pair) ?? new Set()).add(f.group))
+  }
+  return (f) => (groups.get(f.pair.toLowerCase())!.size > 1 ? `${f.pair} · ${f.group}` : f.pair)
+}
+
+/**
+ * The dictionary for one language. `cache` parses the drafts: one kept across builds reads a text
+ * only once however often the dictionary is built again; by default a draft is parsed once per build.
+ */
+export function buildDictionary(input: DictInput, cache: ParseCache = parseCache()): Dictionary {
   const own = input.commandFiles.filter((f) => f.lang === input.lang)
   const isShown = (f: CommandFile) => f.file.path === input.shown
   const ordered = [
@@ -143,18 +194,21 @@ export function buildDictionary(input: DictInput): Dictionary {
     ...own.filter((f) => !isShown(f) && f.group === 'yours'),
     ...own.filter((f) => !isShown(f) && f.group === 'shared'),
   ]
-  // Each draft is parsed once here, however many entries and twins read it.
-  const parse = memoParse()
-  const entries = [
-    ...ordered.flatMap((f) => commandEntries(input, f, isShown(f), parse)),
+  const label = groupLabels(own)
+  const entries = withIds([
+    ...ordered.flatMap((f) => commandEntries(input, f, isShown(f), label(f), cache.parse)),
     ...input.libraryFiles.filter((f) => f.lang === input.lang).flatMap(libraryEntries),
-  ]
+  ])
   const byName = new Map<string, DictEntry>()
   for (const entry of entries) {
     const lower = entry.fn.name.toLowerCase()
     if (!byName.has(lower)) byName.set(lower, entry)
   }
-  return { lang: input.lang, entries, lookup: (name) => byName.get(name.toLowerCase()) }
+  const lookupIn = (path: string, name: string) => {
+    const lower = name.toLowerCase()
+    return entries.find((e) => e.source.path === path && e.fn.name.toLowerCase() === lower)
+  }
+  return { lang: input.lang, entries, lookup: (name) => byName.get(name.toLowerCase()), lookupIn }
 }
 
 /** Entries into groups, in the order of the entries; a group without entries does not appear. */

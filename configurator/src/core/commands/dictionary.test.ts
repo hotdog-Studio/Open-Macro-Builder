@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { commandFileAt, libraryTitle, LANGUAGES, type CommandFile, type LibraryFile } from '../languages'
 import { newTextFile } from '../folder/textFile'
-import { buildDictionary, filterSections, listSections, nameAt, sourceText, type DictInput, type ListSections } from './dictionary'
+import {
+  buildDictionary,
+  filterSections,
+  listSections,
+  nameAt,
+  parseCache,
+  sourceText,
+  type DictInput,
+  type Dictionary,
+  type ListSections,
+} from './dictionary'
 
 function cmd(path: string, text: string): CommandFile {
   const at = commandFileAt(path)!
@@ -80,7 +90,7 @@ describe('buildDictionary', () => {
 
   it('names the group of each entry', () => {
     const dict = buildDictionary(input())
-    expect(dict.lookup('OpenThing')!.group).toEqual({ key: 'shown', kind: 'shown', label: 'windows', file: null })
+    expect(dict.lookup('OpenThing')!.group).toEqual({ key: 'shown:shared:windows', kind: 'shown', label: 'windows', file: null })
     expect(dict.lookup('OpenMine')!.group).toEqual({ key: 'yours:mine', kind: 'yours', label: 'mine', file: null })
     expect(dict.lookup('Message')!.group).toEqual({ key: 'shared:helper', kind: 'shared', label: 'helper', file: null })
     expect(dict.lookup('Set-SoundVolume')!.group).toEqual({
@@ -91,6 +101,58 @@ describe('buildDictionary', () => {
   it('keeps every definition of a name in the entries', () => {
     const dict = buildDictionary(input())
     expect(dict.entries.filter((e) => e.fn.name === 'ActivateOrOpen')).toHaveLength(2)
+  })
+
+  it('gives each entry an id of its own, which a moved line keeps', () => {
+    const ids = (dict: Dictionary) => dict.entries.filter((e) => e.fn.name === 'ActivateOrOpen').map((e) => e.id)
+    const before = ids(buildDictionary(input()))
+    expect(new Set(before).size).toBe(2)
+    const moved = buildDictionary(input({ drafts: { [HELPER_PS.file.path]: '# Moved down.\n\n' + HELPER_PS.file.text } }))
+    expect(moved.lookup('Message')!.fn.line).toBe(13)
+    expect(ids(moved)).toEqual(before)
+  })
+
+  it('tells apart two definitions of one name in one file', () => {
+    const twice = cmd('powershell/commands/windows.ps1', 'function Twice {\n}\nfunction twice {\n}\n')
+    const entries = buildDictionary(input({ commandFiles: [twice], libraryFiles: [] })).entries
+    expect(entries).toHaveLength(2)
+    expect(entries[0].id).not.toBe(entries[1].id)
+  })
+
+  it('keys the shown group by its file', () => {
+    const shownAs = (shown: string) => buildDictionary(input({ shown })).entries.find((e) => e.group.kind === 'shown')!.group.key
+    expect(shownAs(WIN_PS.file.path)).toBe('shown:shared:windows')
+    expect(shownAs(MINE_PS.file.path)).toBe('shown:yours:mine')
+  })
+
+  it('names the group a pair name of yours and a shared one share', () => {
+    const mine = cmd('local/powershell/commands/windows.ps1', 'function OpenMine {\n    param($Macro)\n}\n')
+    const dict = buildDictionary(input({ shown: HELPER_PS.file.path, commandFiles: [mine, HELPER_PS, WIN_PS] }))
+    expect(listSections(dict).commands.map((g) => g.group.label)).toEqual(['windows · yours', 'windows · shared'])
+    expect(dict.lookup('Message')!.group.label).toBe('helper')
+  })
+
+  it('finds a name in one file only', () => {
+    const dict = buildDictionary(input())
+    expect(dict.lookupIn(HELPER_PS.file.path, 'activateoropen')!.summary).toBe('Switches to a program.')
+    expect(dict.lookupIn(WIN_PS.file.path, 'ActivateOrOpen')).toBeUndefined()
+  })
+
+  it('parses a draft once across builds with a shared parse, and only drafts', () => {
+    const cache = parseCache()
+    const drafts = { [WIN_PS.file.path]: 'function Get-Typed {\n}\n', [HELPER_PS.file.path]: HELPER_PS.file.text + '\n' }
+    const parse = vi.spyOn(LANGUAGES.ps, 'findFunctions')
+    try {
+      buildDictionary(input({ drafts }), cache)
+      expect(parse).toHaveBeenCalledTimes(2)
+      parse.mockClear()
+      const typed = { ...drafts, [WIN_PS.file.path]: 'function Get-Typed2 {\n}\n' }
+      cache.keep(typed)
+      expect(buildDictionary(input({ drafts: typed }), cache).lookup('Get-Typed2')).toBeDefined()
+      expect(parse.mock.calls.map(([text]) => text)).toEqual(['function Get-Typed2 {\n}\n'])
+    } finally {
+      parse.mockRestore()
+    }
   })
 })
 

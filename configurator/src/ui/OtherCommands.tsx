@@ -13,9 +13,6 @@ const CLOSING: Record<LangId, string> = {
 /** What names a group in the set of toggled ones: its list and its key, as a file can stand in both lists. */
 const stateKey = (title: string, list: ListGroup) => `${title}/${list.group.key}`
 
-/** What names a row in the set of open ones: its file and name, so it survives the file being retyped. */
-const rowKey = (entry: DictEntry) => `${entry.source.path}\0${entry.fn.name.toLowerCase()}`
-
 function Row({
   entry,
   expanded,
@@ -76,11 +73,12 @@ function Group({
       {open && (
         <ul className="ml-3 space-y-0.5">
           {entries.map((entry) => (
+            // The id survives the file being retyped, so a row keeps its open docs.
             <Row
-              key={rowKey(entry)}
+              key={entry.id}
               entry={entry}
-              expanded={expanded.has(rowKey(entry))}
-              onToggle={() => onToggleRow(rowKey(entry))}
+              expanded={expanded.has(entry.id)}
+              onToggle={() => onToggleRow(entry.id)}
               hover={hover}
             />
           ))}

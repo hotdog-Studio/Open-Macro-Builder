@@ -26,8 +26,6 @@ export interface RowHover {
 
 export type RowHoverFor = (entry: DictEntry | undefined, onClick: () => void) => RowHover
 
-const sameEntry = (a: DictEntry, b: DictEntry) => a.source.path === b.source.path && a.fn.name === b.fn.name
-
 /**
  * A floating card of docs for the row under the pointer or holding the focus, one at a time. `row`
  * gives a row its handlers (its own click runs after the card is hidden: the click reveals the same
@@ -72,7 +70,7 @@ export function useDocHover(): { row: RowHoverFor; card: ReactNode } {
         hide()
         onClick()
       },
-      'aria-describedby': shown && sameEntry(shown.entry, entry) ? id : undefined,
+      'aria-describedby': shown?.entry.id === entry.id ? id : undefined,
     }
   }
 

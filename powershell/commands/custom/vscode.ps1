@@ -19,7 +19,7 @@ function VsCodeMovePanelLeft { param($Macro) Send-Chord 'Ctrl+LAlt+Left' }
 function VsCodeOpenSourceControl { param($Macro) Send-Chord 'Ctrl+Shift+g' }
 function VsCodeSplitPanel { param($Macro) Send-Chord 'Ctrl+\' }
 function VsCodeOpenCommandPalette { param($Macro) Send-Chord 'Ctrl+Shift+p' }
-function VsCodeOpenTerminal { param($Macro) Send-Chord "Ctrl+Shift+'" }
+function VsCodeOpenTerminal { param($Macro) Send-Chord 'Ctrl+Shift+`' }
 function VsCodeDebug { param($Macro) Send-Chord 'F5' }
 function VsCodeAddBreakpoint { param($Macro) Send-Chord 'F9' }
 function VsCodeAddInlineBreakpoint { param($Macro) Send-Chord 'Shift+F9' }

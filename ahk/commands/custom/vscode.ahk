@@ -104,7 +104,7 @@ VsCodeOpenCommandPalette(Macro) {
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 VsCodeOpenTerminal(Macro) {
-    Send("{Ctrl Down}{Shift Down}'{Shift Up}{Ctrl Up}")
+    Send("{Ctrl Down}{Shift Down}``{Shift Up}{Ctrl Up}")  ; `` is one backtick
 }
 
 VsCodeDebug(Macro) {

@@ -14,9 +14,12 @@ BeforeAll {
         'lib\Screen.ps1'      = 'Get-PixelColor', 'Find-Pixel', 'Find-Image', 'Move-Mouse', 'Get-MousePosition', 'ConvertTo-ScreenPoint', 'Show-ToolTip', 'Hide-ToolTip'
         'lib\Sound.ps1'       = 'Get-SoundVolume', 'Set-SoundVolume', 'Get-SoundMute', 'Set-SoundMute', 'Switch-SoundMute'
     }
-    # One object per top-level function of lib\*.ps1, commands\helper.ps1 and the two custom files above:
-    # File (relative, as above), Name, Parameters (names), Help (GetHelpContent(), or $null), LineAbove (trimmed text).
-    $Functions = foreach ($file in @(Get-ChildItem "$ps\lib\*.ps1") + @(Get-Item "$ps\commands\helper.ps1", "$ps\commands\custom\chrome.ps1", "$ps\commands\custom\ssh.ps1")) {
+    # The files read: lib\*.ps1 and every command file, in commands and its subfolders, so a block in any
+    # of them is checked the same way.
+    $Files = @(Get-ChildItem "$ps\lib\*.ps1") + @(Get-ChildItem "$ps\commands" -Recurse -Filter *.ps1)
+    # One object per top-level function of those files: File (relative, as above), Name, Parameters (names),
+    # Help (GetHelpContent(), or $null), LineAbove (trimmed text), Ast (the definition).
+    $Functions = foreach ($file in $Files) {
         $lines = Get-Content $file.FullName
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$null)
         foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
@@ -28,6 +31,7 @@ BeforeAll {
                 Parameters = $params
                 Help       = $fn.GetHelpContent()
                 LineAbove  = $lines[$fn.Extent.StartLineNumber - 2].Trim()
+                Ast        = $fn
             }
         }
     }
@@ -86,7 +90,49 @@ Describe 'Help blocks of the functions for commands' {
             $want = $MustHave[$file]
             $Functions | Where-Object { $_.File -eq $file -and ($want -eq '*' -or $want -contains $_.Name) } | ForEach-Object Name
         }
-        ($Functions | Where-Object { $_.Help -and $listed -notcontains $_.Name }).Name | Should -BeNullOrEmpty
+        # The library and the files named above; a block in another command file is checked, not forbidden.
+        $named = $Functions | Where-Object { $_.File -like 'lib\*' -or $MustHave.Contains($_.File) }
+        ($named | Where-Object { $_.Help -and $listed -notcontains $_.Name }).Name | Should -BeNullOrEmpty
         @($listed).Count | Should -Be 64
+    }
+    It 'writes each example as a call that parses and names only parameters the function has' {
+        # Every documented function, by name, so a call to another one inside an example is checked too.
+        $byName = @{}
+        foreach ($f in $Functions | Where-Object Help) { $byName[$f.Name] = $f }
+        $bad = foreach ($f in $Functions | Where-Object Help) {
+            foreach ($example in $f.Help.Examples) {
+                $errors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseInput($example, [ref]$null, [ref]$errors)
+                $calls = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $byName.ContainsKey([string]$n.GetCommandName()) }, $true))
+                if ($errors.Count -gt 0 -or -not ($calls | Where-Object { $_.GetCommandName() -eq $f.Name })) { "$($f.Name): does not parse or does not call it"; continue }
+                foreach ($call in $calls) {
+                    $callee = $byName[$call.GetCommandName()]
+                    $els = @($call.CommandElements)
+                    for ($i = 1; $i -lt $els.Count; $i++) {
+                        $el = $els[$i]
+                        if ($el -is [System.Management.Automation.Language.CommandParameterAst] -and $callee.Parameters -notcontains $el.ParameterName) { "$($f.Name): $($callee.Name) has no -$($el.ParameterName)" }
+                        # 'Send-Click 200, 300' passes one array, not two values; after a parameter name a list is meant.
+                        $named = $els[$i - 1] -is [System.Management.Automation.Language.CommandParameterAst]
+                        if ($el -is [System.Management.Automation.Language.ArrayLiteralAst] -and -not $named) { "$($f.Name): commas in $($call.Extent.Text)" }
+                    }
+                }
+            }
+        }
+        $bad | Should -BeNullOrEmpty
+    }
+    It 'says what a function gives back when it returns a value' {
+        $bad = foreach ($f in $Functions | Where-Object Help) {
+            # A return with a value, outside any script block the function passes on (those return from the block).
+            $returns = @($f.Ast.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.ReturnStatementAst] -and $n.Pipeline }, $false))
+            if ($returns.Count -gt 0 -and $f.Help.Outputs.Count -eq 0) { $f.Name }
+        }
+        $bad | Should -BeNullOrEmpty
+    }
+    It 'keeps the first sentence of each synopsis short enough for a row' {
+        $bad = foreach ($f in $Functions | Where-Object Help) {
+            $first = ($f.Help.Synopsis.Trim() -split '(?<=\.)\s')[0]
+            if ($first.Length -gt 90) { "$($f.Name) ($($first.Length))" }
+        }
+        $bad | Should -BeNullOrEmpty
     }
 }

@@ -97,6 +97,14 @@ describe('a file that is not UTF-8', () => {
   })
 })
 
+describe('a PowerShell command defined with a scope', () => {
+  it('is defined, under its name without the scope, for the catalog and for the check alike', async () => {
+    const files = await scanCommands(new MemoryFolder('scoped', { 'local/powershell/commands/x.ps1': 'function global:OpenIt { param($Macro) }\n' }))
+    expect(commandCatalog(files).map((e) => e.name)).toEqual(['OpenIt'])
+    expect(definedNames(files, 'ps').has('openit')).toBe(true)
+  })
+})
+
 describe('shared library', () => {
   const load = () => scanCommands(memoryFolderFromRepo(['ahk/commands', 'powershell/commands']))
 

@@ -271,6 +271,26 @@ describe('the opening screen', () => {
     await screen.findByRole('list', { name: 'Keys' })
   })
 
+  it('the message about a refused folder is still there when the guide is opened', async () => {
+    const refused = "This folder doesn't look like Open Macro Builder: it needs config.json and an ahk or powershell folder."
+    const folder = new MemoryFolder('projects', { 'README.md': 'x' })
+    const user = await openFolder(fakePlatform(folder))
+    expect((await screen.findByRole('alert')).textContent).toBe(refused)
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    expect(screen.getByRole('article', { name: 'Get started' })).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toBe(refused)
+    expect(screen.getByRole('button', { name: 'Open folder' })).toBeTruthy()
+  })
+
+  it('the Reopen button stays when the guide is opened', async () => {
+    const user = renderApp(fakePlatform(null, { restoreFolder: async () => ({ needsPermission: 'repo' }) }))
+    expect(await screen.findByRole('button', { name: 'Reopen repo' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    expect(screen.getByRole('article', { name: 'Get started' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reopen repo' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Hide the guide' })).toBeTruthy()
+  })
+
   it('Which version do you run? says what each one needs', async () => {
     const folder = repoFolder()
     await folder.writeBytes('local/config.json', new TextEncoder().encode(EXAMPLE))

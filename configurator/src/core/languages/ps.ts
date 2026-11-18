@@ -1,4 +1,4 @@
-import { emptyDoc, oneLine, rewriteBody, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
+import { emptyDoc, exampleOf, oneLine, rewriteBody, textOf, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
 const DEFINITION = /^\s*function\s+([\w-]+)/i
 const PARAM_START = /param\s*\(/i
@@ -174,8 +174,6 @@ function sectionsOf(block: string[]): Section[] {
   return sections
 }
 
-const textOf = (lines: string[]): string => oneLine(lines.join(' '))
-
 /** A `.PARAMETER` section onto the declared parameter it names, ignoring case; a name that matches none is dropped. */
 function readParamSection(section: Section, params: ParamDoc[]): void {
   const head = section.lines[0].trim()
@@ -184,14 +182,6 @@ function readParamSection(section: Section, params: ParamDoc[]): void {
   const first = split === -1 ? '' : head.slice(split)
   const param = params.find((p) => p.name.toLowerCase() === name.toLowerCase())
   if (param) param.text = textOf([first, ...section.lines.slice(1)])
-}
-
-/** An `.EXAMPLE` section: its lines as written, the blank lines at its ends dropped. */
-function readExample(section: Section): string {
-  const lines = [section.lines[0].trim(), ...section.lines.slice(1)]
-  while (lines.length > 0 && lines[0].trim() === '') lines.shift()
-  while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
-  return lines.join('\n')
 }
 
 /** The docs in the lines of a help block, for the parameters a definition declares. */
@@ -204,7 +194,7 @@ function readBlock(block: string[], params: ParamDoc[]): FunctionDoc {
     summary: textOf([...of('synopsis'), ...of('description')].flatMap((s) => s.lines)),
     params,
     returns: textOf(of('outputs').flatMap((s) => s.lines)),
-    examples: of('example').map(readExample).filter((e) => e !== ''),
+    examples: of('example').map((s) => exampleOf(s.lines)).filter((e) => e !== ''),
   }
 }
 

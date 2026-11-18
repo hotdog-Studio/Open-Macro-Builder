@@ -1,4 +1,4 @@
-import { emptyDoc, oneLine, rewriteBody, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
+import { emptyDoc, exampleOf, oneLine, rewriteBody, textOf, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
 const DEFINITION = /^(\w+)\(([^)]*)\)\s*(?:\{\s*)?$/
 const PARAM_NAME = /^[&*]?(\w+)/
@@ -87,8 +87,6 @@ function splitTags(block: string[]): { intro: string[]; tags: Tag[] } {
   return { intro, tags }
 }
 
-const textOf = (lines: string[]): string => oneLine(lines.join(' '))
-
 /** What the first line of an `@param` says: `[{Type}] name [-] text`. */
 interface ParamParts {
   type: string | undefined
@@ -140,14 +138,6 @@ function readParamTag(tag: Tag, params: ParamDoc[]): void {
   param.text = textOf([parts.text, ...tag.lines.slice(1)])
 }
 
-/** An `@example`: its lines as written, the blank lines at its ends dropped. */
-function readExample(tag: Tag): string {
-  const lines = [tag.lines[0].trim(), ...tag.lines.slice(1)]
-  while (lines.length > 0 && lines[0].trim() === '') lines.shift()
-  while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
-  return lines.join('\n')
-}
-
 /** The docs in the lines of a doc block, for the parameters a definition declares. */
 function readDoc(block: string[], declared: Declared[]): FunctionDoc {
   const { intro, tags } = splitTags(block)
@@ -160,7 +150,7 @@ function readDoc(block: string[], declared: Declared[]): FunctionDoc {
     else if (tag.name === 'returns' || tag.name === 'return') {
       doc.returns = textOf([RETURNS_TAG.exec(tag.lines[0].trim())?.[1] ?? '', ...tag.lines.slice(1)])
     } else if (tag.name === 'example') {
-      const example = readExample(tag)
+      const example = exampleOf(tag.lines)
       if (example !== '') doc.examples.push(example)
     }
   }

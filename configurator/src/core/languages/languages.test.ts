@@ -178,9 +178,18 @@ describe('AutoHotkey findFunctions', () => {
     })
 
     it('reads a tag line with nothing after its name', () => {
-      expect(docOf(['@example', '  F("a")', '  F("b")']).examples).toEqual(['  F("a")\n  F("b")'])
+      expect(docOf(['@example', '  F("a")', '  F("b")']).examples).toEqual(['F("a")\nF("b")'])
       expect(docOf(['@description', 'Does it.']).summary).toBe('Does it.')
       expect(docOf(['@param', '@returns']).returns).toBe('')
+    })
+
+    it('drops an @example with nothing in it, and joins text lines with @description', () => {
+      expect(docOf(['Does it.', '@example']).examples).toEqual([])
+      expect(docOf(['Does it.', '@description And more.']).summary).toBe('Does it. And more.')
+    })
+
+    it('keeps the indentation of an example relative to its first line only', () => {
+      expect(docOf(['@example', '    F("a")', '        F("b")']).examples).toEqual(['F("a")\n    F("b")'])
     })
 
     it('does not take an @ in the middle of a line, or a bare @, for a tag', () => {
@@ -362,6 +371,11 @@ describe('PowerShell findFunctions', () => {
   it('reads a note that starts with the letters of #region or #Requires', () => {
     expect(LANGUAGES.ps.findFunctions('#requirements: none\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'requirements: none' })
     expect(LANGUAGES.ps.findFunctions('#regional settings\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'regional settings' })
+  })
+
+  it('reads an indented help block without its indentation', () => {
+    const [fn] = LANGUAGES.ps.findFunctions('    <#\n    .SYNOPSIS\n    Clicks.\n    .EXAMPLE\n    Send-Click 1 2\n\n    Send-Click 3 4\n    #>\nfunction Send-Click {\n}')
+    expect(fn.doc.examples).toEqual(['Send-Click 1 2\n\nSend-Click 3 4'])
   })
 
   it('builds the usage lines of real library functions', () => {

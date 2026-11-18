@@ -24,9 +24,9 @@ foreach ($n in 0..9) { $script:VirtualKeys["$n"] = 0x30 + $n }
 
 $script:ExtendedKeys = @(0x25, 0x26, 0x27, 0x28, 0x24, 0x23, 0x21, 0x22, 0x2D, 0x2E, 0xA3, 0xA5, 0x5B, 0x5C, 0x2C, 0x90) + (0xA6..0xB7)
 
-# The symbol names. The table above gives the keys of a US keyboard; on another layout the same
-# character is often on another key (on en-GB ' is where a US keyboard has ;), so these names press
-# the key that types the character on the layout in use, and the table only when the layout has none.
+# The symbol names. The table above gives the key codes of a US keyboard; another layout often gives a
+# character another code (on en-GB ' is vk C0, the US code for `, and ` is vk DF), so these names
+# press the key that types the character on the layout in use, and the table only when it has none.
 $script:SymbolKeyNames = @('\', "'", ';', '=', ',', '-', '.', '/', '`', '[', ']')
 
 # A seam for tests: the virtual key that types Char on the keyboard layout of the active window, or -1

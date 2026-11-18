@@ -13,7 +13,7 @@ Describe 'Get-VirtualKey on the keyboard layout in use' {
         Get-VirtualKey '\' | Should -Be 0xDC
     }
     It 'gives the key that types the character where the layout puts it on another key' {
-        # en-GB: ' is on the key a US keyboard has ; ... and ` on its own key, vk DF.
+        # en-GB: the key that types ' is vk C0 (the US code for `), and ` is vk DF.
         Mock Get-LayoutVirtualKey { 0xC0 } -ParameterFilter { $Char -eq "'" }
         Mock Get-LayoutVirtualKey { 0xDF } -ParameterFilter { $Char -eq '`' }
         Get-VirtualKey "'" | Should -Be 0xC0

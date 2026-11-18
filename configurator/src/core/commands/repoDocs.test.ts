@@ -73,19 +73,31 @@ describe('the real scripts, as the Commands tab reads them', () => {
   it('gives every AutoHotkey function to call a summary and a note for each parameter', async () => {
     const { functions } = await sections('ahk')
     const entries = functions.flatMap((g) => g.entries)
-    expect(entries.length).toBeGreaterThan(0)
+    // Pinned, so that a block cut off from its function (a blank line, or /* */) takes it off the list and fails here.
+    expect(entries.map((e) => e.fn.name)).toEqual([
+      'ActivateOrOpenChrome',
+      'LoadPuttySession',
+      'ActivateOrOpen',
+      'Open',
+      'EnsureActiveOrOpen',
+      'RunPythonScript',
+      'RunPowerShellScript',
+      'RunBatchScript',
+    ])
     expect(entries.filter((e) => e.summary === '').map((e) => e.fn.name)).toEqual([])
     expect(entries.filter((e) => e.fn.doc.params.some((p) => p.text === '')).map((e) => e.fn.name)).toEqual([])
   })
 
-  it('gives every AutoHotkey command with a block a summary', async () => {
+  it('gives every AutoHotkey command a block with a summary', async () => {
     // Imported here so that the imports at the top of this file stay as they are.
     const { isCommand } = await import('../languages')
     const commandFiles = await scanCommands(folder)
-    const withBlock = commandFiles
+    const commands = commandFiles
       .filter((f) => f.lang === 'ahk')
-      .flatMap((f) => f.functions.filter((fn) => isCommand(fn) && fn.doc.form === 'block').map((fn) => ({ fn, at: `${f.pair} ${fn.name}` })))
-    expect(withBlock.length).toBeGreaterThan(0)
-    expect(withBlock.filter(({ fn }) => fn.doc.summary === '').map(({ at }) => at)).toEqual([])
+      .flatMap((f) => f.functions.filter((fn) => isCommand(fn)).map((fn) => ({ fn, at: `${f.pair} ${fn.name}` })))
+    expect(commands.length).toBeGreaterThan(0)
+    // Every command has one, so a block cut off from its command (a blank line, or /* */) fails here.
+    expect(commands.filter(({ fn }) => fn.doc.form !== 'block').map(({ at }) => at)).toEqual([])
+    expect(commands.filter(({ fn }) => fn.doc.summary === '').map(({ at }) => at)).toEqual([])
   })
 })

@@ -72,7 +72,10 @@ function Split-AhkGuard {
     # Get-AhkFunctionSource leaves out a line that is only '{', so a block shows as its closing '}'.
     if ($Matches[2] -eq '' -and $body.Count -eq 2) { return [pscustomobject]@{ Guard = $name; Body = @($body[1]) } }
     if ($body.Count -lt 3 -or $body[-1] -ne '}') { return $none }
-    [pscustomobject]@{ Guard = $name; Body = @($body[1..($body.Count - 2)]) }
+    $inner = @($body[1..($body.Count - 2)])
+    # A line inside that starts with '}' ends the block early, as '} else {' does: not one guarded block.
+    if (@($inner | Where-Object { $_.StartsWith('}') }).Count -gt 0) { return $none }
+    [pscustomobject]@{ Guard = $name; Body = $inner }
 }
 
 # The guard's name of an AHK function (Split-AhkGuard), or '' when its body has no such guard.

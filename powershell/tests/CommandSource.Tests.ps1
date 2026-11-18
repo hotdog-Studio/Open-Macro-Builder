@@ -19,10 +19,27 @@ GuardedCopyPaste(Macro) {
     }
 }
 
-CopyWaitPaste(Macro) {
+CopyTypePaste(Macro) {
     Send("^c")
-    Sleep 100
+    SendText("x")
     Send("^v")
+}
+
+AllmanCopyPaste(Macro)
+{
+    if IsReady(Macro)
+    {
+        Send("^c")
+        Send("^v")
+    }
+}
+
+GuardElse(Macro) {
+    if IsReady(Macro) {
+        Send("^c")
+    } else {
+        Send("^v")
+    }
 }
 
 GuardThenMore(Macro) {
@@ -59,7 +76,15 @@ Describe 'Reading the sends of a command' {
         Get-AhkGuard $ahk['GuardedCopyPaste'] | Should -Be 'IsReady'
     }
     It 'reads no sequence when something else stands between the Sends' {
-        Get-AhkSends $ahk['CopyWaitPaste'] | Should -BeNullOrEmpty
+        Get-AhkSends $ahk['CopyTypePaste'] | Should -BeNullOrEmpty
+    }
+    It 'reads a guard whose braces stand on lines of their own' {
+        (Get-AhkSends $ahk['AllmanCopyPaste']) | Should -Be @('^c', '^v')
+        Get-AhkGuard $ahk['AllmanCopyPaste'] | Should -Be 'IsReady'
+    }
+    It 'reads no guard and no sends from an if with an else' {
+        Get-AhkGuard $ahk['GuardElse'] | Should -Be ''
+        Get-AhkSends $ahk['GuardElse'] | Should -BeNullOrEmpty
     }
     It 'reads no guard when a Send follows the guarded one outside the guard' {
         Get-AhkGuard $ahk['GuardThenMore'] | Should -Be ''

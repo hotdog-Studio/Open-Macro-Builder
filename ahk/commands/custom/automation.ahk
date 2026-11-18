@@ -1,4 +1,9 @@
-; AutoHotkey v2. Call ShowDelayedKeyForm() to open the form.
+#Requires AutoHotkey v2.0
+
+/**
+ * Opens a small form that sends a key, or a Send sequence such as "^+{t}", after a delay. "Record key" captures the next key pressed with the Ctrl, Shift and Alt keys held with it. Opening the form again cancels a send it scheduled.
+ * @param {Macro} Macro - The macro object (not used in this function).
+ */
 ShowDelayedKeyForm(Macro) {
 	global AutomationKey, AutomationDelay, AutomationGui
 	global AutomationCaptureStatus
@@ -33,7 +38,18 @@ AutomationSchedule(*) {
 
 	AutomationPendingKey := key
 	AutomationGui.Hide()
-	SetTimer(AutomationSendPending, -Integer(delay))
+	SetTimer(AutomationSendPending, -AutomationTimerDelay(delay))
+}
+
+; The delay to give SetTimer, from a text of digits: at least 1 ms (SetTimer deletes a timer given 0)
+; and at most 2147483647 ms (Int32 max, as in PowerShell; SetTimer refuses more than 4294967295).
+AutomationTimerDelay(Delay) {
+	Delay := LTrim(Delay, "0")
+	if (Delay = "")
+		return 1
+	if (StrLen(Delay) > 10)  ; more digits than Integer() can hold safely, and over the maximum anyway
+		return 2147483647
+	return Min(Integer(Delay), 2147483647)
 }
 
 AutomationRecordKey(*) {
@@ -52,22 +68,24 @@ AutomationRecordKey(*) {
 }
 
 AutomationCaptureKeyDown(ih, vk, sc) {
-	global AutomationKey, AutomationCaptureDone
-
-	; Ignore standalone modifier presses so the next usable key can be recorded.
-	if (vk = 16 || vk = 17 || vk = 18 || vk = 91 || vk = 92)
-		return
+	global AutomationKey, AutomationCaptureDone, AutomationCaptureStatus
 
 	keyName := GetKeyName(Format("vk{:02X}sc{:03X}", vk, sc))
-	if (keyName != "") {
-		AutomationKey.Value := "{" keyName "}"
-		AutomationCaptureDone := true
-		ih.Stop()
-	}
+	; Skip a modifier pressed on its own (the hook names it LControl, RShift, ...) and record the next
+	; key with the modifiers held, as the PowerShell form does.
+	if (keyName = "" || InStr("|Control|LControl|RControl|Shift|LShift|RShift|Alt|LAlt|RAlt|LWin|RWin|", "|" keyName "|"))
+		return
+	mods := (GetKeyState("Ctrl", "P") ? "^" : "") (GetKeyState("Shift", "P") ? "+" : "") (GetKeyState("Alt", "P") ? "!" : "")
+	AutomationKey.Value := mods "{" keyName "}"
+	AutomationCaptureDone := true
+	AutomationCaptureStatus.Value := "Recorded " AutomationKey.Value "."
+	ih.Stop()
 }
 
 AutomationCaptureEnded(ih) {
-	global AutomationCaptureStatus, AutomationCaptureDone
+	global AutomationCaptureHook, AutomationCaptureStatus, AutomationCaptureDone
+	if (ih != AutomationCaptureHook)  ; a recording that a newer one replaced
+		return
 	if (!AutomationCaptureDone)
 		AutomationCaptureStatus.Value := "No key recorded; timed out."
 }
@@ -78,11 +96,17 @@ AutomationSendPending() {
 }
 
 AutomationGuiClose(*) {
-	global AutomationGui
+	global AutomationGui, AutomationCaptureHook
+	; A recording still running would keep holding back the next key typed anywhere.
+	if (IsSet(AutomationCaptureHook))
+		AutomationCaptureHook.Stop()
 	AutomationGui.Hide()
 }
 
-; Call ShowDelayedClickForm() to record a mouse click and replay it after a delay.
+/**
+ * Opens a small form that records one mouse click (its button and screen position) and replays it after a delay. Opening the form again cancels a click it scheduled.
+ * @param {Macro} Macro - The macro object (not used in this function).
+ */
 ShowDelayedClickForm(Macro) {
 	global AutomationClickGui, AutomationClickDelay, AutomationClickStatus
 	global AutomationClickCaptured
@@ -181,7 +205,7 @@ AutomationScheduleClick(*) {
 	AutomationPendingClickY := AutomationClickY
 	AutomationPendingClickButton := AutomationClickButton
 	AutomationClickGui.Hide()
-	SetTimer(AutomationSendPendingClick, -Integer(delay))
+	SetTimer(AutomationSendPendingClick, -AutomationTimerDelay(delay))
 }
 
 AutomationSendPendingClick() {

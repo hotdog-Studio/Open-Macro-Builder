@@ -150,14 +150,3 @@ ReplaceMe(Macro)
 {
    MsgBox("Replace " Macro.name " with your own!", Macro.name)
 }
-
-/**
- * Encodes an integer value into a memory location.
- * @param {Uint} Ref - The reference to the memory location.
- * @param {Uint} Val - The integer value to encode.
- * @returns {Uint} The result of the DllCall operation.
- */
-EncodeInteger(Ref, Val)
-{
-	return DllCall("ntdll\RtlFillMemoryUlong", "Uint", ref, "Uint", 4, "Uint", val)
-}

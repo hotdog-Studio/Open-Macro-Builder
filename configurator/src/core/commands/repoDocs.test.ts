@@ -56,16 +56,16 @@ describe('the real scripts, as the Commands tab reads them', () => {
     expect(helper.entries.map((e) => e.fn.name)).toEqual(
       [
         'ActivateOrOpen', 'Open', 'EnsureActiveOrOpen', 'RunPythonScript', 'RunPowerShellScript', 'RunBatchScript',
-        'ProgramCommandLine', 'ScriptCommandLine', 'EncodeInteger',
+        'ProgramCommandLine', 'ScriptCommandLine',
       ],
     )
   })
 
-  it('gives every AutoHotkey helper to call a one-line example of a call to it, but EncodeInteger', async () => {
+  it('gives every AutoHotkey helper to call a one-line example of a call to it', async () => {
     const { functions } = await sections('ahk')
     const groups = functions.filter((g) => ['helper', 'custom/chrome', 'custom/ssh'].includes(g.group.label))
     expect(groups).toHaveLength(3)
-    const entries = groups.flatMap((g) => g.entries).filter((e) => e.fn.name !== 'EncodeInteger')
+    const entries = groups.flatMap((g) => g.entries)
     expect(entries.map((e) => e.fn.name)).toEqual(expect.arrayContaining(['ActivateOrOpenChrome', 'LoadPuttySession']))
     const bad = entries.filter(
       (e) => e.fn.doc.examples.length === 0 || e.fn.doc.examples.some((x) => x.includes('\n') || !x.startsWith(`${e.fn.name}(`)),

@@ -106,21 +106,29 @@ ChromeOpenBookmarks(Macro) {
 }
 
 /**
- * Opens the extensions page in Google Chrome.
+ * Opens the extensions page in Google Chrome, through the address bar (Chrome has no shortcut for it).
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenExtensions(Macro) {
-    if EnsureActiveOrOpenChrome(Macro)
-        Send("{Ctrl Down}{Shift Down}e{Shift Up}{Ctrl Up}")
+    if EnsureActiveOrOpenChrome(Macro) {
+        Send("{Ctrl Down}l{Ctrl Up}")
+        Sleep 100  ; give the address bar a moment to take the keys
+        SendText("chrome://extensions")
+        Send("{Enter}")
+    }
 }
 
 /**
- * Opens the settings page in Google Chrome.
+ * Opens the settings page in Google Chrome, through the address bar (Chrome has no shortcut for it).
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ChromeOpenSettings(Macro) {
-    if EnsureActiveOrOpenChrome(Macro)
-        Send("{Alt Down}e{Alt Up}g")
+    if EnsureActiveOrOpenChrome(Macro) {
+        Send("{Ctrl Down}l{Ctrl Up}")
+        Sleep 100  ; give the address bar a moment to take the keys
+        SendText("chrome://settings")
+        Send("{Enter}")
+    }
 }
 
 /**

@@ -41,8 +41,9 @@ function ChromeOpenIncognitoWindow { param($Macro) if (EnsureActiveOrOpenChrome 
 function ChromeOpenDownloads { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+j' } }
 function ChromeOpenHistory { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+h' } }
 function ChromeOpenBookmarks { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+o' } }
-function ChromeOpenExtensions { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+e' } }
-function ChromeOpenSettings { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Alt+e'; Send-Key 'g' } }
+# Chrome has no shortcut for these pages, so they go through the address bar (Ctrl+L), given a moment to take the keys.
+function ChromeOpenExtensions { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+l'; Wait-Pump 100; Send-Text 'chrome://extensions'; Send-Key 'Enter' } }
+function ChromeOpenSettings { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+l'; Wait-Pump 100; Send-Text 'chrome://settings'; Send-Key 'Enter' } }
 
 function ChromePreviousTab { param($Macro) Send-Chord 'Ctrl+Shift+Tab' }
 function ChromeNextTab { param($Macro) Send-Chord 'Ctrl+Tab' }

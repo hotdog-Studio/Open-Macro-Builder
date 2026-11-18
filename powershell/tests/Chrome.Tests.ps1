@@ -85,4 +85,13 @@ Describe 'Chrome commands send their keys only to Chrome' {
         & $Command $null
         $script:sent -join ' | ' | Should -Be $Expected
     }
+    It '<Command> goes to <Address> through the address bar, with a pause for the address bar to take the keys' -ForEach @(
+        @{ Command = 'ChromeOpenSettings'; Address = 'chrome://settings' }
+        @{ Command = 'ChromeOpenExtensions'; Address = 'chrome://extensions' }
+    ) {
+        Mock EnsureActiveOrOpen { $true }
+        Mock Wait-Pump { $script:sent.Add("wait $Milliseconds") }
+        & $Command $null
+        $script:sent -join ' | ' | Should -Be "chord Ctrl+l | wait 100 | text $Address | key Enter"
+    }
 }

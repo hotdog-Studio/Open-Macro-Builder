@@ -9,6 +9,7 @@
 ; by a minute, it carries out the clean-up the test left in its state file and exits. The file has
 ; one instruction per line:
 ;   kill <pid> <exe name>     end that process, if it still runs under that name
+;   killdir <folder>          end every process whose program is in that folder (the run's own)
 ;   run <command line>        start this (the macropad the test stopped)
 ;
 ;   AutoHotkey64.exe banner.ahk <test pid> <state file> <deadline, seconds since 1970 UTC>
@@ -51,6 +52,13 @@ BannerCleanUp() {
             try {
                 if (ProcessExist(m[1]) && StrLower(ProcessGetName(Integer(m[1]))) = StrLower(m[2]))
                     ProcessClose(Integer(m[1]))
+            }
+        } else if RegExMatch(A_LoopField, "^killdir (.+)$", &m) {
+            for p in ComObjGet("winmgmts:").ExecQuery("Select ProcessId, ExecutablePath from Win32_Process") {
+                try {
+                    if (p.ExecutablePath != "" && InStr(p.ExecutablePath, RTrim(m[1], "\") "\") = 1)
+                        ProcessClose(p.ProcessId)
+                }
             }
         } else if RegExMatch(A_LoopField, "^run (.+)$", &m) {
             runs.Push(m[1])

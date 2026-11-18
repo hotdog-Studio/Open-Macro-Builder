@@ -3,8 +3,9 @@
 # results/pester/test-results.xml at the repo root and leaves out the Integration tests, which
 # open windows and send real keys. The end-to-end test (tag EndToEnd) is left out of every run but
 # -EndToEnd, which runs it alone: it takes the keyboard, the mouse and the screen for a few minutes.
-# With -Ci -EndToEnd its JUnit XML goes to results/pester/end-to-end-results.xml.
-param([string[]]$ExcludeTag = @(), [switch]$Ci, [switch]$EndToEnd)
+# With -Ci -EndToEnd its JUnit XML goes to results/pester/end-to-end-results.xml. -Case runs only the
+# end-to-end cases whose name matches a regular expression, such as -Case 'ChromeNewTab|E2eStep'.
+param([string[]]$ExcludeTag = @(), [switch]$Ci, [switch]$EndToEnd, [string]$Case)
 Import-Module Pester -MinimumVersion 5.0 -Force
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $c = New-PesterConfiguration
@@ -18,6 +19,7 @@ if ($EndToEnd) {
     $c.Filter.Tag = @('EndToEnd')
     $resultFile = 'end-to-end-results.xml'
     $env:OMB_E2E = '1'
+    if ($Case) { $env:OMB_E2E_CASE = $Case }
 } else {
     $ExcludeTag = @($ExcludeTag) + 'EndToEnd'
 }
@@ -30,4 +32,4 @@ if ($Ci) {
     $c.TestResult.OutputPath = Join-Path $results $resultFile
 }
 $c.Filter.ExcludeTag = $ExcludeTag
-try { Invoke-Pester -Configuration $c } finally { if ($EndToEnd) { Remove-Item Env:\OMB_E2E -ErrorAction SilentlyContinue } }
+try { Invoke-Pester -Configuration $c } finally { if ($EndToEnd) { Remove-Item Env:\OMB_E2E, Env:\OMB_E2E_CASE -ErrorAction SilentlyContinue } }

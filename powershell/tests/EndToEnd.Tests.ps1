@@ -86,7 +86,7 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
         foreach ($c in Get-E2eCases) {
             if (-not $c.Name) { $c.Name = $c.Command }
             if (-not $c.Kind) { $c.Kind = 'Chord' }
-            if ($c.Kind -eq 'Chord' -and -not $c.Chords) {
+            if ($c.Kind -in 'Chord', 'Watch' -and -not $c.Chords) {
                 if (-not $twins.ContainsKey($c.Command)) { throw "$($c.Command) has no one-chord PowerShell twin; give its case Chords and Source." }
                 $c.Chords = $twins[$c.Command]
             }
@@ -94,12 +94,15 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
         }
         Write-E2eLayout @($script:E2eCaseTable.Values)
         Install-E2eLaunchers
+        Install-E2eScripts
+        $script:E2eRun.DesktopCount = Get-E2eDesktopCount
         if (-not [OmbE2e.KeyWatch]::Start()) { throw 'Could not install the key watch (a low-level keyboard hook).' }
         Start-E2eBanner
         Wait-Pump 3000  # the banner is up three seconds before the first key
         Stop-E2eOwnerMacropad
         [void](Start-E2eStandin 'A' -Exe 'chrome.exe' -X 40 -Y 120)
         [void](Start-E2eStandin 'B' -Exe 'e2eapp.exe' -X 500 -Y 120)
+        [void](Start-E2eStandin 'C' -Exe 'e2eapp.exe' -X 500 -Y 320)
     }
     AfterAll {
         if (-not $script:E2eSkip) { Complete-E2eRun }

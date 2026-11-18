@@ -66,6 +66,9 @@ OnMessage(0x102, StandinChar)  ; WM_CHAR, made only from typed characters (VK_PA
 OnMessage(0x201, StandinClick("left"))    ; WM_LBUTTONDOWN
 OnMessage(0x204, StandinClick("right"))   ; WM_RBUTTONDOWN
 OnMessage(0x207, StandinClick("middle"))  ; WM_MBUTTONDOWN
+; A second click on the same spot soon after the first comes as a double click.
+OnMessage(0x203, StandinClick("left"))    ; WM_LBUTTONDBLCLK
+OnMessage(0x206, StandinClick("right"))   ; WM_RBUTTONDBLCLK
 
 window := Gui("+Resize -DPIScale", "OMB e2e stand-in: " name)
 window.BackColor := "404040"

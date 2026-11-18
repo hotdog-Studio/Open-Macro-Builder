@@ -244,19 +244,20 @@ function Send-E2eClick {
 
 function Write-E2eState {
     $lines = @(foreach ($p in $script:E2eRun.Processes) { "kill $($p.Pid) $($p.Name)" })
+    $lines += "killdir $($script:E2eRun.Dir)"
     if ($null -ne $script:E2eRun.Owner) { $lines += "run $($script:E2eRun.Owner.Restart)" }
     [System.IO.File]::WriteAllLines($script:E2eRun.StateFile, [string[]]$lines)
 }
 
 # Starts a program for the run and remembers it, so that it is ended at the end of the run (or by the
 # banner's watchdog if this process goes away first). Environment entries are added to this process's
-# own, minus OMB_E2E; this process's own environment is never changed.
+# own, minus OMB_E2E and OMB_E2E_CASE; this process's own environment is never changed.
 function Start-E2eProcess {
     param([Parameter(Mandatory)][string]$File, [string]$Arguments = '', [hashtable]$Environment = @{}, [switch]$NoTrack)
     $si = [System.Diagnostics.ProcessStartInfo]::new($File, $Arguments)
     $si.UseShellExecute = $false
     $si.CreateNoWindow = $true
-    [void]$si.EnvironmentVariables.Remove('OMB_E2E')
+    foreach ($k in 'OMB_E2E', 'OMB_E2E_CASE') { [void]$si.EnvironmentVariables.Remove($k) }
     foreach ($k in $Environment.Keys) { $si.EnvironmentVariables[$k] = [string]$Environment[$k] }
     $p = [System.Diagnostics.Process]::Start($si)
     if (-not $NoTrack) {
@@ -395,6 +396,8 @@ function New-E2eRun {
         BannerPid    = $null
         Standins     = @{}
         Macropad     = $null
+        Windows      = [System.Collections.Generic.List[IntPtr]]::new()
+        DesktopCount = $null
     }
     Write-E2eState
     $script:E2eRun
@@ -412,19 +415,190 @@ function Get-E2eAhkCopy {
 # The launcher (ahk\tests\e2e\launcher.cs) under each of these names in the run's path folder, which
 # the macropad finds first on its PATH, with an AutoHotkey copy of the same name for its window.
 function Install-E2eLaunchers {
-    param([string[]]$Names = @('chrome.exe', 'putty.exe', 'ssh.exe'))
+    param([string[]]$Names = @('chrome.exe', 'putty.exe', 'ssh.exe', 'e2eapp.exe'))
     $built = Join-Path $script:E2eRun.Dir 'launcher.exe'
     Add-Type -TypeDefinition (Get-Content -LiteralPath (Join-Path $script:E2eFixtures 'launcher.cs') -Raw) -OutputAssembly $built -OutputType WindowsApplication
     foreach ($n in $Names) {
         Copy-Item -LiteralPath $built -Destination (Join-Path $script:E2eRun.Dir "path\$n")
         [void](Get-E2eAhkCopy $n)
     }
+    # A program whose path has spaces, for the helpers' quoting.
+    Copy-Item -LiteralPath $built -Destination (Join-Path $script:E2eRun.Dir 'E2E Test\e2e app.exe')
+    [void](Get-E2eAhkCopy 'e2e app.exe')
+}
+
+# The scripts the script helpers run, in a folder with a space in its name, and the folders and files
+# the cases open.
+function Install-E2eScripts {
+    $dir = Join-Path $script:E2eRun.Dir 'E2E Test'
+    foreach ($f in 'write.py', 'write.ps1', 'args.bat') { Copy-Item -LiteralPath (Join-Path $script:E2eFixtures $f) -Destination $dir }
+    [void](New-Item -ItemType Directory -Path (Join-Path $dir 'Smith, John'))
+    Set-Content -LiteralPath (Join-Path $dir 'note a.txt') -Value 'end-to-end test'
+}
+
+# The programs the launcher recorded after Mark: Exe (its full path), Log (its stand-in's log) and
+# Arguments (what followed the program on its command line).
+function Get-E2eLaunches {
+    param([int]$Mark = 0)
+    $lines = @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'launches.log'))
+    for ($i = $Mark; $i -lt $lines.Count; $i++) {
+        $p = $lines[$i] -split "`t", 3
+        $line = $p[2]
+        # The program as the command line names it, quoted or not, then the rest.
+        if ($line.StartsWith('"')) { $rest = $line.Substring($line.IndexOf('"', 1) + 1) } else { $rest = ($line -replace '^\S+', '') }
+        [pscustomobject]@{ Exe = $p[0]; Log = $p[1]; Arguments = $rest.Trim() }
+    }
+}
+
+function Get-E2eLaunchMark { @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'launches.log')).Count }
+
+# The processes running from the run's folder (stand-ins the launcher started, copies of AutoHotkey).
+function Get-E2eRunProcesses {
+    $dir = $script:E2eRun.Dir.TrimEnd('\') + '\'
+    @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) })
+}
+
+# Ends the stand-ins the launcher started (not A, B and C), with a paced change.
+function Stop-E2eLaunched {
+    $keep = @($script:E2eRun.Processes | ForEach-Object { $_.Pid })
+    foreach ($p in Get-E2eRunProcesses) {
+        if ($keep -contains [int]$p.ProcessId) { continue }
+        Wait-ScreenChange
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------
+# Windows that commands open.
+
+# The visible windows that fit any of the WinTitles (Find-Window's form), as a list of handles.
+function Get-E2eWindows {
+    param([string[]]$WinTitle)
+    $seen = [System.Collections.Generic.List[IntPtr]]::new()
+    foreach ($t in $WinTitle) { foreach ($h in (Find-Window $t -All)) { if (-not $seen.Contains($h)) { $seen.Add($h) } } }
+    , $seen.ToArray()
+}
+
+# The visible windows of the WinTitles that the run did not open (a person's own), as descriptions.
+function Get-E2eForeignWindows {
+    param([string[]]$WinTitle)
+    $ours = @($script:E2eRun.Processes | ForEach-Object { $_.Pid }) + @(Get-E2eRunProcesses | ForEach-Object { [int]$_.ProcessId })
+    , @(foreach ($h in (Get-E2eWindows $WinTitle)) {
+            if ($script:E2eRun.Windows -contains $h) { continue }
+            $i = Get-WindowInfo $h
+            if ($ours -notcontains $i.Pid) { "'$($i.Title)' ($($i.Exe))" }
+        })
+}
+
+# The lines of marks.log (what the test's own commands write) after Mark.
+function Get-E2eMarks {
+    param([int]$Mark = 0)
+    @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'marks.log') | Select-Object -Skip $Mark)
+}
+
+function Wait-E2eMark {
+    param([int]$Mark, [string]$Like, [int]$TimeoutMs = 10000)
+    Wait-E2eCondition { Get-E2eMarks $Mark | Where-Object { $_ -like $Like } | Select-Object -First 1 } -TimeoutMs $TimeoutMs
+}
+
+# Waits for a window that fits a WinTitle and is not in Before; with -Active, until it is also the
+# active window. Its handle, or $null. A found window is remembered, so that the run closes it at the
+# end if the case does not.
+function Wait-E2eNewWindow {
+    param([string[]]$WinTitle, [IntPtr[]]$Before = @(), [switch]$Active, [int]$TimeoutMs = 8000)
+    $h = Wait-E2eCondition {
+        foreach ($w in (Get-E2eWindows $WinTitle)) {
+            if ($Before -contains $w) { continue }
+            if (-not $Active -or [Macropad.WindowApi]::Foreground() -eq $w) { return $w }
+        }
+    } -TimeoutMs $TimeoutMs
+    if ($null -ne $h) {
+        Wait-ScreenChange -Observed
+        if ($script:E2eRun.Windows -notcontains $h) { $script:E2eRun.Windows.Add([IntPtr]$h) }
+    }
+    $h
+}
+
+# Closes a window a command opened (paced), and ends its program if it stays.
+function Close-E2eWindow {
+    param([IntPtr]$Hwnd, [switch]$Force)
+    if (-not [Macropad.WindowApi]::Exists($Hwnd)) { return }
+    Wait-ScreenChange
+    [void](Close-Window $Hwnd -Force:$Force -TimeoutMs 4000)
+    [void]$script:E2eRun.Windows.Remove($Hwnd)
+}
+
+function Test-E2eAdministrator {
+    [bool](whoami /groups | Select-String -SimpleMatch 'S-1-5-32-544')
+}
+
+# ---------------------------------------------------------------------------------------------------
+# Virtual desktops, through Windows' documented IVirtualDesktopManager and the desktop list Explorer
+# keeps in the registry.
+
+if (-not ('OmbE2e.Desktops' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace OmbE2e
+{
+    [ComImport, Guid("a5cd92ff-29be-454c-8d04-d82879fb3f1b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IVirtualDesktopManager
+    {
+        [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr topLevelWindow, out int onCurrentDesktop);
+        [PreserveSig] int GetWindowDesktopId(IntPtr topLevelWindow, out Guid desktopId);
+        [PreserveSig] int MoveWindowToDesktop(IntPtr topLevelWindow, ref Guid desktopId);
+    }
+    public static class Dwm
+    {
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+        // DWMWA_CLOAKED: nonzero when Windows keeps the window off the screen (another virtual desktop,
+        // a suspended app's frame) although IsWindowVisible says it is visible.
+        public static bool Cloaked(IntPtr hwnd)
+        {
+            int value;
+            return DwmGetWindowAttribute(hwnd, 14, out value, 4) == 0 && value != 0;
+        }
+    }
+    public static class Desktops
+    {
+        public static bool OnCurrent(IntPtr hwnd)
+        {
+            IVirtualDesktopManager m = (IVirtualDesktopManager)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("aa509086-5ca9-4c25-8f95-589d3c07b48a")));
+            int on;
+            int hr = m.IsWindowOnCurrentVirtualDesktop(hwnd, out on);
+            if (hr != 0) Marshal.ThrowExceptionForHR(hr);
+            return on != 0;
+        }
+    }
+}
+'@
+}
+
+# How many virtual desktops there are (Explorer keeps their ids, 16 bytes each).
+function Get-E2eDesktopCount {
+    $ids = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops' -Name VirtualDesktopIDs -ErrorAction SilentlyContinue).VirtualDesktopIDs
+    if ($null -eq $ids) { return 1 }
+    [math]::Max(1, $ids.Length / 16)
+}
+
+# Closes virtual desktops a failed case left, until there are as many as the run found: from the
+# desktop where the stand-in A is, it goes right and closes that one (Win+Ctrl+Right, Win+Ctrl+F4).
+function Restore-E2eDesktops {
+    if ($null -eq $script:E2eRun.DesktopCount) { return }
+    $a = $script:E2eRun.Standins['A']
+    for ($i = 0; $i -lt 5 -and (Get-E2eDesktopCount) -gt $script:E2eRun.DesktopCount; $i++) {
+        if ($null -ne $a -and [OmbE2e.Desktops]::OnCurrent($a.Hwnd)) { Wait-ScreenChange; Send-E2eChord 'LWin+Ctrl+Right'; Wait-Pump 400 }
+        Wait-ScreenChange
+        Send-E2eChord 'LWin+Ctrl+F4'
+        [void](Wait-E2eCondition { (Get-E2eDesktopCount) -le $script:E2eRun.DesktopCount -or ($null -ne $a -and [OmbE2e.Desktops]::OnCurrent($a.Hwnd)) } -TimeoutMs 3000)
+    }
 }
 
 # The environment a macropad under test gets on top of this process's own.
 function Get-E2eMacropadEnvironment {
     @{
-        OMB_CONFIG      = Join-Path $script:E2eRun.Dir 'layout.json'
         OMB_E2E_DIR     = $script:E2eRun.Dir
         OMB_E2E_STANDIN = Join-Path $script:E2eFixtures 'standin.ahk'
         PATH            = (Join-Path $script:E2eRun.Dir 'path') + ';' + $env:PATH
@@ -470,7 +644,7 @@ function Read-E2eLog {
         $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
         $text = $reader.ReadToEnd()
     } finally { $stream.Dispose() }
-    @($text -split "`n" | Where-Object { $_ -ne '' })
+    @($text -split "\r?\n" | Where-Object { $_ -ne '' })
 }
 
 # How many lines a stand-in's log has now: read the events after this mark.
@@ -562,6 +736,7 @@ function Set-E2eActive {
 function Start-E2eMacropad {
     param([Parameter(Mandatory)][ValidateSet('ahk', 'ps')][string]$Lang)
     $envs = Get-E2eMacropadEnvironment
+    $envs.OMB_CONFIG = Join-Path $script:E2eRun.Dir "layout-$Lang.json"
     if ($Lang -eq 'ahk') {
         $arguments = '/ErrorStdOut=UTF-8 /include "{0}" "{1}"' -f (Join-Path $script:E2eFixtures 'commands.ahk'), (Join-Path $script:E2eRepo 'ahk\main.ahk')
         $p = Start-E2eProcess (Get-AhkExe) $arguments -Environment $envs
@@ -575,7 +750,7 @@ function Start-E2eMacropad {
     $marks = Join-Path $script:E2eRun.Dir 'marks.log'
     $before = @(Read-E2eLog $marks).Count
     $ready = Wait-E2eCondition {
-        if ($p.HasExited) { throw "The $Lang macropad exited at start (exit code $($p.ExitCode))." }
+        if ($p.HasExited) { throw "The $Lang macropad exited at start (exit code $($p.ExitCode)). $((Get-E2eErrorLines) -join ' ')" }
         Send-E2eTap $script:E2eFirstKeyVk
         Wait-E2eCondition { @(Read-E2eLog $marks).Count -gt $before } -TimeoutMs 700
     } -TimeoutMs 30000 -EveryMs 10
@@ -636,24 +811,37 @@ function Invoke-E2eMacroKey {
 
 function Write-E2eLayout {
     param([object[]]$Cases)
-    $keys = @(for ($i = 0; $i -lt $script:E2eKeyCount; $i++) { @{ key = "F$(13 + $i)"; row = [math]::Floor($i / 4) + 1; col = ($i % 4) + 1 } })
     $slots = [System.Collections.Generic.List[object]]::new()
     $slots.Add(@{ action = 'E2eMark'; name = 'ready' })
     $slots.Add(@{ action = 'E2eExit'; name = 'exit' })
     foreach ($case in $Cases) {
         $case.Layer = [math]::Floor($slots.Count / $script:E2eKeyCount) + 1
         $case.Slot = ($slots.Count % $script:E2eKeyCount) + 1
-        $entry = @{ action = $case.Command; name = $case.Command; description = '' }
+        $entry = @{ action = $case.Command; name = $case.Command; description = ''; only = $case.Only }
         if ($case.Macro) { foreach ($k in $case.Macro.Keys) { $entry[$k] = $case.Macro[$k] } }
         $slots.Add($entry)
     }
+    # One layout file per language: a case for one language only leaves its key empty in the other's.
+    foreach ($lang in 'ahk', 'ps') {
+        $mine = @(foreach ($s in $slots) {
+                if ($s.only -and $s.only -ne $lang) { $null; continue }
+                $copy = @{}; foreach ($k in $s.Keys) { if ($k -ne 'only') { $copy[$k] = $s[$k] } }; $copy
+            })
+        Write-E2eLayoutFile $mine (Join-Path $script:E2eRun.Dir "layout-$lang.json")
+    }
+}
+
+function Write-E2eLayoutFile {
+    param([object[]]$Slots, [string]$Path)
+    $keys = @(for ($i = 0; $i -lt $script:E2eKeyCount; $i++) { @{ key = "F$(13 + $i)"; row = [math]::Floor($i / 4) + 1; col = ($i % 4) + 1 } })
+    $slots = $Slots
     $layers = @(for ($l = 0; $l * $script:E2eKeyCount -lt $slots.Count; $l++) {
             $last = [math]::Min($slots.Count, ($l + 1) * $script:E2eKeyCount) - 1
             @{ title = "Test $($l + 1)"; icon = 'default_commands'; macros = @($slots[($l * $script:E2eKeyCount)..$last]) }
         })
     if ($layers.Count -gt $script:E2eKeyCount) { throw "The cases need $($layers.Count) layers; the layout has room for $($script:E2eKeyCount)." }
     $layout = @{ fn = @{ key = 'F24'; row = 4; col = 1 }; keys = $keys; layers = $layers; default = 1 }
-    [System.IO.File]::WriteAllText((Join-Path $script:E2eRun.Dir 'layout.json'), ($layout | ConvertTo-Json -Depth 8))
+    [System.IO.File]::WriteAllText($Path, ($layout | ConvertTo-Json -Depth 8))
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -699,15 +887,34 @@ function Use-E2eStandin {
 $script:E2eChordArrange = {
     param($ctx)
     $ctx.Standin = Use-E2eStandin 'A'
+    # The expected keys are worked out while A is active, on its keyboard layout.
     $ctx.Expected = ConvertTo-E2eExpectedTap $ctx.Case.Chords
     $ctx.Mark = Get-E2eStandinMark $ctx.Standin
+    # A case that starts from another window: the command must bring A (its program) forward first.
+    if ($ctx.Case.From) { [void](Use-E2eStandin $ctx.Case.From) }
 }
 $script:E2eChordAssert = {
     param($ctx)
     $want = @($ctx.Expected)
-    [void](Wait-E2eTaps { Get-E2eStandinTaps $ctx.Standin $ctx.Mark } $want.Count)
+    [void](Wait-E2eTaps { Get-E2eStandinTaps $ctx.Standin $ctx.Mark } $want.Count -TimeoutMs 8000)
     $got = Get-E2eStandinTaps $ctx.Standin $ctx.Mark
     ($got -join ', ') | Should -Be ($want -join ', ') -Because "the stand-in must receive exactly the keys of $($ctx.Case.Command) (in front now: $(Get-E2eForegroundText))"
+    if ($ctx.Case.From) { [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Standin.Hwnd -Because 'the command brings its program forward' }
+}
+# A Watch case: the keys are seen by the key watch (a low-level hook), which keeps Windows from acting
+# on them; for chords that Windows takes before any window gets them.
+$script:E2eWatchArrange = {
+    param($ctx)
+    $ctx.Standin = Use-E2eStandin 'A'
+    $ctx.Expected = ConvertTo-E2eExpectedTap $ctx.Case.Chords
+    $ctx.Mark = Get-E2eStandinMark $ctx.Standin
+}
+$script:E2eWatchAssert = {
+    param($ctx)
+    $want = @($ctx.Expected)
+    [void](Wait-E2eTaps { Get-E2eWatchTaps } $want.Count)
+    $got = Get-E2eWatchTaps
+    ($got -join ', ') | Should -Be ($want -join ', ') -Because "the keys pressed must be exactly those of $($ctx.Case.Command)"
 }
 
 # Runs one case against the macropad under test. Returns $null when it ran, or the reason it was
@@ -718,8 +925,10 @@ function Invoke-E2eCase {
     Assert-E2eTime
     if ($Case.Only -and $Case.Only -ne $Lang) { return "runs against the $($Case.Only) macropad only: $($Case.Why)" }
     if ($Case.SkipIf) { $why = & $Case.SkipIf; if ($why) { return $why } }
-    $arrange = if ($Case.Arrange) { $Case.Arrange } else { $script:E2eChordArrange }
-    $assert = if ($Case.Assert) { $Case.Assert } else { $script:E2eChordAssert }
+    if ($Case.Kind -eq 'Watch') { $arrange = $script:E2eWatchArrange; $assert = $script:E2eWatchAssert; $Case.Swallow = $true }
+    else { $arrange = $script:E2eChordArrange; $assert = $script:E2eChordAssert }
+    if ($Case.Arrange) { $arrange = $Case.Arrange }
+    if ($Case.Assert) { $assert = $Case.Assert }
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         $ctx = @{ Case = $Case; Lang = $Lang; Run = $script:E2eRun }
         try {
@@ -757,9 +966,17 @@ function Complete-E2eRun {
     $problems = [System.Collections.Generic.List[string]]::new()
     [OmbE2e.KeyWatch]::Stop()
     try { Stop-E2eMacropad } catch { $problems.Add("stopping the macropad: $($_.Exception.Message)") }
+    try { Restore-E2eDesktops } catch { $problems.Add("closing the virtual desktops the test made: $($_.Exception.Message)") }
+    foreach ($h in @($script:E2eRun.Windows)) {
+        try { Close-E2eWindow $h } catch { $problems.Add("closing window $h`: $($_.Exception.Message)") }
+    }
     foreach ($p in @($script:E2eRun.Processes)) {
         try { Wait-ScreenChange; Stop-E2eProcessId $p.Pid } catch { $problems.Add("ending $($p.Name) ($($p.Pid)): $($_.Exception.Message)") }
     }
+    foreach ($p in Get-E2eRunProcesses) {
+        try { Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch { $problems.Add("ending $($p.Name) ($($p.ProcessId)): $($_.Exception.Message)") }
+    }
+    [void](Wait-E2eCondition { (Get-E2eRunProcesses).Count -eq 0 } -TimeoutMs 5000)
     try { Restore-E2eOwnerMacropad } catch { $problems.Add($_.Exception.Message) }
     try { Stop-E2eBanner } catch { $problems.Add("closing the banner: $($_.Exception.Message)") }
     try { Remove-Item -LiteralPath $script:E2eRun.Dir -Recurse -Force -ErrorAction Stop } catch { $problems.Add("removing $($script:E2eRun.Dir): $($_.Exception.Message)") }

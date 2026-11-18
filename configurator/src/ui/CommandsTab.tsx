@@ -12,6 +12,8 @@ import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
 import { ConfirmDialog } from './ConfirmDialog'
 import { NewCommandButton } from './NewCommandDialog'
+import { useDocHover } from './DocHover'
+import { OtherCommands } from './OtherCommands'
 import { LeftPanel, RightPanel, STYLE } from './Panels'
 
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
@@ -515,8 +517,9 @@ function EntryDetails({ entry }: Readonly<{ entry: OutlineEntry }>) {
 }
 
 /** The right panel: every command of the shown pair with its gaps, and the details of one. */
-function Outline({ pair }: Readonly<{ pair: CommandPair }>) {
+function Outline({ pair, dict }: Readonly<{ pair: CommandPair; dict: Dictionary }>) {
   const { state, dispatch, actions } = useEditor()
+  const { row, card } = useDocHover()
   const { lang, drafts } = state.commands
   const [selected, setSelected] = useState<string | null>(null)
   // The text the editors hold, so the outline follows typing.
@@ -566,7 +569,7 @@ function Outline({ pair }: Readonly<{ pair: CommandPair }>) {
               className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left ${
                 e === chosen ? 'bg-zinc-700' : 'hover:bg-zinc-800'
               }`}
-              onClick={() => open(e)}
+              {...row(dict.lookup(e.name), () => open(e))}
             >
               <span className="truncate font-mono text-[12px] text-zinc-200">{e.name}</span>{' '}
               <span className="flex shrink-0 gap-2 text-[10px]">
@@ -592,6 +595,7 @@ function Outline({ pair }: Readonly<{ pair: CommandPair }>) {
         </div>
       ))}
       {chosen && <EntryDetails entry={chosen} />}
+      {card}
     </section>
   )
 }
@@ -626,7 +630,10 @@ export function CommandsTab() {
         {pair && !file && <MissingFile key={`${pair.key}\0${lang}`} pair={pair} />}
         {!pair && <p className="p-5 text-zinc-500">There are no command files yet.</p>}
       </main>
-      <RightPanel preview={false}>{pair && <Outline key={pair.key} pair={pair} />}</RightPanel>
+      <RightPanel preview={false}>
+        {pair && <Outline key={pair.key} pair={pair} dict={dict} />}
+        <OtherCommands dict={dict} />
+      </RightPanel>
       {dialog && <CommandDialogView dialog={dialog} />}
       {newFile && <NewFileDialog onClose={() => setNewFile(false)} />}
     </>

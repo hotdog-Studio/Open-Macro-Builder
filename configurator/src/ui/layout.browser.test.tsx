@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { size } from '../core/config/model'
-import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, repoFiles, startApp, unmount, ws } from '../../test/browser/harness'
+import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, repoFiles, startApp, startOpenScreen, unmount, ws } from '../../test/browser/harness'
 
 // Dragging when the layout is not the comfortable 1280×900 of the other suites: a small window
 // where the pad has to be scrolled to, a zoomed-in browser, a pad much bigger than the example, and
@@ -77,6 +77,28 @@ describe('in a small window', () => {
     expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight)
     // The end of the guide can be scrolled to.
     guide.scrollTop = guide.scrollHeight
+    await settle()
+    expect(inView(screen.getByRole('link', { name: 'contributing guide' }))).toBe(true)
+  })
+
+  it('on the opening screen the guide scrolls and the buttons stay reachable', async () => {
+    await page.viewport(760, 420)
+    startOpenScreen()
+    await click(await screen.findByRole('button', { name: 'Get started' }))
+    const main = screen.getByRole('main')
+    const root = document.documentElement
+    expect(main.scrollHeight).toBeGreaterThan(main.clientHeight)
+    expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight)
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth)
+    // The title and the buttons are not cut off above the window, and the mouse reaches them.
+    expect(screen.getByRole('heading', { level: 1, name: 'Open Macro Builder' }).getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
+    for (const name of ['Open folder', 'Create new folder…', 'Hide the guide']) {
+      const button = screen.getByRole('button', { name })
+      expect(inView(button), name).toBe(true)
+      expect(reachable(button), name).toBe(true)
+    }
+    // The end of the guide can be scrolled to.
+    main.scrollTop = main.scrollHeight
     await settle()
     expect(inView(screen.getByRole('link', { name: 'contributing guide' }))).toBe(true)
   })

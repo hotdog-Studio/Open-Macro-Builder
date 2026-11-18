@@ -124,6 +124,11 @@ export async function startApp(tab: TabName = 'Pad shape', layout?: string): Pro
   return { folder }
 }
 
+/** The opening screen, with no folder open and none to reopen. */
+export function startOpenScreen(): void {
+  mount({ kind: 'browser', openFolder: async () => null, createFolder: async () => null, restoreFolder: async () => null })
+}
+
 export async function openTab(tab: TabName): Promise<void> {
   await click(screen.getByRole('tab', { name: tab }))
 }

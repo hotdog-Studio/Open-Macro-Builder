@@ -95,42 +95,73 @@ Describe 'Help blocks of the functions for commands' {
         ($named | Where-Object { $_.Help -and $listed -notcontains $_.Name }).Name | Should -BeNullOrEmpty
         @($listed).Count | Should -Be 64
     }
-    It 'writes each example as a call that parses, calls only commands that exist and names only parameters the function has' {
+    It 'writes each example as a call that parses, calls only commands that exist and names whole parameters each command has' {
         # Every documented function, by name, so a call to another one inside an example is checked too.
         $byName = @{}
         foreach ($f in $Functions | Where-Object Help) { $byName[$f.Name] = $f }
-        # Any other command an example calls must be a function of these files (documented or not) or a
-        # cmdlet of Windows PowerShell 5.1 itself, so a renamed function leaves no example calling its old name.
-        $projectNames = @{}
-        foreach ($f in $Functions) { $projectNames[$f.Name] = $true }
-        $builtIn = @{}
+        # The parameters of each function of the project's scripts: whole names, their [Alias()] names,
+        # and whether it takes the common parameters (-ErrorAction and the like) as an advanced function does.
+        $common = (Get-Command Get-Date).Parameters.Values | Where-Object { [System.Management.Automation.PSCmdlet]::CommonParameters -contains $_.Name }
+        $project = @{}
+        foreach ($f in $Functions) {
+            $block = $f.Ast.Body.ParamBlock
+            $parameters = if ($block) { @($block.Parameters) } else { @() }
+            $advanced = $block -and (@($block.Attributes | Where-Object { $_.TypeName.Name -eq 'CmdletBinding' }).Count -gt 0 -or
+                @($parameters | ForEach-Object { $_.Attributes } | Where-Object { $_.TypeName.Name -eq 'Parameter' }).Count -gt 0)
+            $names = @($f.Parameters)
+            $aliases = @($parameters | ForEach-Object { $_.Attributes } | Where-Object { $_.TypeName.Name -eq 'Alias' } | ForEach-Object { $_.PositionalArguments.Value })
+            if ($advanced) { $names += @($common.Name); $aliases += @($common.Aliases) }
+            $project[$f.Name] = [pscustomobject]@{ Names = $names; Accepted = $names + $aliases }
+        }
+        # A command that comes with Windows PowerShell 5.1: a cmdlet, function or alias of its default
+        # session (Microsoft.PowerShell.* and functions such as Clear-Host and mkdir), or of a module in
+        # $PSHOME. Any other command an example calls must be a function of the project's scripts, so a
+        # renamed function leaves no example calling its old name.
+        $default = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault().Commands
+        $defaultFunctions = @($default | Where-Object { $_ -is [System.Management.Automation.Runspaces.SessionStateFunctionEntry] } | ForEach-Object Name)
+        $defaultAliases = @{}
+        foreach ($e in $default | Where-Object { $_ -is [System.Management.Automation.Runspaces.SessionStateAliasEntry] }) { $defaultAliases[$e.Name] = $e.Definition }
+        function Test-InBox($Info) {
+            if ($Info.Module) { return $Info.Module.ModuleBase.StartsWith($PSHOME, [StringComparison]::OrdinalIgnoreCase) }
+            if ($Info.PSSnapIn) { return $Info.PSSnapIn.Name -like 'Microsoft.PowerShell.*' }
+            $Info.CommandType -eq 'Function' -and $defaultFunctions -contains $Info.Name
+        }
+        $inBox = @{}
+        function Get-InBoxCommand([string]$Name) {
+            if (-not $inBox.ContainsKey($Name)) {
+                $target = if ($defaultAliases.ContainsKey($Name)) { $defaultAliases[$Name] } else { $Name }
+                $inBox[$Name] = $null
+                foreach ($info in @(Get-Command -Name $target -All -ErrorAction SilentlyContinue)) {
+                    if ($info -is [System.Management.Automation.AliasInfo]) { if ($info.Module -and (Test-InBox $info)) { $info = $info.ResolvedCommand } else { continue } }
+                    if ($info -and $info.CommandType -in 'Cmdlet', 'Function' -and (Test-InBox $info)) { $inBox[$Name] = $info; break }
+                }
+            }
+            $inBox[$Name]
+        }
         $bad = foreach ($f in $Functions | Where-Object Help) {
             foreach ($example in $f.Help.Examples) {
                 $errors = $null
                 $ast = [System.Management.Automation.Language.Parser]::ParseInput($example, [ref]$null, [ref]$errors)
-                foreach ($name in @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })) {
-                    if ($projectNames.ContainsKey($name)) { continue }
-                    if (-not $builtIn.ContainsKey($name)) {
-                        $command = Get-Command -Name $name -CommandType Cmdlet, Alias -ErrorAction SilentlyContinue | Select-Object -First 1
-                        if ($command -is [System.Management.Automation.AliasInfo]) { $command = $command.ResolvedCommand }
-                        # A cmdlet of PowerShell's core, or of a module that comes with it (in $PSHOME).
-                        $builtIn[$name] = $null -ne $command -and $command.CommandType -eq 'Cmdlet' -and
-                            ($command.PSSnapIn -or ($command.Module -and $command.Module.ModuleBase.StartsWith($PSHOME, [StringComparison]::OrdinalIgnoreCase)))
+                foreach ($call in @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | Where-Object { $_.GetCommandName() })) {
+                    $name = $call.GetCommandName()
+                    if ($project.ContainsKey($name)) { $names = $project[$name].Names; $accepted = $project[$name].Accepted }
+                    elseif ($null -ne (Get-InBoxCommand $name)) { $info = Get-InBoxCommand $name; $names = @($info.Parameters.Keys); $accepted = $names + @($info.Parameters.Values | ForEach-Object { $_.Aliases }) }
+                    else { "$($f.Name): calls $name, which is not a function of the project's scripts or a command that comes with Windows PowerShell"; continue }
+                    # Stricter than PowerShell, which takes a short form such as -Win: a novice copies the
+                    # example, and the usage line shows whole names.
+                    foreach ($p in @($call.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] })) {
+                        if ($accepted -contains $p.ParameterName) { continue }
+                        $long = @($names | Where-Object { $_ -like "$($p.ParameterName)*" })
+                        if ($long) { "$($f.Name): -$($p.ParameterName) is short for -$($long -join ' or -') of $name; an example writes each parameter's whole name" }
+                        else { "$($f.Name): $name has no parameter named -$($p.ParameterName)" }
                     }
-                    if (-not $builtIn[$name]) { "$($f.Name): calls $name, which no script of the project defines and Windows PowerShell 5.1 does not have" }
                 }
                 $calls = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $byName.ContainsKey([string]$n.GetCommandName()) }, $true))
                 if ($errors.Count -gt 0 -or -not ($calls | Where-Object { $_.GetCommandName() -eq $f.Name })) { "$($f.Name): does not parse or does not call it"; continue }
                 foreach ($call in $calls) {
-                    $callee = $byName[$call.GetCommandName()]
                     $els = @($call.CommandElements)
                     for ($i = 1; $i -lt $els.Count; $i++) {
                         $el = $els[$i]
-                        # Stricter than PowerShell, which takes a short form such as -Win: a novice copies the
-                        # example, and the usage line shows whole names.
-                        if ($el -is [System.Management.Automation.Language.CommandParameterAst] -and $callee.Parameters -notcontains $el.ParameterName) {
-                            "$($f.Name): $($callee.Name) has no parameter named -$($el.ParameterName); an example writes each parameter's whole name"
-                        }
                         # 'Send-Click 200, 300' passes one array, not two values; after a parameter name a list is meant.
                         $named = $els[$i - 1] -is [System.Management.Automation.Language.CommandParameterAst]
                         if ($el -is [System.Management.Automation.Language.ArrayLiteralAst] -and -not $named) { "$($f.Name): commas in $($call.Extent.Text)" }

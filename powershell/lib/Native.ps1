@@ -79,17 +79,19 @@ namespace Macropad
         [DllImport("user32.dll")]
         private static extern IntPtr GetKeyboardLayout(uint idThread);
 
-        // The virtual key that types ch on the keyboard layout of the active window (this thread's
-        // layout when no window is active), without the shift state; -1 when the layout has no such key.
-        public static int LayoutVirtualKey(char ch)
+        // The keyboard layout of the thread that owns hWnd; this thread's when hWnd is zero or gives none.
+        public static IntPtr WindowLayout(IntPtr hWnd)
         {
             uint ignored;
-            IntPtr foreground = GetForegroundWindow();
-            uint thread = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out ignored);
+            uint thread = hWnd == IntPtr.Zero ? 0 : GetWindowThreadProcessId(hWnd, out ignored);
             IntPtr layout = GetKeyboardLayout(thread);
-            if (layout == IntPtr.Zero) layout = GetKeyboardLayout(0);
-            int vk = VkKeyScanEx(ch, layout) & 0xFF;
-            return vk == 0xFF ? -1 : vk;
+            return layout == IntPtr.Zero ? GetKeyboardLayout(0) : layout;
+        }
+
+        // VkKeyScanEx as it is: low byte the virtual key, high byte the shift state; -1 when no key types ch.
+        public static short KeyScan(char ch, IntPtr layout)
+        {
+            return VkKeyScanEx(ch, layout);
         }
 
         // Visible top-level windows owned by any of the pids, top of the Z-order first.

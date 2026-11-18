@@ -42,11 +42,43 @@ Describe 'Get-VirtualKey on the keyboard layout in use' {
         $e = ConvertTo-KeyEvent "Ctrl+'"
         ($e | ForEach-Object { '{0}:{1}' -f $_.Vk, $_.Up }) -join ' ' | Should -Be '17:False 192:False 192:True 17:True'
     }
-    It 'reads the layout without raising an error' {
-        $vk = Get-LayoutVirtualKey '\'
-        $vk | Should -BeOfType [int]
-        $vk | Should -BeGreaterOrEqual -1
-        $vk | Should -BeLessThan 255
+}
+Describe 'Get-LayoutVirtualKey' {
+    BeforeEach {
+        # Window 42 is the active one and has layout 0x111; any other window has layout 0x222.
+        Mock Get-ForegroundWindowHandle { [IntPtr]42 }
+        Mock Get-WindowKeyboardLayout { [IntPtr]0x111 } -ParameterFilter { $Hwnd -eq [IntPtr]42 }
+        Mock Get-WindowKeyboardLayout { [IntPtr]0x222 } -ParameterFilter { $Hwnd -ne [IntPtr]42 }
+    }
+    It 'asks the keyboard layout of the active window, not that of another window' {
+        Mock Get-LayoutKeyScan { 0x00C0 } -ParameterFilter { $Layout -eq [IntPtr]0x111 }
+        Mock Get-LayoutKeyScan { 0x00DE } -ParameterFilter { $Layout -ne [IntPtr]0x111 }
+        Get-LayoutVirtualKey "'" | Should -Be 0xC0
+        Get-VirtualKey "'" | Should -Be 0xC0 -Because 'the table alone would give DE'
+        Should -Invoke Get-LayoutKeyScan -ParameterFilter { $Char -eq "'" -and $Layout -eq [IntPtr]0x111 }
+    }
+    It 'gives no key when the layout needs <Needs> to type the character, so the table is used' -ForEach @(
+        # de-DE: = is Shift+0, \ is AltGr (Ctrl+Alt) on the key right of 0.
+        @{ Needs = 'Shift'; Char = '='; Scan = 0x0130; Table = 0xBB }
+        @{ Needs = 'AltGr'; Char = '\'; Scan = 0x06DB; Table = 0xDC }
+    ) {
+        Mock Get-LayoutKeyScan { $Scan }
+        Get-LayoutVirtualKey $Char | Should -Be -1
+        Get-VirtualKey $Char | Should -Be $Table
+    }
+    It 'gives no key when no key types the character, or the lookup fails' {
+        Mock Get-LayoutKeyScan { -1 }
+        Get-LayoutVirtualKey "'" | Should -Be -1
+        Mock Get-LayoutKeyScan { throw 'no layout' }
+        Get-LayoutVirtualKey "'" | Should -Be -1
+        Get-VirtualKey "'" | Should -Be 0xDE
+    }
+}
+Describe 'Get-LayoutVirtualKey on this PC' {
+    It 'finds the key of a on the real keyboard layout' {
+        # Any Latin layout types a with VK_A alone; a lookup that always failed would give -1.
+        Get-LayoutVirtualKey 'a' | Should -Be 0x41
+        Get-ForegroundKeyboardLayout | Should -Not -Be ([IntPtr]::Zero)
     }
 }
 Describe 'Test-ExtendedKey' {

@@ -115,7 +115,7 @@ function Wait-Key {
 .SYNOPSIS
 Tells whether CapsLock, NumLock, ScrollLock or Insert is switched on. It stands in for AutoHotkey's GetKeyState.
 .DESCRIPTION
-Reads the on or off state of a key that switches between two states each time it is pressed. For CapsLock, NumLock and ScrollLock, on is when the key's light is lit, on a keyboard that has one. For Insert, Windows only switches the state each time the key is pressed: it does not tell whether the program you are typing in writes over text, because each program keeps that for itself. For whether a key is held down right now, use Test-KeyPressed.
+Reads the on or off state of a key that switches between two states each time it is pressed. For CapsLock, NumLock and ScrollLock, on is when the key's light is lit, on a keyboard that has one. For Insert, Windows only switches the state each time the key is pressed. That does not tell whether the program you are typing in writes over text, because each program keeps that for itself. For whether a key is held down right now, use Test-KeyPressed.
 .PARAMETER Name
 The key to check: 'CapsLock', 'NumLock', 'ScrollLock' or 'Insert'.
 .OUTPUTS

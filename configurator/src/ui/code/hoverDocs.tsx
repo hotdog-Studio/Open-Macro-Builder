@@ -1,6 +1,6 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import type { Extension } from '@codemirror/state'
-import { EditorView, hoverTooltip } from '@codemirror/view'
+import { EditorView, hoverTooltip, type Tooltip } from '@codemirror/view'
 import { createRoot } from 'react-dom/client'
 import { nameAt, type Dictionary } from '../../core/commands/dictionary'
 import { DocCard } from './DocCard'
@@ -10,6 +10,7 @@ const TREE_WAIT = 50
 
 /** Whether the highlighter calls the text at `pos` a comment or a string, where a name is no call. */
 function inCommentOrString(view: EditorView, pos: number): boolean {
+  // In a long file the parse may not reach `pos` in time: then the tree as far as it got.
   const tree = ensureSyntaxTree(view.state, pos, TREE_WAIT) ?? syntaxTree(view.state)
   const name = tree.resolveInner(pos, 1).name
   return name.includes('comment') || name.includes('string')
@@ -29,33 +30,33 @@ const scrollingCard = EditorView.theme({ '.cm-tooltip-hover': { overflowY: 'auto
  * docs it was made with.
  */
 export function hoverDocs(get: () => Dictionary | null): Extension {
-  const tooltip = hoverTooltip(
-    (view, pos, side) => {
-      const dict = get()
-      if (!dict) return null
-      const line = view.state.doc.lineAt(pos)
-      // The pointer is over the character before `pos` when it is left of it (side -1), else the one at it.
-      const at = pos - line.from - (side < 0 ? 1 : 0)
-      const hit = at >= 0 ? nameAt(line.text, at, dict.lang) : null
-      if (!hit) return null
-      const from = line.from + hit.from
-      if (inCommentOrString(view, from)) return null
-      const entry = dict.lookup(hit.name)
-      if (!entry) return null
-      return {
-        pos: from,
-        end: line.from + hit.to,
-        above: true,
-        create() {
-          const dom = document.createElement('div')
-          const root = createRoot(dom)
-          root.render(<DocCard entry={entry} />)
-          // Unmounted in a microtask: the tooltip can go while React is still rendering.
-          return { dom, destroy: () => queueMicrotask(() => root.unmount()) }
-        },
-      }
-    },
-    { hideOnChange: true },
-  )
+  const tooltip = hoverTooltip((view, pos, side) => docTooltipAt(view, pos, side, get()), { hideOnChange: true })
   return [tooltip, scrollingCard]
+}
+
+/** The card for the name the pointer rests on at `pos` (`side` -1: left of it); null where there is none to show. */
+export function docTooltipAt(view: EditorView, pos: number, side: -1 | 1, dict: Dictionary | null): Tooltip | null {
+  // A CodeEditor given no docs (its own tests render it so) shows no card.
+  if (!dict) return null
+  const line = view.state.doc.lineAt(pos)
+  // The pointer is over the character before `pos` when it is left of it (side -1), else the one at it.
+  const at = pos - line.from - (side < 0 ? 1 : 0)
+  const hit = at >= 0 ? nameAt(line.text, at, dict.lang) : null
+  if (!hit) return null
+  const from = line.from + hit.from
+  if (inCommentOrString(view, from)) return null
+  const entry = dict.lookup(hit.name)
+  if (!entry) return null
+  return {
+    pos: from,
+    end: line.from + hit.to,
+    above: true,
+    create() {
+      const dom = document.createElement('div')
+      const root = createRoot(dom)
+      root.render(<DocCard entry={entry} />)
+      // Unmounted in a microtask: the tooltip can go while React is still rendering.
+      return { dom, destroy: () => queueMicrotask(() => root.unmount()) }
+    },
+  }
 }

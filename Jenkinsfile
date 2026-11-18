@@ -10,6 +10,9 @@
 //   OMB_WINDOWS_LABEL      label of the Windows agent (default windows-x64). It runs the Pester
 //                          suite and packages the desktop app, so it needs Windows PowerShell 5.1,
 //                          Pester 5.5+ installed for all users, AutoHotkey v2, Node and Git.
+//   OMB_WINDOWS_DESKTOP_LABEL  label of the Windows agent with a real, logged-in desktop that runs
+//                          the end-to-end test (default windows-desktop), on every branch. It needs
+//                          what OMB_WINDOWS_LABEL needs, plus Python on PATH.
 //   OMB_SKIP_BROWSER_TESTS set to anything to skip 'Configurator Browser Test', for an agent that
 //                          lacks the system libraries headless Chromium needs.
 //   OMB_ARM64_LABEL        label of the arm64 agent that tries the arm64 image (default linux-arm64)
@@ -31,13 +34,15 @@
 // v<version> FIRST, then the two Linux images and their shared tags, then the GitHub release with
 // the installer and the portable exe. Only develop uses the Windows and the arm64 agent: on any
 // other branch the Windows tests, Desktop app, Container images and Release stages are skipped.
+// The end-to-end test is the exception: it runs on the desktop agent on every branch.
 //
 // STAGES, in order: Checkout → Version → Validate config (scripts/validate-config.mjs: config.json's
 // structure, icons, and every action defined in both versions) → Script tests (node:test,
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
 // installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron: the
 // desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (the
-// Pester suite, on the Windows agent) → SonarQube analysis → quality gate → Desktop app (the installer and the portable exe,
+// Pester suite, on the Windows agent) → Windows end-to-end (the real macropad on the desktop agent,
+// every branch) → SonarQube analysis → quality gate → Desktop app (the installer and the portable exe,
 // on the Windows agent) → Container images (linux/amd64 and linux/arm64, both built here, the
 // arm64 one tried on the arm64 agent) → Release (develop only) → Cleanup. Nothing is deployed
 // from here, the macropad runs on the desktop it drives.
@@ -231,6 +236,30 @@ node {
             unstable "the Windows tests did not run (no '${label}' agent): nothing is released"
         }
         stopIfFailed('Windows tests')
+    }
+
+    stage('Windows End-to-End') {
+        // The end-to-end test (powershell/tests/EndToEnd.Tests.ps1): the real macropad, both
+        // versions, on a real desktop, driven by real key presses. It runs on every branch, so a
+        // branch proves itself on the VM before it is merged. It needs a logged-in desktop that
+        // the next build inherits: the test closes what it opens, also when a case fails. Its
+        // own limit is 20 minutes; the stage gives the wait for the agent and the run 45.
+        def label = env.OMB_WINDOWS_DESKTOP_LABEL ?: 'windows-desktop'
+        if (!onAgent(label, 45) {
+            try {
+                deleteDir()
+                checkout scm
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci -EndToEnd'
+                }
+                junit testResults: 'results/pester/end-to-end-results.xml', skipPublishingChecks: true, allowEmptyResults: true
+            } finally {
+                cleanWs(notFailBuild: true)
+            }
+        }) {
+            unstable "the end-to-end test did not run (no '${label}' agent)"
+        }
+        stopIfFailed('Windows end-to-end test')
     }
 
     stage('SonarQube Analysis') {

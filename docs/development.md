@@ -45,7 +45,7 @@ Press **Open folder** and pick this repository.
 > [!WARNING]
 > **Photosensitivity warning.** Some of these suites open, move and close windows in quick succession, which makes the screen flash and flicker. If you have photosensitive epilepsy, or flashing affects you, do not watch the screen while they run: look away, switch the monitor off, or let CI run them.
 >
-> The ones that do it: the Pester suite (`powershell\tests\run.ps1`), which shows the overlay, tooltips, forms and test windows even when its Integration tests are left out, and more with them; and the desktop-app tests (`npm run test:electron`), which open and close the app's window. The configurator's unit tests and browser tests run without a visible window.
+> The ones that do it: the Pester suite (`powershell\tests\run.ps1`), which shows the overlay, tooltips, forms and test windows even when its Integration tests are left out, and more with them; the end-to-end test (`powershell\tests\run.ps1 -EndToEnd`), which opens, moves, maximizes and closes windows, shows Task View and the screen capture, and switches the virtual desktop, at most three changes a second; and the desktop-app tests (`npm run test:electron`), which open and close the app's window. The configurator's unit tests and browser tests run without a visible window.
 
 | Command | From | What it runs |
 | --- | --- | --- |
@@ -56,8 +56,22 @@ Press **Open folder** and pick this repository.
 | `npm run test:electron` | `configurator/` | Builds and launches the desktop app, drags a key, saves and checks the file on disk, and sets up a fresh copy in an empty folder. Skips itself without the Electron binary or a display. |
 | `npm run lint` and `npm run build` | `configurator/` | ESLint, then the type check and the production build. |
 | `powershell -NoProfile -File powershell\tests\run.ps1` | the repository root, on Windows | The Pester suite of the PowerShell version. |
+| `powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd` | the repository root, on Windows with AutoHotkey v2 and Python | The end-to-end test of both versions, below. `-Case 'Name\|Other'` runs only the cases whose name matches. |
 
 Tests never read anything under `local/`.
+
+### The end-to-end test
+
+`powershell\tests\EndToEnd.Tests.ps1` starts the real macropad, the AutoHotkey version and then the PowerShell one, with a test layout, presses the macro keys with `SendInput` as a keyboard would, and checks what happened: a program window that opened and is active, a file that a fixture script wrote, a window that moved, or the exact keys that a stand-in window received. Every command of `ahk/commands` and `powershell/commands` has a case or a reason why not (the power commands lock or shut down the PC); the table is `powershell/tests/helpers/EndToEndCases.ps1`, the fixtures are in `ahk/tests/e2e`. No real Chrome, PuTTY, VS Code or Visual Studio is used: small stand-in windows run under those programs' names.
+
+While it runs, for a few minutes, the test has the keyboard, the mouse and the screen. It:
+
+- shows a banner at the top of the screen for the whole run, three seconds before the first key;
+- stops the macropad that runs from this checkout, and starts it again at the end, also when a case fails (the banner process does it if the test process dies);
+- opens and closes small dark stand-in windows, File Explorer, PowerShell and Command Prompt, Calculator, Notepad, Control Panel and message boxes; snaps, maximizes and minimizes a stand-in; shows Task View, the desktop and the screen capture once each; makes a virtual desktop, switches to and fro, and closes it;
+- moves the mouse pointer for the delayed-click form, and puts it back.
+
+A case skips itself, saying why, where it would act on a window of yours: for example while your own File Explorer, Notepad or Settings window is open, and Task Manager and Services for an administrator (they would ask for or take elevation). Close those windows first for a full run.
 
 ### Where a configurator test goes
 
@@ -104,6 +118,7 @@ Jenkins runs the `Jenkinsfile`:
 3. Runs the browser tests in headless Chromium. The agent needs Chromium's system libraries (`npx playwright install-deps chromium`, once, as root); set the `OMB_SKIP_BROWSER_TESTS` global to skip the stage on an agent without them.
 4. Builds the configurator.
 5. On `develop` only: runs the Pester suite on the Windows agent (`windows-x64`).
+6. On every branch: runs the end-to-end test on the Windows agent with a real desktop (`windows-desktop`).
 6. Sends everything to SonarQube, with the coverage of the unit and the browser tests, and waits for the quality gate.
 7. On `develop` only: packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).
 8. On `develop` only: publishes all of it as a release. [releasing.md](releasing.md) has the version scheme and the order of the steps.

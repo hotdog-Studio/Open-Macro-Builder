@@ -66,6 +66,44 @@ describe('at 1280 wide', () => {
   })
 })
 
+/**
+ * Whether the header's controls (tabs, links, buttons) sit in one row. Each is centred in its row, so
+ * in one row their top edges differ by a pixel at most (their heights differ by a pixel or two); on a
+ * second row they are a whole line lower.
+ */
+const oneRow = () => {
+  const tops = [...document.querySelectorAll<HTMLElement>('header button, header a')].map((el) => el.getBoundingClientRect().top)
+  return Math.max(...tops) - Math.min(...tops) <= 2
+}
+/** The path of the layout file shown in the header, which is in the page whether or not there is room for it. */
+const layoutPath = () => screen.getByText('local/config.json')
+const shown = (el: Element) => el.getBoundingClientRect().width > 0
+
+describe('the header', () => {
+  it('is one row in the browser at 1280 wide, without the path of the layout file', async () => {
+    await startApp()
+    expect(screen.getByRole('link', { name: /Download/ })).toBeTruthy()
+    expect(oneRow()).toBe(true)
+    expect(shown(layoutPath())).toBe(false)
+  })
+
+  it('is one row in the desktop app at its default window width, with the folder name it gives a new folder', async () => {
+    // 1264 px: the default 1280 px window less its frame.
+    await page.viewport(1264, 900)
+    await startApp('Pad shape', undefined, { kind: 'electron', folderName: 'Open Macro Builder' })
+    expect(screen.queryByRole('link', { name: /Download/ })).toBeNull()
+    expect(oneRow()).toBe(true)
+    expect(shown(layoutPath())).toBe(false)
+  })
+
+  it('shows the path of the layout file when the window is wide', async () => {
+    await page.viewport(1700, 900)
+    await startApp('Pad shape', undefined, { folderName: 'Open Macro Builder' })
+    expect(oneRow()).toBe(true)
+    expect(shown(layoutPath())).toBe(true)
+  })
+})
+
 describe('in a small window', () => {
   it('the guide scrolls inside its own panel, not the page', async () => {
     await page.viewport(760, 420)

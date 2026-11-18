@@ -113,11 +113,16 @@ export const click = (el: Element) => userEvent.click(el)
 
 /**
  * The example repository in memory, opened in the editor on a tab. `layout` is the text of the
- * personal config.json to open instead of the example's, for a pad of another shape.
+ * personal config.json to open instead of the example's, for a pad of another shape. `how` says
+ * which look the app has (`electron` is the desktop app, with no Download link) and the folder's name.
  */
-export async function startApp(tab: TabName = 'Pad shape', layout?: string): Promise<{ folder: MemoryFolder }> {
-  const folder = new MemoryFolder('repo', await editableFiles(layout))
-  mount({ kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null })
+export async function startApp(
+  tab: TabName = 'Pad shape',
+  layout?: string,
+  how: { kind?: Platform['kind']; folderName?: string } = {},
+): Promise<{ folder: MemoryFolder }> {
+  const folder = new MemoryFolder(how.folderName ?? 'repo', await editableFiles(layout))
+  mount({ kind: how.kind ?? 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null })
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
   if (tab !== 'Pad shape') await openTab(tab)

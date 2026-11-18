@@ -5,9 +5,10 @@ function TurnMonitorsOff {
     # Wait a moment so the key release does not wake the monitors straight back up.
     Wait-Pump 1000
     # WM_SYSCOMMAND / SC_MONITORPOWER / 2 = off, sent to the desktop window like the AHK version,
-    # which also gives up after 5 seconds when the desktop does not answer.
+    # which also gives up after 5 seconds when the desktop does not answer. Both raise an error when there is no desktop window.
     $desktop = Find-Window 'ahk_class Progman' -IncludeHidden
-    if ($desktop -ne [IntPtr]::Zero) { [void](Send-WindowMessage $desktop 0x112 0xF170 2 -TimeoutMs 5000) }
+    if ($desktop -eq [IntPtr]::Zero) { throw 'No desktop window to turn the monitors off with. Is Explorer running?' }
+    [void](Send-WindowMessage $desktop 0x112 0xF170 2 -TimeoutMs 5000)
 }
 
 # Seams for the tests: the calls into Windows that lock, sleep and hibernate.

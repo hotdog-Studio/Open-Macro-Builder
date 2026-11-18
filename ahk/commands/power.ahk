@@ -2,13 +2,15 @@
 
 ; *********************** Power & Sleep *********************
 /**
- * Send the Turn Monitors Off command
+ * Turns the monitors off, a second after the key is pressed. Shows an error when there is no desktop window (Explorer is not running).
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 TurnMonitorsOff(Macro)
 {
    Sleep 1000
-   SendMessage(0x112,0xF170,2,,"Program Manager")
+   if !WinExist("Program Manager")  ; the desktop window
+      throw Error("No desktop window to turn the monitors off with. Is Explorer running?")
+   SendMessage(0x112,0xF170,2,,"Program Manager")  ; gives up after 5 seconds when the desktop does not answer
 }
 
 /**

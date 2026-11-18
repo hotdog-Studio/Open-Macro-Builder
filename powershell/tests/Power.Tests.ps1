@@ -67,9 +67,13 @@ Describe 'Power commands' {
             $Hwnd -eq [IntPtr]42 -and $Msg -eq 0x112 -and $WParam -eq 0xF170 -and $LParam -eq 2 -and -not $Post -and $TimeoutMs -eq 5000
         }
     }
-    It 'TurnMonitorsOff sends nothing when there is no desktop window' {
+    It 'TurnMonitorsOff raises an error and sends nothing when there is no desktop window, as the AutoHotkey version does' {
         Mock Find-Window { [IntPtr]::Zero } -ParameterFilter { $WinTitle -eq 'ahk_class Progman' }
-        TurnMonitorsOff $null
+        { TurnMonitorsOff $null } | Should -Throw 'No desktop window*'
         Should -Invoke Send-WindowMessage -Times 0 -Exactly
+    }
+    It 'TurnMonitorsOff looks for the desktop window even when it is hidden' {
+        TurnMonitorsOff $null
+        Should -Invoke Find-Window -Times 1 -Exactly -ParameterFilter { $WinTitle -eq 'ahk_class Progman' -and $IncludeHidden }
     }
 }

@@ -361,11 +361,34 @@ function Assert-E2eFront {
     if ($front -ne $Hwnd) { throw "Not pressed: $What was not in front; $(Get-E2eForegroundText) was." }
 }
 
+# Windows' own shell can come up by itself a moment after a case (Snap Assist after a snap, the desktop
+# window after a desktop switch) and take the keyboard. Only such a window of explorer.exe is put
+# away: Escape for an overlay, then the expected window is brought back. A window of anything else
+# (a person's) is left alone, and Assert-E2eFront then refuses to press.
+function Restore-E2eFront {
+    param([IntPtr]$Front)
+    for ($i = 0; $i -lt 2; $i++) {
+        $fg = [Macropad.WindowApi]::Foreground()
+        if ($fg -eq $Front) { return }
+        $info = Get-WindowInfo $fg
+        if ($info.Exe -ne 'explorer.exe' -or $info.Class -notin 'XamlExplorerHostIslandWindow', 'Progman', 'WorkerW', 'Shell_TrayWnd') { return }
+        if ($info.Class -eq 'XamlExplorerHostIslandWindow') {
+            Wait-ScreenChange
+            Send-E2eChordTo $fg 'Escape'
+            [void](Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -ne $fg } -TimeoutMs 1500)
+        }
+        [void](Set-E2eActive $Front)
+    }
+}
+
 # Presses a case's macro key: paced, and only while Front is the window in front.
 function Invoke-E2eCaseKey {
     param($ctx, [IntPtr]$Front = $ctx.Front, [int]$Slot = $ctx.Case.Slot)
     Wait-ScreenChange
-    if ($Front -ne [IntPtr]::Zero) { Assert-E2eFront $Front }
+    if ($Front -ne [IntPtr]::Zero) {
+        if ([Macropad.WindowApi]::Foreground() -ne $Front) { Restore-E2eFront $Front }
+        Assert-E2eFront $Front
+    }
     $ctx.Pressed = $true
     Invoke-E2eMacroKey $Slot
 }
@@ -645,18 +668,19 @@ function Get-E2eRunProcesses {
 # cloaked window (Windows keeps it off the screen: a Store app's frame while the app starts, a window
 # on another virtual desktop) is left out unless IncludeCloaked says otherwise.
 function Get-E2eWindows {
-    param([string[]]$WinTitle, [switch]$IncludeCloaked)
+    param([string[]]$WinTitle, [switch]$IncludeCloaked, [switch]$IncludeHidden)
     $seen = [System.Collections.Generic.List[IntPtr]]::new()
-    foreach ($t in $WinTitle) { foreach ($h in (Find-Window $t -All)) { if (-not $seen.Contains($h) -and ($IncludeCloaked -or -not [OmbE2e.Dwm]::Cloaked($h))) { $seen.Add($h) } } }
+    foreach ($t in $WinTitle) { foreach ($h in (Find-Window $t -All -IncludeHidden:$IncludeHidden)) { if (-not $seen.Contains($h) -and ($IncludeCloaked -or -not [OmbE2e.Dwm]::Cloaked($h))) { $seen.Add($h) } } }
     , $seen.ToArray()
 }
 
 # The windows of the WinTitles that the run did not open (a person's own, or an aborted run's), as
-# descriptions; cloaked ones count too.
+# descriptions; cloaked and hidden ones count too (a Store app such as Settings hides its window while
+# it is suspended, and the key would bring it back).
 function Get-E2eForeignWindows {
     param([string[]]$WinTitle)
     $ours = @($script:E2eRun.Processes | ForEach-Object { $_.Pid }) + @(Get-E2eRunProcesses | ForEach-Object { [int]$_.ProcessId })
-    , @(foreach ($h in (Get-E2eWindows $WinTitle -IncludeCloaked)) {
+    , @(foreach ($h in (Get-E2eWindows $WinTitle -IncludeCloaked -IncludeHidden)) {
             if ($script:E2eRun.Windows -contains $h) { continue }
             $i = Get-WindowInfo $h
             if ($ours -notcontains $i.Pid) { "'$($i.Title)' ($($i.Exe))" }
@@ -814,7 +838,11 @@ function Wait-E2eStandinLog {
 function Read-E2eLog {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
-    $stream = [System.IO.FileStream]::new($Path, 'Open', 'Read', 'ReadWrite')
+    $stream = $null
+    for ($i = 0; $null -eq $stream; $i++) {
+        try { $stream = [System.IO.FileStream]::new($Path, 'Open', 'Read', 'ReadWrite') }
+        catch [System.IO.IOException] { if ($i -ge 20) { throw }; [System.Threading.Thread]::Sleep(15) }  # the writer has it open
+    }
     try {
         $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
         $text = $reader.ReadToEnd()
@@ -1112,7 +1140,8 @@ $script:E2eChordArrange = {
 $script:E2eChordAssert = {
     param($ctx)
     $want = @($ctx.Expected)
-    $got = Wait-E2eTaps { Get-E2eStandinTaps $ctx.Standin $ctx.Mark } $want.Count -TimeoutMs 8000
+    try { $got = Wait-E2eTaps { Get-E2eStandinTaps $ctx.Standin $ctx.Mark } $want.Count -TimeoutMs 8000 }
+    catch { throw "The stand-in's key events are not whole chords ($($_.Exception.Message)): $((@(Read-E2eLog $ctx.Standin.Log) | Select-Object -Skip $ctx.Mark) -join ' / ')" }
     ($got -join ', ') | Should -Be ($want -join ', ') -Because "the stand-in must receive exactly the keys of $($ctx.Case.Command) (in front now: $(Get-E2eForegroundText))"
     if ($ctx.Case.From) { [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Standin.Hwnd -Because 'the command brings its program forward' }
 }

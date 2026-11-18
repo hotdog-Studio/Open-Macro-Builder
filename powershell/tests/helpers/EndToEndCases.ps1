@@ -176,7 +176,16 @@ function New-E2ePlacementCase {
             (Wait-E2eCondition { & $ctx.Case.Test $a } -TimeoutMs 4000) | Should -BeTrue -Because "the active window must be $($ctx.Case.Expect) (now: $((Get-WindowRect $a) | Out-String) state $(Get-WindowState $a))"
             Wait-ScreenChange -Observed
         }
-        CleanUp = { param($ctx) Close-E2eShellOverlay; Reset-E2eStandinA }
+        CleanUp = {
+            param($ctx)
+            # After a snap, Windows may offer the other half to another window (Snap Assist), a moment
+            # later; it is closed so that it does not take the next case's keys.
+            if ($ctx.Case.Command -like 'SnapWindow*') {
+                [void](Wait-E2eCondition { $i = Get-WindowInfo ([Macropad.WindowApi]::Foreground()); $i.Exe -eq 'explorer.exe' -and $i.Class -eq 'XamlExplorerHostIslandWindow' } -TimeoutMs 1500)
+            }
+            Close-E2eShellOverlay
+            Reset-E2eStandinA
+        }
     }
 }
 

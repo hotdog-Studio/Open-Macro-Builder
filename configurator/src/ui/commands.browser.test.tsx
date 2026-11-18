@@ -617,11 +617,39 @@ describe('Commands tab: docs on hover', () => {
       await hover(tip)
       await new Promise((r) => setTimeout(r, 400))
       expect(screen.getByRole('tooltip')).toBe(tip)
+      // At the end of the scroll there is nothing more below.
+      const scroller = tip.firstElementChild as HTMLElement
+      scroller.scrollTop = scroller.scrollHeight
+      await waitFor(() => expect(within(tip).queryByText('More below. Scroll the card, or click the row.')).toBeNull())
+      expect(screen.getByRole('tooltip')).toBe(tip)
+      // Back onto its row across the gap between them, as a hand moves: the same card stays, it does
+      // not go and come back.
+      const gap = { x: tip.getBoundingClientRect().right + 4, y: row.getBoundingClientRect().top + 4 }
+      await hover(gap)
+      expect(screen.getByRole('tooltip')).toBe(tip)
+      await hover(row)
+      await new Promise((r) => setTimeout(r, 300))
+      expect(screen.getByRole('tooltip')).toBe(tip)
       await hover(nav())
       await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
     } finally {
       await page.viewport(1280, 900)
     }
+  })
+
+  it('lets the pointer pass over a card that fits, on its way to the editor', async () => {
+    const other = await powerShellList()
+    const row = within(other).getByRole('button', { name: /^Wait-Pump\b/ })
+    row.scrollIntoView({ block: 'center' })
+    await hover(row)
+    const tip = await screen.findByRole('tooltip')
+    expect(within(tip).queryByText('More below. Scroll the card, or click the row.')).toBeNull()
+    const box = tip.getBoundingClientRect()
+    const spot = { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+    // What lies under the card there takes the pointer, not the card.
+    expect(tip.contains(document.elementFromPoint(spot.x, spot.y))).toBe(false)
+    await hover(spot)
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
   })
 
   it('keeps the card of the list inside a narrow window', async () => {

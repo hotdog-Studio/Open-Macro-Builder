@@ -5,12 +5,14 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
   type FocusEvent,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
   type SetStateAction,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -160,9 +162,23 @@ function useFollow(update: () => void): void {
   }, [update])
 }
 
+/** What the card's scroll area holds: more than it shows (`tall`), and more below what it shows (`more`). */
+function useScrollState(scroller: RefObject<HTMLDivElement | null>) {
+  const [tall, setTall] = useState(false)
+  const [more, setMore] = useState(false)
+  const measure = useCallback(() => {
+    const s = scroller.current
+    if (!s) return
+    setTall(s.scrollHeight > s.clientHeight + 1)
+    setMore(s.scrollTop + s.clientHeight < s.scrollHeight - 1)
+  }, [scroller])
+  return { tall, more, measure }
+}
+
 /**
- * The card beside the panel, portalled into the page. It takes the pointer, so that a card taller
- * than the window can be scrolled; a last line says so when there is more below.
+ * The card beside the panel, portalled into the page. A card taller than the window takes the
+ * pointer, so that it can be scrolled, and its last line says so while there is more below; a card
+ * that fits lets the pointer through to what lies under it.
  */
 function FloatingCard({
   id,
@@ -173,13 +189,13 @@ function FloatingCard({
 }: Readonly<{ id: string; entry: DictEntry; row: HTMLElement; onEnter: () => void; onLeave: () => void }>) {
   const box = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
-  const [more, setMore] = useState(false)
+  const { tall, more, measure } = useScrollState(scroller)
   const update = useCallback(() => {
-    if (!box.current || !scroller.current) return
-    place(box.current, row)
-    setMore(scroller.current.scrollHeight > scroller.current.clientHeight + 1)
-  }, [row])
-  // After every render: the docs may have changed, and with them the card's height.
+    if (box.current) place(box.current, row)
+    measure()
+  }, [row, measure])
+  // After every render: the docs may have changed, and with them the card's height. The card's own
+  // scroll reaches useFollow too, so the last line follows it.
   useLayoutEffect(update)
   useFollow(update)
   return createPortal(
@@ -187,7 +203,7 @@ function FloatingCard({
       ref={box}
       id={id}
       role="tooltip"
-      style={{ maxHeight: `calc(100vh - ${2 * GAP}px)` }}
+      style={{ maxHeight: `calc(100vh - ${2 * GAP}px)`, pointerEvents: tall ? 'auto' : 'none' }}
       className="fixed z-50 flex flex-col rounded-md border border-zinc-700 bg-zinc-900 shadow-xl"
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
@@ -206,6 +222,29 @@ function FloatingCard({
 }
 
 /**
+ * What the rows' handlers do to the hover state, the same functions on every render. Leaving a row
+ * or the card hides the pointer's card after the grace, which entering a row or the card cancels.
+ */
+function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>): HoverActions {
+  const grace = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const actions = useMemo<HoverActions>(
+    () => ({
+      set: (change) => setHover((was) => ({ ...was, ...change })),
+      leaveRow: () => {
+        clearTimeout(grace.current)
+        grace.current = setTimeout(() => setHover((was) => ({ ...was, pointer: null })), GRACE)
+      },
+      stay: () => clearTimeout(grace.current),
+      hideAll: () => setHover(NONE),
+    }),
+    [setHover],
+  )
+  // No hide may land once the lists are gone.
+  useEffect(() => actions.stay, [actions])
+  return actions
+}
+
+/**
  * One floating card of docs for the lists inside it: for the row under the pointer, else for the row
  * holding the focus. The card shows the entry with the row's id in `dicts` as they are now, so it
  * follows typing, and goes when the entry or the row does.
@@ -213,35 +252,27 @@ function FloatingCard({
 export function DocHoverProvider({ dicts, children }: Readonly<{ dicts: Dictionary[]; children: ReactNode }>) {
   const [hover, setHover] = useState<Hover>(NONE)
   const id = useId()
-  const grace = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const actions = useHoverActions(setHover)
   const shown = hover.pointer ?? hover.focus
   // Undefined once the entry is gone from the dictionaries (renamed, deleted, another file shown): no card then.
   const entry = shown ? findEntry(dicts, shown.id) : undefined
-
-  const hideAll = useCallback(() => setHover(NONE), [])
-  const stay = useCallback(() => clearTimeout(grace.current), [])
-  const actions: HoverActions = {
-    set: (change) => setHover((was) => ({ ...was, ...change })),
-    leaveRow: () => {
-      clearTimeout(grace.current)
-      grace.current = setTimeout(() => setHover((was) => ({ ...was, pointer: null })), GRACE)
-    },
-    stay,
-    hideAll,
-  }
-  useEffect(() => stay, [stay])
-  useEscape(shown !== null, hideAll)
+  const shownId = entry?.id
+  useEscape(shown !== null, actions.hideAll)
   useDropGoneRows(shown !== null, setHover)
 
-  const row: RowHoverFor = (rowEntry, onClick) =>
-    rowEntry ? rowHandlers(rowEntry, onClick, actions, entry?.id === rowEntry.id ? id : undefined) : { onClick }
+  // The same function until another entry's card is up, so the lists re-render only then.
+  const row = useCallback<RowHoverFor>(
+    (rowEntry, onClick) => {
+      if (!rowEntry) return { onClick }
+      return rowHandlers(rowEntry, onClick, actions, rowEntry.id === shownId ? id : undefined)
+    },
+    [actions, shownId, id],
+  )
 
   return (
     <HoverContext.Provider value={row}>
       {children}
-      {shown && entry && (
-        <FloatingCard id={id} entry={entry} row={shown.el} onEnter={stay} onLeave={() => actions.set({ pointer: null })} />
-      )}
+      {shown && entry && <FloatingCard id={id} entry={entry} row={shown.el} onEnter={actions.stay} onLeave={actions.leaveRow} />}
     </HoverContext.Provider>
   )
 }

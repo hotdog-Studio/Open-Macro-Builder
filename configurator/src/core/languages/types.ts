@@ -1,11 +1,52 @@
 export type LangId = 'ahk' | 'ps'
 
+export interface ParamDoc {
+  /** As declared. */
+  name: string
+  /** The note from the docs on one line; '' when the docs have none. */
+  text: string
+  /** The type as written, without its outer brackets or braces; '' when none. */
+  type: string
+  optional: boolean
+  /** The default as written; '' when none. */
+  default: string
+  /** The values of a PowerShell [ValidateSet(...)], unquoted; [] when none. */
+  values: string[]
+}
+
+export interface FunctionDoc {
+  /** 'block': a doc block (AutoHotkey `/** *\/`, PowerShell `<# #>`); 'note': a run of PowerShell `#` lines; 'none'. */
+  form: 'block' | 'note' | 'none'
+  /** What it does, on one line; '' when the docs do not say. */
+  summary: string
+  /** One per declared parameter, in declared order. */
+  params: ParamDoc[]
+  /** On one line; '' when the docs do not say. */
+  returns: string
+  /** Each as written, its lines kept, blank lines at its ends dropped. */
+  examples: string[]
+}
+
 export interface FunctionInfo {
   name: string
   /** 1-based line of the definition. */
   line: number
   params: string[]
+  /** Always equal to doc.summary. */
   description: string
+  usage: string
+  doc: FunctionDoc
+}
+
+/** The docs of a function that has none: form 'none', a ParamDoc per name with every other field empty. */
+export function emptyDoc(params: string[]): FunctionDoc {
+  return {
+    form: 'none',
+    summary: '',
+    params: params.map((name) => ({ name, text: '', type: '', optional: false, default: '', values: [] })),
+    returns: '',
+    examples: [],
+  }
 }
 
 export interface Language {

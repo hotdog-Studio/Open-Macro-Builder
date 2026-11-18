@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readRepoText } from '../../../test/repo'
 import { appendBlock } from '../commands/newCommand'
-import { LANGUAGES, LANG_IDS, isCommand } from './index'
+import { LANGUAGES, LANG_IDS, emptyDoc, isCommand } from './index'
 
 describe('AutoHotkey findFunctions', () => {
   it('reads a documented command', () => {
@@ -14,7 +14,7 @@ describe('AutoHotkey findFunctions', () => {
       '    ActivateOrOpenChrome("https://www.youtube.com/")',
       '}',
     ].join('\n')
-    expect(LANGUAGES.ahk.findFunctions(text)).toEqual([
+    expect(LANGUAGES.ahk.findFunctions(text)).toMatchObject([
       { name: 'OpenYoutube', line: 5, params: ['Macro'], description: 'Opens YouTube in Google Chrome.' },
     ])
   })
@@ -48,6 +48,78 @@ describe('AutoHotkey findFunctions', () => {
   it('ignores indented calls and control flow', () => {
     const text = 'Thing(Macro) {\n    Other(Macro)\n    if(x) {\n    }\n}\nif(y) {\n}'
     expect(LANGUAGES.ahk.findFunctions(text).map((f) => f.name)).toEqual(['Thing'])
+  })
+
+  it('reads the docs of a documented function', () => {
+    const text = [
+      '/**',
+      ' * Activates a window, or opens the program.',
+      ' * Second line of the summary.',
+      ' * @param {String} Window - The window title.',
+      ' *   It may span lines.',
+      ' * @param {String} [Args=""] - Optional arguments.',
+      ' * @param {String} Nobody - Names no parameter.',
+      ' * @returns {Integer} The window id.',
+      ' * @example ActivateOrOpen("ahk_exe notepad.exe", "notepad")',
+      ' */',
+      'ActivateOrOpen(Window, Program, Args := "")',
+      '{',
+      '}',
+    ].join('\n')
+    const [fn] = LANGUAGES.ahk.findFunctions(text)
+    expect(fn.usage).toBe('ActivateOrOpen(Window, Program, Args := "")')
+    expect(fn.description).toBe('Activates a window, or opens the program. Second line of the summary.')
+    expect(fn.doc).toEqual({
+      form: 'block',
+      summary: 'Activates a window, or opens the program. Second line of the summary.',
+      params: [
+        { name: 'Window', text: 'The window title. It may span lines.', type: 'String', optional: false, default: '', values: [] },
+        { name: 'Program', text: '', type: '', optional: false, default: '', values: [] },
+        { name: 'Args', text: 'Optional arguments.', type: 'String', optional: true, default: '""', values: [] },
+      ],
+      returns: 'The window id.',
+      examples: ['ActivateOrOpen("ahk_exe notepad.exe", "notepad")'],
+    })
+  })
+
+  it('leaves the brace out of the usage line', () => {
+    expect(LANGUAGES.ahk.findFunctions('Thing(Macro) {\n}')[0].usage).toBe('Thing(Macro)')
+  })
+
+  it('gives a function without a block its declared parameters and no docs', () => {
+    const [fn] = LANGUAGES.ahk.findFunctions('F(&Out, Rest*, Maybe?) {\n}')
+    expect(fn.doc).toEqual({
+      form: 'none',
+      summary: '',
+      params: [
+        { name: 'Out', text: '', type: '', optional: false, default: '', values: [] },
+        { name: 'Rest', text: '', type: '', optional: true, default: '', values: [] },
+        { name: 'Maybe', text: '', type: '', optional: true, default: '', values: [] },
+      ],
+      returns: '',
+      examples: [],
+    })
+  })
+
+  it('reads an @param without a type or a dash', () => {
+    const [fn] = LANGUAGES.ahk.findFunctions('/**\n * Does it.\n * @param wParam the word\n */\nOn(wParam) {\n}')
+    expect(fn.doc.params[0]).toMatchObject({ text: 'the word', type: '' })
+  })
+
+  it('lists a function under a half-typed block without docs', () => {
+    const [fn] = LANGUAGES.ahk.findFunctions('/**\n * Half typed\nThing(Macro) {\n}')
+    expect(fn.name).toBe('Thing')
+    expect(fn.doc.form).toBe('none')
+  })
+
+  it('reads the docs of the real helper file', () => {
+    const fns = LANGUAGES.ahk.findFunctions(readRepoText('ahk/commands/helper.ahk'))
+    const fn = fns.find((f) => f.name === 'ActivateOrOpen')!
+    expect(fn.usage).toBe('ActivateOrOpen(Window, Program, Args := "")')
+    expect(fn.doc.form).toBe('block')
+    expect(fn.doc.params[0].text).toBe('The Window title or class to check for.')
+    expect(fn.doc.params[2]).toMatchObject({ name: 'Args', optional: true, default: '""' })
+    expect(fns.find((f) => f.name === 'EncodeInteger')!.doc.returns).toBe('The result of the DllCall operation.')
   })
 })
 
@@ -106,7 +178,7 @@ describe('language table', () => {
   })
 
   it('accepts Macro in any case only as the single parameter', () => {
-    const f = (params: string[]) => ({ name: 'n', line: 1, params, description: '' })
+    const f = (params: string[]) => ({ name: 'n', line: 1, params, description: '', usage: 'n', doc: emptyDoc(params) })
     expect(isCommand(f(['macro']))).toBe(true)
     expect(isCommand(f(['Macro', 'X']))).toBe(false)
     expect(isCommand(f([]))).toBe(false)
@@ -310,7 +382,7 @@ describe('starter command description', () => {
     const text = appendBlock('', LANGUAGES.ahk.starterCommand('Foo', 'fast */ copy'))
     expect(text).toBe('/**\n * fast * / copy\n * @param {Macro} Macro - The macro object.\n */\nFoo(Macro)\n{\n}\n')
     const fns = LANGUAGES.ahk.findFunctions(text)
-    expect(fns).toEqual([{ name: 'Foo', line: 5, params: ['Macro'], description: 'fast * / copy' }])
+    expect(fns).toMatchObject([{ name: 'Foo', line: 5, params: ['Macro'], description: 'fast * / copy' }])
     expect(isCommand(fns[0])).toBe(true)
   })
 

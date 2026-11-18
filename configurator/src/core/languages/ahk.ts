@@ -1,4 +1,4 @@
-import { oneLine, rewriteBody, type FunctionInfo, type Language } from './types'
+import { emptyDoc, oneLine, rewriteBody, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
 const DEFINITION = /^(\w+)\(([^)]*)\)\s*(?:\{\s*)?$/
 const PARAM_NAME = /^[&*]?(\w+)/
@@ -24,36 +24,105 @@ function splitParams(list: string): string[] {
   return pieces
 }
 
-function paramNames(list: string): string[] {
-  const names: string[] = []
-  for (const piece of splitParams(list)) {
-    const match = PARAM_NAME.exec(piece.trim())
-    if (match) names.push(match[1])
-  }
-  return names
+interface Declared {
+  name: string
+  optional: boolean
+  default: string
 }
 
-/** The text of the `/** ... *\/` block that ends on the line directly above `index`. */
-function descriptionAbove(lines: string[], index: number): string {
-  if (index === 0 || !/\*\/\s*$/.test(lines[index - 1])) return ''
+/** The parameters a definition declares: optional with `:=`, or with a trailing `?` or `*`. */
+function declaredParams(list: string): Declared[] {
+  const declared: Declared[] = []
+  for (const piece of splitParams(list)) {
+    const text = piece.trim()
+    const match = PARAM_NAME.exec(text)
+    if (!match) continue
+    const assign = text.indexOf(':=')
+    const head = assign === -1 ? text : text.slice(0, assign).trimEnd()
+    declared.push({
+      name: match[1],
+      optional: assign !== -1 || head.endsWith('?') || head.endsWith('*'),
+      default: assign === -1 ? '' : text.slice(assign + ':='.length).trim(),
+    })
+  }
+  return declared
+}
+
+/** The lines of the `/** ... *\/` block that ends on the line directly above `index`, without their decoration; null when there is none. */
+function docBlockAbove(lines: string[], index: number): string[] | null {
+  if (index === 0 || !/\*\/\s*$/.test(lines[index - 1])) return null
   let start = index - 1
   while (start >= 0 && !/^\s*\/\*\*/.test(lines[start])) {
-    if (/^\s*\/\*(?!\*)/.test(lines[start])) return ''
+    if (/^\s*\/\*(?!\*)/.test(lines[start])) return null
     start--
   }
-  if (start < 0) return ''
-  const parts: string[] = []
-  for (let i = start; i < index; i++) {
-    const text = lines[i]
-      .replace(/^\s*\/\*\*/, '')
-      .replace(/\*\/\s*$/, '')
-      .replace(/^\s*\*\s?/, '')
-      .trim()
-    if (text === '') continue
-    if (text.startsWith('@description ')) parts.push(text.slice('@description '.length).trim())
-    else if (!text.startsWith('@')) parts.push(text)
+  if (start < 0) return null
+  return lines
+    .slice(start, index)
+    .map((line) => line.replace(/^\s*\/\*\*/, '').replace(/\*\/\s*$/, '').replace(/^\s*\*\s?/, '').trimEnd())
+}
+
+/** A tag of a doc block, such as `@param`: the rest of its line, then the lines up to the next tag. */
+interface Tag {
+  name: string
+  lines: string[]
+}
+
+const TAG = /^\s*@(\w+)\s?(.*)$/
+const PARAM_TAG = /^(?:\{([^}]*)\}\s*)?(\[[^\]]*\]|\S+)\s*(?:-(?:\s+|$))?(.*)$/
+const RETURNS_TAG = /^(?:\{[^}]*\}\s*)?(.*)$/
+
+/** The lines before the first tag, and the tags. */
+function splitTags(block: string[]): { intro: string[]; tags: Tag[] } {
+  const intro: string[] = []
+  const tags: Tag[] = []
+  for (const line of block) {
+    const match = TAG.exec(line)
+    if (match) tags.push({ name: match[1].toLowerCase(), lines: [match[2]] })
+    else (tags.at(-1)?.lines ?? intro).push(line)
   }
-  return parts.join(' ')
+  return { intro, tags }
+}
+
+const textOf = (lines: string[]): string => oneLine(lines.join(' '))
+
+/** An `@param` note onto the declared parameter it names, ignoring case; a name that matches none is dropped. */
+function readParamTag(tag: Tag, params: ParamDoc[]): void {
+  const match = PARAM_TAG.exec(tag.lines[0].trim())
+  if (!match) return
+  const name = match[2].replace(/^\[|\]$/g, '').split('=')[0].trim().toLowerCase()
+  const param = params.find((p) => p.name.toLowerCase() === name)
+  if (!param) return
+  param.type = match[1]?.trim() ?? ''
+  param.text = textOf([match[3], ...tag.lines.slice(1)])
+}
+
+/** An `@example`: its lines as written, the blank lines at its ends dropped. */
+function readExample(tag: Tag): string {
+  const lines = [tag.lines[0].trim(), ...tag.lines.slice(1)]
+  while (lines.length > 0 && lines[0].trim() === '') lines.shift()
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop()
+  return lines.join('\n')
+}
+
+/** The docs in the lines of a doc block, for the parameters a definition declares. */
+function readDoc(block: string[], declared: Declared[]): FunctionDoc {
+  const { intro, tags } = splitTags(block)
+  const doc = emptyDoc(declared.map((d) => d.name))
+  doc.form = 'block'
+  const summary = [...intro]
+  for (const tag of tags) {
+    if (tag.name === 'description') summary.push(...tag.lines)
+    else if (tag.name === 'param') readParamTag(tag, doc.params)
+    else if (tag.name === 'returns' || tag.name === 'return') {
+      doc.returns = textOf([RETURNS_TAG.exec(tag.lines[0].trim())?.[1] ?? '', ...tag.lines.slice(1)])
+    } else if (tag.name === 'example') {
+      const example = readExample(tag)
+      if (example !== '') doc.examples.push(example)
+    }
+  }
+  doc.summary = textOf(summary)
+  return doc
 }
 
 function findFunctions(text: string): FunctionInfo[] {
@@ -62,11 +131,20 @@ function findFunctions(text: string): FunctionInfo[] {
   lines.forEach((raw, i) => {
     const match = DEFINITION.exec(raw.replace(/\r$/, ''))
     if (!match || NOT_FUNCTIONS.has(match[1].toLowerCase())) return
+    const declared = declaredParams(match[2])
+    const block = docBlockAbove(lines, i)
+    const doc = block ? readDoc(block, declared) : emptyDoc(declared.map((d) => d.name))
+    doc.params.forEach((param, n) => {
+      param.optional = declared[n].optional
+      param.default = declared[n].default
+    })
     found.push({
       name: match[1],
       line: i + 1,
-      params: paramNames(match[2]),
-      description: descriptionAbove(lines, i),
+      params: declared.map((d) => d.name),
+      description: doc.summary,
+      usage: `${match[1]}(${match[2]})`,
+      doc,
     })
   })
   return found

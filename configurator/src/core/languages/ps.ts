@@ -1,4 +1,4 @@
-import { oneLine, rewriteBody, type FunctionInfo, type Language } from './types'
+import { emptyDoc, oneLine, rewriteBody, type FunctionInfo, type Language } from './types'
 
 const DEFINITION = /^\s*function\s+([\w-]+)/i
 const PARAM_START = /param\s*\(/i
@@ -67,7 +67,9 @@ function findFunctions(text: string): FunctionInfo[] {
     if (!match) return
     const above = i > 0 ? lines[i - 1].trim() : ''
     const description = above.startsWith('#') ? above.slice(1).trim() : ''
-    found.push({ name: match[1], line: i + 1, params: paramNames(lines, i), description })
+    const params = paramNames(lines, i)
+    const doc = { ...emptyDoc(params), summary: description, form: description === '' ? ('none' as const) : ('note' as const) }
+    found.push({ name: match[1], line: i + 1, params, description, usage: match[1], doc })
   })
   return found
 }

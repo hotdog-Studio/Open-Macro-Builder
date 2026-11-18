@@ -1,13 +1,13 @@
+import { PS_SCOPES } from '../../../../scripts/validate-config-core.mjs'
 import { emptyDoc, exampleOf, oneLine, rewriteBody, textOf, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
 /** `function` and the name, which may carry a scope (`global:Name`). */
 const DEFINITION = /^\s*function\s+([\w:-]+)/i
 const PARAM_START = /param\s*\(/i
-const SCOPES = ['global:', 'script:', 'local:', 'private:']
 
-/** A function's name without the scope it may be defined in. */
+/** A function's name without the scope it may be defined in: the scopes the config validator knows. */
 function withoutScope(name: string): string {
-  const scope = SCOPES.find((s) => name.toLowerCase().startsWith(s))
+  const scope = PS_SCOPES.find((s) => name.toLowerCase().startsWith(s))
   return scope ? name.slice(scope.length) : name
 }
 

@@ -126,7 +126,8 @@ function checkHotstring(s, i, { errors, actions }) {
 const AHK_FUNCTION = /^(\w+)\s*\(/gm;
 /** `function` and the name, which may carry a scope (`global:Name`). */
 const PS_FUNCTION = /^[ \t]*function[ \t]+([\w:-]+)/gim;
-const PS_SCOPES = ['global:', 'script:', 'local:', 'private:'];
+/** The scopes a PowerShell function can be defined in; the configurator's reader takes the same list from here. */
+export const PS_SCOPES = ['global:', 'script:', 'local:', 'private:'];
 
 /** A lower-cased PowerShell name without the scope it may be defined in, as the configurator reads it. */
 function withoutScope(name) {

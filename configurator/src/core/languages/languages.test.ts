@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { functionNames, PS_SCOPES } from '../../../../scripts/validate-config-core.mjs'
 import { readRepoText } from '../../../test/repo'
 import { appendBlock } from '../commands/newCommand'
 import { paramMismatches } from '../commands/outline'
@@ -439,6 +440,15 @@ describe('PowerShell findFunctions', () => {
     expect(fns.map((f) => [f.name, f.params])).toEqual([['Send-Thing', ['X', 'Y']], ['Send-Other', ['X', 'Y']], ['Open', ['Macro']]])
     expect(fns[1].usage).toBe('Send-Other <X> [-Y <value>]')
     expect(isCommand(fns[2])).toBe(true)
+  })
+
+  it('reads every scope the config validator reads, as the validator does', () => {
+    expect(PS_SCOPES.length).toBeGreaterThan(0)
+    for (const scope of PS_SCOPES) {
+      const text = `function ${scope.toUpperCase()}Send-Thing {\n}`
+      expect(LANGUAGES.ps.findFunctions(text).map((f) => f.name)).toEqual(['Send-Thing'])
+      expect(functionNames(text, '.ps1')).toEqual(['send-thing'])
+    }
   })
 
   it('reads no function from a half-typed scope with no name after it', () => {

@@ -246,20 +246,26 @@ node {
         // own limit is 20 minutes; the stage gives the wait for the agent and the run 45. An abort
         // or a timeout ends the test's process tree, so the stage runs the test's own clean-up
         // (run.ps1 -EndToEndCleanup: leftover processes, windows, virtual desktops, held keys,
-        // the run's folder) before the test and again after it, whatever happened.
+        // the run's folder; only what the run's state file shows is still the run's) before the
+        // test and again after it, whatever happened. The clean-up exits 1 when it could not do
+        // everything, and that marks the build failed, as a failed test does.
         def label = env.OMB_WINDOWS_DESKTOP_LABEL ?: 'windows-desktop'
         def cleanUp = 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -EndToEndCleanup'
         if (!onAgent(label, 45) {
             try {
                 deleteDir()
                 checkout scm
-                bat cleanUp
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the clean-up before the end-to-end test failed') {
+                    bat cleanUp
+                }
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci -EndToEnd'
                 }
                 junit testResults: 'results/pester/end-to-end-results.xml', skipPublishingChecks: true, allowEmptyResults: true
             } finally {
-                try { bat cleanUp } catch (cleanUpFailed) { echo "the end-to-end clean-up failed: ${cleanUpFailed}" }
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the clean-up after the end-to-end test failed') {
+                    bat cleanUp
+                }
                 cleanWs(notFailBuild: true)
             }
         }) {

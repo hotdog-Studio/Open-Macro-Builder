@@ -264,6 +264,13 @@ $script:E2eFirstKeyVk = 0x7C
 $script:E2eKeyCount = 11
 # The keys a run may hold down: Shift, Ctrl, Alt (both sides), the Windows keys, and Fn.
 $script:E2eHoldableVk = @(0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C, 0x87)
+# The variables run.ps1 sets for the test: no program the test starts gets them.
+$script:E2eOwnVariables = @('OMB_E2E', 'OMB_E2E_CASE', 'OMB_E2E_CI', 'OMB_E2E_LIMIT', 'OMB_E2E_REPEAT')
+# The windows of Windows' own shell that can come up by themselves and take the keyboard (Snap Assist,
+# Task View, the desktop, the taskbar), and the desktop itself, which a key may leave in front (on a
+# new virtual desktop, explorer.exe's untitled ExplorerBrowserOwner may hold the keyboard).
+$script:E2eShellClasses = @('XamlExplorerHostIslandWindow', 'Progman', 'WorkerW', 'Shell_TrayWnd')
+$script:E2eDesktopClasses = @('Progman', 'WorkerW', 'Shell_TrayWnd', 'ExplorerBrowserOwner')
 
 # ---------------------------------------------------------------------------------------------------
 # Pacing: at most three changes of the screen a second.
@@ -361,32 +368,51 @@ function Assert-E2eFront {
     if ($front -ne $Hwnd) { throw "Not pressed: $What was not in front; $(Get-E2eForegroundText) was." }
 }
 
-# Windows' own shell can come up by itself a moment after a case (Snap Assist after a snap, the desktop
-# window after a desktop switch) and take the keyboard. Only such a window of explorer.exe is put
-# away: Escape for an overlay, then the expected window is brought back. A window of anything else
-# (a person's) is left alone, and Assert-E2eFront then refuses to press.
+# Under -Ci only (OMB_E2E_CI: nobody sits at that desktop), Windows' own shell may have come up by
+# itself a moment after a case (Snap Assist after a snap, the desktop after a desktop switch) and taken
+# the keyboard. Once, such a window of explorer.exe is put away (Escape, only while that overlay is in
+# front) and Front is brought back, paced. On a developer's desktop nothing is taken back from a
+# person: nothing happens here, and Assert-E2eFront refuses to press, saying what was in front.
 function Restore-E2eFront {
     param([IntPtr]$Front)
-    for ($i = 0; $i -lt 2; $i++) {
-        $fg = [Macropad.WindowApi]::Foreground()
-        if ($fg -eq $Front) { return }
-        $info = Get-WindowInfo $fg
-        if ($info.Exe -ne 'explorer.exe' -or $info.Class -notin 'XamlExplorerHostIslandWindow', 'Progman', 'WorkerW', 'Shell_TrayWnd') { return }
-        if ($info.Class -eq 'XamlExplorerHostIslandWindow') {
-            Wait-ScreenChange
-            Send-E2eChordTo $fg 'Escape'
-            [void](Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -ne $fg } -TimeoutMs 1500)
-        }
-        [void](Set-E2eActive $Front)
+    if ($env:OMB_E2E_CI -ne '1') { return }
+    $fg = [Macropad.WindowApi]::Foreground()
+    if ($fg -eq $Front) { return }
+    $info = Get-WindowInfo $fg
+    if ($info.Exe -ne 'explorer.exe' -or $info.Class -notin $script:E2eShellClasses) { return }
+    Write-Host "End-to-end (CI): $(Get-E2eForegroundText) had the keyboard; it is put away once and the case's window brought back."
+    if ($info.Class -eq 'XamlExplorerHostIslandWindow') {
+        Wait-ScreenChange
+        Send-E2eChordTo $fg 'Escape'
+        [void](Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -ne $fg } -TimeoutMs 1500)
     }
+    [void](Set-E2eActive $Front)
 }
 
-# Presses a case's macro key: paced, and only while Front is the window in front.
+# True when the desktop itself (or the taskbar) has the keyboard, or no window has: where a key that
+# shows the desktop or switches virtual desktops leaves it.
+function Test-E2eDesktopFront {
+    $fg = [Macropad.WindowApi]::Foreground()
+    if ($fg -eq [IntPtr]::Zero) { return $true }
+    $info = Get-WindowInfo $fg
+    $info.Exe -eq 'explorer.exe' -and $info.Class -in $script:E2eDesktopClasses
+}
+
+# Presses a case's macro key: paced, and only while the window the case names (Front) is in front.
+# With -FrontDesktop, the case names the desktop itself (after Show Desktop, or on a new virtual
+# desktop), and the desktop must have the keyboard. With neither, nothing is pressed: the window a key
+# goes into is never taken from whatever happens to be in front.
 function Invoke-E2eCaseKey {
-    param($ctx, [IntPtr]$Front = $ctx.Front, [int]$Slot = $ctx.Case.Slot)
+    param($ctx, [IntPtr]$Front = $ctx.Front, [int]$Slot = $ctx.Case.Slot, [switch]$FrontDesktop)
     Wait-ScreenChange
-    if ($Front -ne [IntPtr]::Zero) {
-        if ([Macropad.WindowApi]::Foreground() -ne $Front) { Restore-E2eFront $Front }
+    if ($FrontDesktop) {
+        if (-not (Test-E2eDesktopFront)) { throw "Not pressed: the desktop was not in front; $(Get-E2eForegroundText) was." }
+    } else {
+        if ($Front -eq [IntPtr]::Zero) { throw 'Not pressed: the case names no window to press into (no known front).' }
+        if ([Macropad.WindowApi]::Foreground() -ne $Front) {
+            Restore-E2eFront $Front
+            Wait-ScreenChange  # the restore changed the screen; the press may change it again
+        }
         Assert-E2eFront $Front
     }
     $ctx.Pressed = $true
@@ -406,13 +432,36 @@ function Send-E2eChordTo {
 function Write-E2eState {
     $r = $script:E2eRun
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add("test $PID")
-    foreach ($p in $r.Processes) { $lines.Add("kill $($p.Pid) $($p.Name)") }
-    $lines.Add("killdir $($r.Dir)")
-    foreach ($h in $r.Windows) { $lines.Add("window $([long]$h)") }
-    if ($null -ne $r.DesktopCount) { $lines.Add("desktops $($r.DesktopCount)") }
+    # What makes each line the run's own: the test process with its start time, the start of Windows,
+    # each process with its start time, each window with its process and class, each desktop by its id.
+    $lines.Add("test $PID $(Get-E2eStartTicks $PID)")
+    $lines.Add("boot $($r.Boot)")
+    if ($r.CleanupStarted) { $lines.Add('cleanup') }
+    if ($r.BannerPid) { $lines.Add("banner $($r.BannerPid) $($r.BannerStart)") }
+    foreach ($p in $r.Processes) { $lines.Add("kill $($p.Pid) $($p.Start) $($p.Name)") }
+    foreach ($h in $r.Windows) { $i = $r.WindowInfo[[long]$h]; if ($i) { $lines.Add("window $([long]$h) $($i.Pid) $($i.Start) $($i.Class)") } }
+    foreach ($d in $r.NewDesktops) { $lines.Add("desktop $d") }
     foreach ($o in $r.Owners) { $lines.Add("run $($o.Exe)`t$($o.Arguments)`t$($o.Cwd)") }
     [System.IO.File]::WriteAllLines($r.StateFile, [string[]]$lines)
+}
+
+# When a process started (UTC ticks), or 0 when it is gone or cannot be read: with its pid, this says
+# whether a process is still the one a run started.
+function Get-E2eStartTicks {
+    param([int]$Id)
+    try { (Get-Process -Id $Id -ErrorAction Stop).StartTime.ToUniversalTime().Ticks } catch { 0 }
+}
+
+# When Windows last started (UTC ticks): a state file from before that names nothing that still exists.
+function Get-E2eBootTicks {
+    (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+}
+
+# How many times a case that repeats a moment runs it (the Calculator series): OMB_E2E_REPEAT
+# (run.ps1 -Repeat), else 2.
+function Get-E2eRepeat {
+    if ($env:OMB_E2E_REPEAT -match '^\d+$' -and [int]$env:OMB_E2E_REPEAT -gt 0) { return [int]$env:OMB_E2E_REPEAT }
+    2
 }
 
 # Starts a program for the run and remembers it, so that it is ended at the end of the run (or by the
@@ -424,11 +473,11 @@ function Start-E2eProcess {
     $si.UseShellExecute = $false
     $si.CreateNoWindow = $true
     if ($WorkingDirectory) { $si.WorkingDirectory = $WorkingDirectory }
-    foreach ($k in 'OMB_E2E', 'OMB_E2E_CASE', 'OMB_E2E_CI', 'OMB_E2E_LIMIT') { [void]$si.EnvironmentVariables.Remove($k) }
+    foreach ($k in $script:E2eOwnVariables) { [void]$si.EnvironmentVariables.Remove($k) }
     foreach ($k in $Environment.Keys) { $si.EnvironmentVariables[$k] = [string]$Environment[$k] }
     $p = [System.Diagnostics.Process]::Start($si)
     if (-not $NoTrack) {
-        $script:E2eRun.Processes.Add([pscustomobject]@{ Pid = $p.Id; Name = [System.IO.Path]::GetFileName($File) })
+        $script:E2eRun.Processes.Add([pscustomobject]@{ Pid = $p.Id; Name = [System.IO.Path]::GetFileName($File); Start = (Get-E2eStartTicks $p.Id) })
         Write-E2eState
     }
     $p
@@ -448,7 +497,8 @@ function Stop-E2eProcessId {
 }
 
 # The banner, started so that a Jenkins abort, which ends the build's process tree, does not end it
-# (Jenkins finds that tree by BUILD_ID and JENKINS_NODE_COOKIE): it then cleans up after the test.
+# (Jenkins finds that tree by BUILD_ID and JENKINS_NODE_COOKIE): when the test is gone it starts the
+# clean-up (run.ps1 -EndToEndCleanup), which then runs outside the tree too.
 function Start-E2eBanner {
     Wait-ScreenChange
     $deadline = [long]($script:E2eRun.Deadline - [DateTime]'1970-01-01').TotalSeconds
@@ -456,11 +506,13 @@ function Start-E2eBanner {
     # Detached, so that it holds none of this process's handles (a build step's output pipe stays open
     # while any process holds it).
     $environment = @(foreach ($e in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
-            if ($e.Key -notin 'OMB_E2E', 'OMB_E2E_CASE', 'OMB_E2E_CI', 'OMB_E2E_LIMIT', 'BUILD_ID', 'JENKINS_NODE_COOKIE') { "$($e.Key)=$($e.Value)" }
+            if ($e.Key -notin ($script:E2eOwnVariables + 'BUILD_ID', 'JENKINS_NODE_COOKIE')) { "$($e.Key)=$($e.Value)" }
         }) + @('BUILD_ID=dontKillMe', 'JENKINS_NODE_COOKIE=dontKillMe') | Sort-Object
     $bannerPid = [OmbE2e.ProcessInfo]::StartDetached((Get-AhkExe), $arguments, '', [string[]]$environment)
     if ($bannerPid -eq 0) { throw 'The banner could not be started.' }
     $script:E2eRun.BannerPid = $bannerPid
+    $script:E2eRun.BannerStart = Get-E2eStartTicks $bannerPid
+    Write-E2eState
     $window = Wait-E2eCondition { $w = Find-Window "Open Macro Builder end-to-end test ahk_pid $bannerPid"; if ($w -ne [IntPtr]::Zero) { $w } } -TimeoutMs 10000
     if ($null -eq $window) { throw 'The banner did not appear within 10 s.' }
     Wait-ScreenChange -Observed
@@ -468,45 +520,80 @@ function Start-E2eBanner {
 
 function Stop-E2eBanner {
     if (-not $script:E2eRun.BannerPid) { return }
-    Wait-ScreenChange
-    Stop-Process -Id $script:E2eRun.BannerPid -Force -ErrorAction SilentlyContinue
+    if ((Get-E2eStartTicks $script:E2eRun.BannerPid) -eq $script:E2eRun.BannerStart) {
+        Wait-ScreenChange
+        Stop-Process -Id $script:E2eRun.BannerPid -Force -ErrorAction SilentlyContinue
+    }
     $script:E2eRun.BannerPid = $null
+    Write-E2eState
 }
 
 # ---------------------------------------------------------------------------------------------------
 # Macropads that run before the run (a person's): either language, started from anywhere.
 
-function ConvertTo-E2eComparable {
-    param([string]$Text)
-    $Text.Replace('"', '').Replace('/', '\').Trim().ToLowerInvariant().TrimEnd('\')
-}
-
-# The text that follows the program on a command line (quoted or not).
+# The text that follows the program on a command line. Exe, the program's full path, may stand there
+# unquoted with spaces in it (C:\Program Files\...), which is then taken whole.
 function Get-E2eCommandArguments {
-    param([string]$CommandLine)
+    param([string]$CommandLine, [string]$Exe = '')
     $line = $CommandLine.TrimStart()
     if ($line.StartsWith('"')) { $end = $line.IndexOf('"', 1); if ($end -lt 0) { return '' }; return $line.Substring($end + 1).Trim() }
+    if ($Exe -and $line.StartsWith($Exe, [StringComparison]::OrdinalIgnoreCase) -and ($line.Length -eq $Exe.Length -or $line[$Exe.Length] -eq ' ')) {
+        return $line.Substring($Exe.Length).Trim()
+    }
     $space = $line.IndexOf(' ')
     if ($space -lt 0) { return '' }
     $line.Substring($space + 1).Trim()
 }
 
-# The macropads among the processes: rows with Lang, Pid, Exe, CommandLine, Arguments. An AutoHotkey
-# process counts when its command line ends with ahk\main.ahk and has no /Validate; a powershell.exe
-# when it runs -File ...\powershell\main.ps1. The run's own macropads (started from its folder) and
-# the processes in Ignore do not count. $Processes are Win32_Process rows.
+# The arguments of a command line, one by one, with their quotes taken off.
+function Split-E2eArguments {
+    param([string]$Text)
+    , @(foreach ($m in [regex]::Matches($Text, '"([^"]*)"|(\S+)')) { if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value } })
+}
+
+# What a process runs when it is a macropad: @{ Lang; Script } (the script's full path), or $null. A
+# macropad is the interpreter with the macropad's script as its argument: AutoHotkey with a main.ahk
+# that has config.ahk and lib beside it (not loaded with /Validate or /iLib, which only read it), or
+# powershell.exe with -File and a main.ps1 that has lib\ConfigJson.ps1 beside it. A relative script
+# path is read from Cwd, the process's working directory.
+function Get-E2eMacropadScript {
+    param([string]$Name, [string]$Arguments, [string]$Cwd = '')
+    $words = Split-E2eArguments $Arguments
+    $script = $null; $lang = $null
+    if ($Name -like 'autohotkey*') {
+        for ($i = 0; $i -lt $words.Count; $i++) {
+            $w = $words[$i]
+            if ($w -match '^/(validate|ilib)\b') { return $null }
+            if ($w -match '^/include$') { $i++; continue }
+            if ($w.StartsWith('/')) { continue }
+            $script = $w; $lang = 'ahk'; break
+        }
+    } elseif ($Name -eq 'powershell.exe') {
+        for ($i = 0; $i -lt $words.Count - 1; $i++) { if ($words[$i] -match '^-f(ile)?$') { $script = $words[$i + 1]; $lang = 'ps'; break } }
+    }
+    if (-not $script) { return $null }
+    if (-not [System.IO.Path]::IsPathRooted($script)) { if (-not $Cwd) { return $null }; $script = Join-Path $Cwd $script }
+    try { $script = [System.IO.Path]::GetFullPath($script) } catch { return $null }
+    $dir = Split-Path $script -Parent
+    $leaf = Split-Path $script -Leaf
+    if ($lang -eq 'ahk' -and $leaf -eq 'main.ahk' -and (Test-Path -LiteralPath (Join-Path $dir 'config.ahk')) -and (Test-Path -LiteralPath (Join-Path $dir 'lib') -PathType Container)) { return @{ Lang = 'ahk'; Script = $script } }
+    if ($lang -eq 'ps' -and $leaf -eq 'main.ps1' -and (Test-Path -LiteralPath (Join-Path $dir 'lib\ConfigJson.ps1'))) { return @{ Lang = 'ps'; Script = $script } }
+    $null
+}
+
+# The macropads among the processes: rows with Lang, Script, Pid, Exe, CommandLine, Arguments, Cwd.
+# The run's own macropads (their script is in a run folder, omb-e2e-...) and the processes in Ignore do
+# not count. $Processes are Win32_Process rows.
 function Find-E2eMacropads {
     param([object[]]$Processes, [int[]]$Ignore = @())
     , @(foreach ($p in @($Processes)) {
             if (-not $p.CommandLine -or $Ignore -contains [int]$p.ProcessId) { continue }
-            $line = ConvertTo-E2eComparable $p.CommandLine
-            if ($line -match 'omb-e2e-\d+\\') { continue }
-            $lang = $null
-            if ($p.Name -like 'autohotkey*' -and $line -match '(^|\s)(\S.*\\)?ahk\\main\.ahk$' -and $line -notmatch '(^|\s)[/\\]validate(\s|$)') { $lang = 'ahk' }
-            elseif ($p.Name -eq 'powershell.exe' -and $line -match '(^|\s)-file\s+.*\\powershell\\main\.ps1(\s|$)') { $lang = 'ps' }
-            if ($lang) {
-                [pscustomobject]@{ Lang = $lang; Pid = [int]$p.ProcessId; Exe = $p.ExecutablePath; CommandLine = $p.CommandLine; Arguments = (Get-E2eCommandArguments $p.CommandLine) }
-            }
+            $arguments = Get-E2eCommandArguments $p.CommandLine $p.ExecutablePath
+            $cwd = [OmbE2e.ProcessInfo]::CurrentDirectory([int]$p.ProcessId)
+            if (-not $cwd) { $cwd = '' }  # unreadable: a relative script cannot be found, and it starts in this process's folder
+            $found = Get-E2eMacropadScript $p.Name $arguments $cwd
+            if (-not $found -or $found.Script -match '\\omb-e2e-\d+(-\d+)?\\') { continue }
+            [pscustomobject]@{ Lang = $found.Lang; Script = $found.Script; Pid = [int]$p.ProcessId; Exe = $p.ExecutablePath; CommandLine = $p.CommandLine; Arguments = $arguments; Cwd = $cwd }
         })
 }
 
@@ -515,15 +602,12 @@ function Get-E2eMacropadProcesses {
 }
 
 # Stops every macropad that runs, of either language, and records how to start each again: its program,
-# its command line and its working directory.
+# its arguments and its working directory.
 function Stop-E2eOwnerMacropads {
     foreach ($found in (Find-E2eMacropads (Get-E2eMacropadProcesses))) {
-        $cwd = [OmbE2e.ProcessInfo]::CurrentDirectory($found.Pid)
-        if (-not $cwd) { $cwd = '' }  # unreadable: it starts in this process's folder
-        $found | Add-Member Cwd $cwd
         $script:E2eRun.Owners.Add($found)
         Write-E2eState
-        Write-Host "End-to-end: stopping the running $($found.Lang) macropad (pid $($found.Pid)); it is started again at the end as it was: $($found.CommandLine) (in $cwd)"
+        Write-Host "End-to-end: stopping the running $($found.Lang) macropad (pid $($found.Pid)); it is started again at the end as it was: $($found.CommandLine) (in $($found.Cwd))"
         if ($found.Lang -eq 'ahk') {
             $main = Find-Window "ahk_class AutoHotkey ahk_pid $($found.Pid)" -IncludeHidden
             if ($main -ne [IntPtr]::Zero) { [void][Macropad.WindowApi]::Post($main, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }
@@ -535,27 +619,44 @@ function Stop-E2eOwnerMacropads {
     }
 }
 
-# Starts one recorded macropad again, from its program, command line and working directory, unless one
-# with the same command line already runs. True when it runs afterwards.
+# The environment a macropad the test stopped is started again with: this process's own, less every
+# variable of the macropad's and of the test's (OMB_CONFIG, OMB_E2E and the others, all OMB_...), which
+# a person's macropad never had from the test.
+function Get-E2eOwnerEnvironment {
+    $all = @(foreach ($e in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
+            if (-not ([string]$e.Key).StartsWith('OMB_', [StringComparison]::OrdinalIgnoreCase)) { "$($e.Key)=$($e.Value)" }
+        })
+    , [string[]]@($all | Sort-Object)
+}
+
+# Starts one recorded macropad again, from its program, arguments and working directory, unless a
+# macropad of the same script already runs: it is started at most once, by whoever comes first. 'ran'
+# when one already ran, 'started' when this started it, 'failed' when it could not.
 function Start-E2eRecordedMacropad {
     param([string]$Exe, [string]$Arguments, [string]$Cwd)
-    $same = { @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $Exe -and (Get-E2eCommandArguments ([string]$_.CommandLine)) -eq $Arguments }).Count -gt 0 }
-    if (& $same) { return $true }
+    $wanted = Get-E2eMacropadScript ([System.IO.Path]::GetFileName($Exe)) $Arguments $Cwd
+    $running = {
+        foreach ($m in (Find-E2eMacropads (Get-E2eMacropadProcesses))) {
+            if ($wanted) { if ($m.Lang -eq $wanted.Lang -and $m.Script -eq $wanted.Script) { return $true } }
+            elseif ($m.Exe -eq $Exe -and $m.Arguments -eq $Arguments) { return $true }
+        }
+        $false
+    }
+    if (& $running) { return 'ran' }
     # Detached: it holds none of this process's handles (a run's output pipe would otherwise stay open
-    # until the macropad exits), and its environment is this process's without the test's own variables.
-    $environment = @(foreach ($e in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
-            if ($e.Key -notin 'OMB_E2E', 'OMB_E2E_CASE', 'OMB_E2E_CI', 'OMB_E2E_LIMIT') { "$($e.Key)=$($e.Value)" }
-        }) | Sort-Object
+    # until the macropad exits).
     $dir = if ($Cwd -and (Test-Path -LiteralPath $Cwd)) { $Cwd } else { '' }
-    if ([OmbE2e.ProcessInfo]::StartDetached($Exe, $Arguments, $dir, [string[]]$environment) -eq 0) { return $false }
-    [bool](Wait-E2eCondition $same -TimeoutMs 20000)
+    if ([OmbE2e.ProcessInfo]::StartDetached($Exe, $Arguments, $dir, (Get-E2eOwnerEnvironment)) -eq 0) { return 'failed' }
+    if (Wait-E2eCondition $running -TimeoutMs 20000) { 'started' } else { 'failed' }
 }
 
 # Starts again every macropad the run stopped, and waits until each runs.
 function Restore-E2eOwnerMacropads {
     $failed = [System.Collections.Generic.List[string]]::new()
     foreach ($o in @($script:E2eRun.Owners)) {
-        if (Start-E2eRecordedMacropad $o.Exe $o.Arguments $o.Cwd) { Write-Host "End-to-end: the $($o.Lang) macropad runs again: $($o.CommandLine)" }
+        $result = Start-E2eRecordedMacropad $o.Exe $o.Arguments $o.Cwd
+        if ($result -eq 'started') { Write-Host "End-to-end: the $($o.Lang) macropad runs again: $($o.CommandLine)" }
+        elseif ($result -eq 'ran') { Write-Host "End-to-end: a $($o.Lang) macropad of $($o.Script) already runs; it is not started twice." }
         else { $failed.Add("the $($o.Lang) macropad did not start again; start it by hand: $($o.CommandLine) (in $($o.Cwd))") }
         [void]$script:E2eRun.Owners.Remove($o)
         Write-E2eState
@@ -569,20 +670,30 @@ function Restore-E2eOwnerMacropads {
 function New-E2eRun {
     param([int]$LimitMinutes = 20)
     $dir = Join-Path ([OmbE2e.ProcessInfo]::LongPath([System.IO.Path]::GetTempPath())) "omb-e2e-$PID"
-    if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+    # A folder of an earlier process that had this pid is a leftover: it is moved aside, unread, for
+    # Clear-E2eLeftovers to carry out.
+    if (Test-Path -LiteralPath $dir) { Rename-Item -LiteralPath $dir -NewName "omb-e2e-$PID-$([DateTime]::UtcNow.Ticks)" }
     foreach ($sub in 'bin', 'path', 'temp', 'E2E Test', 'app') { [void](New-Item -ItemType Directory -Path (Join-Path $dir $sub)) }
     $script:E2eRun = [pscustomobject]@{
         Dir          = $dir
         LimitMinutes = $LimitMinutes
+        StartedAt    = [DateTime]::Now
         Deadline     = [DateTime]::UtcNow.AddMinutes($LimitMinutes)
         StateFile    = Join-Path $dir 'state.txt'
         Processes    = [System.Collections.Generic.List[object]]::new()
         Owners       = [System.Collections.Generic.List[object]]::new()
         BannerPid    = $null
+        BannerStart  = 0
         Standins     = @{}
         Macropad     = $null
         Windows      = [System.Collections.Generic.List[IntPtr]]::new()
         DesktopCount = $null
+        Desktops     = @()
+        NewDesktops  = [System.Collections.Generic.List[string]]::new()
+        WindowInfo   = @{}
+        Boot         = Get-E2eBootTicks
+        CleanupStarted = $false
+        LastActivated = [IntPtr]::Zero
         NotRun       = [System.Collections.Generic.List[string]]::new()
         Chunks       = 1
     }
@@ -675,12 +786,15 @@ function Get-E2eWindows {
 }
 
 # The windows of the WinTitles that the run did not open (a person's own, or an aborted run's), as
-# descriptions; cloaked and hidden ones count too (a Store app such as Settings hides its window while
-# it is suspended, and the key would bring it back).
+# descriptions: those the command under test could pick itself. Both languages' helpers search as
+# Find-Window does without -IncludeHidden (AutoHotkey's WinExist with hidden windows not detected):
+# visible windows, cloaked ones among them, never hidden ones, such as a Jenkins agent's own hidden
+# console. -IncludeHidden is for a command whose program Windows brings back from a hidden window
+# (Settings, a Store app that hides its window while it is suspended).
 function Get-E2eForeignWindows {
-    param([string[]]$WinTitle)
+    param([string[]]$WinTitle, [switch]$IncludeHidden)
     $ours = @($script:E2eRun.Processes | ForEach-Object { $_.Pid }) + @(Get-E2eRunProcesses | ForEach-Object { [int]$_.ProcessId })
-    , @(foreach ($h in (Get-E2eWindows $WinTitle -IncludeCloaked -IncludeHidden)) {
+    , @(foreach ($h in (Get-E2eWindows $WinTitle -IncludeCloaked -IncludeHidden:$IncludeHidden)) {
             if ($script:E2eRun.Windows -contains $h) { continue }
             $i = Get-WindowInfo $h
             if ($ours -notcontains $i.Pid) { "'$($i.Title)' ($($i.Exe))" }
@@ -711,9 +825,20 @@ function Wait-E2eNewWindow {
     } -TimeoutMs $TimeoutMs
     if ($null -ne $h) {
         Wait-ScreenChange -Observed
-        if ($script:E2eRun.Windows -notcontains $h) { $script:E2eRun.Windows.Add([IntPtr]$h); Write-E2eState }
+        Add-E2eRunWindow $h
     }
     $h
+}
+
+# Remembers a window a command opened, with what makes it the same window later (its process, that
+# process's start, its class), so that the run, or the clean-up after it, closes it.
+function Add-E2eRunWindow {
+    param([IntPtr]$Hwnd)
+    if ($script:E2eRun.Windows -contains $Hwnd) { return }
+    $windowPid = [Macropad.WindowApi]::ProcessId($Hwnd)
+    $script:E2eRun.WindowInfo[[long]$Hwnd] = [pscustomobject]@{ Pid = $windowPid; Start = (Get-E2eStartTicks $windowPid); Class = [Macropad.WindowApi]::ClassName($Hwnd) }
+    $script:E2eRun.Windows.Add($Hwnd)
+    Write-E2eState
 }
 
 # Closes a window a command opened (paced), and ends its program if it stays.
@@ -774,24 +899,75 @@ namespace OmbE2e
 '@
 }
 
-# How many virtual desktops there are (Explorer keeps their ids, 16 bytes each).
-function Get-E2eDesktopCount {
-    $ids = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops' -Name VirtualDesktopIDs -ErrorAction SilentlyContinue).VirtualDesktopIDs
-    if ($null -eq $ids) { return 1 }
-    [math]::Max(1, $ids.Length / 16)
+$script:E2eDesktopKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops'
+
+function ConvertTo-E2eDesktopId {
+    param([byte[]]$Bytes)
+    -join @($Bytes | ForEach-Object { $_.ToString('x2') })
 }
 
-# Closes virtual desktops a case left, until there are Count: a new desktop is the last one, so it goes
-# to the last desktop (Win+Ctrl+Right as often as there are desktops) and closes it (Win+Ctrl+F4).
-function Restore-E2eDesktops {
-    param([int]$Count)
-    for ($i = 0; $i -lt 5 -and (Get-E2eDesktopCount) -gt $Count; $i++) {
-        $n = Get-E2eDesktopCount
-        for ($j = 1; $j -lt $n; $j++) { Wait-ScreenChange; Send-E2eChord 'LWin+Ctrl+Right' }
+# The virtual desktops, by id (32 hex digits), in their order from left to right, as Explorer keeps
+# them (16 bytes each). Empty while Windows has made no second desktop.
+function Get-E2eDesktops {
+    $ids = (Get-ItemProperty $script:E2eDesktopKey -Name VirtualDesktopIDs -ErrorAction SilentlyContinue).VirtualDesktopIDs
+    if ($null -eq $ids) { return , @() }
+    , @(for ($i = 0; $i + 16 -le $ids.Length; $i += 16) { ConvertTo-E2eDesktopId $ids[$i..($i + 15)] })
+}
+
+# The id of the virtual desktop that is shown, or $null.
+function Get-E2eCurrentDesktop {
+    $b = (Get-ItemProperty $script:E2eDesktopKey -Name CurrentVirtualDesktop -ErrorAction SilentlyContinue).CurrentVirtualDesktop
+    if ($b) { ConvertTo-E2eDesktopId $b }
+}
+
+# How many virtual desktops there are.
+function Get-E2eDesktopCount { [math]::Max(1, (Get-E2eDesktops).Count) }
+
+# Remembers the virtual desktops a case made (those that were not there when the run began), so that
+# the run, or the clean-up after it, closes them; and forgets those that are gone.
+function Update-E2eNewDesktops {
+    $r = $script:E2eRun
+    $now = Get-E2eDesktops
+    # Without a second desktop Windows may keep no list; a desktop is then added to the right of the
+    # one there was, which is the first.
+    if (@($r.Desktops).Count -eq 0 -and $now.Count -gt 0) { $r.Desktops = @($now[0]) }
+    foreach ($d in $now) { if ($r.Desktops -notcontains $d -and $r.NewDesktops -notcontains $d) { $r.NewDesktops.Add($d) } }
+    foreach ($d in @($r.NewDesktops)) { if ($now -notcontains $d) { [void]$r.NewDesktops.Remove($d) } }
+    Write-E2eState
+}
+
+# Closes the virtual desktop Id, one the run made: it goes there one desktop at a time (Win+Ctrl+Left
+# or Right), checking after each step which desktop is shown, and closes it (Win+Ctrl+F4). Every switch
+# is paced. True when the desktop is gone (or was already); false when it could not be reached or did
+# not close, and then nothing else is pressed.
+function Close-E2eDesktop {
+    param([string]$Id)
+    for ($step = 0; $step -lt 20; $step++) {
+        $all = Get-E2eDesktops
+        $target = [array]::IndexOf($all, $Id)
+        if ($target -lt 0) { return $true }
+        $current = Get-E2eCurrentDesktop
+        $at = [array]::IndexOf($all, $current)
+        if ($at -lt 0) { return $false }
         Wait-ScreenChange
-        Send-E2eChord 'LWin+Ctrl+F4'
-        [void](Wait-E2eCondition { (Get-E2eDesktopCount) -lt $n } -TimeoutMs 3000)
+        if ($at -eq $target) {
+            Send-E2eChord 'LWin+Ctrl+F4'
+            return [bool](Wait-E2eCondition { (Get-E2eDesktops) -notcontains $Id } -TimeoutMs 3000)
+        }
+        Send-E2eChord $(if ($target -gt $at) { 'LWin+Ctrl+Right' } else { 'LWin+Ctrl+Left' })
+        if (-not (Wait-E2eCondition { (Get-E2eCurrentDesktop) -ne $current } -TimeoutMs 3000)) { return $false }
+        Wait-ScreenChange -Observed
     }
+    $false
+}
+
+# Closes every virtual desktop the run made; throws when one stays.
+function Close-E2eNewDesktops {
+    Update-E2eNewDesktops
+    foreach ($d in @($script:E2eRun.NewDesktops)) {
+        if (-not (Close-E2eDesktop $d)) { throw "the virtual desktop $d, which the run made, could not be closed" }
+    }
+    Update-E2eNewDesktops
 }
 
 # The environment a macropad under test gets on top of this process's own.
@@ -933,13 +1109,21 @@ function ConvertTo-E2eExpectedTap {
 }
 
 # Makes a window the active one; true when it is. Bringing a covered window to the front changes the
-# screen, so it is paced.
+# screen, so it is paced. The window is remembered as the one the case named (LastActivated): the macro
+# key is pressed into it.
 function Set-E2eActive {
     param([IntPtr]$Hwnd)
+    if ($null -ne $script:E2eRun) { $script:E2eRun.LastActivated = $Hwnd }
     if ([Macropad.WindowApi]::Foreground() -eq $Hwnd) { return $true }
     Wait-ScreenChange
     $ok = Wait-E2eCondition { if ([Macropad.Native]::ActivateWindow($Hwnd)) { $true } } -TimeoutMs 3000 -EveryMs 100
     [bool]$ok
+}
+
+# Throws when the macropad under test has exited: a key pressed then would go to the window in front.
+function Assert-E2eMacropadRuns {
+    $m = $script:E2eRun.Macropad
+    if ($null -eq $m -or $m.Process.HasExited) { throw "Not pressed: the macropad under test is not running. $((Get-E2eErrorLines) -join ' ')" }
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -961,10 +1145,15 @@ function Start-E2eMacropad {
     }
     $script:E2eRun.Macropad = [pscustomobject]@{ Lang = $Lang; Process = $p; Layer = 1; Chunk = $Chunk }
     # Ready when it answers a key: the first key of the first layer runs E2eMark, which writes a line.
+    # Until the macropad takes the key, it reaches the window in front: the stand-in B, a window of the
+    # harness, which must be in front for every tap.
     $marks = Join-Path $script:E2eRun.Dir 'marks.log'
     $before = @(Read-E2eLog $marks).Count
+    $b = $script:E2eRun.Standins['B'].Hwnd
     $ready = Wait-E2eCondition {
         if ($p.HasExited) { throw "The $Lang macropad exited at start (exit code $($p.ExitCode)). $((Get-E2eErrorLines) -join ' ')" }
+        if (-not (Set-E2eActive $b)) { throw "Not pressed: the stand-in B could not be made the active window for the readiness taps; $(Get-E2eForegroundText) was in front." }
+        Assert-E2eFront $b 'the stand-in B (readiness taps)'
         Send-E2eTap $script:E2eFirstKeyVk
         Wait-E2eCondition { @(Read-E2eLog $marks).Count -gt $before } -TimeoutMs 700
     } -TimeoutMs 30000 -EveryMs 10
@@ -989,6 +1178,7 @@ function Stop-E2eMacropad {
     if (-not $m.Process.HasExited) {
         try {
             Select-E2eLayer 1
+            Assert-E2eMacropadRuns
             Send-E2eTap ($script:E2eFirstKeyVk + 1)
         } catch { Write-Host "End-to-end: could not ask the macropad to exit: $($_.Exception.Message)" }
         if (-not $m.Process.WaitForExit(5000)) { Write-Host 'End-to-end: the macropad did not exit by itself; ending it.' }
@@ -1015,6 +1205,7 @@ function Select-E2eLayer {
     param([Parameter(Mandatory)][int]$Index)
     $m = $script:E2eRun.Macropad
     if ($m.Layer -eq $Index) { return }
+    Assert-E2eMacropadRuns
     Wait-ScreenChange
     Send-E2eKey $script:E2eFnVk
     try {
@@ -1032,6 +1223,7 @@ function Select-E2eLayer {
 # Presses the macro key of a slot (1 to 11) on the current layer.
 function Invoke-E2eMacroKey {
     param([Parameter(Mandatory)][int]$Slot)
+    Assert-E2eMacropadRuns
     Send-E2eTap ($script:E2eFirstKeyVk + $Slot - 1)
 }
 
@@ -1168,6 +1360,8 @@ function Get-E2eSkipReason {
     param($Case, [string]$Lang)
     if ($Case.Only -and $Case.Only -ne $Lang) { return "runs against the $($Case.Only) macropad only: $($Case.Why)" }
     if ($Case.Needs -and -not (& $Case.Needs.Met)) { return "conditional: $($Case.Needs.Why)" }
+    # An earlier case did not leave what this one starts from: that case's failure fails the run.
+    if ($Case.Prior) { $why = & $Case.Prior; if ($why) { return "not run because an earlier case failed: $why" } }
     if ($Case.SkipIf) {
         $why = & $Case.SkipIf
         if ($why) {
@@ -1179,10 +1373,10 @@ function Get-E2eSkipReason {
 }
 
 # Runs one case against the macropad under test. Returns $null when it ran, or the reason it did not
-# (the run lists those at its end). Before the macro key is pressed, the window the case made active
-# must still be in front; when it is not, nothing is pressed and the case fails. A failure after the
-# press is tried once more when a window the run did not open had taken the focus; the second try
-# checks the front again before it presses.
+# (the run lists those at its end). Before the macro key is pressed, the window the case named must
+# still be in front; when it is not, nothing is pressed and the case fails. Under -Ci only, a failure
+# after the press is tried once more when a window the run did not open had taken the focus; the
+# second try checks the front again before it presses.
 function Invoke-E2eCase {
     param([Parameter(Mandatory)]$Case, [Parameter(Mandatory)][string]$Lang)
     Assert-E2eTime
@@ -1200,10 +1394,13 @@ function Invoke-E2eCase {
             Select-E2eLayer $Case.Layer
             $errorsBefore = @(Get-E2eErrorLines).Count
             [OmbE2e.KeyWatch]::Clear()
+            $script:E2eRun.LastActivated = [IntPtr]::Zero
             & $arrange $ctx
-            $ctx.Front = [Macropad.WindowApi]::Foreground()
+            # The key goes into the window the case named: one its Arrange set as Front, or the last
+            # one it made active; or, with FrontDesktop, the desktop itself. Never whatever is in front.
+            if (-not $ctx.Front) { $ctx.Front = $script:E2eRun.LastActivated }
             [OmbE2e.KeyWatch]::Swallow = [bool]$Case.Swallow
-            Invoke-E2eCaseKey $ctx
+            Invoke-E2eCaseKey $ctx -FrontDesktop:([bool]$ctx.FrontDesktop)
             & $assert $ctx
             $errors = @(Get-E2eErrorLines | Select-Object -Skip $errorsBefore)
             $errors -join "`n" | Should -BeNullOrEmpty -Because 'the macropad must not report an error'
@@ -1211,7 +1408,9 @@ function Invoke-E2eCase {
         } catch {
             $caught = $true
             $foreign = Get-E2eForeignForeground $Case
-            if ($attempt -eq 1 -and $ctx.Pressed -and $foreign -and $_.Exception.Message -notlike 'Not pressed:*') {
+            # Only under -Ci, where nobody is at the desktop, is a case tried again after another
+            # window took the focus; on a developer's desktop the case fails, saying what was in front.
+            if ($attempt -eq 1 -and $env:OMB_E2E_CI -eq '1' -and $ctx.Pressed -and $foreign -and $_.Exception.Message -notlike 'Not pressed:*') {
                 Write-Host "End-to-end: $($Case.Name) failed while $foreign had the focus, a window the test did not open; trying once more. The failure was: $($_.Exception.Message)"
                 continue
             }
@@ -1238,12 +1437,15 @@ function Complete-E2eRun {
     $r = $script:E2eRun
     if ($null -eq $r) { return }
     $r.Deadline = [DateTime]::MaxValue
+    # First, the state file says that the run's own clean-up has begun: the watchdog then does nothing.
+    $r.CleanupStarted = $true
+    Write-E2eState
     $problems = [System.Collections.Generic.List[string]]::new()
     $step = { param([string]$What, [scriptblock]$Do) try { & $Do } catch { $problems.Add("$What`: $($_.Exception.Message)") } }
     & $step 'stopping the key watch' { [OmbE2e.KeyWatch]::Stop() }
     & $step 'letting go of held keys' { Clear-E2eHeldKeys }
     & $step 'stopping the macropad under test' { Stop-E2eMacropad }
-    & $step 'closing the virtual desktops the test made' { if ($null -ne $r.DesktopCount) { Restore-E2eDesktops $r.DesktopCount } }
+    & $step 'closing the virtual desktops the test made' { Close-E2eNewDesktops }
     foreach ($h in @($r.Windows)) { & $step "closing window $h" { Close-E2eWindow $h } }
     foreach ($p in @($r.Processes)) { & $step "ending $($p.Name) ($($p.Pid))" { Wait-ScreenChange; Stop-E2eProcessId $p.Pid } }
     foreach ($p in Get-E2eRunProcesses) { & $step "ending $($p.Name) ($($p.ProcessId))" { Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } }
@@ -1258,54 +1460,118 @@ function Complete-E2eRun {
 }
 
 # ---------------------------------------------------------------------------------------------------
-# The clean-up of runs that did not end themselves (a crash, a Jenkins abort): run on its own by
-# `run.ps1 -EndToEndCleanup` (the Jenkins stage does it after every run, whatever happened), and at the
-# start of every run. For each run folder in TEMP whose test process is gone, it carries out the state
-# file: ends the run's processes and its banner, closes the windows its commands opened, closes the
-# virtual desktops it added, lets go of held keys, starts again the macropads it stopped (unless they
-# run), and removes the folder.
+# The clean-up of runs that did not end themselves (a crash, a Jenkins abort): the only code that
+# cleans up after such a run. `run.ps1 -EndToEndCleanup` runs it (the Jenkins stage after every run,
+# whatever happened; the banner when the test is gone), and every run does at its start.
+#
+# A run folder (omb-e2e-<pid> in TEMP) is a leftover when the test it names in its state file (pid and
+# start time) no longer runs. Its state file is believed only as far as it can be checked: after a
+# reboot nothing it names is touched; a process is ended only when its pid, name and start time are
+# still those recorded; a window is closed only when its handle, process, that process's start and
+# class still match; a virtual desktop is closed by its id. Only the run folder itself is always
+# removed. One clean-up at a time works on a folder (cleanup.lock in it). Every step has its own try
+# and every change of the screen is paced. Returns @{ Done; Problems }: what was done, and what could
+# not be.
+
+function Get-E2eStateLines {
+    param([string]$Dir)
+    $state = Join-Path $Dir 'state.txt'
+    if (-not (Test-Path -LiteralPath $state)) { return , @() }
+    , @(Get-Content -LiteralPath $state)
+}
+
+# The test a run folder belongs to still runs: @{ Pid; Start } from its state file, else its name.
+function Test-E2eRunAlive {
+    param([string]$Dir, [string[]]$Lines)
+    foreach ($line in $Lines) {
+        if ($line -match '^test (\d+) (\d+)$') { return ((Get-E2eStartTicks ([int]$Matches[1])) -eq [long]$Matches[2]) }
+    }
+    # No state yet (a run that was making its folder): its name says the pid, alone.
+    if ((Split-Path $Dir -Leaf) -match '^omb-e2e-(\d+)$') { return [bool](Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue) }
+    $false
+}
 
 function Clear-E2eLeftovers {
     $done = [System.Collections.Generic.List[string]]::new()
-    foreach ($dir in Get-ChildItem -LiteralPath ([OmbE2e.ProcessInfo]::LongPath([System.IO.Path]::GetTempPath())) -Directory -Filter 'omb-e2e-*' -ErrorAction SilentlyContinue) {
-        $testPid = 0
-        if (-not [int]::TryParse($dir.Name.Substring(8), [ref]$testPid)) { continue }
-        if ($testPid -eq $PID -or (Get-Process -Id $testPid -ErrorAction SilentlyContinue)) { continue }
-        $state = Join-Path $dir.FullName 'state.txt'
-        $lines = @(if (Test-Path -LiteralPath $state) { Get-Content -LiteralPath $state })
-        # The banner of that run first, so that its watchdog does not do the same work at the same time.
-        foreach ($b in @(Get-CimInstance Win32_Process -Filter "Name LIKE 'AutoHotkey%'" | Where-Object { [string]$_.CommandLine -like "*banner.ahk*$($dir.Name)*" })) {
-            Stop-Process -Id $b.ProcessId -Force -ErrorAction SilentlyContinue; $done.Add("ended the banner $($b.ProcessId)")
-        }
-        foreach ($line in $lines) {
-            if ($line -match '^kill (\d+) (\S+)$') {
-                $p = Get-Process -Id $Matches[1] -ErrorAction SilentlyContinue
-                if ($p -and "$($p.ProcessName).exe" -ieq $Matches[2]) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; $done.Add("ended $($Matches[2]) $($p.Id)") }
+    $problems = [System.Collections.Generic.List[string]]::new()
+    $step = { param([string]$What, [scriptblock]$Do) try { & $Do } catch { $problems.Add("$What`: $($_.Exception.Message)") } }
+    $own = if ($null -ne $script:E2eRun) { $script:E2eRun.Dir } else { '' }
+    $temp = [OmbE2e.ProcessInfo]::LongPath([System.IO.Path]::GetTempPath())
+    $boot = Get-E2eBootTicks
+    foreach ($dir in Get-ChildItem -LiteralPath $temp -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^omb-e2e-\d+(-\d+)?$' }) {
+        if ($dir.FullName -eq $own) { continue }
+        $lines = Get-E2eStateLines $dir.FullName  # already a list
+        if (Test-E2eRunAlive $dir.FullName $lines) { continue }
+        $lockPath = Join-Path $dir.FullName 'cleanup.lock'
+        try { $lock = [System.IO.FileStream]::new($lockPath, 'CreateNew', 'Write', 'None', 4096, 'DeleteOnClose') }
+        catch { $done.Add("left $($dir.FullName): another clean-up works on it"); continue }
+        try {
+            $sameBoot = $false
+            foreach ($line in $lines) { if ($line -match '^boot (\d+)$') { $sameBoot = [math]::Abs([long]$Matches[1] - $boot) -lt 600000000 } }  # within a minute
+            if (-not $sameBoot) {
+                $done.Add("$($dir.Name): written before Windows last started (or unreadable); nothing it names is touched")
+            } else {
+                $match = { param([int]$Id, [long]$Start) $Start -ne 0 -and (Get-E2eStartTicks $Id) -eq $Start }
+                foreach ($line in $lines) {
+                    if ($line -match '^banner (\d+) (\d+)$') {
+                        $id = [int]$Matches[1]; $start = [long]$Matches[2]
+                        & $step "ending the banner $id" { if (& $match $id $start) { Wait-ScreenChange; Stop-Process -Id $id -Force -ErrorAction Stop; $done.Add("ended the banner $id") } }
+                    }
+                }
+                foreach ($line in $lines) {
+                    if ($line -match '^kill (\d+) (\d+) (.+)$') {
+                        $id = [int]$Matches[1]; $start = [long]$Matches[2]; $name = $Matches[3]
+                        & $step "ending $name $id" {
+                            $p = Get-Process -Id $id -ErrorAction SilentlyContinue
+                            if ($p -and "$($p.ProcessName).exe" -ieq $name -and (& $match $id $start)) { Wait-ScreenChange; Stop-Process -Id $id -Force -ErrorAction Stop; $done.Add("ended $name $id") }
+                        }
+                    }
+                }
+                # The programs in the run's own folder (its copies of AutoHotkey, the launcher) are its own.
+                foreach ($p in Get-E2eRunProcesses $dir.FullName) {
+                    & $step "ending $($p.Name) $($p.ProcessId)" { Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $done.Add("ended $($p.Name) $($p.ProcessId)") }
+                }
+                foreach ($line in $lines) {
+                    if ($line -match '^window (\d+) (\d+) (\d+) (.+)$') {
+                        $h = [IntPtr][long]$Matches[1]; $id = [int]$Matches[2]; $start = [long]$Matches[3]; $class = $Matches[4]
+                        & $step "closing window $h" {
+                            if ([Macropad.WindowApi]::Exists($h) -and [Macropad.WindowApi]::ProcessId($h) -eq $id -and [Macropad.WindowApi]::ClassName($h) -eq $class -and (& $match $id $start)) {
+                                Wait-ScreenChange
+                                if (-not (Close-Window $h -TimeoutMs 4000)) { throw 'it did not close' }
+                                $done.Add("closed window $h ($class)")
+                            }
+                        }
+                    }
+                }
+                foreach ($line in $lines) {
+                    if ($line -match '^desktop ([0-9a-f]{32})$') {
+                        $id = $Matches[1]
+                        & $step "closing the virtual desktop $id" {
+                            if ((Get-E2eDesktops) -contains $id) {
+                                if (-not (Close-E2eDesktop $id)) { throw 'it could not be reached or did not close' }
+                                $done.Add("closed the virtual desktop $id")
+                            }
+                        }
+                    }
+                }
+                & $step 'letting go of held keys' { Clear-E2eHeldKeys }
+                foreach ($line in $lines) {
+                    if ($line -match "^run ([^`t]+)`t([^`t]*)`t(.*)$") {
+                        $exe = $Matches[1]; $arguments = $Matches[2]; $cwd = $Matches[3]
+                        & $step "starting again $exe $arguments" {
+                            $result = Start-E2eRecordedMacropad $exe $arguments $cwd
+                            if ($result -eq 'failed') { throw "it did not start; start it by hand (in $cwd)" }
+                            $done.Add("the macropad runs ($result): $exe $arguments")
+                        }
+                    }
+                }
             }
-        }
-        foreach ($p in Get-E2eRunProcesses $dir.FullName) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; $done.Add("ended $($p.Name) $($p.ProcessId)") }
-        foreach ($line in $lines) {
-            if ($line -match '^window (\d+)$') {
-                $h = [IntPtr][long]$Matches[1]
-                if ([Macropad.WindowApi]::Exists($h)) { [void](Close-Window $h -TimeoutMs 4000); $done.Add("closed window $h") }
-            }
-        }
-        foreach ($line in $lines) {
-            if ($line -match '^desktops (\d+)$' -and (Get-E2eDesktopCount) -gt [int]$Matches[1]) {
-                Restore-E2eDesktops ([int]$Matches[1]); $done.Add("closed virtual desktops down to $($Matches[1])")
-            }
-        }
-        Clear-E2eHeldKeys
-        foreach ($line in $lines) {
-            if ($line -match "^run ([^`t]+)`t([^`t]*)`t(.*)$") {
-                if (Start-E2eRecordedMacropad $Matches[1] $Matches[2] $Matches[3]) { $done.Add("the macropad runs: $($Matches[1]) $($Matches[2])") }
-                else { $done.Add("could not start again: $($Matches[1]) $($Matches[2])") }
-            }
-        }
-        Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        $done.Add("removed $($dir.FullName)")
+            # What the state file named is done: a clean-up after this one has nothing to act on.
+            & $step "removing the state file of $($dir.Name)" { Remove-Item -LiteralPath (Join-Path $dir.FullName 'state.txt') -Force -ErrorAction SilentlyContinue }
+        } finally { $lock.Dispose() }
+        & $step "removing $($dir.FullName)" { Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop; $done.Add("removed $($dir.FullName)") }
     }
-    Clear-E2eHeldKeys
     foreach ($d in $done) { Write-Host "End-to-end clean-up: $d" }
-    , $done.ToArray()
+    foreach ($p in $problems) { Write-Host "End-to-end clean-up, not done: $p" }
+    @{ Done = $done.ToArray(); Problems = $problems.ToArray() }
 }

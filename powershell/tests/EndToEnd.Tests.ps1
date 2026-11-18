@@ -89,7 +89,7 @@ Describe 'End-to-end accounting: <Title>' -Tag EndToEnd -ForEach $Langs {
         }
         $bad | Should -BeNullOrEmpty
         Write-Host ("End-to-end, {0}: {1} covered, {2} conditional, {3} excluded, of {4} commands." -f $Title, $covered.Count, $conditional.Count, $excluded.Count, $shared.Count)
-        foreach ($c in $cases | Where-Object { $conditional -contains $_.Command }) { Write-Host "  conditional: $($c.Command): $($c.Needs.Why)" }
+        foreach ($c in $cases | Where-Object { $conditional -contains $_.Command } | Sort-Object Command -Unique) { Write-Host "  conditional: $($c.Command): $($c.Needs.Why)" }
         foreach ($name in $excluded.Keys | Sort-Object) { Write-Host "  excluded: ${name}: $($excluded[$name])" }
     }
     It 'names only commands that exist, and excludes nothing it covers' {
@@ -148,15 +148,28 @@ Describe 'End-to-end parity of the two languages' -Tag EndToEnd {
 Describe 'End-to-end on the desktop' -Tag EndToEnd {
     BeforeAll {
         $script:E2eSkip = $null
-        if (-not (Get-AhkExe)) { $script:E2eSkip = 'AutoHotkey v2 is not installed' }
-        elseif ($env:OMB_E2E -ne '1') { $script:E2eSkip = 'it takes the desktop; run it with powershell\tests\run.ps1 -EndToEnd' }
+        if ($env:OMB_E2E -ne '1') { $script:E2eSkip = 'it takes the desktop; run it with powershell\tests\run.ps1 -EndToEnd' }
+        elseif (-not (Get-AhkExe)) {
+            $why = "AutoHotkey v2 is not installed ($env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe does not exist); it runs the AutoHotkey macropad, the stand-ins and the banner"
+            # Under -Ci the agent must have it: the suite fails rather than skip every case.
+            if ($env:OMB_E2E_CI -eq '1') { throw "The end-to-end test cannot run on this CI agent: $why." }
+            $script:E2eSkip = $why
+        }
         if ($script:E2eSkip) { return }
 
         Write-Host $script:E2eWarning
-        # What an earlier run that did not end itself left (a crash, a Jenkins abort) goes first.
-        [void](Clear-E2eLeftovers)
         $limit = 20; if ($env:OMB_E2E_LIMIT) { $limit = [int]$env:OMB_E2E_LIMIT }
         [void](New-E2eRun -LimitMinutes $limit)
+        Start-E2eBanner
+        Wait-Pump 3000  # the banner is up three seconds before the first key or change of the screen
+        # What an earlier run that did not end itself left (a crash, a Jenkins abort): the clean-up
+        # touches only what each state file shows is still that run's.
+        $left = Clear-E2eLeftovers
+        if ($left.Problems.Count -gt 0) {
+            $text = "The clean-up after an earlier run could not do everything: $($left.Problems -join '; ')"
+            if ($env:OMB_E2E_CI -eq '1') { throw $text }
+            Write-Warning $text
+        }
         Install-E2eApp
         $twins = Get-E2eTwinChords
         $script:E2eCaseTable = [ordered]@{}
@@ -170,10 +183,9 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
         Write-E2eLayout @($script:E2eCaseTable.Values)
         Install-E2eLaunchers
         Install-E2eScripts
+        $script:E2eRun.Desktops = Get-E2eDesktops
         $script:E2eRun.DesktopCount = Get-E2eDesktopCount
         if (-not [OmbE2e.KeyWatch]::Start()) { throw 'Could not install the key watch (a low-level keyboard hook).' }
-        Start-E2eBanner
-        Wait-Pump 3000  # the banner is up three seconds before the first key
         Stop-E2eOwnerMacropads
         [void](Start-E2eStandin 'A' -Exe 'chrome.exe' -X 40 -Y 120)
         [void](Start-E2eStandin 'B' -Exe 'e2eapp.exe' -X 500 -Y 120)

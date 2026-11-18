@@ -90,6 +90,34 @@ describe('the dictionary behind the panel', () => {
   })
 })
 
+describe('the groups of Other commands available, while filtering', () => {
+  it('folds a group on a click while the filter has text, and gives it back as it was after', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    const helper = () => within(other()).getAllByRole('button', { name: /^helper\b/ })[0]
+    const filter = within(other()).getByRole('textbox', { name: 'Filter other commands' })
+    await user.type(filter, 'activate')
+    expect(helper().getAttribute('aria-expanded')).toBe('true')
+    await user.click(helper())
+    expect(helper().getAttribute('aria-expanded')).toBe('false')
+    expect(within(other()).queryByRole('button', { name: /^ActivateOrOpen\b/ })).toBeNull()
+    await user.clear(filter)
+    expect(helper().getAttribute('aria-expanded')).toBe('true')
+    expect(rows('ActivateOrOpen')).toHaveLength(1)
+  })
+
+  it('opens every group with a match again when the filter changes', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    const helper = () => within(other()).getAllByRole('button', { name: /^helper\b/ })[0]
+    const filter = within(other()).getByRole('textbox', { name: 'Filter other commands' })
+    await user.type(filter, 'activate')
+    await user.click(helper())
+    await user.type(filter, 'or')
+    expect(helper().getAttribute('aria-expanded')).toBe('true')
+  })
+})
+
 describe('the groups of Other commands available', () => {
   it("starts each shown file's own group open, whatever was done to another's", async () => {
     const { user } = await startCommands({ files: { 'ahk/commands/tools.ahk': '/**\n * A tool.\n */\nTool(A)\n{\n}\n' } })

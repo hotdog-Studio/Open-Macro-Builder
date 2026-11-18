@@ -2,7 +2,7 @@
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { replaceAll, typeAt } from '../../test/codeEditor'
-import { pairButton, startCommands } from '../../test/commandsTab'
+import { langButton, pairButton, startCommands } from '../../test/commandsTab'
 import { LANGUAGES } from '../core/languages'
 
 // The right panel's docs, past what otherCommands.test.tsx covers: rows of one name, the state of
@@ -74,6 +74,43 @@ describe('the floating card of the panel', () => {
     expect(screen.getByRole('tooltip').textContent).toContain('Old words.')
     replaceAll('/**\n * New words.\n */\nTool(A)\n{\n}\n')
     expect(screen.getByRole('tooltip').textContent).toContain('New words.')
+  })
+})
+
+describe('the rows of Commands in this file', () => {
+  const outline = () => screen.getByRole('region', { name: 'Commands in this file' })
+  const onlyInAhk = {
+    'ahk/commands/x.ahk': '/**\n * From AHK\n */\nOnly(Macro)\n{\n}\n',
+    'powershell/commands/x.ps1': '# x commands.\n',
+    'powershell/lib/Other.ps1': '<#\n.SYNOPSIS\nOther\n.EXAMPLE\nOnly\n#>\nfunction Only {\n}\n',
+  }
+
+  it("shows the card of the pair's own definition, even from the other language", async () => {
+    const { user } = await startCommands({ files: onlyInAhk })
+    await user.click(pairButton('x'))
+    await user.click(langButton('PowerShell'))
+    await user.hover(within(outline()).getByRole('button', { name: /^Only\b/ }))
+    const card = screen.getByRole('tooltip').textContent
+    expect(card).toContain('From AHK')
+    expect(card).toContain('ahk/commands/x.ahk')
+    expect(card).not.toContain('Other')
+  })
+
+  it('shows the card of the other language when the shown one has no file', async () => {
+    const { user } = await startCommands({ files: { 'ahk/commands/x.ahk': onlyInAhk['ahk/commands/x.ahk'] } })
+    await user.click(pairButton('x'))
+    await user.click(langButton('PowerShell'))
+    await user.hover(within(outline()).getByRole('button', { name: /^Only\b/ }))
+    expect(screen.getByRole('tooltip').textContent).toContain('From AHK')
+  })
+
+  it('shows the whole docs in the details a click opens, for touch', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    await user.click(within(outline()).getByRole('button', { name: /^OpenFileExplorer\b/ }))
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    expect(within(outline()).getByText('OpenFileExplorer(Macro)')).toBeTruthy()
+    expect(within(outline()).getByText('Used by')).toBeTruthy()
   })
 })
 

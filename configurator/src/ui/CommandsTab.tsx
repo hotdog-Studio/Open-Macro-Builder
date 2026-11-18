@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { buildDictionary, parseCache, type Dictionary } from '../core/commands/dictionary'
+import { buildDictionary, parseCache, type DictEntry, type Dictionary } from '../core/commands/dictionary'
 import { checkNewFile } from '../core/commands/files'
 import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
@@ -10,6 +10,7 @@ import type { SyntaxProblem } from '../platform/types'
 import { shownPair, type AfterSave, type CommandDialog } from '../state/commandsSlice'
 import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
+import { DocCard } from './code/DocCard'
 import { ConfirmDialog } from './ConfirmDialog'
 import { NewCommandButton } from './NewCommandDialog'
 import { DocHoverProvider, useDocHover } from './DocHover'
@@ -485,14 +486,23 @@ function LangMark({ lang, has }: Readonly<{ lang: LangId; has: boolean }>) {
   return <span className={has ? 'text-emerald-400' : gap}>{`${LANGUAGES[lang].short} ${has ? '✓' : '✗'}`}</span>
 }
 
-/** Where the selected command sits in each language, and which keys use it. */
-function EntryDetails({ entry }: Readonly<{ entry: OutlineEntry }>) {
+/**
+ * The selected command's docs, where it sits in each language, and which keys use it. The docs are
+ * the card's, which is how touch, where nothing hovers, reaches them.
+ */
+function EntryDetails({ entry, docs }: Readonly<{ entry: OutlineEntry; docs: DictEntry | undefined }>) {
   const { ws } = useEditor().state
   const uses = keysUsing(ws, entry.name)
   const description = LANG_IDS.map((l) => entry.in[l]?.description).find(Boolean)
   return (
     <div className="mt-4 border-t border-zinc-800 pt-3">
-      {description && <p className="mb-1 text-zinc-300">{description}</p>}
+      {docs ? (
+        <div className="mb-2 rounded-md border border-zinc-800 bg-zinc-950">
+          <DocCard entry={docs} />
+        </div>
+      ) : (
+        description && <p className="mb-1 text-zinc-300">{description}</p>
+      )}
       {LANG_IDS.map((l) => {
         const at = entry.in[l]
         const where = at ? 'line ' + at.line : 'missing'
@@ -516,8 +526,21 @@ function EntryDetails({ entry }: Readonly<{ entry: OutlineEntry }>) {
   )
 }
 
+/**
+ * The docs of a command of the pair: its definition in the pair's file of the shown language, else in
+ * the other language's file. Never a definition elsewhere, which would be another command's docs.
+ */
+function pairEntry(pair: CommandPair, dicts: Record<LangId, Dictionary>, lang: LangId, name: string): DictEntry | undefined {
+  for (const l of [lang, ...LANG_IDS.filter((other) => other !== lang)]) {
+    const file = pair.files[l]
+    const found = file && dicts[l].lookupIn(file.file.path, name)
+    if (found) return found
+  }
+  return undefined
+}
+
 /** The right panel: every command of the shown pair with its gaps, and the details of one. */
-function Outline({ pair, dict }: Readonly<{ pair: CommandPair; dict: Dictionary }>) {
+function Outline({ pair, dicts }: Readonly<{ pair: CommandPair; dicts: Record<LangId, Dictionary> }>) {
   const { state, dispatch, actions } = useEditor()
   const row = useDocHover()
   const { lang, drafts } = state.commands
@@ -569,7 +592,7 @@ function Outline({ pair, dict }: Readonly<{ pair: CommandPair; dict: Dictionary 
               className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left ${
                 e === chosen ? 'bg-zinc-700' : 'hover:bg-zinc-800'
               }`}
-              {...row(dict.lookup(e.name), () => open(e))}
+              {...row(pairEntry(pair, dicts, lang, e.name), () => open(e))}
             >
               <span className="truncate font-mono text-[12px] text-zinc-200">{e.name}</span>{' '}
               <span className="flex shrink-0 gap-2 text-[10px]">
@@ -594,7 +617,7 @@ function Outline({ pair, dict }: Readonly<{ pair: CommandPair; dict: Dictionary 
           )}
         </div>
       ))}
-      {chosen && <EntryDetails entry={chosen} />}
+      {chosen && <EntryDetails entry={chosen} docs={pairEntry(pair, dicts, lang, chosen.name)} />}
     </section>
   )
 }
@@ -608,13 +631,17 @@ export function CommandsTab() {
   const pairs = useMemo(() => commandPairs(commandFiles), [commandFiles])
   const pair = shownPair(pairs, state.commands.pair)
   const file = pair?.files[lang]
-  const shown = file?.file.path ?? null
   // Kept across renders, so a keystroke in one file parses that file's text only.
   const [cache] = useState(parseCache)
-  const dict = useMemo(() => {
+  // A dictionary per language: the editor and the list use the shown language's, and a row of the
+  // outline is looked up in its pair's own files, whichever language has the command.
+  const dicts = useMemo(() => {
     cache.keep(drafts)
-    return buildDictionary({ lang, shown, commandFiles, libraryFiles, drafts }, cache)
-  }, [cache, lang, shown, commandFiles, libraryFiles, drafts])
+    const build = (l: LangId) =>
+      buildDictionary({ lang: l, shown: pair?.files[l]?.file.path ?? null, commandFiles, libraryFiles, drafts }, cache)
+    return { ahk: build('ahk'), ps: build('ps') }
+  }, [cache, pair, commandFiles, libraryFiles, drafts])
+  const dict = dicts[lang]
   return (
     <>
       <LeftPanel>
@@ -633,8 +660,8 @@ export function CommandsTab() {
       </main>
       <RightPanel preview={false}>
         {/* One card for both lists, so a row of one never leaves a card of the other up. */}
-        <DocHoverProvider dicts={[dict]}>
-          {pair && <Outline key={pair.key} pair={pair} dict={dict} />}
+        <DocHoverProvider dicts={[dicts.ahk, dicts.ps]}>
+          {pair && <Outline key={pair.key} pair={pair} dicts={dicts} />}
           <OtherCommands dict={dict} />
         </DocHoverProvider>
       </RightPanel>

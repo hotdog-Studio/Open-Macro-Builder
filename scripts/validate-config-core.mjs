@@ -124,14 +124,25 @@ function checkHotstring(s, i, { errors, actions }) {
 }
 
 const AHK_FUNCTION = /^(\w+)\s*\(/gm;
-const PS_FUNCTION = /^[ \t]*function[ \t]+([\w-]+)/gim;
+/** `function` and the name, which may carry a scope (`global:Name`). */
+const PS_FUNCTION = /^[ \t]*function[ \t]+([\w:-]+)/gim;
+/** The scopes a PowerShell function can be defined in; the configurator's reader takes the same list from here. */
+export const PS_SCOPES = ['global:', 'script:', 'local:', 'private:'];
+
+/** A lower-cased PowerShell name without the scope it may be defined in, as the configurator reads it. */
+function withoutScope(name) {
+  const scope = PS_SCOPES.find((s) => name.startsWith(s));
+  return scope ? name.slice(scope.length) : name;
+}
 
 /**
- * Lower-cased names of the functions defined in a command file, in file order.
+ * Lower-cased names of the functions defined in a command file, in file order. A PowerShell name
+ * defined with a scope (`function global:Name`) is read without it; a scope with no name is no function.
  * @param {string} text the file's contents
  * @param {'.ahk' | '.ps1'} ext which version's file it is
  */
 export function functionNames(text, ext) {
   const pattern = ext === '.ahk' ? AHK_FUNCTION : PS_FUNCTION;
-  return [...text.matchAll(pattern)].map((m) => m[1].toLowerCase());
+  const names = [...text.matchAll(pattern)].map((m) => m[1].toLowerCase());
+  return ext === '.ahk' ? names : names.map(withoutScope).filter((name) => name !== '');
 }

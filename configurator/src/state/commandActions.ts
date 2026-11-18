@@ -63,6 +63,10 @@ export type CommandActions = Pick<
   draftPaths(): string[]
   /** Forgets every draft: the folder was closed, replaced or loaded again. */
   clearDrafts(): void
+  /** Numbers a read of the library about to start (a reload's), as a recheck numbers its own. */
+  startLibraryRead(): number
+  /** Whether read number `n` may replace the library: no read that started after it has done so. */
+  takeLibraryRead(n: number): boolean
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -151,6 +155,10 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
 
   /** Numbers the saves, so a background result of one save is never taken for another's. */
   let saveCount = 0
+  /** Numbers the reads of the library as they start, so an older one never replaces a newer one's. */
+  let libraryReads = 0
+  /** The number of the newest read whose library the state holds. */
+  let libraryTaken = 0
 
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
   const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
@@ -164,6 +172,13 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     await settled()
     const folder = deps.folder()
     if (!folder) return
+    await recheckCommandFiles(folder)
+    // Whatever became of the command files: the library has guards of its own.
+    await recheckLibrary(folder)
+  }
+
+  /** Reads the command files again and takes up what changed on disk. */
+  async function recheckCommandFiles(folder: FolderAccess): Promise<void> {
     const snapshot = files.get()
     let fresh: CommandFile[]
     try {
@@ -195,20 +210,42 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const list = same ? snapshot : next
     if (!same) files.set(list)
     dispatch({ type: 'command-files', files: list, changed })
-    await recheckLibrary(folder)
   }
 
-  /** Reads the library again; a failed read keeps the one the state holds. */
+  /** Numbers a read of the library about to start: a recheck's or a reload's. */
+  function startLibraryRead(): number {
+    libraryReads++
+    return libraryReads
+  }
+
+  /**
+   * Whether read number `n` may replace the library: true unless a read that started after it has
+   * already done so, so an older read that ends late never undoes a newer one. A read that failed
+   * takes nothing from the others. True marks `n` as the newest read the library holds.
+   */
+  function takeLibraryRead(n: number): boolean {
+    if (n < libraryTaken) return false
+    libraryTaken = n
+    return true
+  }
+
+  /**
+   * Reads the library again; a failed read keeps the one the state holds, and a read overtaken by a
+   * newer one gives way to it. Files whose bytes did not change keep their entry, unparsed.
+   */
   async function recheckLibrary(folder: FolderAccess): Promise<void> {
+    const n = startLibraryRead()
+    const before = deps.getState()
     let fresh: LibraryFile[]
     try {
-      fresh = await scanLibrary(folder)
+      fresh = await scanLibrary(folder, before.screen === 'edit' ? before.libraryFiles : [])
     } catch {
       return
     }
     const state = deps.getState()
-    if (deps.folder() !== folder || state.screen !== 'edit' || sameLibrary(state.libraryFiles, fresh)) return
-    dispatch({ type: 'library-files', files: fresh })
+    // The screen check never decides (a held folder means the editor) but gives the types the editor's state.
+    if (deps.folder() !== folder || state.screen !== 'edit' || !takeLibraryRead(n)) return
+    if (!sameLibrary(state.libraryFiles, fresh)) dispatch({ type: 'library-files', files: fresh })
   }
 
   /** The platform's syntax check of a saved file; null without one. A check that fails says why. */
@@ -476,5 +513,8 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       drafts.clear()
       written.clear()
     },
+
+    startLibraryRead,
+    takeLibraryRead,
   }
 }

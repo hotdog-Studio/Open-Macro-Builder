@@ -10,12 +10,17 @@ import { AppProvider, useApp, type EditState } from '../src/state/store'
 import { App } from '../src/ui/App'
 import { memoryFolderFromRepo, readRepoText } from './repo'
 
-export interface StartOptions {
+export interface FolderOptions {
   languages?: LangId[]
-  /** Extra files for the folder, as text. */
-  files?: Record<string, string>
+  /** Extra files for the folder, as text or as bytes (for a file that is not UTF-8). */
+  files?: Record<string, string | Uint8Array>
   /** Also copy the repository's powershell/lib into the folder. Default false. */
   library?: boolean
+}
+
+export interface StartOptions extends FolderOptions {
+  /** The folder "Open folder" gives on every click after the first; the first folder again when left out. */
+  next?: MemoryFolder
 }
 
 const EXAMPLE = readRepoText('config.json')
@@ -30,11 +35,8 @@ function Probe() {
   return null
 }
 
-/** Opens the example repository in memory and shows the Commands tab: what start() in src/ui/commands.test.tsx does. */
-export async function startCommands({ languages = ['ahk', 'ps'], files = {}, library = false }: StartOptions = {}) {
-  let n = 0
-  URL.createObjectURL = vi.fn(() => `blob:test/${++n}`)
-  URL.revokeObjectURL = vi.fn()
+/** The example repository in memory, with local/config.json, the language settings and `files` added. */
+export async function exampleFolder({ languages = ['ahk', 'ps'], files = {}, library = false }: FolderOptions = {}): Promise<MemoryFolder> {
   const folder: MemoryFolder = memoryFolderFromRepo([
     'config.json',
     'ahk/main.ahk',
@@ -46,10 +48,22 @@ export async function startCommands({ languages = ['ahk', 'ps'], files = {}, lib
   ])
   await folder.writeBytes('local/config.json', enc.encode(EXAMPLE))
   await folder.writeBytes(SETTINGS_PATH, enc.encode(JSON.stringify({ languages }) + '\n'))
-  for (const [path, content] of Object.entries(files)) await folder.writeBytes(path, enc.encode(content))
+  await Promise.all(
+    Object.entries(files).map(([path, content]) => folder.writeBytes(path, typeof content === 'string' ? enc.encode(content) : content)),
+  )
+  return folder
+}
+
+/** Opens the example repository in memory and shows the Commands tab: what start() in src/ui/commands.test.tsx does. */
+export async function startCommands({ next, ...options }: StartOptions = {}) {
+  let n = 0
+  URL.createObjectURL = vi.fn(() => `blob:test/${++n}`)
+  URL.revokeObjectURL = vi.fn()
+  const folder = await exampleFolder(options)
+  let opens = 0
   const platform: Platform = {
     kind: 'browser',
-    openFolder: async () => folder,
+    openFolder: async () => (opens++ === 0 || !next ? folder : next),
     createFolder: async () => null,
     restoreFolder: async () => null,
   }

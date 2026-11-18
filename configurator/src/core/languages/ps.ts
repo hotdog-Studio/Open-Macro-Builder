@@ -1,63 +1,116 @@
-import { emptyDoc, oneLine, rewriteBody, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
+import { PS_SCOPES } from '../../../../scripts/validate-config-core.mjs'
+import { emptyDoc, exampleOf, oneLine, rewriteBody, textOf, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
-const DEFINITION = /^\s*function\s+([\w-]+)/i
+/** `function` and the name, which may carry a scope (`global:Name`). */
+const DEFINITION = /^\s*function\s+([\w:-]+)/i
 const PARAM_START = /param\s*\(/i
 
+/** A function's name without the scope it may be defined in: the scopes the config validator knows. */
+function withoutScope(name: string): string {
+  const scope = PS_SCOPES.find((s) => name.toLowerCase().startsWith(s))
+  return scope ? name.slice(scope.length) : name
+}
+
+/** The text from column `column` of line `from` to the line before the next definition. */
+function textFrom(lines: string[], from: number, column: number): string {
+  const next = lines.findIndex((l, i) => i > from && DEFINITION.test(l))
+  return [lines[from].slice(column), ...lines.slice(from + 1, next === -1 ? lines.length : next)].join('\n')
+}
+
 /**
- * The parameters of the first `param(...)` that starts within the definition
- * line or the next two, never reaching into the following function.
+ * The list of the first `param(...)` that starts within the definition line or the next two, from
+ * its open paren; null when there is none. Read to its close paren, which may be past those three
+ * lines, but an unclosed list stops at the line before the next definition.
  */
-function declaredParams(lines: string[], index: number): ParamDoc[] {
-  const window: string[] = [lines[index]]
-  for (let i = index + 1; i <= index + 2 && i < lines.length; i++) {
-    if (DEFINITION.test(lines[i])) break
-    window.push(lines[i])
+function paramBlock(lines: string[], index: number): string | null {
+  for (let i = index; i <= index + 2 && i < lines.length; i++) {
+    if (i > index && DEFINITION.test(lines[i])) return null
+    const at = lines[i].search(PARAM_START)
+    if (at !== -1) return textFrom(lines, i, lines[i].indexOf('(', at))
   }
-  const startLine = window.findIndex((l) => PARAM_START.test(l))
-  if (startLine === -1) return []
-  // Read to the matching close paren, which may be past the three-line window, but an
-  // unclosed list stops at the line before the next definition.
-  const from = index + startLine + 1
-  const next = lines.findIndex((l, i) => i >= from && DEFINITION.test(l))
-  const rest = [
-    lines[index + startLine].slice(lines[index + startLine].search(PARAM_START)),
-    ...lines.slice(from, next === -1 ? lines.length : next),
-  ]
-  const body = rest.join('\n')
-  return splitParams(body.slice(body.indexOf('('))).flatMap((piece) => readParam(piece) ?? [])
+  return null
+}
+
+/** The list right after the name, `function Name($A, $B)`, from its open paren; null when there is none. */
+function inlineList(lines: string[], index: number, nameEnd: number): string | null {
+  const after = lines[index].slice(nameEnd)
+  return after.trimStart().startsWith('(') ? textFrom(lines, index, nameEnd + after.indexOf('(')) : null
+}
+
+/** The parameters the function on line `index` declares: in a `param(...)`, else in a list after its name. */
+function declaredParams(lines: string[], index: number, nameEnd: number): ParamDoc[] {
+  const list = paramBlock(lines, index) ?? inlineList(lines, index, nameEnd)
+  return list === null ? [] : splitParams(list).flatMap((piece) => readParam(piece) ?? [])
 }
 
 const QUOTES = `'"`
 const PAREN: Record<string, number> = { '(': 1, ')': -1 }
 const BRACKET: Record<string, number> = { '[': 1, ']': -1 }
 
+/** Where a read of a parameter list is: in a quoted string or not, and how deep in parens and brackets. */
+interface ListScan {
+  quote: string
+  paren: number
+  bracket: number
+}
+
+/** What a character is to the list: before it (the open paren), its end (the close paren), a comma between two parameters, or text of one. */
+type ListPart = 'before' | 'end' | 'split' | 'text'
+
+/** What the character `ch` is to the list, the scan moved on past it. */
+function step(scan: ListScan, ch: string): ListPart {
+  if (scan.quote) {
+    if (ch === scan.quote) scan.quote = ''
+    return 'text'
+  }
+  if (QUOTES.includes(ch)) scan.quote = ch
+  const outside = scan.paren === 0
+  scan.paren += PAREN[ch] ?? 0
+  // A `]` too many, while a type is being typed, closes nothing.
+  scan.bracket = Math.max(0, scan.bracket + (BRACKET[ch] ?? 0))
+  if (outside) return 'before'
+  if (scan.paren === 0) return 'end'
+  // No split inside brackets, for a type such as `[Dictionary[string,int]]`. So an unclosed `[` hides
+  // the parameters after it, on purpose: while it is typed it cannot be told from such a type whose `]` is still to come.
+  return ch === ',' && scan.paren === 1 && scan.bracket === 0 ? 'split' : 'text'
+}
+
+/** The index just past the comment that starts at `i` (`#` to the end of its line, or `<# ... #>`); `i` when none starts there. */
+function commentEnd(list: string, i: number): number {
+  if (list.startsWith('<#', i)) {
+    const close = list.indexOf('#>', i + 2)
+    return close === -1 ? list.length : close + 2
+  }
+  if (list[i] !== '#') return i
+  const eol = list.indexOf('\n', i)
+  return eol === -1 ? list.length : eol
+}
+
 /**
  * The pieces between the commas of a parameter list. `list` starts at its open paren; what comes
- * after the matching close paren is not read. A comma inside quotes or inner parens splits nothing.
+ * after the matching close paren is not read. A comma inside quotes, inner parens or brackets
+ * splits nothing, and comments are left out of the pieces.
  */
 function splitParams(list: string): string[] {
   const pieces: string[] = []
-  let depth = 0
-  let quote = ''
+  const scan: ListScan = { quote: '', paren: 0, bracket: 0 }
   let piece = ''
-  for (const ch of list) {
-    if (quote) {
-      piece += ch
-      if (ch === quote) quote = ''
+  let i = 0
+  while (i < list.length) {
+    const after = scan.quote ? i : commentEnd(list, i)
+    if (after > i) {
+      i = after
       continue
     }
-    if (QUOTES.includes(ch)) quote = ch
-    const outside = depth === 0
-    depth += PAREN[ch] ?? 0
-    // The paren that closes the list.
-    if (depth === 0) break
-    if (ch === ',' && depth === 1) {
+    const part = step(scan, list[i])
+    if (part === 'end') break
+    if (part === 'split') {
       pieces.push(piece)
       piece = ''
-    } else if (!outside) {
-      // Everything but the paren that opens the list.
-      piece += ch
+    } else if (part === 'text') {
+      piece += list[i]
     }
+    i++
   }
   pieces.push(piece)
   return pieces
@@ -105,12 +158,26 @@ function readParam(piece: string): ParamDoc | null {
   return { name: name[1], text: '', type, optional: def !== '' || type.toLowerCase() === 'switch', default: def, values }
 }
 
-/** `Name <A> [-B <string>] [-C]`: each parameter as it is passed. */
+const isSwitch = (p: ParamDoc) => p.type.toLowerCase() === 'switch'
+
+/** One parameter as it is passed; `named` once a parameter that can be left out came before it. */
+function usagePart(p: ParamDoc, named: boolean): string {
+  if (isSwitch(p)) return `[-${p.name}]`
+  if (p.default !== '') return `[-${p.name} <${p.type === '' ? 'value' : p.type}>]`
+  return named ? `-${p.name} <${p.name}>` : `<${p.name}>`
+}
+
+/**
+ * `Name <A> [-B <string>] [-C] -D <D>`: each parameter as it is passed. PowerShell fills parameters
+ * by position in declared order, so one that must be given after one that can be left out is
+ * written by name: by position it would land in the one left out.
+ */
 function usageLine(name: string, params: ParamDoc[]): string {
+  let named = false
   const parts = params.map((p) => {
-    if (p.type.toLowerCase() === 'switch') return `[-${p.name}]`
-    if (p.default !== '') return `[-${p.name} <${p.type === '' ? 'value' : p.type}>]`
-    return `<${p.name}>`
+    const part = usagePart(p, named)
+    named ||= isSwitch(p) || p.default !== ''
+    return part
   })
   return [name, ...parts].join(' ')
 }
@@ -132,15 +199,31 @@ function blockText(block: string[]): string[] {
 }
 
 /**
+ * The line of the `<#` that opens the block ending on line `end`; -1 when the end of another block
+ * comes first (the `#>` on line `end` then closes no help block of its own).
+ */
+function helpStart(lines: string[], end: number): number {
+  for (let i = end; i >= 0; i--) {
+    const text = lines[i].trim()
+    // Another block's end first: a one-line `<# ... #>` above is a whole block of its own.
+    if (i < end && text.endsWith('#>')) return -1
+    if (text.startsWith('<#')) return i
+  }
+  return -1
+}
+
+/**
  * The lines of the docs that end on the line directly above `index`, without their comment marks;
  * null when there are none. A `<# ... #>` block comes first, then a run of `#` lines.
  */
 function docsAbove(lines: string[], index: number): { form: 'block' | 'note'; lines: string[] } | null {
   if (index === 0) return null
-  if (lines[index - 1].trim().endsWith('#>')) {
-    let start = index - 1
-    while (start >= 0 && !lines[start].trim().startsWith('<#')) start--
-    if (start < 0) return null
+  const above = lines[index - 1].trim()
+  if (above.endsWith('#>')) {
+    // `$y = 2 <# tweak #>`: a comment at the end of a line of code, not help.
+    if (above.indexOf('<#') > 0) return null
+    const start = helpStart(lines, index - 1)
+    if (start === -1) return null
     return { form: 'block', lines: blockText(lines.slice(start, index)) }
   }
   let start = index
@@ -174,8 +257,6 @@ function sectionsOf(block: string[]): Section[] {
   return sections
 }
 
-const textOf = (lines: string[]): string => oneLine(lines.join(' '))
-
 /** A `.PARAMETER` section onto the declared parameter it names, ignoring case; a name that matches none is dropped. */
 function readParamSection(section: Section, params: ParamDoc[]): void {
   const head = section.lines[0].trim()
@@ -184,14 +265,6 @@ function readParamSection(section: Section, params: ParamDoc[]): void {
   const first = split === -1 ? '' : head.slice(split)
   const param = params.find((p) => p.name.toLowerCase() === name.toLowerCase())
   if (param) param.text = textOf([first, ...section.lines.slice(1)])
-}
-
-/** An `.EXAMPLE` section: its lines as written, the blank lines at its ends dropped. */
-function readExample(section: Section): string {
-  const lines = [section.lines[0].trim(), ...section.lines.slice(1)]
-  while (lines.length > 0 && lines[0].trim() === '') lines.shift()
-  while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
-  return lines.join('\n')
 }
 
 /** The docs in the lines of a help block, for the parameters a definition declares. */
@@ -204,7 +277,7 @@ function readBlock(block: string[], params: ParamDoc[]): FunctionDoc {
     summary: textOf([...of('synopsis'), ...of('description')].flatMap((s) => s.lines)),
     params,
     returns: textOf(of('outputs').flatMap((s) => s.lines)),
-    examples: of('example').map(readExample).filter((e) => e !== ''),
+    examples: of('example').map((s) => exampleOf(s.lines)).filter((e) => e !== ''),
   }
 }
 
@@ -214,7 +287,10 @@ function findFunctions(text: string): FunctionInfo[] {
   lines.forEach((line, i) => {
     const match = DEFINITION.exec(line)
     if (!match) return
-    const params = declaredParams(lines, i)
+    const name = withoutScope(match[1])
+    // `function global:` half typed: no name yet.
+    if (name === '') return
+    const params = declaredParams(lines, i, match[0].length)
     const docs = docsAbove(lines, i)
     let doc: FunctionDoc = { ...emptyDoc([]), params }
     if (docs?.form === 'block') {
@@ -225,11 +301,11 @@ function findFunctions(text: string): FunctionInfo[] {
       if (summary !== '') doc = { ...doc, form: 'note', summary }
     }
     found.push({
-      name: match[1],
+      name,
       line: i + 1,
       params: params.map((p) => p.name),
       description: doc.summary,
-      usage: usageLine(match[1], params),
+      usage: usageLine(name, params),
       doc,
     })
   })

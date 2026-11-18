@@ -13,6 +13,19 @@ if (typeof document !== 'undefined') {
   const range = Range.prototype
   range.getClientRects ??= () => [] as unknown as DOMRectList
   range.getBoundingClientRect ??= () => new DOMRect()
+
+  // jsdom has no elementFromPoint either, which the docs card asks where the pointer is. user-event
+  // moves the pointer from element to element, so here the answer is the element the last pointer
+  // event went to, whatever the point.
+  if (typeof document.elementFromPoint !== 'function') {
+    let under: Element | null = null
+    const track = (e: Event) => {
+      under = e.target instanceof Element ? e.target : null
+    }
+    document.addEventListener('pointerover', track, true)
+    document.addEventListener('pointermove', track, true)
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => under })
+  }
 }
 
 export {}

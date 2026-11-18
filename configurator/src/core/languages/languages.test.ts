@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { functionNames, PS_SCOPES } from '../../../../scripts/validate-config-core.mjs'
 import { readRepoText } from '../../../test/repo'
 import { appendBlock } from '../commands/newCommand'
+import { paramMismatches } from '../commands/outline'
 import { LANGUAGES, LANG_IDS, emptyDoc, isCommand } from './index'
 
 describe('AutoHotkey findFunctions', () => {
@@ -178,9 +180,18 @@ describe('AutoHotkey findFunctions', () => {
     })
 
     it('reads a tag line with nothing after its name', () => {
-      expect(docOf(['@example', '  F("a")', '  F("b")']).examples).toEqual(['  F("a")\n  F("b")'])
+      expect(docOf(['@example', '  F("a")', '  F("b")']).examples).toEqual(['F("a")\nF("b")'])
       expect(docOf(['@description', 'Does it.']).summary).toBe('Does it.')
       expect(docOf(['@param', '@returns']).returns).toBe('')
+    })
+
+    it('drops an @example with nothing in it, and joins text lines with @description', () => {
+      expect(docOf(['Does it.', '@example']).examples).toEqual([])
+      expect(docOf(['Does it.', '@description And more.']).summary).toBe('Does it. And more.')
+    })
+
+    it('keeps the indentation of an example relative to its first line only', () => {
+      expect(docOf(['@example', '    F("a")', '        F("b")']).examples).toEqual(['F("a")\n    F("b")'])
     })
 
     it('does not take an @ in the middle of a line, or a bare @, for a tag', () => {
@@ -220,6 +231,53 @@ describe('AutoHotkey findFunctions', () => {
         expect(timed(tag)).toBeLessThan(1000)
       })
     })
+  })
+
+  it('takes a call at the left edge for a call, not a definition', () => {
+    const fns = LANGUAGES.ahk.findFunctions('/**\n * Real docs\n */\nFoo(a) {\n}\nFoo(1)\nSetTitleMatchMode(2)\nx := 1\n')
+    expect(fns.map((f) => [f.name, f.line])).toEqual([['Foo', 4]])
+    expect(fns[0].description).toBe('Real docs')
+  })
+
+  it('finds a definition whose brace is on a later line', () => {
+    const fns = LANGUAGES.ahk.findFunctions('Foo(a)\n\n{\n}\nBar(b)\n; a comment\n{\n}\nFoo(1)')
+    expect(fns.map((f) => [f.name, f.line])).toEqual([['Foo', 1], ['Bar', 5]])
+  })
+
+  it('finds a one-line function, a comment after the list, and a ) inside a default', () => {
+    const fns = LANGUAGES.ahk.findFunctions('Double(x) => x * 2\nFoo(Macro) ; comment\n{\n}\nBar(a := ")", b := "`"") {\n}')
+    expect(fns.map((f) => [f.name, f.params])).toEqual([['Double', ['x']], ['Foo', ['Macro']], ['Bar', ['a', 'b']]])
+    expect(isCommand(fns[1])).toBe(true)
+    expect(fns[2].usage).toBe('Bar(a := ")", b := "`"")')
+  })
+
+  it('keeps the parameters after a default with an escaped quote', () => {
+    expect(LANGUAGES.ahk.findFunctions('Foo(a := "x`"y", b) {\n}')[0].params).toEqual(['a', 'b'])
+  })
+
+  it('reads no docs from a plain /* */ comment above a function', () => {
+    const fns = LANGUAGES.ahk.findFunctions('/**\n * A docs.\n */\nA() {\n}\n/* plain */\nB() {\n}')
+    expect(fns[1].doc.form).toBe('none')
+  })
+
+  it('reads no docs from a plain /* */ comment under a half-typed /** block', () => {
+    const fns = LANGUAGES.ahk.findFunctions('/** half typed\nA() {\n}\n/* plain\n */\nB() {\n}')
+    expect(fns.map((f) => f.name)).toEqual(['A', 'B'])
+    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
+  })
+
+  it('reads no docs from a */ with no /** above it', () => {
+    expect(LANGUAGES.ahk.findFunctions('x := 1 */\nB() {\n}')[0].doc.form).toBe('none')
+  })
+
+  it.each([
+    ['one-line block for a stray */ above another', '/** A docs. */\nA() {\n}\n */\nB() {\n}'],
+    ['block for a stray */ above another', '/**\n * A docs.\n */\nA() {\n}\n */\nB() {\n}'],
+    ['block for a comment at the end of a line of code', '/**\n * A docs.\n */\nA() {\n}\nx := 1 /* tweak */\nB() {\n}'],
+  ])("does not take an earlier function's %s", (_shape, text) => {
+    const fns = LANGUAGES.ahk.findFunctions(text)
+    expect(fns[0].doc.summary).toBe('A docs.')
+    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
   })
 
   it('lists a function under a half-typed block without docs', () => {
@@ -364,6 +422,124 @@ describe('PowerShell findFunctions', () => {
   it('reads a note that starts with the letters of #region or #Requires', () => {
     expect(LANGUAGES.ps.findFunctions('#requirements: none\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'requirements: none' })
     expect(LANGUAGES.ps.findFunctions('#regional settings\nfunction A {\n}')[0].doc).toMatchObject({ form: 'note', summary: 'regional settings' })
+  })
+
+  it('writes a parameter without a default after one with a default by name', () => {
+    expect(LANGUAGES.ps.findFunctions('function F {\n    param($A, $B = 1, $C)\n}')[0].usage).toBe('F <A> [-B <value>] -C <C>')
+    expect(LANGUAGES.ps.findFunctions('function F {\n    param([switch]$A, [int]$B)\n}')[0].usage).toBe('F [-A] -B <B>')
+  })
+
+  it('reads a name with a scope, and a parameter list after the name', () => {
+    const fns = LANGUAGES.ps.findFunctions('function global:Send-Thing {\n    param($X, $Y = 2)\n}\nfunction Send-Other ($X,\n    $Y = 2) {\n}\nfunction Open($Macro) {\n}')
+    expect(fns.map((f) => [f.name, f.params])).toEqual([['Send-Thing', ['X', 'Y']], ['Send-Other', ['X', 'Y']], ['Open', ['Macro']]])
+    expect(fns[1].usage).toBe('Send-Other <X> [-Y <value>]')
+    expect(isCommand(fns[2])).toBe(true)
+  })
+
+  it('reads every scope the config validator reads, as the validator does', () => {
+    expect(PS_SCOPES.length).toBeGreaterThan(0)
+    for (const scope of PS_SCOPES) {
+      const text = `function ${scope.toUpperCase()}Send-Thing {\n}`
+      expect(LANGUAGES.ps.findFunctions(text).map((f) => f.name)).toEqual(['Send-Thing'])
+      expect(functionNames(text, '.ps1')).toEqual(['send-thing'])
+    }
+  })
+
+  it('reads no function from a half-typed scope with no name after it', () => {
+    expect(LANGUAGES.ps.findFunctions('function global:\n    param($Macro)\n}\nfunction B {\n}').map((f) => f.name)).toEqual(['B'])
+  })
+
+  it('keeps the parameters after a stray ] while a type is typed', () => {
+    expect(LANGUAGES.ps.findFunctions('function F {\n    param([int]]$X, $Y, $Z)\n}')[0].params).toEqual(['X', 'Y', 'Z'])
+  })
+
+  it('reads past comments inside the parameter list', () => {
+    const text = [
+      'function Send-Click {',
+      '    param(',
+      "        # the window's left edge",
+      '        [int]$X,',
+      '        <# the top, $Top in pixels #>',
+      '        [int]$Y,',
+      "        [string]$Button = 'Left' # which one",
+      '    )',
+      '}',
+    ].join('\n')
+    const [fn] = LANGUAGES.ps.findFunctions(text)
+    expect(fn.params).toEqual(['X', 'Y', 'Button'])
+    expect(fn.usage).toBe('Send-Click <X> <Y> [-Button <string>]')
+    expect(fn.doc.params.map((p) => [p.type, p.default])).toEqual([['int', ''], ['int', ''], ['string', "'Left'"]])
+  })
+
+  it('takes no parameter name from a comment', () => {
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param(\n        # Like $Path\n        $Name)\n}')[0].params).toEqual(['Name'])
+  })
+
+  it('reads a command whose parameter has a comment above it as a command', () => {
+    const ps = 'function OpenIt {\n    param(\n        # Uses $Window from the caller\n        $Macro)\n}\n'
+    const [fn] = LANGUAGES.ps.findFunctions(ps)
+    expect(isCommand(fn)).toBe(true)
+    expect(paramMismatches({ ahk: 'OpenIt(Macro) {\n}\n', ps })).toEqual([])
+  })
+
+  it('hides the parameters after an unclosed [, which while typing cannot be told from a type with a comma whose ] is still to come', () => {
+    const type = 'function A {\n    param(\n        [Dictionary[string,\n            int]]$Map,\n        $Y\n    )\n}'
+    const kept = LANGUAGES.ps.findFunctions(type)[0].doc.params.map((p) => [p.name, p.type.replaceAll(/\s/g, '')])
+    expect(kept).toEqual([['Map', 'Dictionary[string,int]'], ['Y', '']])
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param([int$X, $Y, $Z)\n}')[0].params).toEqual(['X'])
+  })
+
+  it('reads a type with a comma inside brackets, and a type after a comment', () => {
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param([Dictionary[string,int]]$Map, $B)\n}')[0].doc.params.map((p) => p.type))
+      .toEqual(['Dictionary[string,int]', ''])
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param(\n        # left\n        [int]$X)\n}')[0].doc.params[0].type).toBe('int')
+  })
+
+  it.each([
+    ['one-line block for a stray #> above another', '<# .SYNOPSIS A. #>\nfunction A {\n}\n#>\nfunction B {\n}', 'A.'],
+    ['block for a stray #> above another', '<#\n.SYNOPSIS\nA.\n#>\nfunction A {\n}\n#>\nfunction B {\n}', 'A.'],
+    ['block for a comment at the end of a line of code', '<#\n.SYNOPSIS\nDoes A.\n#>\nfunction A {\n}\n$y = 2 <# tweak #>\nfunction B {\n}', 'Does A.'],
+  ])("does not take an earlier function's %s", (_shape, text, summary) => {
+    const fns = LANGUAGES.ps.findFunctions(text)
+    expect(fns[0].doc.summary).toBe(summary)
+    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
+  })
+
+  it.each([
+    ['no docs from a #> with no <# above it', '#>\nfunction A {\n}', { form: 'none', summary: '' }],
+    ['a help block whose last text line closes it', '<#\n.SYNOPSIS\nDoes it. #>\nfunction A {\n}', { form: 'block', summary: 'Does it.' }],
+    ['a help block without a synopsis as a block', '<#\n.DESCRIPTION\nMore.\n#>\nfunction A {\n}', { form: 'block', summary: 'More.' }],
+    ['a help block on one line', '<# .SYNOPSIS Does it. #>\nfunction A {\n}', { form: 'block', summary: 'Does it.' }],
+  ])('reads %s', (_shape, text, doc) => {
+    expect(LANGUAGES.ps.findFunctions(text)[0].doc).toMatchObject(doc)
+  })
+
+  it("reads a .PARAMETER named in another case, and text on the keyword's line", () => {
+    const [fn] = LANGUAGES.ps.findFunctions(
+      '<#\n.SYNOPSIS\nS.\n.PARAMETER window The window.\n.PARAMETER count\nHow many.\n#>\nfunction A {\n    param($Window, [int]$Count)\n}',
+    )
+    expect(fn.doc.params.map((p) => p.text)).toEqual(['The window.', 'How many.'])
+  })
+
+  it('reads ValidateSet values in double quotes', () => {
+    const [fn] = LANGUAGES.ps.findFunctions('function A {\n    param([ValidateSet("Left", "Right")][string]$Button = "Left")\n}')
+    expect(fn.doc.params[0]).toMatchObject({ values: ['Left', 'Right'], default: '"Left"', optional: true })
+  })
+
+  it('reads no note from bare marks, no parameter from an empty param(), and no help from inside the body', () => {
+    expect(LANGUAGES.ps.findFunctions('#\n##\nfunction A {\n}')[0].doc.form).toBe('none')
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param()\n}')[0].params).toEqual([])
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param($X,)\n}')[0].params).toEqual(['X'])
+    expect(LANGUAGES.ps.findFunctions('function A {\n<#\n.SYNOPSIS\nIn.\n#>\n}')[0].doc.form).toBe('none')
+  })
+
+  it('lists a parameter whose attribute was never closed', () => {
+    expect(LANGUAGES.ps.findFunctions("function A {\n    param([ValidateSet('a', $X)\n}")[0].params).toEqual(['X'])
+  })
+
+  it('reads an indented help block without its indentation', () => {
+    const [fn] = LANGUAGES.ps.findFunctions('    <#\n    .SYNOPSIS\n    Clicks.\n    .EXAMPLE\n    Send-Click 1 2\n\n    Send-Click 3 4\n    #>\nfunction Send-Click {\n}')
+    expect(fn.doc.examples).toEqual(['Send-Click 1 2\n\nSend-Click 3 4'])
   })
 
   it('builds the usage lines of real library functions', () => {

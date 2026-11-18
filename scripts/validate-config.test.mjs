@@ -175,6 +175,11 @@ test('functionNames finds names the way the validator always has', () => {
   assert.deepEqual(functionNames('function Get-X { }\n  function Y {\n', '.ps1'), ['get-x', 'y']);
 });
 
+test('functionNames reads a PowerShell name defined with a scope without the scope', () => {
+  const text = 'function global:OpenIt { param($Macro) }\nfunction Script:Get-Y {\n}\nfunction global:\n';
+  assert.deepEqual(functionNames(text, '.ps1'), ['openit', 'get-y']);
+});
+
 test('validate-config-core.mjs has no Node imports', () => {
   const src = readFileSync(new URL('./validate-config-core.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /from\s+['"]node:/);

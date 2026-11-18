@@ -13,9 +13,6 @@ const CLOSING: Record<LangId, string> = {
 /** What names a group in the set of toggled ones: its list and its key, as a file can stand in both lists. */
 const stateKey = (title: string, list: ListGroup) => `${title}/${list.group.key}`
 
-/** What names a row in the set of open ones: its file and name, so it survives the file being retyped. */
-const rowKey = (entry: DictEntry) => `${entry.source.path}\0${entry.fn.name.toLowerCase()}`
-
 function Row({
   entry,
   expanded,
@@ -76,11 +73,12 @@ function Group({
       {open && (
         <ul className="ml-3 space-y-0.5">
           {entries.map((entry) => (
+            // The id survives the file being retyped, so a row keeps its open docs.
             <Row
-              key={rowKey(entry)}
+              key={entry.id}
               entry={entry}
-              expanded={expanded.has(rowKey(entry))}
-              onToggle={() => onToggleRow(rowKey(entry))}
+              expanded={expanded.has(entry.id)}
+              onToggle={() => onToggleRow(entry.id)}
               hover={hover}
             />
           ))}
@@ -95,13 +93,20 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
   const [query, setQuery] = useState('')
   // A group's own state by list and key, for the ones the user has toggled; the others keep their starting state.
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
+  // The same while the filter has text, where every group starts open; forgotten when the filter changes.
+  const [filteredToggled, setFilteredToggled] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const { row, card } = useDocHover()
+  const row = useDocHover()
   const all = useMemo(() => listSections(dict), [dict])
   const sections = useMemo(() => filterSections(all, query), [all, query])
   const filtering = query.trim() !== ''
 
-  const toggleGroup = (key: string, initially: boolean) => setToggled((was) => ({ ...was, [key]: !(was[key] ?? initially) }))
+  // The filtered view and the whole list each keep their own groups' states, so neither changes the other.
+  const states = filtering ? filteredToggled : toggled
+  const setStates = filtering ? setFilteredToggled : setToggled
+  const start = (initially: boolean) => filtering || initially
+  const isOpen = (key: string, initially: boolean) => states[key] ?? start(initially)
+  const toggleGroup = (key: string, initially: boolean) => setStates((was) => ({ ...was, [key]: !(was[key] ?? start(initially)) }))
   const toggleRow = (key: string) =>
     setExpanded((was) => {
       const next = new Set(was)
@@ -117,8 +122,8 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
             <Group
               key={list.group.key}
               list={list}
-              // While the filter has text, a group with a match is open; its own state comes back after.
-              open={filtering || (toggled[stateKey(title, list)] ?? initially)}
+              // While the filter has text, a group with a match starts open; its own state comes back after.
+              open={isOpen(stateKey(title, list), initially)}
               onToggle={() => toggleGroup(stateKey(title, list), initially)}
               expanded={expanded}
               onToggleRow={toggleRow}
@@ -139,7 +144,10 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
         placeholder="Filter"
         className={`${STYLE.input} mt-2`}
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setFilteredToggled({})
+        }}
       />
       {section('Functions to call', sections.functions, true)}
       {section('Commands in other files', sections.commands, false)}
@@ -147,7 +155,6 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
         <p className={STYLE.note}>Nothing matches.</p>
       )}
       <p className={STYLE.note}>{CLOSING[dict.lang]}</p>
-      {card}
     </section>
   )
 }

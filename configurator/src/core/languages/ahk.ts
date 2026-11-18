@@ -1,18 +1,23 @@
-import { emptyDoc, oneLine, rewriteBody, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
+import { emptyDoc, exampleOf, oneLine, rewriteBody, textOf, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
-const DEFINITION = /^(\w+)\(([^)]*)\)\s*(?:\{\s*)?$/
+/** A name and an open paren at the left edge: a definition, or a call at the top of the file. */
+const HEAD = /^(\w+)\(/
 const PARAM_NAME = /^[&*]?(\w+)/
 const NOT_FUNCTIONS = new Set(['if', 'while', 'for', 'loop', 'switch', 'catch', 'until', 'return', 'else'])
 
-/** Splits a parameter list on commas that are not inside a quoted string. */
+/** Splits a parameter list on commas that are not inside a quoted string. A backtick escapes the character after it. */
 function splitParams(list: string): string[] {
   const pieces: string[] = []
   let quote = ''
+  let escaped = false
   let start = 0
   for (let i = 0; i < list.length; i++) {
     const ch = list[i]
-    if (quote) {
-      if (ch === quote) quote = ''
+    if (escaped) {
+      escaped = false
+    } else if (quote) {
+      if (ch === '`') escaped = true
+      else if (ch === quote) quote = ''
     } else if (ch === '"' || ch === "'") {
       quote = ch
     } else if (ch === ',') {
@@ -48,15 +53,31 @@ function declaredParams(list: string): Declared[] {
   return declared
 }
 
+/** A line that ends a block comment. */
+const CLOSES = /\*\/\s*$/
+
+/**
+ * The line of the `/**` that opens the block ending on line `end`; -1 when a plain `/*` or the end
+ * of another comment comes first (the `*\/` on line `end` then closes no doc block).
+ */
+function blockStart(lines: string[], end: number): number {
+  for (let i = end; i >= 0; i--) {
+    // Another comment's end first: a one-line `/** ... */` above is a whole block of its own.
+    if (i < end && CLOSES.test(lines[i])) return -1
+    if (/^\s*\/\*\*/.test(lines[i])) return i
+    if (/^\s*\/\*/.test(lines[i])) return -1
+  }
+  return -1
+}
+
 /** The lines of the `/** ... *\/` block that ends on the line directly above `index`, without their decoration; null when there is none. */
 function docBlockAbove(lines: string[], index: number): string[] | null {
-  if (index === 0 || !/\*\/\s*$/.test(lines[index - 1])) return null
-  let start = index - 1
-  while (start >= 0 && !/^\s*\/\*\*/.test(lines[start])) {
-    if (/^\s*\/\*(?!\*)/.test(lines[start])) return null
-    start--
-  }
-  if (start < 0) return null
+  const end = index - 1
+  if (end < 0 || !CLOSES.test(lines[end])) return null
+  // `x := 1 /* tweak */`: a comment at the end of a line of code, not a doc block.
+  if (lines[end].trim().indexOf('/*') > 0) return null
+  const start = blockStart(lines, end)
+  if (start === -1) return null
   return lines
     .slice(start, index)
     .map((line) => line.replace(/^\s*\/\*\*/, '').replace(/\*\/\s*$/, '').replace(/^\s*\*\s?/, '').trimEnd())
@@ -87,8 +108,6 @@ function splitTags(block: string[]): { intro: string[]; tags: Tag[] } {
   return { intro, tags }
 }
 
-const textOf = (lines: string[]): string => oneLine(lines.join(' '))
-
 /** What the first line of an `@param` says: `[{Type}] name [-] text`. */
 interface ParamParts {
   type: string | undefined
@@ -96,12 +115,11 @@ interface ParamParts {
   text: string
 }
 
-/** The `{Type}` the line starts with, and what follows it. A `{...}` with nothing after it is the name, not a type. */
+/** The `{Type}` the line starts with, and what follows it. */
 function splitType(line: string): { type: string | undefined; rest: string } {
   const close = line.indexOf('}')
   if (!line.startsWith('{') || close === -1) return { type: undefined, rest: line }
-  const rest = line.slice(close + 1).trimStart()
-  return rest === '' ? { type: undefined, rest: line } : { type: line.slice(1, close), rest }
+  return { type: line.slice(1, close), rest: line.slice(close + 1).trimStart() }
 }
 
 /** The name at the start of `text`, `[...]` or up to the next whitespace, and what follows it. */
@@ -140,14 +158,6 @@ function readParamTag(tag: Tag, params: ParamDoc[]): void {
   param.text = textOf([parts.text, ...tag.lines.slice(1)])
 }
 
-/** An `@example`: its lines as written, the blank lines at its ends dropped. */
-function readExample(tag: Tag): string {
-  const lines = [tag.lines[0].trim(), ...tag.lines.slice(1)]
-  while (lines.length > 0 && lines[0].trim() === '') lines.shift()
-  while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
-  return lines.join('\n')
-}
-
 /** The docs in the lines of a doc block, for the parameters a definition declares. */
 function readDoc(block: string[], declared: Declared[]): FunctionDoc {
   const { intro, tags } = splitTags(block)
@@ -160,7 +170,7 @@ function readDoc(block: string[], declared: Declared[]): FunctionDoc {
     else if (tag.name === 'returns' || tag.name === 'return') {
       doc.returns = textOf([RETURNS_TAG.exec(tag.lines[0].trim())?.[1] ?? '', ...tag.lines.slice(1)])
     } else if (tag.name === 'example') {
-      const example = readExample(tag)
+      const example = exampleOf(tag.lines)
       if (example !== '') doc.examples.push(example)
     }
   }
@@ -168,13 +178,63 @@ function readDoc(block: string[], declared: Declared[]): FunctionDoc {
   return doc
 }
 
+/** The index of the quote that closes the string opening at `start`, or the line's length. A backtick escapes the character after it. */
+function stringEnd(line: string, start: number): number {
+  let i = start + 1
+  while (i < line.length && line[i] !== line[start]) i += line[i] === '`' ? 2 : 1
+  return Math.min(i, line.length)
+}
+
+/** The index of the paren that closes the one at `open`, outside quoted strings; -1 when the line has none. */
+function closingParen(line: string, open: number): number {
+  let depth = 0
+  let i = open
+  while (i < line.length) {
+    const ch = line[i]
+    if (ch === '"' || ch === "'") {
+      i = stringEnd(line, i)
+    } else if (ch === '(') {
+      depth++
+    } else if (ch === ')') {
+      depth--
+      if (depth === 0) return i
+    }
+    i++
+  }
+  return -1
+}
+
+/**
+ * Whether a body follows a head's close paren: `{` or `=>` after it on the line, or, with nothing
+ * there but a comment, `{` first on the next line that holds code. Anything else makes it a call.
+ */
+function opensBody(lines: string[], index: number, after: string): boolean {
+  if (after.startsWith('{') || after.startsWith('=>')) return true
+  if (after !== '' && !after.startsWith(';')) return false
+  for (const line of lines.slice(index + 1)) {
+    const code = line.trim()
+    if (code !== '' && !code.startsWith(';')) return code.startsWith('{')
+  }
+  return false
+}
+
+/** The name and the parameter list of the definition on line `index`; null when the line defines nothing. */
+function definitionAt(lines: string[], index: number): { name: string; list: string } | null {
+  const line = lines[index]
+  const head = HEAD.exec(line)
+  if (!head || NOT_FUNCTIONS.has(head[1].toLowerCase())) return null
+  const close = closingParen(line, head[1].length)
+  if (close === -1 || !opensBody(lines, index, line.slice(close + 1).trim())) return null
+  return { name: head[1], list: line.slice(head[0].length, close) }
+}
+
 function findFunctions(text: string): FunctionInfo[] {
-  const lines = text.split('\n')
+  const lines = text.split('\n').map((l) => l.replace(/\r$/, ''))
   const found: FunctionInfo[] = []
-  lines.forEach((raw, i) => {
-    const match = DEFINITION.exec(raw.replace(/\r$/, ''))
-    if (!match || NOT_FUNCTIONS.has(match[1].toLowerCase())) return
-    const declared = declaredParams(match[2])
+  lines.forEach((_, i) => {
+    const match = definitionAt(lines, i)
+    if (!match) return
+    const declared = declaredParams(match.list)
     const block = docBlockAbove(lines, i)
     const doc = block ? readDoc(block, declared) : emptyDoc(declared.map((d) => d.name))
     doc.params.forEach((param, n) => {
@@ -182,11 +242,11 @@ function findFunctions(text: string): FunctionInfo[] {
       param.default = declared[n].default
     })
     found.push({
-      name: match[1],
+      name: match.name,
       line: i + 1,
       params: declared.map((d) => d.name),
       description: doc.summary,
-      usage: `${match[1]}(${match[2]})`,
+      usage: `${match.name}(${match.list})`,
       doc,
     })
   })

@@ -112,3 +112,21 @@ export function rewriteBody(
 
 /** A description as one line: every whitespace run, line breaks included, becomes one space. */
 export const oneLine = (description: string): string => description.replace(/\s+/g, ' ').trim()
+
+/** Lines of a doc block's text on one line. */
+export const textOf = (lines: string[]): string => oneLine(lines.join(' '))
+
+/** How many whitespace characters a line starts with. */
+const indentOf = (line: string): number => line.length - line.trimStart().length
+
+/**
+ * An example of a doc block: the rest of its tag's line, then the lines under it. The first line is
+ * trimmed, the blank lines at its ends are dropped, and the indentation its lines share is taken off.
+ */
+export function exampleOf(tagLines: string[]): string {
+  const lines = [tagLines[0].trim(), ...tagLines.slice(1)]
+  while (lines.length > 0 && lines[0].trim() === '') lines.shift()
+  while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
+  const shared = Math.min(...lines.filter((l) => l.trim() !== '').map(indentOf))
+  return lines.map((l) => l.slice(Math.min(shared, indentOf(l)))).join('\n')
+}

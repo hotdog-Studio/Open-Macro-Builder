@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { memoryFolderFromRepo } from '../../../test/repo'
 import { MemoryFolder } from '../folder/memory'
 import { compareText } from '../folder/path'
+import type { FolderAccess } from '../folder/types'
 import {
   commandCatalog,
   commandFileAt,
   commandFileNotices,
   commandFilePath,
   definedNames,
+  LANGUAGES,
   libraryTitle,
   mergeRescan,
   readCommandFile,
@@ -85,6 +87,22 @@ describe('a file that is not UTF-8', () => {
     expect(commandFileNotices(files)).toEqual([
       'ahk/commands/latin.ahk is not UTF-8 text; its commands are listed, but the configurator will not edit it.',
     ])
+  })
+
+  it('shows a PowerShell command file that is not UTF-8 as Windows-1252, and still does not edit it', async () => {
+    const latin = new Uint8Array([...new TextEncoder().encode('# Caf'), 0xe9, ...new TextEncoder().encode('\nfunction LatinCmd { param($Macro) }\n')])
+    const [file] = await scanCommands(new MemoryFolder('ps', { 'powershell/commands/latin.ps1': latin }))
+    expect(file.file.text).toBe('# Café\nfunction LatinCmd { param($Macro) }\n')
+    expect(file.functions[0].description).toBe('Café')
+    expect(file.editable).toBe(false)
+  })
+})
+
+describe('a PowerShell command defined with a scope', () => {
+  it('is defined, under its name without the scope, for the catalog and for the check alike', async () => {
+    const files = await scanCommands(new MemoryFolder('scoped', { 'local/powershell/commands/x.ps1': 'function global:OpenIt { param($Macro) }\n' }))
+    expect(commandCatalog(files).map((e) => e.name)).toEqual(['OpenIt'])
+    expect(definedNames(files, 'ps').has('openit')).toBe(true)
   })
 })
 
@@ -228,15 +246,52 @@ describe('memoryFolderFromRepo', () => {
   })
 })
 
+/** `inner` with every listing reversed: a real folder lists in its own order, not by name as MemoryFolder does. */
+function listedBackwards(inner: FolderAccess): FolderAccess {
+  return {
+    name: inner.name,
+    readBytes: (path) => inner.readBytes(path),
+    writeBytes: (path, data) => inner.writeBytes(path, data),
+    remove: (path) => inner.remove(path),
+    list: async (dir) => (await inner.list(dir)).toReversed(),
+  }
+}
+
 describe('scanLibrary', () => {
   it('reads the PowerShell library by file name, and nothing of AutoHotkey', async () => {
-    const lib = await scanLibrary(memoryFolderFromRepo(['powershell/lib', 'ahk/lib']))
+    const lib = await scanLibrary(listedBackwards(memoryFolderFromRepo(['powershell/lib', 'ahk/lib'])))
     expect(lib.every((f) => f.lang === 'ps')).toBe(true)
+    expect(lib.length).toBeGreaterThan(1)
     expect(lib.map((f) => f.name)).toEqual([...lib.map((f) => f.name)].sort(compareText))
     expect(lib.some((f) => f.path.includes('/cs/'))).toBe(false)
     const input = lib.find((f) => f.name === 'Input')!
     expect(input.path).toBe('powershell/lib/Input.ps1')
     expect(input.functions.map((f) => f.name)).toContain('Send-Chord')
+  })
+
+  it('sorts the library by name whatever order the folder lists it in', async () => {
+    const enc = new TextEncoder()
+    const inner = new MemoryFolder('lib', {
+      'powershell/lib/Bravo.ps1': enc.encode('function Y {\n}\n'),
+      'powershell/lib/Alpha.ps1': enc.encode('function X {\n}\n'),
+      'powershell/lib/Charlie.ps1': enc.encode('function Z {\n}\n'),
+    })
+    expect((await scanLibrary(listedBackwards(inner))).map((f) => f.name)).toEqual(['Alpha', 'Bravo', 'Charlie'])
+  })
+
+  it('skips a library file that is gone by the time it is read', async () => {
+    const enc = new TextEncoder()
+    const folder = new MemoryFolder('lib', {
+      'powershell/lib/A.ps1': enc.encode('function X {\n}\n'),
+      'powershell/lib/B.ps1': enc.encode('function Y {\n}\n'),
+    })
+    const read = folder.readBytes.bind(folder)
+    const spy = vi.spyOn(folder, 'readBytes').mockImplementation((path) => (path.endsWith('/A.ps1') ? Promise.resolve(null) : read(path)))
+    try {
+      expect((await scanLibrary(folder)).map((f) => f.name)).toEqual(['B'])
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('gives no library for a folder without one', async () => {
@@ -264,6 +319,25 @@ describe('scanLibrary', () => {
     const bytes = new Uint8Array([...new TextEncoder().encode('function Z {\n}\n# caf'), 0xe9, 0x0a])
     const lib = await scanLibrary(new MemoryFolder('lib', { 'powershell/lib/Z.ps1': bytes }))
     expect(lib[0].functions.map((f) => f.name)).toEqual(['Z'])
+  })
+
+  it('reads a library file that is not UTF-8 as Windows-1252, as Windows PowerShell does', async () => {
+    const bytes = new Uint8Array([...new TextEncoder().encode('# Caf'), 0xe9, ...new TextEncoder().encode('\n\n# Caf'), 0xe9, ...new TextEncoder().encode(' note.\nfunction Z {\n}\n')])
+    const lib = await scanLibrary(new MemoryFolder('lib', { 'powershell/lib/Z.ps1': bytes }))
+    expect(lib[0].title).toBe('Café')
+    expect(lib[0].functions[0].doc.summary).toBe('Café note.')
+  })
+
+  it('keeps a held file whose bytes did not change, without reading its functions again', async () => {
+    const folder = memoryFolderFromRepo(['powershell/lib'])
+    const held = await scanLibrary(folder)
+    await folder.writeBytes('powershell/lib/Input.ps1', new TextEncoder().encode('# Changed\nfunction Get-New {\n}\n'))
+    const parse = vi.spyOn(LANGUAGES.ps, 'findFunctions')
+    const fresh = await scanLibrary(folder, held)
+    expect(parse.mock.calls).toHaveLength(1)
+    parse.mockRestore()
+    expect(fresh.filter((f) => held.includes(f))).toHaveLength(held.length - 1)
+    expect(fresh.find((f) => f.name === 'Input')!.title).toBe('Changed')
   })
 
   it('sameLibrary compares paths and versions', async () => {

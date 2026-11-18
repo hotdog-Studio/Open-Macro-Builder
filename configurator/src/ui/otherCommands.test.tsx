@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, screen, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { langButton, pairButton, startCommands } from '../../test/commandsTab'
@@ -84,7 +84,7 @@ describe('Other commands available', () => {
     await user.hover(row('ActivateOrOpen'))
     expect(screen.getByRole('tooltip').textContent).toContain('ActivateOrOpen(Window, Program, Args := "")')
     await user.unhover(row('ActivateOrOpen'))
-    expect(screen.queryByRole('tooltip')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
     act(() => row('ActivateOrOpen').focus())
     expect(screen.getByRole('tooltip')).toBeTruthy()
     await user.keyboard('{Escape}')
@@ -92,14 +92,19 @@ describe('Other commands available', () => {
   })
 
   it('opens the docs under a row on a click, and does nothing else', async () => {
-    const { user } = await start()
+    const { user, editor } = await start()
     await user.click(pairButton('windows'))
     const before = editorView().state.doc.toString()
+    const jump = editor().commands.jump
+    const caret = editorView().state.selection.main.head
     await user.click(row('ActivateOrOpen'))
     expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('true')
     expect(within(other()).getByText('ahk/commands/helper.ahk · line 11')).toBeTruthy()
     expect(editorView().state.doc.toString()).toBe(before)
     expect(pairButton('windows').getAttribute('aria-current')).toBe('true')
+    // No jump to the definition, and the caret stays where it was.
+    expect(editor().commands.jump).toBe(jump)
+    expect(editorView().state.selection.main.head).toBe(caret)
     await user.click(row('ActivateOrOpen'))
     expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('false')
   })

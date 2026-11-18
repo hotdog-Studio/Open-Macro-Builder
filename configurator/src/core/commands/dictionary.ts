@@ -193,17 +193,33 @@ function isNameChar(ch: string | undefined, lang: LangId): boolean {
   return /^\w$/.test(ch) || (lang === 'ps' && ch === '-')
 }
 
-/** The name covering `column` (0-based) of a line, unless it is a variable or a member. */
+/**
+ * Whether the PowerShell name that starts at `from` is a parameter or a variable, not a call:
+ * `-Name`, `@Splat`, `${Name}`, or `$scope:Name` (`$env:Path`, `$script:Count`).
+ */
+function isPsVariable(line: string, from: number, name: string): boolean {
+  if (name.startsWith('-')) return true
+  const before = line[from - 1]
+  if (before === '@') return true
+  if (before === '{') return line[from - 2] === '$'
+  if (before !== ':') return false
+  let i = from - 2
+  while (isNameChar(line[i], 'ahk')) i--
+  return line[i] === '$'
+}
+
+/** The name covering `column` (0-based) of a line, unless it is a variable, a parameter or a member. */
 export function nameAt(line: string, column: number, lang: LangId): { from: number; to: number; name: string } | null {
   if (!isNameChar(line[column], lang)) return null
   let from = column
   while (isNameChar(line[from - 1], lang)) from--
   let to = column + 1
   while (isNameChar(line[to], lang)) to++
+  const name = line.slice(from, to)
   const before = line[from - 1]
   if (before === '$' || before === '.') return null
-  if (lang === 'ps' && line.slice(Math.max(0, from - 2), from) === '::') return null
-  return { from, to, name: line.slice(from, to) }
+  if (lang === 'ps' && (line.slice(Math.max(0, from - 2), from) === '::' || isPsVariable(line, from, name))) return null
+  return { from, to, name }
 }
 
 /** `<path> · line <n>` */

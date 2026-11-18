@@ -143,6 +143,16 @@ describe('nameAt', () => {
     expect(nameAt('Send x', 4, 'ahk')).toBeNull()
     expect(nameAt('Send x', 3, 'ahk')).toEqual({ from: 0, to: 4, name: 'Send' })
   })
+
+  it('finds no name in a PowerShell parameter, a scoped variable or a splat', () => {
+    expect(nameAt('Foo -Name x', 6, 'ps')).toBeNull()
+    expect(nameAt('$script:Foo', 9, 'ps')).toBeNull()
+    expect(nameAt('$env:Path', 6, 'ps')).toBeNull()
+    expect(nameAt('Foo @Splat', 6, 'ps')).toBeNull()
+    expect(nameAt('${Foo}', 3, 'ps')).toBeNull()
+    expect(nameAt('Send-Key -Name x', 2, 'ps')).toEqual({ from: 0, to: 8, name: 'Send-Key' })
+    expect(nameAt('if ($x) { Open:Foo }', 15, 'ps')).toEqual({ from: 15, to: 18, name: 'Foo' })
+  })
 })
 
 describe('sourceText', () => {

@@ -3,17 +3,19 @@
 BeforeAll {
     $ps = Split-Path $PSScriptRoot -Parent
     foreach ($f in 'Native', 'Interop', 'Pump', 'Window', 'WinTitle', 'WindowOps') { . "$ps\lib\$f.ps1" }
-    # The functions of power.ps1 other than Lock-Workstation and Invoke-SuspendState that call
-    # [Macropad.Native] themselves, and any such call outside a function. The tests cannot mock those.
-    # It reads the file as text and runs none of it.
+    # The functions of power.ps1 other than Lock-Workstation and Invoke-SuspendState that use the type
+    # [Macropad.Native] themselves, and each use of it outside a function, by line. The tests cannot mock
+    # those. It reads the file's syntax tree, so any spelling counts ([ Macropad.Native ], another case),
+    # and so does the type kept in a variable ($n = [Macropad.Native]; $n::X()). It runs none of the file.
     function Get-DirectNativeCall {
         $ast = [System.Management.Automation.Language.Parser]::ParseFile("$ps\commands\power.ps1", [ref]$null, [ref]$null)
-        foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
-            if ($fn.Name -in 'Lock-Workstation', 'Invoke-SuspendState') { continue }
-            if ($fn.Body.Extent.Text -match '\[Macropad\.Native\]::') { $fn.Name }
-        }
-        $ast.EndBlock.Statements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] -and $_.Extent.Text -match '\[Macropad\.Native\]::' } |
-            ForEach-Object { $_.Extent.Text }
+        $uses = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.TypeExpressionAst] -and $n.TypeName.FullName -eq 'Macropad.Native' }, $true)
+        @(foreach ($use in $uses) {
+                $fn = $use.Parent
+                while ($fn -and $fn -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $fn = $fn.Parent }
+                if (-not $fn) { "line $($use.Extent.StartLineNumber), outside any function" }
+                elseif ($fn.Name -notin 'Lock-Workstation', 'Invoke-SuspendState') { $fn.Name }
+            }) | Select-Object -Unique
     }
     # Loaded only when it calls Windows through the wrappers alone: a call outside any function would
     # run as the file is loaded, before anything could stop it.

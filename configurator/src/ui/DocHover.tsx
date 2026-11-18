@@ -43,7 +43,7 @@ const NONE: Hover = { pointer: null, focus: null }
 /** What a row of a list needs to show the card: the handlers, and `aria-describedby` while its card is up. */
 export interface RowHover {
   onMouseEnter?: (e: MouseEvent<HTMLElement>) => void
-  onMouseLeave?: () => void
+  onMouseLeave?: (e: MouseEvent<HTMLElement>) => void
   onFocus?: (e: FocusEvent<HTMLElement>) => void
   onBlur?: () => void
   onClick: () => void
@@ -102,8 +102,10 @@ type Seen = { x: number; y: number } | null
 /** What the rows' handlers do to the hover state. */
 interface HoverActions {
   set: (change: Partial<Hover>) => void
-  /** Records where the pointer is now. */
-  see: (at: Seen) => void
+  /** The pointer entered row `el` at `at`: its card is asked for, and known as the pointer's row from now on. */
+  enterRow: (id: string, el: HTMLElement, at: Seen) => void
+  /** Records where the pointer is, as the event that tells it (a move, a leave, an enter of the card), and looks. */
+  lookAt: (at: Seen) => void
   /**
    * Looks where the pointer is: on the pointer's row or on the card, its card stays; on neither, the
    * card goes once the grace has passed, unless by then the pointer is on one of them again.
@@ -117,12 +119,8 @@ interface HoverActions {
 /** The handlers of one row; `describedBy` is the card's id while the card is up for this row. */
 function rowHandlers(entry: DictEntry, onClick: () => void, actions: HoverActions, describedBy: string | undefined): RowHover {
   return {
-    onMouseEnter: (e) => {
-      actions.see({ x: e.clientX, y: e.clientY })
-      actions.stay()
-      actions.set({ pointer: { id: entry.id, el: e.currentTarget } })
-    },
-    onMouseLeave: actions.check,
+    onMouseEnter: (e) => actions.enterRow(entry.id, e.currentTarget, { x: e.clientX, y: e.clientY }),
+    onMouseLeave: (e) => actions.lookAt({ x: e.clientX, y: e.clientY }),
     onFocus: (e) => actions.set({ focus: { id: entry.id, el: e.currentTarget } }),
     onBlur: () => actions.set({ focus: null }),
     onClick: () => {
@@ -187,22 +185,22 @@ function useScrollState(scroller: RefObject<HTMLDivElement | null>) {
 
 /**
  * Whether the pointer is on the card, from the card's own native mouseenter and mouseleave, which
- * call `onEnter` and `onLeave`. Not React's onMouseLeave: React builds it from a mouseout that reaches
- * the page's root, and when a re-render has just taken away the line under the pointer, the browser
- * sends that mouseout to the line, off the page, and React never sees the pointer leave.
+ * both pass the pointer's point to `onPointer`. Not React's onMouseLeave: React builds it from a
+ * mouseout that reaches the page's root, and when a re-render has just taken away the line under the
+ * pointer, the browser sends that mouseout to the line, off the page, and React never sees the pointer leave.
  */
-function usePointerOn(box: RefObject<HTMLDivElement | null>, onEnter: () => void, onLeave: () => void): boolean {
+function usePointerOn(box: RefObject<HTMLDivElement | null>, onPointer: (at: Seen) => void): boolean {
   const [on, setOn] = useState(false)
   useEffect(() => {
     const el = box.current
     if (!el) return
-    const enter = () => {
+    const enter = (e: globalThis.MouseEvent) => {
       setOn(true)
-      onEnter()
+      onPointer({ x: e.clientX, y: e.clientY })
     }
-    const leave = () => {
+    const leave = (e: globalThis.MouseEvent) => {
       setOn(false)
-      onLeave()
+      onPointer({ x: e.clientX, y: e.clientY })
     }
     el.addEventListener('mouseenter', enter)
     el.addEventListener('mouseleave', leave)
@@ -210,7 +208,7 @@ function usePointerOn(box: RefObject<HTMLDivElement | null>, onEnter: () => void
       el.removeEventListener('mouseenter', enter)
       el.removeEventListener('mouseleave', leave)
     }
-  }, [box, onEnter, onLeave])
+  }, [box, onPointer])
   return on
 }
 
@@ -223,15 +221,14 @@ function FloatingCard({
   id,
   entry,
   row,
-  onEnter,
-  onLeave,
+  onPointer,
   onMoved,
-}: Readonly<{ id: string; entry: DictEntry; row: HTMLElement; onEnter: () => void; onLeave: () => void; onMoved: () => void }>) {
+}: Readonly<{ id: string; entry: DictEntry; row: HTMLElement; onPointer: (at: Seen) => void; onMoved: () => void }>) {
   const box = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const { tall, more, measure } = useScrollState(scroller)
   // A card the pointer is on keeps it until the pointer leaves, even when its docs change and fit.
-  const pointerOn = usePointerOn(box, onEnter, onLeave)
+  const pointerOn = usePointerOn(box, onPointer)
   const update = useCallback(() => {
     // A row that has just left the page (filtered out, its group closed) waits for useDropGoneRows to drop its card.
     if (!row.isConnected) return
@@ -281,7 +278,7 @@ function onRowOrCard(seen: Seen, row: HTMLElement | undefined, cardId: string): 
  * neither its row nor the card starts the grace, and when the grace ends the card goes only if the
  * pointer is still on neither. Enter and leave events only ask for a look, so their order never decides.
  */
-function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: string, pointerRow: RefObject<HTMLElement | null>): HoverActions {
+function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: string, pointerRowRef: RefObject<HTMLElement | null>): HoverActions {
   const grace = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const seen = useRef<Seen>(null)
   const actions = useMemo<HoverActions>(() => {
@@ -293,25 +290,36 @@ function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: stri
       grace.current = undefined
       setHover((was) => (was.pointer && !onRowOrCard(seen.current, was.pointer.el, cardId) ? { ...was, pointer: null } : was))
     }
+    const check = () => {
+      const row = pointerRowRef.current
+      if (!row) return
+      if (onRowOrCard(seen.current, row, cardId)) stay()
+      // The grace counts from the first look that found the pointer on neither.
+      else grace.current ??= setTimeout(hideUnlessBack, GRACE)
+    }
     return {
       set: (change) => setHover((was) => ({ ...was, ...change })),
-      see: (at) => {
+      // The point and the row are known from the event itself, before React has shown the card: a look
+      // made before then (a leave a moment later) reads them, not an older point or no row at all.
+      enterRow: (id, el, at) => {
         seen.current = at
+        pointerRowRef.current = el
+        stay()
+        setHover((was) => ({ ...was, pointer: { id, el } }))
       },
-      check: () => {
-        const row = pointerRow.current
-        if (!row) return
-        if (onRowOrCard(seen.current, row, cardId)) stay()
-        // The grace counts from the first look that found the pointer on neither.
-        else grace.current ??= setTimeout(hideUnlessBack, GRACE)
+      lookAt: (at) => {
+        seen.current = at
+        check()
       },
+      check,
       stay,
       hideAll: () => {
         stay()
+        pointerRowRef.current = null
         setHover(NONE)
       },
     }
-  }, [setHover, cardId, pointerRow])
+  }, [setHover, cardId, pointerRowRef])
   // No hide may land once the lists are gone.
   useEffect(() => actions.stay, [actions])
   return actions
@@ -326,15 +334,10 @@ function useHoverActions(setHover: Dispatch<SetStateAction<Hover>>, cardId: stri
 function useFollowPointer(up: boolean, actions: HoverActions): void {
   useEffect(() => {
     if (!up) return
-    const move = (e: PointerEvent) => {
-      actions.see({ x: e.clientX, y: e.clientY })
-      actions.check()
-    }
+    const move = (e: PointerEvent) => actions.lookAt({ x: e.clientX, y: e.clientY })
     // A mouseout to nothing: the pointer has left the window.
     const out = (e: globalThis.MouseEvent) => {
-      if (e.relatedTarget !== null) return
-      actions.see(null)
-      actions.check()
+      if (e.relatedTarget === null) actions.lookAt(null)
     }
     const look = () => actions.check()
     const passive = { capture: true, passive: true }
@@ -343,6 +346,8 @@ function useFollowPointer(up: boolean, actions: HoverActions): void {
     document.addEventListener('mouseout', out, passive)
     document.addEventListener('scroll', look, passive)
     window.addEventListener('resize', look)
+    // Whatever happened before the listeners were there, one look now from what is known.
+    actions.check()
     return () => {
       document.removeEventListener('pointermove', move, { capture: true })
       document.removeEventListener('pointerup', move, { capture: true })
@@ -361,7 +366,8 @@ function useFollowPointer(up: boolean, actions: HoverActions): void {
 export function DocHoverProvider({ dicts, children }: Readonly<{ dicts: Dictionary[]; children: ReactNode }>) {
   const [hover, setHover] = useState<Hover>(NONE)
   const id = useId()
-  // The row of the pointer's card as last rendered, for a look between renders; the hide itself reads the state.
+  // The row of the pointer's card for a look between renders: set by a row's enter at once, and by every
+  // render (a card dropped or hidden). The hide itself reads the state.
   const pointerRow = useRef<HTMLElement | null>(null)
   useLayoutEffect(() => {
     pointerRow.current = hover.pointer?.el ?? null
@@ -387,7 +393,7 @@ export function DocHoverProvider({ dicts, children }: Readonly<{ dicts: Dictiona
   return (
     <HoverContext.Provider value={row}>
       {children}
-      {shown && entry && <FloatingCard id={id} entry={entry} row={shown.el} onEnter={actions.stay} onLeave={actions.check} onMoved={actions.check} />}
+      {shown && entry && <FloatingCard id={id} entry={entry} row={shown.el} onPointer={actions.lookAt} onMoved={actions.check} />}
     </HoverContext.Provider>
   )
 }

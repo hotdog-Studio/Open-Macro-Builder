@@ -872,6 +872,8 @@ describe('Commands tab: docs on hover', () => {
     it('card → (button held, as when selecting text) → its row, rests, then released: the same card stays', async () => {
       try {
         const { spot, tip } = await startFrom('card')
+        // A guard, not a reproduction: with the button held, Chromium keeps :hover on what was pressed, so a
+        // hide that asked :hover would take the card away here. It passed before the hide asked the hit test too.
         // Straight onto the row, no step in the gap: the row's enter comes before the card's leave.
         await carry(spot('card'), spot('row'), 1)
         await pause(CARD_STAYS)
@@ -884,31 +886,93 @@ describe('Commands tab: docs on hover', () => {
       }
     })
 
-    it('row → its summary line goes under the resting pointer, then it leaves straight off: the card goes, every time', async () => {
-      // The summary line of a row is drawn only while there is a summary. When it goes under the pointer and
-      // the pointer moves before the browser has looked again at what lies under it, the browser's mouseout
-      // goes to that line, off the page, and React's leave of the row never comes. That race goes either way
-      // from one try to the next, so the test makes several.
+    it('row → its summary line goes from under the resting pointer, which stays on the row, then leaves straight off: the card goes, every time', async () => {
+      // The summary line of a row is drawn only while there is a summary. The pointer rests on the top of
+      // that line, which is still the row once the line goes (its padding takes the place), so the card stays.
+      // When the pointer then moves before the browser has looked again at what lies under it, the browser's
+      // mouseout goes to the line, off the page, and React's leave of the row never comes: only the look the
+      // move itself makes can take the card away. That race goes either way from one try to the next, so the
+      // test makes several.
       await start()
       await openFile('windows')
       const withSummary = '/**\n * A tool.\n */\nTool(A)\n{\n}\n'
       const without = '/**\n * @param A The a.\n */\nTool(A)\n{\n}\n'
       const row = () => within(screen.getByRole('region', { name: 'Other commands available' })).getByRole('button', { name: /^Tool\b/ })
-      const tryOnce = async (tries: number): Promise<void> => {
+      /** Rests on the top of the summary line, shows the card, and takes the line away from under the pointer. */
+      const restAndEmpty = async () => {
         replaceAll(withSummary)
         row().scrollIntoView({ block: 'center' })
         const summary = row().querySelectorAll('span')[1]
         expect(summary.textContent).toBe('A tool.')
+        const box = summary.getBoundingClientRect()
+        const rest = { x: box.left + 4, y: box.top + 1 }
         await hover(nav())
-        await hover(summary)
-        await screen.findByRole('tooltip')
+        await hover(rest)
+        const tip = await screen.findByRole('tooltip')
         replaceAll(without)
         expect(summary.isConnected).toBe(false)
+        expect(row().contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
+        return tip
+      }
+      // With nothing moving, the card stays past the grace: neither the re-render nor the card's own look takes it.
+      const tip = await restAndEmpty()
+      await pause(CARD_STAYS)
+      expect(screen.getByRole('tooltip')).toBe(tip)
+      const tryOnce = async (tries: number): Promise<void> => {
+        await restAndEmpty()
         await hover(nav())
         await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
         if (tries > 1) await tryOnce(tries - 1)
       }
       await tryOnce(8)
+    })
+
+    it('elsewhere → (stop on the row) → rests in the gap: the card goes, every time', async () => {
+      // A guard: the row is left a few milliseconds after it was entered, possibly before the page has finished
+      // showing its card, and the pointer then rests. Nothing moves after that, so the card must go from what was
+      // known when the row was left. The order of that leave and the card's showing goes either way from one try
+      // to the next, so the test makes several.
+      try {
+        const { spot } = await startFrom('elsewhere')
+        const tryOnce = async (tries: number): Promise<void> => {
+          await hoverPath([spot('row'), spot('gap')])
+          await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+          if (tries > 1) await tryOnce(tries - 1)
+        }
+        await tryOnce(8)
+      } finally {
+        await page.viewport(1280, 900)
+      }
+    })
+
+    it('card → (stop on the other row) → (stop in the gap) → back to the other row: the same card all along', async () => {
+      // A guard. From the card straight onto another row, the card's leave comes after that row's enter. It must not
+      // start a grace the enter has just ended: the grace would then count from the row, not from the gap, run
+      // out in the gap, and the card would go and come back. The stops are set: two thirds of the grace on the
+      // row, half of it in the gap, so the gap alone stays under the grace and the row and the gap together do
+      // not. A try whose moves took too long for that is made again.
+      const tryOnce = async (tries: number): Promise<void> => {
+        const { spot, tip } = await startFrom('card')
+        await hoverPath([spot('other row')])
+        await pause(Math.round((GRACE * 2) / 3))
+        const toGap = performance.now()
+        await hoverPath([spot('gap')])
+        await pause(Math.round(GRACE / 2))
+        await hoverPath([spot('other row')])
+        const inGap = performance.now() - toGap
+        if (inGap >= GRACE - 20) {
+          if (tries <= 1) throw new Error(`this machine is too slow to test a stop shorter than the ${GRACE} ms grace (the gap took ${inGap} ms)`)
+          unmount()
+          return tryOnce(tries - 1)
+        }
+        await pause(CARD_STAYS)
+        expect(screen.getByRole('tooltip')).toBe(tip)
+      }
+      try {
+        await tryOnce(5)
+      } finally {
+        await page.viewport(1280, 900)
+      }
     })
 
     it('a card shown by the keyboard stays wherever the pointer goes, until the row loses the focus or Escape', async () => {

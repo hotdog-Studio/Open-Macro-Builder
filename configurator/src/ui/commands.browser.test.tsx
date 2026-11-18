@@ -579,6 +579,71 @@ describe('Commands tab: docs on hover', () => {
     }
   })
 
+  /** The PowerShell list of windows, with the library: the rows of lib/WindowOps have long cards. */
+  async function powerShellList(): Promise<HTMLElement> {
+    await start()
+    await click(pairButton('windows'))
+    await click(toolbarButton('PowerShell'))
+    await waitFor(() => expect(text()).toContain('Send-Chord'))
+    return screen.getByRole('region', { name: 'Other commands available' })
+  }
+
+  it('keeps the card of the list level with its row while the panel scrolls', async () => {
+    const other = await powerShellList()
+    const row = within(other).getByRole('button', { name: /^Send-Chord\b/ })
+    // Near the top of the window, so the card has room under the row's top edge before and after.
+    row.scrollIntoView({ block: 'start' })
+    row.focus()
+    const tip = await screen.findByRole('tooltip')
+    const level = () => Math.abs(tip.getBoundingClientRect().top - row.getBoundingClientRect().top)
+    await waitFor(() => expect(level()).toBeLessThanOrEqual(1))
+    const before = row.getBoundingClientRect().top
+    other.closest('aside')!.scrollBy(0, -100)
+    await waitFor(() => expect(row.getBoundingClientRect().top).toBeGreaterThan(before + 50))
+    await waitFor(() => expect(level()).toBeLessThanOrEqual(1))
+  })
+
+  it('keeps a long card of the list inside a short window, and lets it be scrolled', async () => {
+    await page.viewport(1280, 300)
+    try {
+      const other = await powerShellList()
+      const row = within(other).getByRole('button', { name: /^Set-ControlText\b/ })
+      row.scrollIntoView({ block: 'center' })
+      await hover(row)
+      const tip = await screen.findByRole('tooltip')
+      expect(tip.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
+      expect(within(tip).getByText('More below. Scroll the card, or click the row.')).toBeTruthy()
+      // The pointer can go from the row onto the card, and the card stays to be scrolled.
+      await hover(tip)
+      await new Promise((r) => setTimeout(r, 400))
+      expect(screen.getByRole('tooltip')).toBe(tip)
+      await hover(nav())
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    } finally {
+      await page.viewport(1280, 900)
+    }
+  })
+
+  it('keeps the card of the list inside a narrow window', async () => {
+    const other = await powerShellList()
+    const row = within(other).getByRole('button', { name: /^Set-ControlText\b/ })
+    try {
+      // 700: room beside the panel for a narrower card; 440: too little, so the card goes over the panel.
+      for (const width of [700, 440]) {
+        await page.viewport(width, 900)
+        row.scrollIntoView({ block: 'center' })
+        await hover(row)
+        const tip = await screen.findByRole('tooltip')
+        await waitFor(() => expect(tip.getBoundingClientRect().left).toBeGreaterThanOrEqual(0))
+        expect(tip.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth)
+        await hover(nav())
+        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      }
+    } finally {
+      await page.viewport(1280, 900)
+    }
+  })
+
   it('shows the written docs of a library function, in the editor and in the list', async () => {
     await start()
     await click(pairButton('windows'))

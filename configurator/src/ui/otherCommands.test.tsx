@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, screen, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { langButton, pairButton, startCommands } from '../../test/commandsTab'
@@ -84,7 +84,7 @@ describe('Other commands available', () => {
     await user.hover(row('ActivateOrOpen'))
     expect(screen.getByRole('tooltip').textContent).toContain('ActivateOrOpen(Window, Program, Args := "")')
     await user.unhover(row('ActivateOrOpen'))
-    expect(screen.queryByRole('tooltip')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
     act(() => row('ActivateOrOpen').focus())
     expect(screen.getByRole('tooltip')).toBeTruthy()
     await user.keyboard('{Escape}')

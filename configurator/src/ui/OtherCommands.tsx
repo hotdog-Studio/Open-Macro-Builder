@@ -94,7 +94,7 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
   // A group's own state by list and key, for the ones the user has toggled; the others keep their starting state.
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const { row, card } = useDocHover()
+  const row = useDocHover()
   const all = useMemo(() => listSections(dict), [dict])
   const sections = useMemo(() => filterSections(all, query), [all, query])
   const filtering = query.trim() !== ''
@@ -145,7 +145,6 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
         <p className={STYLE.note}>Nothing matches.</p>
       )}
       <p className={STYLE.note}>{CLOSING[dict.lang]}</p>
-      {card}
     </section>
   )
 }

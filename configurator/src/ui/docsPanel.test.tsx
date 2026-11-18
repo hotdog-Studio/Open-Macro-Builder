@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, screen, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { replaceAll, typeAt } from '../../test/codeEditor'
 import { pairButton, startCommands } from '../../test/commandsTab'
@@ -27,6 +27,53 @@ describe('the rows of Other commands available', () => {
     await user.click(rows('Twice')[0])
     expect(rows('Twice').map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
     expect(keyWarnings(error)).toEqual([])
+  })
+})
+
+describe('the floating card of the panel', () => {
+  const outline = () => screen.getByRole('region', { name: 'Commands in this file' })
+
+  it('shows one card at a time, the pointer\'s over the focus\'s, and falls back to the focus\'s', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    act(() => rows('ActivateOrOpen')[0].focus())
+    expect(screen.getByRole('tooltip').textContent).toContain('ActivateOrOpen(')
+    const own = within(outline()).getByRole('button', { name: /^OpenFileExplorer\b/ })
+    await user.hover(own)
+    expect(screen.getAllByRole('tooltip')).toHaveLength(1)
+    expect(screen.getByRole('tooltip').textContent).toContain('OpenFileExplorer(Macro)')
+    await user.unhover(own)
+    await waitFor(() => expect(screen.getByRole('tooltip').textContent).toContain('ActivateOrOpen('))
+  })
+
+  it('takes the card away when its row goes', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    await user.hover(within(outline()).getByRole('button', { name: /^OpenFileExplorer\b/ }))
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    replaceAll('OnlyThis(Macro)\n{\n}\n')
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+  })
+
+  it('takes the card away when the filter hides its row', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    await user.hover(rows('ActivateOrOpen')[0])
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    // The pointer stays on the row while the keyboard types in the filter.
+    act(() => within(other()).getByRole('textbox', { name: 'Filter other commands' }).focus())
+    await user.keyboard('zzz')
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+  })
+
+  it('shows what is typed in the docs of the row it is up for', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    replaceAll('/**\n * Old words.\n */\nTool(A)\n{\n}\n')
+    await user.hover(rows('Tool')[0])
+    expect(screen.getByRole('tooltip').textContent).toContain('Old words.')
+    replaceAll('/**\n * New words.\n */\nTool(A)\n{\n}\n')
+    expect(screen.getByRole('tooltip').textContent).toContain('New words.')
   })
 })
 

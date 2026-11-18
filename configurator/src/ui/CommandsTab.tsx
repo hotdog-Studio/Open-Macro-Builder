@@ -12,7 +12,7 @@ import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
 import { ConfirmDialog } from './ConfirmDialog'
 import { NewCommandButton } from './NewCommandDialog'
-import { useDocHover } from './DocHover'
+import { DocHoverProvider, useDocHover } from './DocHover'
 import { OtherCommands } from './OtherCommands'
 import { LeftPanel, RightPanel, STYLE } from './Panels'
 
@@ -519,7 +519,7 @@ function EntryDetails({ entry }: Readonly<{ entry: OutlineEntry }>) {
 /** The right panel: every command of the shown pair with its gaps, and the details of one. */
 function Outline({ pair, dict }: Readonly<{ pair: CommandPair; dict: Dictionary }>) {
   const { state, dispatch, actions } = useEditor()
-  const { row, card } = useDocHover()
+  const row = useDocHover()
   const { lang, drafts } = state.commands
   const [selected, setSelected] = useState<string | null>(null)
   // The text the editors hold, so the outline follows typing.
@@ -595,7 +595,6 @@ function Outline({ pair, dict }: Readonly<{ pair: CommandPair; dict: Dictionary 
         </div>
       ))}
       {chosen && <EntryDetails entry={chosen} />}
-      {card}
     </section>
   )
 }
@@ -633,8 +632,11 @@ export function CommandsTab() {
         {!pair && <p className="p-5 text-zinc-500">There are no command files yet.</p>}
       </main>
       <RightPanel preview={false}>
-        {pair && <Outline key={pair.key} pair={pair} dict={dict} />}
-        <OtherCommands dict={dict} />
+        {/* One card for both lists, so a row of one never leaves a card of the other up. */}
+        <DocHoverProvider dicts={[dict]}>
+          {pair && <Outline key={pair.key} pair={pair} dict={dict} />}
+          <OtherCommands dict={dict} />
+        </DocHoverProvider>
       </RightPanel>
       {dialog && <CommandDialogView dialog={dialog} />}
       {newFile && <NewFileDialog onClose={() => setNewFile(false)} />}

@@ -92,14 +92,19 @@ describe('Other commands available', () => {
   })
 
   it('opens the docs under a row on a click, and does nothing else', async () => {
-    const { user } = await start()
+    const { user, editor } = await start()
     await user.click(pairButton('windows'))
     const before = editorView().state.doc.toString()
+    const jump = editor().commands.jump
+    const caret = editorView().state.selection.main.head
     await user.click(row('ActivateOrOpen'))
     expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('true')
     expect(within(other()).getByText('ahk/commands/helper.ahk · line 11')).toBeTruthy()
     expect(editorView().state.doc.toString()).toBe(before)
     expect(pairButton('windows').getAttribute('aria-current')).toBe('true')
+    // No jump to the definition, and the caret stays where it was.
+    expect(editor().commands.jump).toBe(jump)
+    expect(editorView().state.selection.main.head).toBe(caret)
     await user.click(row('ActivateOrOpen'))
     expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('false')
   })

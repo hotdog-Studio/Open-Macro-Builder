@@ -157,7 +157,185 @@ describe('the groups of Other commands available, while filtering', () => {
   })
 })
 
+describe('the list of a library, by language', () => {
+  const DEMO = '# Demo tools\n\n<#\n.SYNOPSIS\nDoes the demo thing.\n.EXAMPLE\nInvoke-Demo\n#>\nfunction Invoke-Demo {\n}\n'
+  const group = (name: RegExp) => within(other()).getByRole('button', { name })
+  const row = (name: string) => rows(name)[0]
+
+  it("leaves PowerShell's library out of the AutoHotkey list", async () => {
+    const { user } = await startCommands({ files: { 'powershell/lib/Demo.ps1': DEMO } })
+    await user.click(pairButton('windows'))
+    expect(within(other()).queryByRole('button', { name: /^Demo tools/ })).toBeNull()
+    await user.click(langButton('PowerShell'))
+    expect(group(/^Demo tools/)).toBeTruthy()
+    await user.click(langButton('AutoHotkey'))
+    expect(within(other()).queryByRole('button', { name: /^Demo tools/ })).toBeNull()
+  })
+
+  it('shows markup from a script as text in the list', async () => {
+    const evil =
+      '# <img src=x onerror=alert(1)> tools\n\n<#\n.SYNOPSIS\n<b>bold</b> <img src=y onerror=alert(2)>\n.EXAMPLE\nInvoke-Evil\n#>\nfunction Invoke-Evil {\n}\n'
+    const { user } = await startCommands({ files: { 'powershell/lib/Evil.ps1': evil } })
+    await user.click(pairButton('windows'))
+    await user.click(langButton('PowerShell'))
+    expect(other().querySelector('img, b')).toBeNull()
+    expect(within(other()).getByText('<img src=x onerror=alert(1)> tools')).toBeTruthy()
+    expect(within(row('Invoke-Evil')).getByText('<b>bold</b> <img src=y onerror=alert(2)>')).toBeTruthy()
+  })
+
+  it('lists the functions of a library file that is not UTF-8, read as Windows-1252, with no banner', async () => {
+    const enc = new TextEncoder()
+    const latin = new Uint8Array([
+      ...enc.encode('# Latin tools\n<#\n.SYNOPSIS\nCaf'),
+      0xe9,
+      ...enc.encode(' tool.\n.EXAMPLE\nInvoke-Latin\n#>\nfunction Invoke-Latin {\n}\n'),
+    ])
+    const { user } = await startCommands({ files: { 'powershell/lib/Latin.ps1': latin } })
+    await user.click(pairButton('windows'))
+    await user.click(langButton('PowerShell'))
+    expect(within(row('Invoke-Latin')).getByText('Café tool.')).toBeTruthy()
+    expect(group(/^Latin tools/)).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('follows a library file changed on disk', async () => {
+    const { user, folder, app } = await startCommands({ files: { 'powershell/lib/Demo.ps1': DEMO } })
+    await user.click(pairButton('windows'))
+    await user.click(langButton('PowerShell'))
+    expect(within(row('Invoke-Demo')).getByText('Does the demo thing.')).toBeTruthy()
+    await folder.writeBytes('powershell/lib/Demo.ps1', new TextEncoder().encode(DEMO.replace('Does the demo thing.', 'Does a new thing.')))
+    await act(() => app().actions.recheckCommands())
+    expect(within(row('Invoke-Demo')).getByText('Does a new thing.')).toBeTruthy()
+  })
+
+  it("counts each group's rows and puts the card outside the panel", async () => {
+    const { user } = await startCommands({ files: { 'powershell/lib/Demo.ps1': DEMO } })
+    await user.click(pairButton('windows'))
+    await user.click(langButton('PowerShell'))
+    expect(group(/^Demo tools/).textContent).toMatch(/lib\/Demo\s*1$/)
+    await user.hover(row('Invoke-Demo'))
+    expect(screen.getByRole('tooltip').closest('aside')).toBeNull()
+  })
+})
+
+describe('the floating card, by keyboard and click', () => {
+  const outline = () => screen.getByRole('region', { name: 'Commands in this file' })
+  const row = (name: string) => rows(name)[0]
+
+  it('takes the floating card away when a row is clicked', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    await user.hover(row('ActivateOrOpen'))
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    await user.click(row('ActivateOrOpen'))
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('true')
+
+    // And on a row of Commands in this file, whose click jumps.
+    const own = within(outline()).getByRole('button', { name: /^OpenFileExplorer\b/ })
+    await user.hover(own)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    await user.click(own)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('takes the card away when the row loses the focus', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    act(() => row('ActivateOrOpen').focus())
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    act(() => within(other()).getByRole('textbox', { name: 'Filter other commands' }).focus())
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('keeps the card for keys other than Escape', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    act(() => row('ActivateOrOpen').focus())
+    await user.keyboard('a{Shift}')
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+  })
+
+  it('stops listening for keys once the card is gone, and when the tab goes', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    const lastKeyListener = () => add.mock.calls.filter(([type]) => type === 'keydown').at(-1)?.[1]
+    await user.hover(row('ActivateOrOpen'))
+    const onKey = lastKeyListener()
+    expect(onKey).toBeDefined()
+    await user.unhover(row('ActivateOrOpen'))
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    expect(remove).toHaveBeenCalledWith('keydown', onKey)
+
+    await user.hover(row('ActivateOrOpen'))
+    const again = lastKeyListener()
+    expect(again).not.toBe(onKey)
+    cleanup()
+    expect(document.querySelector('[role="tooltip"]')).toBeNull()
+    expect(remove).toHaveBeenCalledWith('keydown', again)
+  })
+
+  it('leaves Escape to a dialog once the card has gone', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    await user.hover(row('ActivateOrOpen'))
+    await user.unhover(row('ActivateOrOpen'))
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    await user.click(screen.getByRole('button', { name: 'New file' }))
+    expect(screen.getByRole('dialog', { name: 'New command file' })).toBeTruthy()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'New command file' })).toBeNull()
+  })
+
+  it('ties only the row whose card shows to the card', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    await user.hover(row('ActivateOrOpen'))
+    expect(row('ActivateOrOpen').getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id)
+    expect(row('Open').getAttribute('aria-describedby')).toBeNull()
+    const own = within(outline()).getByRole('button', { name: /^OpenFileExplorer\b/ })
+    expect(own.getAttribute('aria-describedby')).toBeNull()
+  })
+
+  it('shows the card for a row of Commands in this file that takes the focus', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    act(() => within(outline()).getByRole('button', { name: /^OpenFileExplorer\b/ }).focus())
+    expect(screen.getByRole('tooltip').textContent).toContain('OpenFileExplorer(Macro)')
+  })
+
+  it('opens and closes the docs under a row with Enter', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    act(() => row('ActivateOrOpen').focus())
+    await user.keyboard('{Enter}')
+    expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('true')
+    await user.keyboard('{Enter}')
+    expect(row('ActivateOrOpen').getAttribute('aria-expanded')).toBe('false')
+  })
+})
+
 describe('the groups of Other commands available', () => {
+  it('gives each group back its own state when the filter is cleared', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    const helpers = () => within(other()).getAllByRole('button', { name: /^helper/ })
+    const states = () => helpers().map((b) => b.getAttribute('aria-expanded'))
+    const media = () => within(other()).getByRole('button', { name: /^media/ })
+    await user.click(helpers()[0]) // closes the functions of helper
+    expect(states()).toEqual(['false', 'false'])
+    expect(media().getAttribute('aria-expanded')).toBe('false')
+    const filter = within(other()).getByRole('textbox', { name: 'Filter other commands' })
+    await user.type(filter, 'a')
+    expect(states()).toEqual(['true', 'true'])
+    expect(media().getAttribute('aria-expanded')).toBe('true')
+    await user.clear(filter)
+    expect(states()).toEqual(['false', 'false'])
+    expect(media().getAttribute('aria-expanded')).toBe('false')
+  })
+
   it("starts each shown file's own group open, whatever was done to another's", async () => {
     const { user } = await startCommands({ files: { 'ahk/commands/tools.ahk': '/**\n * A tool.\n */\nTool(A)\n{\n}\n' } })
     await user.click(pairButton('tools'))

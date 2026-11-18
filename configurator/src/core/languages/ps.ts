@@ -132,15 +132,30 @@ function blockText(block: string[]): string[] {
 }
 
 /**
+ * The line of the `<#` that opens the block ending on line `end`; -1 when the end of another block
+ * comes first (the `#>` on line `end` then closes no help block of its own).
+ */
+function helpStart(lines: string[], end: number): number {
+  for (let i = end; i >= 0; i--) {
+    const text = lines[i].trim()
+    if (text.startsWith('<#')) return i
+    if (i < end && text.endsWith('#>')) return -1
+  }
+  return -1
+}
+
+/**
  * The lines of the docs that end on the line directly above `index`, without their comment marks;
  * null when there are none. A `<# ... #>` block comes first, then a run of `#` lines.
  */
 function docsAbove(lines: string[], index: number): { form: 'block' | 'note'; lines: string[] } | null {
   if (index === 0) return null
-  if (lines[index - 1].trim().endsWith('#>')) {
-    let start = index - 1
-    while (start >= 0 && !lines[start].trim().startsWith('<#')) start--
-    if (start < 0) return null
+  const above = lines[index - 1].trim()
+  if (above.endsWith('#>')) {
+    // `$y = 2 <# tweak #>`: a comment at the end of a line of code, not help.
+    if (above.indexOf('<#') > 0) return null
+    const start = helpStart(lines, index - 1)
+    if (start === -1) return null
     return { form: 'block', lines: blockText(lines.slice(start, index)) }
   }
   let start = index

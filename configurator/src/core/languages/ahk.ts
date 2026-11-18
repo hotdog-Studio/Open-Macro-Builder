@@ -49,15 +49,29 @@ function declaredParams(list: string): Declared[] {
   return declared
 }
 
+/** A line that ends a block comment. */
+const CLOSES = /\*\/\s*$/
+
+/**
+ * The line of the `/**` that opens the block ending on line `end`; -1 when a plain `/*` or the end
+ * of another comment comes first (the `*\/` on line `end` then closes no doc block).
+ */
+function blockStart(lines: string[], end: number): number {
+  for (let i = end; i >= 0; i--) {
+    if (/^\s*\/\*\*/.test(lines[i])) return i
+    if (/^\s*\/\*/.test(lines[i]) || (i < end && CLOSES.test(lines[i]))) return -1
+  }
+  return -1
+}
+
 /** The lines of the `/** ... *\/` block that ends on the line directly above `index`, without their decoration; null when there is none. */
 function docBlockAbove(lines: string[], index: number): string[] | null {
-  if (index === 0 || !/\*\/\s*$/.test(lines[index - 1])) return null
-  let start = index - 1
-  while (start >= 0 && !/^\s*\/\*\*/.test(lines[start])) {
-    if (/^\s*\/\*(?!\*)/.test(lines[start])) return null
-    start--
-  }
-  if (start < 0) return null
+  const end = index - 1
+  if (end < 0 || !CLOSES.test(lines[end])) return null
+  // `x := 1 /* tweak */`: a comment at the end of a line of code, not a doc block.
+  if (lines[end].trim().indexOf('/*') > 0) return null
+  const start = blockStart(lines, end)
+  if (start === -1) return null
   return lines
     .slice(start, index)
     .map((line) => line.replace(/^\s*\/\*\*/, '').replace(/\*\/\s*$/, '').replace(/^\s*\*\s?/, '').trimEnd())

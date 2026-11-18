@@ -1,6 +1,7 @@
 # Delayed key and click forms (ahk/commands/custom/automation.ahk).
-# Each form keeps its state in a hashtable on $form.Tag. Handlers are { param($sender, $e) } and reach
-# that state through $sender.FindForm().Tag, or $sender.Tag for timers, which carry the form.
+# Each form keeps its state in a hashtable on $form.Tag. Handlers are { param($sender, $e) } and hand
+# the form to a named function below: $sender.FindForm() for controls, $sender.Tag for timers, which
+# carry the form. The named functions can be tested on a form that is never shown.
 
 # Chord name for a WinForms key code (the reverse of Get-VirtualKey), e.g. Keys.Oem5 -> '\'. Asking
 # Get-VirtualKey keeps a symbol name true to the keyboard layout: the name given presses this key.
@@ -10,6 +11,13 @@ function Get-KeyNameFromKeys {
     $names = @($script:VirtualKeys.Keys | Where-Object { $_ -ne 'Win' -and (Get-VirtualKey $_) -eq $vk })
     if ($names.Count -gt 0) { return @($names | Sort-Object)[0] }
     $KeyCode.ToString()
+}
+
+# True when Send-Chord knows every key name in Chord; ConvertTo-KeyEvent checks them and sends nothing.
+function Test-ChordText {
+    param([string]$Chord)
+    if ([string]::IsNullOrWhiteSpace($Chord)) { return $false }
+    try { [void](ConvertTo-KeyEvent $Chord); $true } catch { $false }
 }
 
 function New-AutomationForm {
@@ -60,8 +68,9 @@ function Start-PendingTimer {
     $timer.Start()
 }
 
-function ShowDelayedKeyForm {
-    param($Macro)
+# ---- Delayed key form ----
+
+function New-DelayedKeyForm {
     $form = New-AutomationForm 'MacropadDelayedKeyForm' 'Send key after delay' 168
     $form.KeyPreview = $true
     $state = @{ Recording = $false; PendingChord = ''; PendingTimer = $null }
@@ -79,78 +88,98 @@ function ShowDelayedKeyForm {
     $state.Timeout = New-Object System.Windows.Forms.Timer
     $state.Timeout.Interval = 5000
     $state.Timeout.Tag = $form
-    $state.Timeout.add_Tick({
-        param($sender, $e)
-        $sender.Stop()
-        $f = $sender.Tag
-        if ($f.IsDisposed) { return }
-        if ($f.Tag.Recording) {
-            $f.Tag.Recording = $false
-            $f.Tag.Status.Text = 'No key recorded; timed out.'
-        }
-    })
-
-    $record.add_Click({
-        param($sender, $e)
-        $st = $sender.FindForm().Tag
-        $st.Recording = $true
-        $st.Status.Text = 'Press a key (5-second timeout)...'
-        $st.Timeout.Stop(); $st.Timeout.Start()
-        [void]$st.ChordBox.Focus()
-    })
-
+    $state.Timeout.add_Tick({ param($sender, $e) $sender.Stop(); Stop-KeyRecording $sender.Tag })
+    $record.add_Click({ param($sender, $e) Start-KeyRecording $sender.FindForm() })
     # While recording, Enter, Tab, Escape and the arrows reach KeyDown instead of acting as dialog keys.
     $state.ChordBox.add_PreviewKeyDown({
         param($sender, $e)
         if ($sender.FindForm().Tag.Recording) { $e.IsInputKey = $true }
     })
+    $form.add_KeyDown({ param($sender, $e) Add-RecordedKey $sender $e })
+    $schedule.add_Click({ param($sender, $e) Invoke-DelayedKeySchedule $sender.FindForm() })
+    $form
+}
 
-    $form.add_KeyDown({
-        param($sender, $e)
-        $st = $sender.Tag
-        if (-not $st.Recording) { return }
-        if (@('ShiftKey', 'ControlKey', 'Menu', 'LWin', 'RWin') -contains $e.KeyCode.ToString()) { return }
-        $parts = [System.Collections.Generic.List[string]]::new()
-        if ($e.Control) { $parts.Add('Ctrl') }
-        if ($e.Shift) { $parts.Add('Shift') }
-        if ($e.Alt) { $parts.Add('Alt') }
-        $parts.Add((Get-KeyNameFromKeys $e.KeyCode))
-        $st.ChordBox.Text = $parts -join '+'
+function Start-KeyRecording {
+    param($Form)
+    $st = $Form.Tag
+    $st.Recording = $true
+    $st.Status.Text = 'Press a key (5-second timeout)...'
+    $st.Timeout.Stop(); $st.Timeout.Start()
+    [void]$st.ChordBox.Focus()
+}
+
+# The recording's 5 seconds are up.
+function Stop-KeyRecording {
+    param($Form)
+    if ($Form.IsDisposed) { return }
+    $st = $Form.Tag
+    if ($st.Recording) {
         $st.Recording = $false
-        $st.Timeout.Stop()
-        $st.Status.Text = "Recorded $($st.ChordBox.Text)."
-        $e.Handled = $true
-        $e.SuppressKeyPress = $true
-    })
+        $st.Status.Text = 'No key recorded; timed out.'
+    }
+}
 
-    $schedule.add_Click({
-        param($sender, $e)
-        $f = $sender.FindForm()
-        $st = $f.Tag
-        $chord = $st.ChordBox.Text.Trim()
-        $delay = $st.DelayBox.Text.Trim()
-        if (-not $chord -or $delay -notmatch '^\d+$') {
-            [void][System.Windows.Forms.MessageBox]::Show('Enter a key and a delay in milliseconds.', 'Invalid input')
-            return
-        }
-        $st.Recording = $false
-        $st.PendingChord = $chord
-        $f.Hide()
-        Start-PendingTimer $f $delay {
-            param($sender, $e)
-            $sender.Stop()
-            $chord = $sender.Tag.Tag.PendingChord
-            try { Send-Chord $chord }
-            catch { [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Delayed key failed') }
-        }
-    })
+# A key went down on the form ($KeyEvent: KeyEventArgs). While recording, the key and the modifiers
+# held with it become the chord, unless the key is a modifier alone or one Send-Chord cannot send.
+function Add-RecordedKey {
+    param($Form, $KeyEvent)
+    $st = $Form.Tag
+    if (-not $st.Recording) { return }
+    if (@('ShiftKey', 'ControlKey', 'Menu', 'LWin', 'RWin') -contains $KeyEvent.KeyCode.ToString()) { return }
+    $KeyEvent.Handled = $true
+    $KeyEvent.SuppressKeyPress = $true
+    $name = Get-KeyNameFromKeys $KeyEvent.KeyCode
+    if (-not (Test-ChordText $name)) {
+        $st.Status.Text = "$name cannot be sent; press another key."
+        return
+    }
+    $parts = [System.Collections.Generic.List[string]]::new()
+    if ($KeyEvent.Control) { $parts.Add('Ctrl') }
+    if ($KeyEvent.Shift) { $parts.Add('Shift') }
+    if ($KeyEvent.Alt) { $parts.Add('Alt') }
+    $parts.Add($name)
+    $st.ChordBox.Text = $parts -join '+'
+    $st.Recording = $false
+    $st.Timeout.Stop()
+    $st.Status.Text = "Recorded $($st.ChordBox.Text)."
+}
 
+# The Schedule button: checks the chord and the delay, hides the form and sends the chord later.
+function Invoke-DelayedKeySchedule {
+    param($Form)
+    $st = $Form.Tag
+    $chord = $st.ChordBox.Text.Trim()
+    $delay = $st.DelayBox.Text.Trim()
+    if (-not $chord -or $delay -notmatch '^\d+$') {
+        Show-MessageBox 'Enter a key and a delay in milliseconds.' 'Invalid input'
+        return
+    }
+    # Every key name is checked now, not when the time comes and the form is gone.
+    try { [void](ConvertTo-KeyEvent $chord) }
+    catch { Show-MessageBox $_.Exception.Message 'Invalid input'; return }
+    $st.Recording = $false
+    $st.PendingChord = $chord
+    $Form.Hide()
+    Start-PendingTimer $Form $delay { param($sender, $e) $sender.Stop(); Send-PendingChord $sender.Tag }
+}
+
+function Send-PendingChord {
+    param($Form)
+    try { Send-Chord $Form.Tag.PendingChord }
+    catch { Show-MessageBox $_.Exception.Message 'Delayed key failed' }
+}
+
+function ShowDelayedKeyForm {
+    param($Macro)
+    $form = New-DelayedKeyForm
     $form.Show()
     $form.Activate()
 }
 
-function ShowDelayedClickForm {
-    param($Macro)
+# ---- Delayed click form ----
+
+function New-DelayedClickForm {
     $form = New-AutomationForm 'MacropadDelayedClickForm' 'Click after delay' 140
     $state = @{ Captured = $false; X = 0; Y = 0; Button = ''; Started = 0; WaitingForRelease = $false; PendingTimer = $null }
     $form.Tag = $state
@@ -166,60 +195,70 @@ function ShowDelayedClickForm {
     $state.Poll = New-Object System.Windows.Forms.Timer
     $state.Poll.Interval = 10
     $state.Poll.Tag = $form
-    $state.Poll.add_Tick({
-        param($sender, $e)
-        $f = $sender.Tag
-        if ($f.IsDisposed) { $sender.Stop(); return }
-        $st = $f.Tag
-        if ([Environment]::TickCount - $st.Started -ge 5000) {
-            $sender.Stop()
-            $st.Status.Text = 'No click recorded; timed out.'
-            return
-        }
-        $button = Get-PressedMouseButton
-        # Ignore the button that clicked Record until it is released.
-        if ($st.WaitingForRelease) {
-            if (-not $button) { $st.WaitingForRelease = $false }
-            return
-        }
-        if (-not $button) { return }
-        $p = [System.Windows.Forms.Cursor]::Position
-        $st.X = $p.X; $st.Y = $p.Y; $st.Button = $button; $st.Captured = $true
-        $sender.Stop()
-        $st.Status.Text = "Captured $button click at $($p.X), $($p.Y)."
-    })
+    $state.Poll.add_Tick({ param($sender, $e) Update-ClickCapture $sender.Tag })
+    $record.add_Click({ param($sender, $e) Start-ClickRecording $sender.FindForm() })
+    $schedule.add_Click({ param($sender, $e) Invoke-DelayedClickSchedule $sender.FindForm() })
+    $form
+}
 
-    $record.add_Click({
-        param($sender, $e)
-        $st = $sender.FindForm().Tag
+function Start-ClickRecording {
+    param($Form)
+    $st = $Form.Tag
+    $st.Poll.Stop()
+    $st.Captured = $false
+    $st.Started = [Environment]::TickCount
+    # Ignore the button that clicked Record until it is released.
+    $st.WaitingForRelease = [bool](Get-PressedMouseButton)
+    $st.Status.Text = 'Click a mouse button (5-second timeout)...'
+    $st.Poll.Start()
+}
+
+# One look at the mouse while recording (the Poll timer, every 10 ms).
+function Update-ClickCapture {
+    param($Form)
+    $st = $Form.Tag
+    if ($Form.IsDisposed) { $st.Poll.Stop(); return }
+    if ([Environment]::TickCount - $st.Started -ge 5000) {
         $st.Poll.Stop()
-        $st.Captured = $false
-        $st.Started = [Environment]::TickCount
-        $st.WaitingForRelease = [bool](Get-PressedMouseButton)
-        $st.Status.Text = 'Click a mouse button (5-second timeout)...'
-        $st.Poll.Start()
-    })
+        $st.Status.Text = 'No click recorded; timed out.'
+        return
+    }
+    $button = Get-PressedMouseButton
+    if ($st.WaitingForRelease) {
+        if (-not $button) { $st.WaitingForRelease = $false }
+        return
+    }
+    if (-not $button) { return }
+    $p = Get-MousePosition
+    $st.X = $p.X; $st.Y = $p.Y; $st.Button = $button; $st.Captured = $true
+    $st.Poll.Stop()
+    $st.Status.Text = "Captured $button click at $($p.X), $($p.Y)."
+}
 
-    $schedule.add_Click({
-        param($sender, $e)
-        $f = $sender.FindForm()
-        $st = $f.Tag
-        $delay = $st.DelayBox.Text.Trim()
-        if (-not $st.Captured -or $delay -notmatch '^\d+$') {
-            [void][System.Windows.Forms.MessageBox]::Show('Record a click and enter a delay in milliseconds.', 'Invalid input')
-            return
-        }
-        $st.PendingX = $st.X; $st.PendingY = $st.Y; $st.PendingButton = $st.Button
-        $f.Hide()
-        Start-PendingTimer $f $delay {
-            param($sender, $e)
-            $sender.Stop()
-            $st = $sender.Tag.Tag
-            try { Send-Click $st.PendingX $st.PendingY $st.PendingButton }
-            catch { [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Delayed click failed') }
-        }
-    })
+# The Schedule button: hides the form and replays the recorded click later.
+function Invoke-DelayedClickSchedule {
+    param($Form)
+    $st = $Form.Tag
+    $delay = $st.DelayBox.Text.Trim()
+    if (-not $st.Captured -or $delay -notmatch '^\d+$') {
+        Show-MessageBox 'Record a click and enter a delay in milliseconds.' 'Invalid input'
+        return
+    }
+    $st.PendingX = $st.X; $st.PendingY = $st.Y; $st.PendingButton = $st.Button
+    $Form.Hide()
+    Start-PendingTimer $Form $delay { param($sender, $e) $sender.Stop(); Send-PendingClick $sender.Tag }
+}
 
+function Send-PendingClick {
+    param($Form)
+    $st = $Form.Tag
+    try { Send-Click $st.PendingX $st.PendingY $st.PendingButton }
+    catch { Show-MessageBox $_.Exception.Message 'Delayed click failed' }
+}
+
+function ShowDelayedClickForm {
+    param($Macro)
+    $form = New-DelayedClickForm
     $form.Show()
     $form.Activate()
 }

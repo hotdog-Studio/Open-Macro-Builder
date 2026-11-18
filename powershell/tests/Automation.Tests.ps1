@@ -35,6 +35,18 @@ Describe 'Delayed key form, recording' {
         $st.Status.Text | Should -Be 'NumPad5 cannot be sent; press another key.'
         $st.Recording | Should -BeTrue
     }
+    It 'records a key the table has no name for by the character it types, so it can be sent again' {
+        # en-GB: ' is vk C0, ` is vk DF, and vk DE (the US ' key) types #.
+        Mock Get-LayoutVirtualKey { 0xC0 } -ParameterFilter { $Char -eq "'" }
+        Mock Get-LayoutVirtualKey { 0xDF } -ParameterFilter { $Char -eq '`' }
+        Mock Get-LayoutVirtualKey { 0xDE } -ParameterFilter { $Char -eq '#' }
+        Mock Get-LayoutVirtualKey { -1 } -ParameterFilter { $Char -notin "'", '`', '#' }
+        Mock Get-LayoutCharacter { '#' } -ParameterFilter { $Vk -eq 0xDE }
+        Mock Get-LayoutCharacter { '' } -ParameterFilter { $Vk -ne 0xDE }
+        Start-KeyRecording $form
+        Add-RecordedKey $form (New-KeyArgs 'Oem7, Control')
+        $st.ChordBox.Text | Should -Be 'Ctrl+#'
+    }
     It 'records nothing when not recording' {
         Add-RecordedKey $form (New-KeyArgs 'T')
         $st.ChordBox.Text | Should -Be ''

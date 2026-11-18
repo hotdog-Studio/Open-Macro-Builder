@@ -43,6 +43,30 @@ Describe 'Get-VirtualKey on the keyboard layout in use' {
         ($e | ForEach-Object { '{0}:{1}' -f $_.Vk, $_.Up }) -join ' ' | Should -Be '17:False 192:False 192:True 17:True'
     }
 }
+Describe 'Get-VirtualKey for a character the table has no name for' {
+    It 'names the key that types it on its own on the layout in use, such as # on a UK keyboard' {
+        Mock Get-LayoutVirtualKey { 0xDE } -ParameterFilter { $Char -eq '#' }
+        Get-VirtualKey '#' | Should -Be 0xDE
+        ((ConvertTo-KeyEvent 'Ctrl+#') | ForEach-Object { '{0:X2}:{1}' -f $_.Vk, $_.Up }) -join ' ' | Should -Be '11:False DE:False DE:True 11:True'
+    }
+    It 'stays unknown where the layout cannot type it on its own' {
+        Mock Get-LayoutVirtualKey { -1 }
+        { Get-VirtualKey '#' } | Should -Throw "Unknown key name '#'"
+    }
+    It 'asks the layout only for one printable character' {
+        Mock Get-LayoutVirtualKey { 0x99 }
+        { Get-VirtualKey 'Bogus' } | Should -Throw "Unknown key name 'Bogus'"
+        { Get-VirtualKey ' ' } | Should -Throw
+        Should -Invoke Get-LayoutVirtualKey -Times 0 -Exactly
+    }
+}
+Describe 'Get-LayoutCharacter on this PC' {
+    It 'gives the character a key types on the real keyboard layout' {
+        Get-LayoutCharacter 0x41 | Should -Be 'A'
+        Get-LayoutCharacter 0x0D | Should -Not -BeNullOrEmpty
+        Get-LayoutCharacter 0x7C | Should -Be '' -Because 'F13 types no character'
+    }
+}
 Describe 'Get-LayoutVirtualKey' {
     BeforeEach {
         # Window 42 is the active one and has layout 0x111; any other window has layout 0x222.

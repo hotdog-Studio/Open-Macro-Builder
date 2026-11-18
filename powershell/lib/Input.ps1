@@ -52,9 +52,26 @@ function Get-LayoutVirtualKey {
     $vk
 }
 
+# The character the key Vk types on its own on the keyboard layout of the active window, such as '#'
+# for vk DE on a UK keyboard; '' when it types none, is a dead key, or the layout cannot be read.
+function Get-LayoutCharacter {
+    param([Parameter(Mandatory)][int]$Vk)
+    try { $c = [long][Macropad.Native]::KeyCharacter($Vk, (Get-ForegroundKeyboardLayout)) } catch { return '' }
+    if ($c -le 0 -or $c -gt 0xFFFF) { return '' }
+    [string][char]$c
+}
+
 function Get-VirtualKey {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Name)
-    if (-not $script:VirtualKeys.ContainsKey($Name)) { throw "Unknown key name '$Name'" }
+    if (-not $script:VirtualKeys.ContainsKey($Name)) {
+        # One printable character the table lacks, such as # on a UK keyboard: the key that types it on
+        # its own on the layout in use. '+' cannot be a name, because it joins the names of a chord.
+        if ($Name.Length -eq 1 -and $Name -ne '+' -and -not [char]::IsWhiteSpace($Name[0]) -and -not [char]::IsControl($Name[0])) {
+            $vk = Get-LayoutVirtualKey $Name[0]
+            if ($vk -gt 0) { return $vk }
+        }
+        throw "Unknown key name '$Name'"
+    }
     if ($script:SymbolKeyNames -contains $Name) {
         # Only a key that types the character on its own: one that needs Shift or AltGr for it would,
         # pressed alone, be a digit or a letter (de-DE = is Shift+0), so the table's key is kept then.
@@ -102,7 +119,7 @@ Presses a key combination such as Ctrl+Shift+T.
 .DESCRIPTION
 Holds every key but the last, taps the last, then lets the held keys go in reverse order. One key name alone works too. Every name is checked before anything is pressed, so an unknown name raises an error and sends nothing.
 .PARAMETER Chord
-Key names joined by '+', for example 'Ctrl+Shift+t' or 'LWin+Left'. Case does not matter, and Shift is pressed only when you name it. The names are: Ctrl, LCtrl, RCtrl, Alt, LAlt, RAlt, Shift, LShift, RShift, Win, LWin, RWin; Left, Up, Right, Down, Home, End, PgUp, PgDn; Insert, Delete, Tab, Enter, Escape, Space, Backspace; PrintScreen, ScrollLock, CapsLock, NumLock, Pause; Media_Play_Pause, Media_Next, Media_Prev, Media_Stop, Volume_Up, Volume_Down, Volume_Mute; the letters a to z, the digits 0 to 9 and F1 to F24; and the symbol keys \ ' ; = , - . / ` [ ]. A symbol names the key that types that character, without Shift or AltGr, on the keyboard layout of the active window, so on a UK keyboard ' is the key marked ' and @, and ` the key left of 1. When the layout has no such key, or types the character only with Shift or AltGr (as a German keyboard types =), the key a US keyboard has for it is pressed. The plus key has no name, because '+' separates the names.
+Key names joined by '+', for example 'Ctrl+Shift+t' or 'LWin+Left'. Case does not matter, and Shift is pressed only when you name it. The names are: Ctrl, LCtrl, RCtrl, Alt, LAlt, RAlt, Shift, LShift, RShift, Win, LWin, RWin; Left, Up, Right, Down, Home, End, PgUp, PgDn; Insert, Delete, Tab, Enter, Escape, Space, Backspace; PrintScreen, ScrollLock, CapsLock, NumLock, Pause; Media_Play_Pause, Media_Next, Media_Prev, Media_Stop, Volume_Up, Volume_Down, Volume_Mute; the letters a to z, the digits 0 to 9 and F1 to F24; and the symbol keys \ ' ; = , - . / ` [ ]. A symbol names the key that types that character, without Shift or AltGr, on the keyboard layout of the active window, so on a UK keyboard ' is the key marked ' and @, and ` the key left of 1. When the layout has no such key, or types the character only with Shift or AltGr (as a German keyboard types =), the key a US keyboard has for it is pressed. Any other single character, such as # on a UK keyboard, names the key that types it without Shift or AltGr on that layout; where no key does, the name is unknown. The plus key has no name, because '+' separates the names.
 .EXAMPLE
 Send-Chord 'LWin+Shift+Right'
 .EXAMPLE

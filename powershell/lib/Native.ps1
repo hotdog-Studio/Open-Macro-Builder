@@ -94,6 +94,16 @@ namespace Macropad
             return VkKeyScanEx(ch, layout);
         }
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint MapVirtualKeyEx(uint uCode, uint uMapType, IntPtr dwhkl);
+
+        // MAPVK_VK_TO_CHAR: the character vk types on its own on the layout (letters in capitals), with
+        // the top bit set for a dead key; 0 when it types none.
+        public static uint KeyCharacter(int vk, IntPtr layout)
+        {
+            return MapVirtualKeyEx((uint)vk, 2, layout);
+        }
+
         // Visible top-level windows owned by any of the pids, top of the Z-order first.
         public static IntPtr[] GetProcessWindows(int[] pids)
         {

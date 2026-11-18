@@ -10,6 +10,12 @@ function Get-KeyNameFromKeys {
     $vk = [int]$KeyCode -band 0xFFFF
     $names = @($script:VirtualKeys.Keys | Where-Object { $_ -ne 'Win' -and (Get-VirtualKey $_) -eq $vk })
     if ($names.Count -gt 0) { return @($names | Sort-Object)[0] }
+    # A key the table has no name for, such as # on a UK keyboard: the character it types on its own,
+    # when that character, used as a name, presses this key again.
+    $char = (Get-LayoutCharacter $vk).ToLowerInvariant()
+    if ($char) {
+        try { if ((Get-VirtualKey $char) -eq $vk) { return $char } } catch { }
+    }
     $KeyCode.ToString()
 }
 

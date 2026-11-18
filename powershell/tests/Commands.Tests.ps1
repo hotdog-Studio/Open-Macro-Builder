@@ -86,13 +86,25 @@ Describe 'Get-KeyNameFromKeys' {
     }
     It 'round-trips through Get-VirtualKey' { Get-VirtualKey (Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::PageDown)) | Should -Be 0x22 }
     It 'names a symbol key by the character it types on the keyboard layout in use' {
-        # en-GB: vk C0 types ', and the US ' key (vk DE) types #, which has no name.
+        # en-GB: vk C0 types ', vk DF types `, and the US ' key (vk DE) types #, which the table lacks.
         Mock Get-LayoutVirtualKey { 0xC0 } -ParameterFilter { $Char -eq "'" }
         Mock Get-LayoutVirtualKey { 0xDF } -ParameterFilter { $Char -eq '`' }
-        Mock Get-LayoutVirtualKey { -1 } -ParameterFilter { $Char -ne "'" -and $Char -ne '`' }
+        Mock Get-LayoutVirtualKey { 0xDE } -ParameterFilter { $Char -eq '#' }
+        Mock Get-LayoutVirtualKey { -1 } -ParameterFilter { $Char -ne "'" -and $Char -ne '`' -and $Char -ne '#' }
+        Mock Get-LayoutCharacter { '#' } -ParameterFilter { $Vk -eq 0xDE }
+        Mock Get-LayoutCharacter { '' } -ParameterFilter { $Vk -ne 0xDE }
         Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem3) | Should -Be "'"
         Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem8) | Should -Be '`'
-        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem7) | Should -Be 'Oem7'
+        $name = Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem7)
+        $name | Should -Be '#'
+        Get-VirtualKey $name | Should -Be 0xDE -Because 'the recorded name must press the recorded key again'
+    }
+    It 'keeps the WinForms name of a key that types nothing the layout can name back' {
+        Mock Get-LayoutVirtualKey { -1 }
+        Mock Get-LayoutCharacter { '' }
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Apps) | Should -Be 'Apps'
+        Mock Get-LayoutCharacter { '#' }
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem102) | Should -Be ([System.Windows.Forms.Keys]::Oem102).ToString() -Because '# does not press that key again'
     }
 }
 Describe 'File Explorer commands' {

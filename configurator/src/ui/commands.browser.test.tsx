@@ -698,5 +698,62 @@ describe('Commands tab: docs on hover', () => {
     // Beside the panel, not under it and not cut off by it.
     expect(tip.getBoundingClientRect().right).toBeLessThanOrEqual(panel.left)
     expect(tip.getBoundingClientRect().left).toBeGreaterThanOrEqual(0)
+    // And it holds Send-Chord's docs, not just any box.
+    expect(tip.textContent).toContain('Send-Chord <Chord>')
+    expect(tip.textContent).toContain('Example')
+    expect(tip.textContent).toContain('powershell/lib/Input.ps1 · line')
+  })
+
+  it("shows the card on a function's own definition line", async () => {
+    await start()
+    await openFile('windows')
+    const definition = text().search(/^OpenFileExplorer\(/m)
+    expect(definition).toBeGreaterThanOrEqual(0)
+    await hover(await pointAt(definition + 2))
+    await waitFor(() => expect(card()?.textContent).toContain('OpenFileExplorer(Macro)'))
+  })
+
+  it('shows the card in a file it will not edit', async () => {
+    const { folder } = await start()
+    const enc = new TextEncoder()
+    await folder.writeBytes(
+      'ahk/commands/latin.ahk',
+      new Uint8Array([...enc.encode('; caf'), 0xe9, ...enc.encode('\nLatin(Macro)\n{\n    ActivateOrOpen("x", "y")\n}\n')]),
+    )
+    // The save flow rechecks the command files when the window regains the focus.
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(pairButton('latin')).toBeTruthy())
+    await click(pairButton('latin'))
+    await waitFor(() => expect(editorView().state.readOnly).toBe(true))
+    await hover(await wordPoint('ActivateOrOpen'))
+    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
+  })
+
+  it('shows the card with the pointer on the right half of the last letter', async () => {
+    await start()
+    await openFile('windows')
+    const last = text().indexOf('ActivateOrOpen') + 'ActivateOrOpen'.length - 1
+    const middle = await pointAt(last)
+    // coordsAtPos gives a box of no width at a position: the last letter runs from one to the next.
+    const from = editorView().coordsAtPos(last, 1)!.left
+    const to = editorView().coordsAtPos(last + 1, -1)!.left
+    const x = to - 1
+    expect(x).toBeGreaterThan((from + to) / 2)
+    await hover({ x, y: middle.y })
+    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen('))
+  })
+
+  it('unmounts the card of the editor once it goes', async () => {
+    await start()
+    await openFile('windows')
+    await hover(await wordPoint('ActivateOrOpen'))
+    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen('))
+    // The element the card was rendered into, inside CodeMirror's own box.
+    const dom = card()!.firstElementChild as HTMLElement
+    expect(dom.textContent).toContain('ActivateOrOpen(')
+    await hover(toolbar())
+    await waitFor(() => expect(card()).toBeNull())
+    // root.unmount() empties the element the card was rendered into.
+    await waitFor(() => expect(dom.childElementCount).toBe(0))
   })
 })

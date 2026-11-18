@@ -41,70 +41,91 @@ Describe 'Test-KeyToggled with real key events' -Tag Integration {
     BeforeAll {
         # The NumLock state as a process started now reads it, apart from this test's own thread.
         function Get-NumLocked { [bool]::Parse((powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Control]::IsKeyLocked('NumLock')")) }
-        # Another process presses NumLock, as a keyboard or another program would. It says 'ready', presses
-        # when the event <name>-press is set and says 'pressed', then presses again when <name>-restore is
-        # set, or by itself 700 ms later, and says 'restored <ms>': NumLock is put back even when this test
-        # stops in between. Without a press event within 20 s it ends without pressing.
+        # Another process presses NumLock, as a keyboard or another program would. It says 'ready'; when
+        # the event <name>-press is set it presses and says 'pressed'; when <name>-restore is set, or this
+        # test's process is gone, it presses again and says 'restored <ms from press to restore>'. Its own
+        # 5 s timer is only the last resort. Without a press event, or with this process gone, it ends
+        # without pressing, at the latest after 20 s.
         $script:PresserScript = @"
 `$ProgressPreference = 'SilentlyContinue'
 Add-Type -Namespace NumLockTest -Name Key -MemberDefinition '[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);'
 function Send-NumLock { `$scan = [byte][NumLockTest.Key]::MapVirtualKey(0x90, 0); [NumLockTest.Key]::keybd_event(0x90, `$scan, 1, [UIntPtr]::Zero); [NumLockTest.Key]::keybd_event(0x90, `$scan, 3, [UIntPtr]::Zero) }
+`$test = [Diagnostics.Process]::GetProcessById(PARENT)
 `$press = [Threading.EventWaitHandle]::OpenExisting('NAME-press'); `$restore = [Threading.EventWaitHandle]::OpenExisting('NAME-restore')
 [Console]::Out.WriteLine('ready'); [Console]::Out.Flush()
-if (-not `$press.WaitOne(20000)) { exit }
-`$sw = [Diagnostics.Stopwatch]::StartNew(); Send-NumLock
+`$sw = [Diagnostics.Stopwatch]::StartNew()
+while (-not `$press.WaitOne(100)) { if (`$test.HasExited -or `$sw.ElapsedMilliseconds -gt 20000) { exit } }
+`$sw.Restart(); Send-NumLock
 [Console]::Out.WriteLine('pressed'); [Console]::Out.Flush()
-[void]`$restore.WaitOne(700)
+while (-not `$restore.WaitOne(20)) { if (`$test.HasExited -or `$sw.ElapsedMilliseconds -gt 5000) { break } }
 Send-NumLock; [Console]::Out.WriteLine("restored `$(`$sw.ElapsedMilliseconds)"); [Console]::Out.Flush()
 "@
         function Start-NumLockPresser([string]$Name) {
             $psi = New-Object System.Diagnostics.ProcessStartInfo 'powershell'
-            $code = $script:PresserScript.Replace('NAME', $Name)
+            $code = $script:PresserScript.Replace('NAME', $Name).Replace('PARENT', [string]$PID)
             $psi.Arguments = '-NoProfile -NonInteractive -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
             $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
             $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
             [System.Diagnostics.Process]::Start($psi)
         }
+        # The next line the presser writes, or an error when none comes within the limit.
+        function Read-PresserLine($Presser, [int]$TimeoutMs) {
+            $line = $Presser.StandardOutput.ReadLineAsync()
+            if (-not $line.Wait($TimeoutMs)) { throw "The NumLock presser said nothing within $TimeoutMs ms." }
+            $line.Result
+        }
+        # A press from this process, only to put NumLock back when the presser could not.
+        function Send-NumLockHere {
+            foreach ($flags in [Macropad.Native]::KEYEVENTF_EXTENDEDKEY, ([Macropad.Native]::KEYEVENTF_EXTENDEDKEY -bor [Macropad.Native]::KEYEVENTF_KEYUP)) {
+                [Macropad.Native]::keybd_event(0x90, [byte][Macropad.Native]::MapVirtualKey(0x90, 0), $flags, [UIntPtr]::Zero)
+            }
+        }
     }
     It 'reads the new state of NumLock in a hotkey handler while a window of another process has the focus' {
         # As when a command runs: the macropad's thread has a window and runs the command inside its
         # message loop, in the handler of a WM_HOTKEY; the focus is on another program; and the key is
-        # pressed by another process. NumLock is changed for under a second and put back also on failure.
+        # pressed by another process. NumLock is changed only for the reads, and put back also on failure.
         $focus = [Macropad.WindowApi]::Foreground()
         $focus | Should -Not -Be ([IntPtr]::Zero) -Because 'a window must have the focus'
         [Macropad.WindowApi]::ProcessId($focus) | Should -Not -Be $PID -Because 'the focus must be on a window of another process'
         $before = Get-NumLocked
-        $window = [Macropad.HotkeyWindow]::new()
-        $window.Context = @{ Reads = [System.Collections.ArrayList]::new(); Clock = [System.Diagnostics.Stopwatch]::StartNew() }
-        $window.add_HotkeyPressed({ param($sender, $e)
-                [void]$sender.Context.Reads.Add([pscustomobject]@{ Id = $e.Id; Ms = $sender.Context.Clock.ElapsedMilliseconds; On = (Test-KeyToggled 'NumLock') }) })
-        $name = "Local\MacropadNumLockTest$PID"
-        $press = [System.Threading.EventWaitHandle]::new($false, 'ManualReset', "$name-press")
-        $restore = [System.Threading.EventWaitHandle]::new($false, 'ManualReset', "$name-restore")
-        $presser = Start-NumLockPresser $name
-        $restored = ''
+        $window = $null; $press = $null; $restore = $null; $presser = $null; $restored = ''; $putBackHere = $false
+        $reads = [System.Collections.ArrayList]::new()
         try {
-            $presser.StandardOutput.ReadLine() | Should -Be 'ready'
+            $window = [Macropad.HotkeyWindow]::new()
+            $window.Context = @{ Reads = $reads; Clock = [System.Diagnostics.Stopwatch]::StartNew() }
+            $window.add_HotkeyPressed({ param($sender, $e)
+                    [void]$sender.Context.Reads.Add([pscustomobject]@{ Id = $e.Id; Ms = $sender.Context.Clock.ElapsedMilliseconds; On = (Test-KeyToggled 'NumLock') }) })
+            $name = "Local\MacropadNumLockTest$PID"
+            $press = [System.Threading.EventWaitHandle]::new($false, 'ManualReset', "$name-press")
+            $restore = [System.Threading.EventWaitHandle]::new($false, 'ManualReset', "$name-restore")
+            $presser = Start-NumLockPresser $name
+            Read-PresserLine $presser 30000 | Should -Be 'ready'
             [void][Macropad.WindowApi]::Post($window.Handle, 0x312, [IntPtr]1, [IntPtr]::Zero)
             Wait-Pump 30
             [void]$press.Set()
-            $presser.StandardOutput.ReadLine() | Should -Be 'pressed'
+            Read-PresserLine $presser 3000 | Should -Be 'pressed'
             $window.Context.Clock.Restart()
             # The first read is in the first handler after the press, with no pump of its own before it.
             foreach ($k in 2..11) { [void][Macropad.WindowApi]::Post($window.Handle, 0x312, [IntPtr]$k, [IntPtr]::Zero); Wait-Pump 20 }
         } finally {
-            [void]$restore.Set()
-            if ($presser.WaitForExit(3000)) { $restored = $presser.StandardOutput.ReadToEnd().Trim() }
-            $window.Dispose(); $press.Dispose(); $restore.Dispose()
+            if ($restore) { [void]$restore.Set() }
+            if ($presser) {
+                if ($presser.WaitForExit(3000)) { $restored = $presser.StandardOutput.ReadToEnd().Trim() }
+                else { $presser.Kill() }
+            }
+            foreach ($d in $window, $press, $restore) { if ($d) { $d.Dispose() } }
+            if ((Get-NumLocked) -ne $before) { Send-NumLockHere; $putBackHere = $true }
         }
-        $reads = @($window.Context.Reads)
+        $reads = @($reads)
         Write-Host ('NumLock was {0}; reads in the hotkey handler: {1}; presser: {2}' -f $(if ($before) { 'on' } else { 'off' }),
             (($reads | ForEach-Object { "#$($_.Id) at $($_.Ms) ms: $(if ($_.On) { 'on' } else { 'off' })" }) -join ', '), $restored)
+        $putBackHere | Should -BeFalse -Because 'the presser puts NumLock back itself'
         ($reads | Where-Object Id -eq 1).On | Should -Be $before -Because 'before the press it agrees with a new process'
         $after = @($reads | Where-Object Id -gt 1)
         $after.Count | Should -BeGreaterThan 0
         $after[0].On | Should -Be (-not $before) -Because 'the first handler after the press reads the new state'
-        @($after | Where-Object { $_.On -eq $before }).Count | Should -Be 0 -Because 'no later read goes back to the old state'
+        @($after | Where-Object { $_.On -eq $before }).Count | Should -Be 0 -Because 'no read before the restore goes back to the old state'
         $restored | Should -Match '^restored \d+$'
         [int]($restored -replace '\D', '') | Should -BeLessThan 1000 -Because 'NumLock stays changed for under a second'
         Get-NumLocked | Should -Be $before -Because 'NumLock is put back'

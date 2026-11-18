@@ -37,6 +37,45 @@ Describe 'Wait-Key' {
     It 'times out while the key stays down' { Mock Test-VirtualKeyDown { $true }; Wait-Key 'a' -TimeoutMs 50 | Should -BeFalse }
     It 'waits for a press with -Down' { Mock Test-VirtualKeyDown { $true }; Wait-Key 'a' -Down -TimeoutMs 50 | Should -BeTrue }
 }
+Describe 'Test-KeyToggled with real key events' -Tag Integration {
+    BeforeAll {
+        # The NumLock state as a process started now reads it, apart from this test's own thread.
+        function Get-NumLocked { [bool]::Parse((powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Control]::IsKeyLocked('NumLock')")) }
+        function Send-NumLock([bool]$Up) {
+            $flags = [Macropad.Native]::KEYEVENTF_EXTENDEDKEY; if ($Up) { $flags = $flags -bor [Macropad.Native]::KEYEVENTF_KEYUP }
+            [Macropad.Native]::keybd_event(0x90, [byte][Macropad.Native]::MapVirtualKey(0x90, 0), $flags, [UIntPtr]::Zero)
+        }
+    }
+    It 'reads the new state of NumLock while a window of another process has the focus' {
+        # As when a command runs: the macropad's thread has a window and pumps its messages with Wait-Pump,
+        # but the focus is on another program. NumLock is pressed once, and again in finally, within a second.
+        $focus = [Macropad.WindowApi]::Foreground()
+        $focus | Should -Not -Be ([IntPtr]::Zero) -Because 'a window must have the focus'
+        [Macropad.WindowApi]::ProcessId($focus) | Should -Not -Be $PID -Because 'the focus must be on a window of another process'
+        $before = Get-NumLocked
+        $window = [Macropad.HotkeyWindow]::new()
+        $pressed = $false; $seen = $before
+        $sw = [System.Diagnostics.Stopwatch]::new()
+        try {
+            Wait-Pump 50
+            Test-KeyToggled 'NumLock' | Should -Be $before -Because 'it agrees with a new process before the press'
+            $sw.Start()
+            Send-NumLock $false; Send-NumLock $true; $pressed = $true
+            while ($sw.ElapsedMilliseconds -lt 500) {
+                Wait-Pump 20
+                $seen = Test-KeyToggled 'NumLock'
+                if ($seen -ne $before) { break }
+            }
+        } finally {
+            if ($pressed) { Send-NumLock $false; Send-NumLock $true }
+            $sw.Stop()
+            $window.Dispose()
+        }
+        $seen | Should -Be (-not $before) -Because "NumLock was switched $(('on', 'off')[[int]$before]) $($sw.ElapsedMilliseconds) ms before it was put back"
+        $sw.ElapsedMilliseconds | Should -BeLessThan 1000 -Because 'NumLock stays changed for under a second'
+        Get-NumLocked | Should -Be $before -Because 'NumLock is put back'
+    }
+}
 Describe 'Set-LockKeyState' {
     It 'taps only when the state differs' {
         Mock Send-KeyInput {}

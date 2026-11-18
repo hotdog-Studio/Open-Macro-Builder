@@ -1,30 +1,46 @@
 import { emptyDoc, exampleOf, oneLine, rewriteBody, textOf, type FunctionDoc, type FunctionInfo, type Language, type ParamDoc } from './types'
 
-const DEFINITION = /^\s*function\s+([\w-]+)/i
+/** `function` and the name, which may carry a scope (`global:Name`). */
+const DEFINITION = /^\s*function\s+([\w:-]+)/i
 const PARAM_START = /param\s*\(/i
+const SCOPES = ['global:', 'script:', 'local:', 'private:']
+
+/** A function's name without the scope it may be defined in. */
+function withoutScope(name: string): string {
+  const scope = SCOPES.find((s) => name.toLowerCase().startsWith(s))
+  return scope ? name.slice(scope.length) : name
+}
+
+/** The text from column `column` of line `from` to the line before the next definition. */
+function textFrom(lines: string[], from: number, column: number): string {
+  const next = lines.findIndex((l, i) => i > from && DEFINITION.test(l))
+  return [lines[from].slice(column), ...lines.slice(from + 1, next === -1 ? lines.length : next)].join('\n')
+}
 
 /**
- * The parameters of the first `param(...)` that starts within the definition
- * line or the next two, never reaching into the following function.
+ * The list of the first `param(...)` that starts within the definition line or the next two, from
+ * its open paren; null when there is none. Read to its close paren, which may be past those three
+ * lines, but an unclosed list stops at the line before the next definition.
  */
-function declaredParams(lines: string[], index: number): ParamDoc[] {
-  const window: string[] = [lines[index]]
-  for (let i = index + 1; i <= index + 2 && i < lines.length; i++) {
-    if (DEFINITION.test(lines[i])) break
-    window.push(lines[i])
+function paramBlock(lines: string[], index: number): string | null {
+  for (let i = index; i <= index + 2 && i < lines.length; i++) {
+    if (i > index && DEFINITION.test(lines[i])) return null
+    const at = lines[i].search(PARAM_START)
+    if (at !== -1) return textFrom(lines, i, lines[i].indexOf('(', at))
   }
-  const startLine = window.findIndex((l) => PARAM_START.test(l))
-  if (startLine === -1) return []
-  // Read to the matching close paren, which may be past the three-line window, but an
-  // unclosed list stops at the line before the next definition.
-  const from = index + startLine + 1
-  const next = lines.findIndex((l, i) => i >= from && DEFINITION.test(l))
-  const rest = [
-    lines[index + startLine].slice(lines[index + startLine].search(PARAM_START)),
-    ...lines.slice(from, next === -1 ? lines.length : next),
-  ]
-  const body = rest.join('\n')
-  return splitParams(body.slice(body.indexOf('('))).flatMap((piece) => readParam(piece) ?? [])
+  return null
+}
+
+/** The list right after the name, `function Name($A, $B)`, from its open paren; null when there is none. */
+function inlineList(lines: string[], index: number, nameEnd: number): string | null {
+  const after = lines[index].slice(nameEnd)
+  return after.trimStart().startsWith('(') ? textFrom(lines, index, nameEnd + after.indexOf('(')) : null
+}
+
+/** The parameters the function on line `index` declares: in a `param(...)`, else in a list after its name. */
+function declaredParams(lines: string[], index: number, nameEnd: number): ParamDoc[] {
+  const list = paramBlock(lines, index) ?? inlineList(lines, index, nameEnd)
+  return list === null ? [] : splitParams(list).flatMap((piece) => readParam(piece) ?? [])
 }
 
 const QUOTES = `'"`
@@ -267,7 +283,8 @@ function findFunctions(text: string): FunctionInfo[] {
   lines.forEach((line, i) => {
     const match = DEFINITION.exec(line)
     if (!match) return
-    const params = declaredParams(lines, i)
+    const name = withoutScope(match[1])
+    const params = declaredParams(lines, i, match[0].length)
     const docs = docsAbove(lines, i)
     let doc: FunctionDoc = { ...emptyDoc([]), params }
     if (docs?.form === 'block') {
@@ -278,11 +295,11 @@ function findFunctions(text: string): FunctionInfo[] {
       if (summary !== '') doc = { ...doc, form: 'note', summary }
     }
     found.push({
-      name: match[1],
+      name,
       line: i + 1,
       params: params.map((p) => p.name),
       description: doc.summary,
-      usage: usageLine(match[1], params),
+      usage: usageLine(name, params),
       doc,
     })
   })

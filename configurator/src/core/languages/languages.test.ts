@@ -418,6 +418,13 @@ describe('PowerShell findFunctions', () => {
     expect(LANGUAGES.ps.findFunctions('function F {\n    param([switch]$A, [int]$B)\n}')[0].usage).toBe('F [-A] -B <B>')
   })
 
+  it('reads a name with a scope, and a parameter list after the name', () => {
+    const fns = LANGUAGES.ps.findFunctions('function global:Send-Thing {\n    param($X, $Y = 2)\n}\nfunction Send-Other ($X,\n    $Y = 2) {\n}\nfunction Open($Macro) {\n}')
+    expect(fns.map((f) => [f.name, f.params])).toEqual([['Send-Thing', ['X', 'Y']], ['Send-Other', ['X', 'Y']], ['Open', ['Macro']]])
+    expect(fns[1].usage).toBe('Send-Other <X> [-Y <value>]')
+    expect(isCommand(fns[2])).toBe(true)
+  })
+
   it('reads past comments inside the parameter list', () => {
     const text = [
       'function Send-Click {',

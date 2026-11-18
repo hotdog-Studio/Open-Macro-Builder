@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { memoryFolderFromRepo } from '../../../test/repo'
 import { MemoryFolder } from '../folder/memory'
 import { compareText } from '../folder/path'
+import type { FolderAccess } from '../folder/types'
 import {
   commandCatalog,
   commandFileAt,
@@ -245,15 +246,52 @@ describe('memoryFolderFromRepo', () => {
   })
 })
 
+/** `inner` with every listing reversed: a real folder lists in its own order, not by name as MemoryFolder does. */
+function listedBackwards(inner: FolderAccess): FolderAccess {
+  return {
+    name: inner.name,
+    readBytes: (path) => inner.readBytes(path),
+    writeBytes: (path, data) => inner.writeBytes(path, data),
+    remove: (path) => inner.remove(path),
+    list: async (dir) => (await inner.list(dir)).reverse(),
+  }
+}
+
 describe('scanLibrary', () => {
   it('reads the PowerShell library by file name, and nothing of AutoHotkey', async () => {
-    const lib = await scanLibrary(memoryFolderFromRepo(['powershell/lib', 'ahk/lib']))
+    const lib = await scanLibrary(listedBackwards(memoryFolderFromRepo(['powershell/lib', 'ahk/lib'])))
     expect(lib.every((f) => f.lang === 'ps')).toBe(true)
+    expect(lib.length).toBeGreaterThan(1)
     expect(lib.map((f) => f.name)).toEqual([...lib.map((f) => f.name)].sort(compareText))
     expect(lib.some((f) => f.path.includes('/cs/'))).toBe(false)
     const input = lib.find((f) => f.name === 'Input')!
     expect(input.path).toBe('powershell/lib/Input.ps1')
     expect(input.functions.map((f) => f.name)).toContain('Send-Chord')
+  })
+
+  it('sorts the library by name whatever order the folder lists it in', async () => {
+    const enc = new TextEncoder()
+    const inner = new MemoryFolder('lib', {
+      'powershell/lib/Bravo.ps1': enc.encode('function Y {\n}\n'),
+      'powershell/lib/Alpha.ps1': enc.encode('function X {\n}\n'),
+      'powershell/lib/Charlie.ps1': enc.encode('function Z {\n}\n'),
+    })
+    expect((await scanLibrary(listedBackwards(inner))).map((f) => f.name)).toEqual(['Alpha', 'Bravo', 'Charlie'])
+  })
+
+  it('skips a library file that is gone by the time it is read', async () => {
+    const enc = new TextEncoder()
+    const folder = new MemoryFolder('lib', {
+      'powershell/lib/A.ps1': enc.encode('function X {\n}\n'),
+      'powershell/lib/B.ps1': enc.encode('function Y {\n}\n'),
+    })
+    const read = folder.readBytes.bind(folder)
+    const spy = vi.spyOn(folder, 'readBytes').mockImplementation((path) => (path.endsWith('/A.ps1') ? Promise.resolve(null) : read(path)))
+    try {
+      expect((await scanLibrary(folder)).map((f) => f.name)).toEqual(['B'])
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('gives no library for a folder without one', async () => {

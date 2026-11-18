@@ -60,24 +60,42 @@ function ConvertFrom-AhkStringLiteral {
     $sb.ToString()
 }
 
-# The guard of an AHK function whose body is 'if Name(Macro)' followed by one statement, such as
-# 'if EnsureActiveOrOpenChrome(Macro)' then a Send: the name, or '' when the body has no such guard.
-function Get-AhkGuard {
-    param($Function)
-    if (@($Function.Body).Count -ne 2) { return '' }
-    if ($Function.Body[0] -notmatch '^if\s*\(?\s*(\w+)\(Macro\)\s*\)?$') { return '' }
-    $Matches[1]
-}
-
-# The keys of an AHK function whose whole body is one Send("...") with a string literal, perhaps
-# under a guard (Get-AhkGuard); else $null.
-function Get-AhkSingleSend {
+# The guard of an AHK function whose whole body is 'if Name(Macro)' followed by one statement, or by
+# statements in braces, such as 'if EnsureActiveOrOpenChrome(Macro)' then a Send: Guard is the name
+# and Body the guarded statements. Without such a guard, Guard is '' and Body the whole body.
+function Split-AhkGuard {
     param($Function)
     $body = @($Function.Body)
-    if ((Get-AhkGuard $Function) -ne '') { $body = @($body[1]) }
-    if ($body.Count -ne 1) { return $null }
-    if ($body[0] -notmatch '^Send\((.*)\)$') { return $null }
-    ConvertFrom-AhkStringLiteral $Matches[1].Trim()
+    $none = [pscustomobject]@{ Guard = ''; Body = $body }
+    if ($body.Count -lt 2 -or $body[0] -notmatch '^if\s*\(?\s*(\w+)\(Macro\)\s*\)?\s*(\{?)$') { return $none }
+    $name = $Matches[1]
+    # Get-AhkFunctionSource leaves out a line that is only '{', so a block shows as its closing '}'.
+    if ($Matches[2] -eq '' -and $body.Count -eq 2) { return [pscustomobject]@{ Guard = $name; Body = @($body[1]) } }
+    if ($body.Count -lt 3 -or $body[-1] -ne '}') { return $none }
+    [pscustomobject]@{ Guard = $name; Body = @($body[1..($body.Count - 2)]) }
+}
+
+# The guard's name of an AHK function (Split-AhkGuard), or '' when its body has no such guard.
+function Get-AhkGuard {
+    param($Function)
+    (Split-AhkGuard $Function).Guard
+}
+
+# The keys of an AHK function whose whole body is Send("...") calls with a string literal, one per
+# statement and nothing else (no wait between them), perhaps under a guard (Split-AhkGuard): the
+# Send texts in order, or $null.
+function Get-AhkSends {
+    param($Function)
+    $body = @((Split-AhkGuard $Function).Body)
+    if ($body.Count -eq 0) { return $null }
+    $sends = [System.Collections.Generic.List[string]]::new()
+    foreach ($statement in $body) {
+        if ($statement -notmatch '^Send\((.*)\)$') { return $null }
+        $text = ConvertFrom-AhkStringLiteral $Matches[1].Trim()
+        if ($null -eq $text) { return $null }
+        $sends.Add($text)
+    }
+    , $sends.ToArray()
 }
 
 # The one command of a list of statements: a CommandAst when the list is exactly one pipeline of one

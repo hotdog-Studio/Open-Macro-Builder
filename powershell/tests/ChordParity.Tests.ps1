@@ -2,8 +2,8 @@
 # the AutoHotkey Send string and the PowerShell chord are read from the source text, turned into key
 # events (ConvertFrom-AhkSend reads AutoHotkey's syntax, ConvertTo-KeyEvent reads a chord) and
 # compared as the taps they make, such as 'Alt+Shift+Tab'. Two sources written apart must agree,
-# so a wrong or mistyped chord on one side shows. (A PowerShell command that is several sends in a row, with
-# nothing between them, counts as the taps of all of them.) A command that is not one chord on both sides
+# so a wrong or mistyped chord on one side shows. (A command that is several sends in a row, with nothing
+# between them, counts as the taps of all of them, in either language.) A command that is not one chord on both sides
 # (it starts a program, sends more than once, branches) must be in its pair's Skip list with the
 # reason; the test fails on a command that is neither compared nor listed, and on a listed one whose
 # version in either language only presses keys, so a skip cannot hide a disagreement. A chord sent only when a
@@ -67,7 +67,7 @@ BeforeDiscovery {
         # This pair compares no keys: both of its commands open a form and press nothing themselves, so
         # both are skipped. It is listed so that a new command in either file must be compared or skipped
         # with a reason. The forms' keys are tested in Automation.Tests.ps1.
-        @{ Name = 'custom\automation'; Ahk ='ahk\commands\custom\automation.ahk'; Ps = 'powershell\commands\custom\automation.ps1'; Skip = @{
+        @{ Name = 'custom\automation'; Ahk = 'ahk\commands\custom\automation.ahk'; Ps = 'powershell\commands\custom\automation.ps1'; Skip = @{
                 ShowDelayedKeyForm   = 'opens a form; the key is chosen there'
                 ShowDelayedClickForm = 'opens a form; the click is recorded there'
             }
@@ -79,7 +79,7 @@ BeforeAll {
     foreach ($f in 'Input', 'AhkSyntax') { . "$root\powershell\lib\$f.ps1" }
     . "$PSScriptRoot\helpers\CommandSource.ps1"
 
-    # name -> @{ Ahk = Send text or $null; Ps = chord or $null; InAhk; InPs } for the commands of a pair.
+    # name -> @{ Ahk = Send texts or $null; Ps = chords or $null; AhkGuard; PsGuard } for the commands of a pair.
     function Get-PairCommand {
         param([string]$Ahk, [string]$Ps)
         $a = Get-AhkFunctionSource (Join-Path $root $Ahk)
@@ -88,12 +88,14 @@ BeforeAll {
         $result = [ordered]@{}
         foreach ($n in $names) {
             $sendText = $null; $chord = $null; $ahkGuard = ''; $psGuard = ''
-            if ($a.Contains($n)) { $sendText = Get-AhkSingleSend $a[$n]; $ahkGuard = Get-AhkGuard $a[$n] }
+            if ($a.Contains($n)) { $sendText = Get-AhkSends $a[$n]; $ahkGuard = Get-AhkGuard $a[$n] }
             if ($p.Contains($n)) { $chord = $p[$n].Chord; $psGuard = $p[$n].Guard }
             $result[$n] = [pscustomobject]@{ Ahk = $sendText; Ps = $chord; AhkGuard = $ahkGuard; PsGuard = $psGuard }
         }
         $result
     }
+    # Send texts as they are written in AutoHotkey: Send("^c"), Send("^v").
+    function Format-AhkSends { param([string[]]$Sends) (@($Sends | ForEach-Object { "Send(`"$_`")" })) -join ', ' }
 }
 Describe 'The two languages press the same keys: <Name>' -ForEach $Pairs {
     It 'compares every command or lists why not' {
@@ -104,7 +106,7 @@ Describe 'The two languages press the same keys: <Name>' -ForEach $Pairs {
             if ($comparable -and $Skip.ContainsKey($n)) { "$n is one chord in both languages; take it out of the Skip list" }
             elseif ($Skip.ContainsKey($n) -and ($null -ne $commands[$n].Ahk -or $null -ne $commands[$n].Ps)) {
                 # A skip must not hide a command that became a chord on one side only.
-                $side = if ($null -ne $commands[$n].Ahk) { "AutoHotkey Send(`"$($commands[$n].Ahk)`")" } else { "PowerShell '$($commands[$n].Ps -join "', '")'" }
+                $side = if ($null -ne $commands[$n].Ahk) { "AutoHotkey $(Format-AhkSends $commands[$n].Ahk)" } else { "PowerShell '$($commands[$n].Ps -join "', '")'" }
                 "$n is skipped, but its $side only presses keys; compare it instead"
             }
         }
@@ -119,9 +121,9 @@ Describe 'The two languages press the same keys: <Name>' -ForEach $Pairs {
             if ($null -eq $c.Ahk -or $null -eq $c.Ps) { continue }
             $compared++
             try {
-                $ahkTaps = (ConvertTo-ChordTap (ConvertFrom-AhkSend $c.Ahk).Events) -join ', '
+                $ahkTaps = (@(foreach ($send in $c.Ahk) { foreach ($tap in (ConvertTo-ChordTap (ConvertFrom-AhkSend $send).Events)) { $tap } })) -join ', '
                 $psTaps = (@(foreach ($chord in $c.Ps) { foreach ($tap in (ConvertTo-ChordTap (ConvertTo-KeyEvent $chord))) { $tap } })) -join ', '
-                if ($ahkTaps -ne $psTaps) { "$n`: AutoHotkey Send(`"$($c.Ahk)`") presses $ahkTaps; PowerShell '$($c.Ps -join "', '")' presses $psTaps" }
+                if ($ahkTaps -ne $psTaps) { "$n`: AutoHotkey $(Format-AhkSends $c.Ahk) presses $ahkTaps; PowerShell '$($c.Ps -join "', '")' presses $psTaps" }
                 if ($c.AhkGuard -ne $c.PsGuard) { "$n`: AutoHotkey sends only if '$($c.AhkGuard)' says so; PowerShell only if '$($c.PsGuard)' says so" }
             } catch { "$n`: $($_.Exception.Message)" }
         }

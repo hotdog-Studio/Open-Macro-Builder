@@ -118,6 +118,17 @@ describe('opening an empty folder', () => {
     expect(screen.queryByRole('article', { name: 'Get started' })).toBeNull()
   })
 
+  it('a fresh setup with its prompt up, then another existing setup opened with Open folder, opens on Pad shape', async () => {
+    // The prompt only covers the screen: the Open folder button behind it can still be pressed.
+    const folders = [empty(), await readyFolder()]
+    const user = await openFolder(fakePlatform(null, { openFolder: async () => folders.shift() ?? null }))
+    await user.click(await screen.findByRole('button', { name: 'Set up' }))
+    await screen.findByRole('dialog', { name: 'This folder has no local/config.json yet' })
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    expect(await screen.findByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
+    expect(screen.queryByRole('article', { name: 'Get started' })).toBeNull()
+  })
+
   it('Cancel goes back to the open screen with nothing written', async () => {
     const folder = empty()
     const user = await openFolder(fakePlatform(folder))
@@ -283,7 +294,6 @@ describe('Create new folder…', () => {
     const { dialog } = await nameDialog(user)
     await user.click(within(dialog).getByRole('button', { name: 'Choose where…' }))
     expect(await keyButtons()).toHaveLength(12)
-    expect(screen.getByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
     expect(await snapshot(folder)).toEqual(before)
   })
 

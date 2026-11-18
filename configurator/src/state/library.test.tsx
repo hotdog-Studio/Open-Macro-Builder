@@ -202,6 +202,40 @@ describe('the library of the opened folder', () => {
     expect(editor().libraryFiles.find((f) => f.name === 'Input')!.title).toBe('Library A')
   })
 
+  it("keeps an older recheck's library that landed during a reload whose own library read fails", async () => {
+    const { folder, app, editor } = await startCommands({ library: true })
+    const before = editor().libraryFiles.find((f) => f.name === 'Input')!.title
+    const recheckGate: (() => void)[] = []
+    const reloadGate: (() => void)[] = []
+    let locked = false
+    const read = MemoryFolder.prototype.readBytes
+    vi.spyOn(MemoryFolder.prototype, 'readBytes').mockImplementation(async function (this: MemoryFolder, path: string) {
+      if (path === INPUT && locked) {
+        await new Promise<void>((done) => reloadGate.push(done))
+        throw new Error(`${path} is locked`)
+      }
+      const bytes = await read.call(this, path)
+      if (path === INPUT) await new Promise<void>((done) => recheckGate.push(done))
+      return bytes
+    })
+    await folder.writeBytes(INPUT, enc.encode('# Library A\nfunction Get-A {\n}\n'))
+    // The recheck starts first, and reads Library A.
+    const recheck = app().actions.recheckCommands()
+    await waitFor(() => expect(recheckGate).toHaveLength(1))
+    // The reload starts with the library the state holds, and its own read of the library will fail.
+    locked = true
+    const reload = app().actions.reloadFromDisk()
+    await waitFor(() => expect(reloadGate).toHaveLength(1))
+    recheckGate[0]()
+    await act(() => recheck)
+    expect(editor().libraryFiles.find((f) => f.name === 'Input')!.title).toBe('Library A')
+    reloadGate[0]()
+    await act(() => reload)
+    // The reload's fallback is the library from before the recheck: it never goes over the newer one.
+    expect(editor().libraryFiles.find((f) => f.name === 'Input')!.title).toBe('Library A')
+    expect(before).not.toBe('Library A')
+  })
+
   it('does not read the functions of an unchanged library again on a recheck', async () => {
     const { app } = await startCommands({ library: true })
     const parse = vi.spyOn(LANGUAGES.ps, 'findFunctions')

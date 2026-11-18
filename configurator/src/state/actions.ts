@@ -166,7 +166,7 @@ function samePaths(a: CommandFile[], b: CommandFile[]): boolean {
 
 /**
  * Reads the config, the command files and the icon sets of an opened folder. `library` is the
- * library already held (none for a folder being opened): kept when the library cannot be read.
+ * library already held (none for a folder being opened): given back itself when the library cannot be read.
  */
 async function readSession(folder: FolderAccess, configPath: string, library: LibraryFile[] = []): Promise<Session> {
   const configFile = await readTextFile(folder, configPath)
@@ -612,14 +612,17 @@ export function createActions(
       const state = getState()
       // Numbered with the rechecks' reads of the library, so the newest read of it wins whichever ends first.
       const libraryRead = commands.startLibraryRead()
+      const heldLibrary = state.screen === 'edit' ? state.libraryFiles : []
       try {
-        const read = await readSession(file.folder, file.configFile.path, state.screen === 'edit' ? state.libraryFiles : [])
+        const read = await readSession(file.folder, file.configFile.path, heldLibrary)
         if (token !== loads || held !== file) return
         // Command files with unsaved edits keep the version they were edited on.
         const files = mergeAfterRead(before, commandFiles, read.commandFiles, commands.draftPaths())
         const now = getState()
-        // A recheck that started after this read has put a newer library in the state already.
-        const overtaken = !commands.takeLibraryRead(libraryRead) && now.screen === 'edit'
+        // A recheck that started after this read has put a newer library in the state already. A read
+        // that failed gave back the library held at the start, which never goes over the state's.
+        const failed = read.libraryFiles === heldLibrary
+        const overtaken = (failed || !commands.takeLibraryRead(libraryRead)) && now.screen === 'edit'
         const libraryFiles = overtaken ? now.libraryFiles : read.libraryFiles
         const session = { ...read, libraryFiles, commandFiles: files, catalog: commandCatalog(files) }
         dispatch({ type: 'reloaded', session })

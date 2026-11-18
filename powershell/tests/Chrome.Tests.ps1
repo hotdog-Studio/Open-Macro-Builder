@@ -64,6 +64,9 @@ Describe 'Chrome commands send their keys only to Chrome' {
         Should -Invoke EnsureActiveOrOpen -Times 1 -Exactly -ParameterFilter { $Exe -eq 'chrome.exe' -and $Program -eq 'chrome.exe' }
         $script:sent.Count | Should -Be 0
     }
+    It 'has no ChromeNewTabInGroup: Chrome has no shortcut for a new tab in a group, and Shift+Alt+T focuses the toolbar' {
+        Get-Command ChromeNewTabInGroup -CommandType Function -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    }
     It 'EnsureActiveOrOpenChrome passes on whether Chrome is active' {
         Mock EnsureActiveOrOpen { $true }
         EnsureActiveOrOpenChrome $null | Should -BeTrue

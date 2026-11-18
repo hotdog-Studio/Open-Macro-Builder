@@ -36,7 +36,6 @@ function OpenGoogle { param($Macro) ActivateOrOpenChrome 'https://www.google.com
 function ChromeOpen { param($Macro) ActivateOrOpenChrome }
 
 function ChromeNewTab { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+t' } }
-function ChromeNewTabInGroup { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'LAlt+Shift+t' } }
 function ChromeOpenNewWindow { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+n' } }
 function ChromeOpenIncognitoWindow { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+n' } }
 function ChromeOpenDownloads { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+j' } }

@@ -61,15 +61,6 @@ ChromeNewTab(Macro) {
 }
 
 /**
- * Opens a new tab in the current tab group in Google Chrome.
- * @param {Macro} Macro - The macro object (not used in this function).
- */
-ChromeNewTabInGroup(Macro) {
-    if EnsureActiveOrOpenChrome(Macro)
-        Send("{LAlt Down}{Shift Down}t{Shift Up}{LAlt Up}")
-}
-
-/**
  * Opens a new window in Google Chrome.
  * @param {Macro} Macro - The macro object (not used in this function).
  */

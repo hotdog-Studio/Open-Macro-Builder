@@ -2,7 +2,7 @@
 
 ; ************************* Helper Functions *********************
 /**
- * Activates an existing Window or opens a Program if the Window does not exist.
+ * Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows.
  * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
  * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
@@ -23,20 +23,21 @@ ActivateOrOpen(Window, Program, Args := "")
 	else
 	{   ; else start requested Program
         Run(ProgramCommandLine(Program, Args))
-        WinWait(Window,,5)		; wait up to 5 seconds for Window to exist
-		
-		if WinActive(Window) {
-            WinActivateBottom Window ; Uses the last found Window.
-        }
-        else {
-            WinActivate  ; Uses the last found Window.
+        if WinWait(Window,,5)  ; 0 when no window appeared in 5 seconds
+        {
+            if WinActive(Window) {
+                WinActivateBottom Window
+            }
+            else {
+                WinActivate  ; the window WinWait found
+            }
         }
 	}
 	return
 }
 
 /**
- * Opens a Program and activates its Window.
+ * Opens a Program and activates its Window once it appears. If no window appears within 5 seconds, nothing is activated.
  * @param {String} Window - The Window to wait for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run.
  * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
@@ -45,9 +46,8 @@ ActivateOrOpen(Window, Program, Args := "")
 Open(Window, Program, Args := "")
 {
     Run(ProgramCommandLine(Program, Args))
-    WinWait(Window,,5)		; wait up to 5 seconds for Window to exist
-    
-    WinActivate  ; Uses the last found Window.
+    if WinWait(Window,,5)  ; 0 when no window appeared in 5 seconds
+        WinActivate  ; the window WinWait found
 }
 
 /**
@@ -55,9 +55,9 @@ Open(Window, Program, Args := "")
  * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
  * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
- * @example EnsureActiveOrOpen("ahk_exe notepad.exe", "notepad", "")
+ * @example EnsureActiveOrOpen("ahk_exe notepad.exe", "notepad")
  */
-EnsureActiveOrOpen(Window, Program, Args)
+EnsureActiveOrOpen(Window, Program, Args := "")
 {
    ; check if Window exists
    if WinExist(Window)
@@ -69,11 +69,8 @@ EnsureActiveOrOpen(Window, Program, Args)
 	else
 	{   ; else start requested Program
         Run(ProgramCommandLine(Program, Args))
-		WinWait(Window,,5)		; wait up to 5 seconds for Window to exist
-		
-		if !WinActive(Window) {
-            WinActivate  ; Uses the last found Window.
-        }
+        if WinWait(Window,,5) && !WinActive(Window)  ; WinWait gives 0 when no window appeared in 5 seconds
+            WinActivate  ; the window WinWait found
 	}
 	return
 }

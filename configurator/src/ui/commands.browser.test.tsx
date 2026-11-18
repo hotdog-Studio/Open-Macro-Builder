@@ -479,7 +479,7 @@ describe('Commands tab: docs on hover', () => {
     await openFile('windows')
     await hover(await wordPoint('ActivateOrOpen'))
     await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
-    expect(card()!.textContent).toContain('Activates an existing Window or opens a Program if the Window does not exist.')
+    expect(card()!.textContent).toContain("Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows.")
     expect(card()!.textContent).toContain('ahk/commands/helper.ahk · line')
   })
 

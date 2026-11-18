@@ -44,4 +44,30 @@ CheckReturn("WinWait", 1)
 EnsureActiveOrOpen("ahk_exe macropad-check.exe", "macropad-check.exe", "0")
 CheckCase("EnsureActiveOrOpen starts")
 
+; When no window appears within 5 seconds, nothing is activated.
+CheckReturn("WinWait", 0)
+ActivateOrOpen("ahk_exe macropad-check.exe", "macropad-check.exe")
+CheckCase("ActivateOrOpen no window appears")
+CheckReturn("WinWait", 0)
+Open("ahk_exe macropad-check.exe", "macropad-check.exe")
+CheckCase("Open no window appears")
+CheckReturn("WinWait", 0)
+EnsureActiveOrOpen("ahk_exe macropad-check.exe", "macropad-check.exe", "")
+CheckCase("EnsureActiveOrOpen no window appears")
+
+; An existing window: activated, or when one is already active the bottom one comes forward.
+CheckReturn("WinExist", 1)
+ActivateOrOpen("ahk_exe macropad-check.exe", "macropad-check.exe")
+CheckCase("ActivateOrOpen window exists")
+CheckReturn("WinExist", 1)
+CheckReturn("WinActive", 1)
+ActivateOrOpen("ahk_exe macropad-check.exe", "macropad-check.exe")
+CheckCase("ActivateOrOpen window already active")
+
+; Args is optional, as its doc says.
+CheckReturn("WinExist", 1)
+CheckReturn("WinActive", 1)
+EnsureActiveOrOpen("ahk_exe macropad-check.exe", "macropad-check.exe")
+CheckCase("EnsureActiveOrOpen with two arguments")
+
 CheckDone()

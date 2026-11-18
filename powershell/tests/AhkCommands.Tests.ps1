@@ -22,6 +22,12 @@ BeforeDiscovery {
                 'ActivateOrOpen starts'             = 'WinExist|ahk_exe macropad-check.exe ; Run|"macropad-check.exe" --a --b https://x.test/?a=1&b=2 ; WinWait|ahk_exe macropad-check.exe|5 ; WinActivate|'
                 'Open starts'                       = 'Run|"C:\Program Files\Macropad Check\check.exe" --a ; WinWait|ahk_exe macropad-check.exe|5 ; WinActivate|'
                 'EnsureActiveOrOpen starts'         = 'WinExist|ahk_exe macropad-check.exe ; Run|"macropad-check.exe" 0 ; WinWait|ahk_exe macropad-check.exe|5 ; WinActivate|'
+                'ActivateOrOpen no window appears'  = 'WinExist|ahk_exe macropad-check.exe ; Run|"macropad-check.exe" ; WinWait|ahk_exe macropad-check.exe|5'
+                'Open no window appears'            = 'Run|"macropad-check.exe" ; WinWait|ahk_exe macropad-check.exe|5'
+                'EnsureActiveOrOpen no window appears' = 'WinExist|ahk_exe macropad-check.exe ; Run|"macropad-check.exe" ; WinWait|ahk_exe macropad-check.exe|5'
+                'ActivateOrOpen window exists'      = 'WinExist|ahk_exe macropad-check.exe ; WinActivate|'
+                'ActivateOrOpen window already active' = 'WinExist|ahk_exe macropad-check.exe ; WinActivateBottom|ahk_exe macropad-check.exe'
+                'EnsureActiveOrOpen with two arguments' = 'WinExist|ahk_exe macropad-check.exe'
             }
         }
     )

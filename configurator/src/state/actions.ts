@@ -249,7 +249,15 @@ export function createActions(
     await saving?.catch(() => undefined)
   }
 
+  /**
+   * The folder the app has just filled with the starter, until the editor opens on it or any
+   * other folder is opened or closed. Only that folder opens on Get started: one that already
+   * held a setup opens on Pad shape.
+   */
+  let fresh: FolderAccess | null = null
+
   function forget(): void {
+    fresh = null
     stopWatch?.()
     stopWatch = null
     held = null
@@ -289,7 +297,9 @@ export function createActions(
 
   /** The editor opens on a loaded session. */
   function opened(session: Session, settings: Settings): void {
-    dispatch({ type: 'loaded', session, settings })
+    // Read before forget() clears it.
+    const tab = session.folder === fresh ? 'start' : undefined
+    dispatch({ type: 'loaded', session, settings, tab })
     forget()
     hold(session.folder, session.configFile, session.commandFiles)
   }
@@ -447,7 +457,9 @@ export function createActions(
     } finally {
       copying = false
     }
-    if (copied && token === loads) await load(folder)
+    if (!copied || token !== loads) return
+    fresh = folder
+    await load(folder)
   }
 
   /** Loads the starter, then writes it; false when either failed, and the open screen says why. */

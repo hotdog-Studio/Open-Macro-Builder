@@ -90,7 +90,7 @@ const textOf = (lines: string[]): string => oneLine(lines.join(' '))
 function readParamTag(tag: Tag, params: ParamDoc[]): void {
   const match = PARAM_TAG.exec(tag.lines[0].trim())
   if (!match) return
-  const name = match[2].replace(/^\[|\]$/g, '').split('=')[0].trim().toLowerCase()
+  const name = match[2].replace(/^\[/, '').replace(/\]$/, '').split('=')[0].trim().toLowerCase()
   const param = params.find((p) => p.name.toLowerCase() === name)
   if (!param) return
   param.type = match[1]?.trim() ?? ''
@@ -101,7 +101,7 @@ function readParamTag(tag: Tag, params: ParamDoc[]): void {
 function readExample(tag: Tag): string {
   const lines = [tag.lines[0].trim(), ...tag.lines.slice(1)]
   while (lines.length > 0 && lines[0].trim() === '') lines.shift()
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop()
+  while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop()
   return lines.join('\n')
 }
 

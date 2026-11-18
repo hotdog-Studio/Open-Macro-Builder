@@ -1,17 +1,52 @@
 BeforeAll {
     . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Interop.ps1"; . "$PSScriptRoot\..\lib\Input.ps1"
-    # The tests 'on this PC' expect a Latin keyboard layout on the active window (a typed by VK_A alone,
-    # Enter on scan code 1C). $null when it is one; else why not, naming the layout. Asks Windows
-    # directly, with both VkKeyScanEx and MapVirtualKeyEx, not through the functions those tests check.
-    function Get-NotLatinLayoutReason {
-        param([IntPtr]$Layout = [Macropad.Native]::WindowLayout([Macropad.Native]::GetForegroundWindow()))
-        if ([int][Macropad.Native]::KeyScan([char]'a', $Layout) -eq 0x41 -and [long][Macropad.Native]::KeyCharacter(0x41, $Layout) -eq 0x41) { return $null }
-        Add-Type -AssemblyName System.Windows.Forms
-        $name = @([System.Windows.Forms.InputLanguage]::InstalledInputLanguages | Where-Object { $_.Handle -eq $Layout } | ForEach-Object { $_.LayoutName })
-        $language = [int]($Layout.ToInt64() -band 0xFFFF)
-        try { $culture = [System.Globalization.CultureInfo]::GetCultureInfo($language).Name } catch { $culture = "language $language" }
-        $label = (@($name) + $culture + ('0x{0:X8}' -f $Layout.ToInt64()) | Where-Object { $_ }) -join ', '
-        "the keyboard layout of the active window ($label) is not a Latin one: no key types a on its own as VK_A"
+    # The tests 'on this PC' read the keyboard layout of the active window. Each first checks the one
+    # condition it relies on, from what Windows says the layout and the keyboard are, and skips, naming
+    # them, when it does not hold. These checks use none of the [Macropad.Native] calls the tests
+    # exercise, so a broken call fails its test instead of skipping it.
+    if (-not ('LayoutTest.Win' -as [type])) {
+        Add-Type -Namespace LayoutTest -Name Win -MemberDefinition @"
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
+[DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
+[DllImport("user32.dll")] public static extern int GetKeyboardType(int typeFlag);
+"@
+    }
+    # The active window's layout: its handle, its layout id (KLID) and name from the registry, and the
+    # language the layout is made for.
+    function Get-ActiveLayoutIdentity {
+        $handle = [LayoutTest.Win]::GetKeyboardLayout([LayoutTest.Win]::GetWindowThreadProcessId([LayoutTest.Win]::GetForegroundWindow(), [IntPtr]::Zero))
+        $value = $handle.ToInt64() -band 0xFFFFFFFFL
+        $device = [int](($value -shr 16) -band 0xFFFF)
+        $layouts = 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layouts'
+        $klid = '{0:X8}' -f $device
+        if (($device -band 0xF000) -eq 0xF000) {
+            # A variant, such as US-Dvorak: the registry lists it under its Layout Id.
+            $id = '{0:X4}' -f ($device -band 0x0FFF)
+            $klid = @(Get-ChildItem $layouts | Where-Object { (Get-ItemProperty $_.PSPath).'Layout Id' -eq $id } | ForEach-Object { $_.PSChildName })[0]
+        }
+        $text = ''
+        if ($klid -and (Test-Path "$layouts\$klid")) { $text = (Get-ItemProperty "$layouts\$klid").'Layout Text' }
+        $language = if ($klid) { [Convert]::ToInt32($klid.Substring(4), 16) } else { [int]($value -band 0xFFFF) }
+        try { $culture = [System.Globalization.CultureInfo]::GetCultureInfo($language) } catch { $culture = $null }
+        $name = if ($culture) { $culture.Name } else { "language $language" }
+        [pscustomobject]@{ Culture = $culture; Label = ((@($text, $name, "KLID $klid", ('0x{0:X8}' -f $value)) | Where-Object { $_ }) -join ', ') }
+    }
+    # Why a test that needs a key typing a as VK_A cannot run here, or $null when it can. That holds for
+    # layouts made for a language written in Latin letters (Windows code pages 1250, 1252, 1254, 1257,
+    # 1258) and for the Chinese, Japanese and Korean layouts, whose letter keys are those of a US keyboard.
+    function Get-NoLatinLetterReason {
+        $layout = Get-ActiveLayoutIdentity
+        $codePage = if ($layout.Culture) { $layout.Culture.TextInfo.ANSICodePage } else { 0 }
+        if ($codePage -in 1250, 1252, 1254, 1257, 1258, 932, 936, 949, 950) { return $null }
+        "the keyboard layout of the active window ($($layout.Label)) is not made for Latin letters (code page $codePage)"
+    }
+    # Why a test that needs Enter on scan code 1C cannot run here, or $null when it can: true of the
+    # keyboards of an IBM PC/AT, of the enhanced 101/102-key one and of the Japanese one (types 3, 4, 7).
+    function Get-NoPcEnterReason {
+        $type = [LayoutTest.Win]::GetKeyboardType(0)
+        if ($type -in 3, 4, 7) { return $null }
+        "the keyboard of the active layout ($((Get-ActiveLayoutIdentity).Label)) is of type $type, not one whose Enter is scan code 1C"
     }
 }
 Describe 'Get-VirtualKey' {
@@ -77,7 +112,7 @@ Describe 'Get-VirtualKey for a character the table has no name for' {
 }
 Describe 'Get-LayoutCharacter on this PC' {
     It 'gives the character a key types on the real keyboard layout' {
-        $why = Get-NotLatinLayoutReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
+        $why = Get-NoLatinLetterReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
         Get-LayoutCharacter 0x41 | Should -Be 'A'
         Get-LayoutCharacter 0x0D | Should -Not -BeNullOrEmpty
         Get-LayoutCharacter 0x7C | Should -Be '' -Because 'F13 types no character'
@@ -116,7 +151,7 @@ Describe 'Get-LayoutVirtualKey' {
 }
 Describe 'Get-LayoutVirtualKey on this PC' {
     It 'finds the key of a on the real keyboard layout' {
-        $why = Get-NotLatinLayoutReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
+        $why = Get-NoLatinLetterReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
         # Any Latin layout types a with VK_A alone; a lookup that always failed would give -1.
         Get-LayoutVirtualKey 'a' | Should -Be 0x41
         Get-ForegroundKeyboardLayout | Should -Not -Be ([IntPtr]::Zero)
@@ -157,7 +192,7 @@ Describe 'Send-KeyEvent' {
 }
 Describe 'Get-LayoutScanCode on this PC' {
     It 'gives Enter its scan code on the real keyboard layout' {
-        $why = Get-NotLatinLayoutReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
+        $why = Get-NoPcEnterReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
         Get-LayoutScanCode 0x0D (Get-ForegroundKeyboardLayout) | Should -Be 0x1C
     }
 }

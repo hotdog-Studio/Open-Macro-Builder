@@ -115,9 +115,9 @@ function Wait-Key {
 .SYNOPSIS
 Tells whether CapsLock, NumLock, ScrollLock or Insert is switched on. It stands in for AutoHotkey's GetKeyState.
 .DESCRIPTION
-Reads the on or off state of a key that switches between two states each time it is pressed. For whether a key is held down right now, use Test-KeyPressed.
+Reads the on or off state of a key that switches between two states each time it is pressed. For CapsLock, NumLock and ScrollLock, on is when the key's light is lit, on a keyboard that has one. For Insert, Windows only switches the state each time the key is pressed: it does not tell whether the program you are typing in writes over text, because each program keeps that for itself. For whether a key is held down right now, use Test-KeyPressed.
 .PARAMETER Name
-The key to check.
+The key to check: 'CapsLock', 'NumLock', 'ScrollLock' or 'Insert'.
 .OUTPUTS
 True when the key is switched on, False when it is off.
 .EXAMPLE
@@ -136,7 +136,7 @@ Taps the key only when its state is not the wanted one, so calling it twice does
 .PARAMETER Name
 The lock key to set.
 .PARAMETER On
-$true to switch the key on, $false to switch it off.
+$true to switch the key on, $false to switch it off. Leaving it out switches the key off.
 .EXAMPLE
 Set-LockKeyState 'CapsLock' $false
 .EXAMPLE

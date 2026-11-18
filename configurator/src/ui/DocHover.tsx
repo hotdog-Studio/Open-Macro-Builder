@@ -127,7 +127,8 @@ function rowHandlers(entry: DictEntry, onClick: () => void, actions: HoverAction
 /** Where the card goes: level with its row beside the panel, or under the row over the panel when the window is too narrow. */
 function place(box: HTMLElement, row: HTMLElement): void {
   const rect = row.getBoundingClientRect()
-  const panelLeft = (row.closest('aside') ?? row).getBoundingClientRect().left
+  // Every list of the provider is in the right panel's <aside> (CommandsTab), its only user.
+  const panelLeft = row.closest('aside')!.getBoundingClientRect().left
   const { clientWidth, clientHeight } = document.documentElement
   const beside = panelLeft - 2 * GAP >= MIN_WIDTH
   if (beside) {

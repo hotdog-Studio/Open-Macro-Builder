@@ -115,12 +115,11 @@ interface ParamParts {
   text: string
 }
 
-/** The `{Type}` the line starts with, and what follows it. A `{...}` with nothing after it is the name, not a type. */
+/** The `{Type}` the line starts with, and what follows it. */
 function splitType(line: string): { type: string | undefined; rest: string } {
   const close = line.indexOf('}')
   if (!line.startsWith('{') || close === -1) return { type: undefined, rest: line }
-  const rest = line.slice(close + 1).trimStart()
-  return rest === '' ? { type: undefined, rest: line } : { type: line.slice(1, close), rest }
+  return { type: line.slice(1, close), rest: line.slice(close + 1).trimStart() }
 }
 
 /** The name at the start of `text`, `[...]` or up to the next whitespace, and what follows it. */

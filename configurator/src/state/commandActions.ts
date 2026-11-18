@@ -243,6 +243,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       return
     }
     const state = deps.getState()
+    // The screen check never decides (a held folder means the editor) but gives the types the editor's state.
     if (deps.folder() !== folder || state.screen !== 'edit' || !takeLibraryRead(n)) return
     if (!sameLibrary(state.libraryFiles, fresh)) dispatch({ type: 'library-files', files: fresh })
   }

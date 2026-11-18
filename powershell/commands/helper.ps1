@@ -1,5 +1,21 @@
 # Helper commands (ahk/commands/helper.ahk). $Exe replaces AHK's "ahk_exe X" window title.
 
+<#
+.SYNOPSIS
+Brings a program's window forward, or starts the program if it has none.
+.DESCRIPTION
+Looks for a visible window of the program named by Exe. If it has one, that window is activated; when one of its windows is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows. If it has none, the program is started, up to 5 seconds are given for its window to appear, and the window is activated.
+.PARAMETER Exe
+The program's executable name as Task Manager shows it, such as 'chrome.exe'. It is how the program's windows are found.
+.PARAMETER Program
+What to start when the program has no window: a program name such as 'chrome', or the full path of a file.
+.PARAMETER Arguments
+Text given to the program on its command line when it is started, such as a web address. Not used when a window already exists.
+.EXAMPLE
+ActivateOrOpen 'chrome.exe' 'chrome'
+.EXAMPLE
+ActivateOrOpen 'chrome.exe' 'chrome' -Arguments 'https://example.com'
+#>
 function ActivateOrOpen {
     param([string]$Exe, [string]$Program, [string]$Arguments = '')
     if (-not (Invoke-WindowActivation $Exe)) {
@@ -9,6 +25,22 @@ function ActivateOrOpen {
     }
 }
 
+<#
+.SYNOPSIS
+Starts a program and brings its window to the front.
+.DESCRIPTION
+Starts the program every time, even when it is already running, then waits up to 5 seconds until the program has a visible window (at once if it already has one) and activates the topmost of its windows. If no window appears in time, nothing is activated.
+.PARAMETER Exe
+The program's executable name as Task Manager shows it, such as 'notepad.exe'. It is how the program's windows are found.
+.PARAMETER Program
+What to start: a program name such as 'notepad', or the full path of a file.
+.PARAMETER Arguments
+Text given to the program on its command line, such as a file to open.
+.EXAMPLE
+Open 'notepad.exe' 'notepad'
+.EXAMPLE
+Open 'notepad.exe' 'notepad' -Arguments 'C:\Users\Public\notes.txt'
+#>
 function Open {
     param([string]$Exe, [string]$Program, [string]$Arguments = '')
     Start-Program $Program $Arguments
@@ -16,6 +48,20 @@ function Open {
     if ($windows.Count -gt 0) { [void](Set-ActiveWindow $windows[0]) }
 }
 
+<#
+.SYNOPSIS
+Makes a program's window the active one, starting the program if needed.
+.DESCRIPTION
+If the program has no visible window, it is started and up to 5 seconds are given for a window to appear. Then, unless one of the program's windows is already the active window, its topmost window is activated. Unlike ActivateOrOpen, it never moves on to another window of the program when one is already active.
+.PARAMETER Exe
+The program's executable name as Task Manager shows it, such as 'code.exe'. It is how the program's windows are found.
+.PARAMETER Program
+What to start when the program has no window: a program name, or the full path of a file.
+.PARAMETER Arguments
+Text given to the program on its command line when it is started. Not used when a window already exists.
+.EXAMPLE
+EnsureActiveOrOpen 'notepad.exe' 'notepad'
+#>
 function EnsureActiveOrOpen {
     param([string]$Exe, [string]$Program, [string]$Arguments = '')
     $windows = Get-ProcessWindow $Exe
@@ -28,39 +74,123 @@ function EnsureActiveOrOpen {
     }
 }
 
+<#
+.SYNOPSIS
+Runs a Python script in its own process and does not wait for it.
+.DESCRIPTION
+Starts python with the script's path in double quotes (so spaces in the path are fine), followed by the arguments. Python must be installed so that the name python works. The macro carries on at once, without waiting for the script to finish.
+.PARAMETER ScriptPath
+The full path of the .py file.
+.PARAMETER Arguments
+Text that follows the script's path on the command line, as one string.
+.EXAMPLE
+RunPythonScript 'C:\Scripts\backup.py'
+.EXAMPLE
+RunPythonScript 'C:\Scripts\backup.py' -Arguments '--quick'
+#>
 function RunPythonScript {
     param($ScriptPath, $Arguments = '')
     Start-Program 'python' ("`"$ScriptPath`" $Arguments".Trim())
 }
 
+<#
+.SYNOPSIS
+Runs a PowerShell script in its own process and does not wait for it.
+.DESCRIPTION
+Starts Windows PowerShell with the script's path in double quotes (so spaces in the path are fine), followed by the arguments. The script runs without the user's profile, and even where the execution policy would otherwise refuse to run scripts. The macro carries on at once, without waiting for the script to finish.
+.PARAMETER ScriptPath
+The full path of the .ps1 file.
+.PARAMETER Arguments
+Text that follows the script's path on the command line, as one string.
+.EXAMPLE
+RunPowerShellScript 'C:\Scripts\cleanup.ps1'
+.EXAMPLE
+RunPowerShellScript 'C:\Scripts\cleanup.ps1' -Arguments '-Force'
+#>
 function RunPowerShellScript {
     param($ScriptPath, $Arguments = '')
     Start-Program 'powershell' ("-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" $Arguments".Trim())
 }
 
+<#
+.SYNOPSIS
+Runs a batch file in its own process and does not wait for it.
+.DESCRIPTION
+Starts the file at ScriptPath, with the arguments after it. The macro carries on at once, without waiting for the batch file to finish.
+.PARAMETER ScriptPath
+The full path of the .bat or .cmd file.
+.PARAMETER Arguments
+Text given to the batch file on its command line, as one string.
+.EXAMPLE
+RunBatchScript 'C:\Scripts\backup.bat'
+.EXAMPLE
+RunBatchScript 'C:\Scripts\backup.bat' -Arguments 'quick'
+#>
 function RunBatchScript {
     param($ScriptPath, $Arguments = '')
     Start-Program $ScriptPath $Arguments
 }
 
+<#
+.SYNOPSIS
+Shows a message box with the macro's name and description.
+.DESCRIPTION
+Meant to be the action of a macro: the box has the macro's name as its title and its description as its text. The macro waits until the box is closed.
+.PARAMETER Macro
+The macro of the key that was pressed. The function reads its Name (the title of the box) and its Description (the text in it).
+.EXAMPLE
+Message $Macro
+#>
 function Message {
     param($Macro)
     [void][System.Windows.Forms.MessageBox]::Show($Macro.Description, $Macro.Name)
 }
 
+<#
+.SYNOPSIS
+Shows a message box telling you to replace this macro with your own.
+.DESCRIPTION
+A placeholder action for macros that have no real command yet. The box says "Replace" followed by the macro's name and "with your own!", and has the macro's name as its title. The macro waits until the box is closed.
+.PARAMETER Macro
+The macro of the key that was pressed. The function reads only its Name.
+.EXAMPLE
+ReplaceMe $Macro
+#>
 function ReplaceMe {
     param($Macro)
     [void][System.Windows.Forms.MessageBox]::Show("Replace $($Macro.Name) with your own!", $Macro.Name)
 }
 
-# File Explorer windows only (class CabinetWClass). explorer.exe also owns the taskbar, the desktop
-# and helper windows, so matching by exe (as AHK's "ahk_exe explorer.exe" did) never found them.
+<#
+.SYNOPSIS
+Lists the open File Explorer windows.
+.DESCRIPTION
+Only File Explorer windows count (window class CabinetWClass), not the taskbar, the desktop or the other windows that explorer.exe owns, so matching by the program's name would not find them. Hidden windows are left out.
+.OUTPUTS
+A list of window handles, one for each open File Explorer window; empty when there are none. A window handle is the number Windows uses to name one window, and Set-ActiveWindow takes it.
+.EXAMPLE
+Get-ExplorerWindows
+.EXAMPLE
+$windows = Get-ExplorerWindows
+Set-ActiveWindow $windows[0]
+#>
 function Get-ExplorerWindows {
     $windows = Find-Window 'ahk_class CabinetWClass' -All
     , [IntPtr[]]@($windows)
 }
 
-# Opens File Explorer (at $Path when given) and activates the window it opens.
+<#
+.SYNOPSIS
+Opens a File Explorer window and brings it to the front.
+.DESCRIPTION
+Starts File Explorer, at the folder in Path when one is given, and activates the new window as soon as it appears. It looks for about 5 seconds; if no new window shows up in that time, it gives up without an error.
+.PARAMETER Path
+The folder to show. Without it, File Explorer opens where it normally starts.
+.EXAMPLE
+Open-ExplorerWindow
+.EXAMPLE
+Open-ExplorerWindow -Path 'C:\Users\Public\Documents'
+#>
 function Open-ExplorerWindow {
     param([string]$Path = '')
     $before = Get-ExplorerWindows

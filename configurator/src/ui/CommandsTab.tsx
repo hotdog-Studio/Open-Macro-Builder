@@ -400,11 +400,14 @@ function NewFileDialog({ onClose }: Readonly<{ onClose: () => void }>) {
         }}
       />
       <div className="mt-3 space-y-1">
-        {radio('yours', 'Yours (local/, not committed)')}
-        {radio('shared', 'Shared (committed to git)')}
+        {radio('yours', 'Yours (kept in local/)')}
+        {radio('shared', 'Shared (bundled in with the built-in commands)')}
       </div>
       {group === 'shared' && (
-        <p className={STYLE.note}>Shared files are committed to git. Keep personal details out of them.</p>
+        <p className={STYLE.note}>
+          Shared files sit beside the built-in commands, where a command meant for other people goes. Keep personal
+          details out of them.
+        </p>
       )}
       <div className="mt-3 flex gap-4">
         {LANG_IDS.map((l) => (

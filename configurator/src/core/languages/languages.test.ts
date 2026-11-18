@@ -647,8 +647,8 @@ describe('include listings', () => {
   const CONFIG_AHK = readRepoText('ahk/config.ahk')
   const HUB_HEADER = [
     '#Requires AutoHotkey v2.0',
-    '; Your own AutoHotkey commands. ahk\\config.ahk includes this file when it exists. The local folder',
-    '; is ignored by git, so nothing here is ever committed.',
+    String.raw`; Your own AutoHotkey commands. ahk\config.ahk includes this file when it exists. The local folder`,
+    String.raw`; holds only what is yours; the commands that came with Open Macro Builder are in ahk\commands.`,
     '',
   ].join('\n')
 

@@ -86,7 +86,13 @@ describe('opening a folder', () => {
     const folder = repoFolder()
     await folder.writeBytes(SETTINGS_PATH, new TextEncoder().encode('{ "languages": ["ahk"] }\n'))
     const user = await openFolder(fakePlatform(folder))
-    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
+    const copyButton = await screen.findByRole('button', { name: 'Edit a copy in local/' })
+    expect(
+      screen.getByText(
+        'Your own layout lives in local/config.json, apart from the files that came with Open Macro Builder. It starts as a copy of the bundled example, config.json, which is left as it is.',
+      ),
+    ).toBeTruthy()
+    await user.click(copyButton)
     await screen.findByRole('list', { name: 'Keys' })
     expect(await folder.readBytes('local/config.json')).toEqual(await folder.readBytes('config.json'))
     expect(screen.getByText('local/config.json')).toBeTruthy()

@@ -103,8 +103,8 @@ export function OpenScreen() {
           choices={[{ label: 'Edit a copy in local/', primary: true, onChoose: () => void actions.chooseConfig() }]}
         >
           <p>
-            Your own layout lives in local/config.json, which git ignores, so updates never touch it. It starts as
-            a copy of the shared example, config.json, which is left as it is.
+            Your own layout lives in local/config.json, apart from the files that came with Open Macro Builder. It
+            starts as a copy of the bundled example, config.json, which is left as it is.
           </p>
         </ConfirmDialog>
       )}

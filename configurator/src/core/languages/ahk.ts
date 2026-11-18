@@ -275,8 +275,10 @@ const CONFIG_DIR = 'ahk'
 const SHARED_DIR = 'ahk/commands'
 const HUB_HEADER =
   '#Requires AutoHotkey v2.0\n' +
-  '; Your own AutoHotkey commands. ahk\\config.ahk includes this file when it exists. The local folder\n' +
-  '; is ignored by git, so nothing here is ever committed.\n'
+  String.raw`; Your own AutoHotkey commands. ahk\config.ahk includes this file when it exists. The local folder` +
+  '\n' +
+  String.raw`; holds only what is yours; the commands that came with Open Macro Builder are in ahk\commands.` +
+  '\n'
 
 /** Lines that load a file: `#Include` or `#IncludeAgain`, then the target. */
 const INCLUDE = /^\s*#include(?:again)?\s(.*)$/i

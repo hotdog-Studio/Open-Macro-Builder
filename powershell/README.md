@@ -128,7 +128,7 @@ function Send-Greeting {
 }
 ```
 
-A parameter's `.PARAMETER` line must give its name as the function declares it. The first line of a library file (a file directly in `lib`), when it is a `#` comment, is the file's heading in the list. A first line that is `#requires`, `#region` or `#endregion` is not a heading; then, and when the first line is not a `#` comment, the file's name is the heading.
+A parameter's `.PARAMETER` line must give its name as the function declares it. The first line of a library file (a file directly in `lib`), when it is a `#` comment, is the file's heading in the list. A first line that is `#requires`, `#region` or `#endregion` is not a heading, and neither is a first line that is not a `#` comment. For those files the file's name is the heading.
 
 ## Test
 

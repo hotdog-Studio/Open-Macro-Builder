@@ -1,4 +1,19 @@
-BeforeAll { . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Interop.ps1"; . "$PSScriptRoot\..\lib\Input.ps1" }
+BeforeAll {
+    . "$PSScriptRoot\..\lib\Native.ps1"; . "$PSScriptRoot\..\lib\Interop.ps1"; . "$PSScriptRoot\..\lib\Input.ps1"
+    # The tests 'on this PC' expect a Latin keyboard layout on the active window (a typed by VK_A alone,
+    # Enter on scan code 1C). $null when it is one; else why not, naming the layout. Asks Windows
+    # directly, with both VkKeyScanEx and MapVirtualKeyEx, not through the functions those tests check.
+    function Get-NotLatinLayoutReason {
+        param([IntPtr]$Layout = [Macropad.Native]::WindowLayout([Macropad.Native]::GetForegroundWindow()))
+        if ([int][Macropad.Native]::KeyScan([char]'a', $Layout) -eq 0x41 -and [long][Macropad.Native]::KeyCharacter(0x41, $Layout) -eq 0x41) { return $null }
+        Add-Type -AssemblyName System.Windows.Forms
+        $name = @([System.Windows.Forms.InputLanguage]::InstalledInputLanguages | Where-Object { $_.Handle -eq $Layout } | ForEach-Object { $_.LayoutName })
+        $language = [int]($Layout.ToInt64() -band 0xFFFF)
+        try { $culture = [System.Globalization.CultureInfo]::GetCultureInfo($language).Name } catch { $culture = "language $language" }
+        $label = (@($name) + $culture + ('0x{0:X8}' -f $Layout.ToInt64()) | Where-Object { $_ }) -join ', '
+        "the keyboard layout of the active window ($label) is not a Latin one: no key types a on its own as VK_A"
+    }
+}
 Describe 'Get-VirtualKey' {
     It 'maps names case-insensitively' { Get-VirtualKey 'lwin' | Should -Be 0x5B; Get-VirtualKey 'F13' | Should -Be 0x7C; Get-VirtualKey 'a' | Should -Be 0x41 }
     It 'maps punctuation to the keys of a US keyboard when the layout cannot say' {
@@ -62,6 +77,7 @@ Describe 'Get-VirtualKey for a character the table has no name for' {
 }
 Describe 'Get-LayoutCharacter on this PC' {
     It 'gives the character a key types on the real keyboard layout' {
+        $why = Get-NotLatinLayoutReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
         Get-LayoutCharacter 0x41 | Should -Be 'A'
         Get-LayoutCharacter 0x0D | Should -Not -BeNullOrEmpty
         Get-LayoutCharacter 0x7C | Should -Be '' -Because 'F13 types no character'
@@ -100,6 +116,7 @@ Describe 'Get-LayoutVirtualKey' {
 }
 Describe 'Get-LayoutVirtualKey on this PC' {
     It 'finds the key of a on the real keyboard layout' {
+        $why = Get-NotLatinLayoutReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
         # Any Latin layout types a with VK_A alone; a lookup that always failed would give -1.
         Get-LayoutVirtualKey 'a' | Should -Be 0x41
         Get-ForegroundKeyboardLayout | Should -Not -Be ([IntPtr]::Zero)
@@ -140,6 +157,7 @@ Describe 'Send-KeyEvent' {
 }
 Describe 'Get-LayoutScanCode on this PC' {
     It 'gives Enter its scan code on the real keyboard layout' {
+        $why = Get-NotLatinLayoutReason; if ($why) { Set-ItResult -Skipped -Because $why; return }
         Get-LayoutScanCode 0x0D (Get-ForegroundKeyboardLayout) | Should -Be 0x1C
     }
 }

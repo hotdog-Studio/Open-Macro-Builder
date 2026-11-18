@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import { cleanup, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { replaceAll } from '../../test/codeEditor'
+import { replaceAll, typeAt } from '../../test/codeEditor'
 import { pairButton, startCommands } from '../../test/commandsTab'
+import { LANGUAGES } from '../core/languages'
 
 // The right panel's docs, past what otherCommands.test.tsx covers: rows of one name, the state of
 // groups, the one floating card, and the docs of the rows of "Commands in this file".
@@ -26,6 +27,19 @@ describe('the rows of Other commands available', () => {
     await user.click(rows('Twice')[0])
     expect(rows('Twice').map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
     expect(keyWarnings(error)).toEqual([])
+  })
+})
+
+describe('the dictionary behind the panel', () => {
+  it('parses a draft once, not on every keystroke in another file', async () => {
+    const { user } = await startCommands()
+    await user.click(pairButton('media'))
+    typeAt(0, '; kept\n')
+    await user.click(pairButton('windows'))
+    const parse = vi.spyOn(LANGUAGES.ahk, 'findFunctions')
+    typeAt(0, '; one\n')
+    typeAt(0, '; two\n')
+    expect(parse.mock.calls.filter(([text]) => text.startsWith('; kept\n'))).toHaveLength(0)
   })
 })
 

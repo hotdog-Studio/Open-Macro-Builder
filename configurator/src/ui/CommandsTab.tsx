@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { buildDictionary, type Dictionary } from '../core/commands/dictionary'
+import { buildDictionary, parseCache, type Dictionary } from '../core/commands/dictionary'
 import { checkNewFile } from '../core/commands/files'
 import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
@@ -610,10 +610,12 @@ export function CommandsTab() {
   const pair = shownPair(pairs, state.commands.pair)
   const file = pair?.files[lang]
   const shown = file?.file.path ?? null
-  const dict = useMemo(
-    () => buildDictionary({ lang, shown, commandFiles, libraryFiles, drafts }),
-    [lang, shown, commandFiles, libraryFiles, drafts],
-  )
+  // Kept across renders, so a keystroke in one file parses that file's text only.
+  const [cache] = useState(parseCache)
+  const dict = useMemo(() => {
+    cache.keep(drafts)
+    return buildDictionary({ lang, shown, commandFiles, libraryFiles, drafts }, cache)
+  }, [cache, lang, shown, commandFiles, libraryFiles, drafts])
   return (
     <>
       <LeftPanel>

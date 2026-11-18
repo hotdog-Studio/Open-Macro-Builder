@@ -10,6 +10,9 @@ const CLOSING: Record<LangId, string> = {
   ps: "PowerShell's own cmdlets are not listed here.",
 }
 
+/** What names a group in the set of toggled ones: its list and its key, as a file can stand in both lists. */
+const stateKey = (title: string, list: ListGroup) => `${title}/${list.group.key}`
+
 /** What names a row in the set of open ones: its file and name, so it survives the file being retyped. */
 const rowKey = (entry: DictEntry) => `${entry.source.path}\0${entry.fn.name.toLowerCase()}`
 
@@ -90,7 +93,7 @@ function Group({
 /** The right panel's second list: what the shown language's commands can call, with the docs of each. */
 export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
   const [query, setQuery] = useState('')
-  // A group's own state by key, for the ones the user has toggled; the others keep their starting state.
+  // A group's own state by list and key, for the ones the user has toggled; the others keep their starting state.
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const { row, card } = useDocHover()
@@ -115,8 +118,8 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
               key={list.group.key}
               list={list}
               // While the filter has text, a group with a match is open; its own state comes back after.
-              open={filtering || (toggled[list.group.key] ?? initially)}
-              onToggle={() => toggleGroup(list.group.key, initially)}
+              open={filtering || (toggled[stateKey(title, list)] ?? initially)}
+              onToggle={() => toggleGroup(stateKey(title, list), initially)}
               expanded={expanded}
               onToggleRow={toggleRow}
               hover={row}

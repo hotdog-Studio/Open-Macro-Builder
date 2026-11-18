@@ -29,6 +29,18 @@ describe('Other commands available', () => {
     expect(outline.compareDocumentPosition(other()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('opens and closes a group in its own list only', async () => {
+    const { user } = await start()
+    await user.click(pairButton('windows'))
+    const helpers = () => within(other()).getAllByRole('button', { name: /^helper/ })
+    const states = () => helpers().map((b) => b.getAttribute('aria-expanded'))
+    expect(states()).toEqual(['true', 'false'])
+    await user.click(helpers()[1])
+    expect(states()).toEqual(['true', 'true'])
+    await user.click(helpers()[0])
+    expect(states()).toEqual(['false', 'true'])
+  })
+
   it('keeps the commands of other files closed until asked, and leaves the shown file out', async () => {
     const { user } = await start()
     await user.click(pairButton('windows'))

@@ -46,6 +46,27 @@ Describe 'waits' {
     It 'returns zero after the timeout' { Wait-Window 'NoSuchWindow-xyz' -TimeoutMs 120 | Should -Be ([IntPtr]::Zero) }
     It 'reports an absent window as closed' { Wait-WindowClose 'NoSuchWindow-xyz' -TimeoutMs 100 | Should -BeTrue }
 }
+Describe 'Send-ControlKeys' {
+    It 'posts each key with the scan code it has on the keyboard layout of the window it goes to' {
+        # The control's layout (0x222) is not the macropad's own (0x111); only the control's gives scan 2B.
+        Mock Get-WindowKeyboardLayout { [IntPtr]0x222 } -ParameterFilter { $Hwnd -eq [IntPtr]0x5150 }
+        Mock Get-WindowKeyboardLayout { [IntPtr]0x111 } -ParameterFilter { $Hwnd -ne [IntPtr]0x5150 }
+        Mock Get-LayoutScanCode { 0x2B } -ParameterFilter { $Vk -eq 0x0D -and $Layout -eq [IntPtr]0x222 }
+        Mock Get-LayoutScanCode { 0x7E } -ParameterFilter { -not ($Vk -eq 0x0D -and $Layout -eq [IntPtr]0x222) }
+        Mock Send-ControlMessage {}
+        Send-ControlKeys ([IntPtr]0x5150) '{Enter}'
+        Should -Invoke Send-ControlMessage -Times 1 -Exactly -ParameterFilter { $Control -eq [IntPtr]0x5150 -and $Msg -eq 0x100 -and $WParam -eq [IntPtr]0x0D -and $LParam -eq [IntPtr]0x2B0001 }
+        Should -Invoke Send-ControlMessage -Times 1 -Exactly -ParameterFilter { $Control -eq [IntPtr]0x5150 -and $Msg -eq 0x101 -and $WParam -eq [IntPtr]0x0D -and $LParam -eq [IntPtr][long]0xC02B0001L }
+    }
+    It 'falls back to the macropad''s own layout when the scan code cannot be read' {
+        Mock Get-WindowKeyboardLayout { [IntPtr]0x222 }
+        Mock Get-LayoutScanCode { -1 }
+        Mock Send-ControlMessage {}
+        Send-ControlKeys ([IntPtr]0x5150) '{Enter}'
+        $own = [long][Macropad.Native]::MapVirtualKey(0x0D, 0)
+        Should -Invoke Send-ControlMessage -Times 1 -Exactly -ParameterFilter { $Msg -eq 0x100 -and $LParam -eq [IntPtr](1L -bor ($own -shl 16)) }
+    }
+}
 Describe 'Switch-Window' -Tag Integration {
     It 'activates a window by WinTitle' {
         $a = New-Object System.Windows.Forms.Form; $a.Text = "MacropadSwitchA $PID"; $a.Show()

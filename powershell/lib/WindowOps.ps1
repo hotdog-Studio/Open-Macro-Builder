@@ -481,18 +481,28 @@ Send-ControlKeys (Find-Control 'Run' 'Edit1') 'notepad'
 #>
 function Send-ControlKeys {
     param([IntPtr]$Control, [Parameter(Mandatory)][AllowEmptyString()][string]$Keys)
+    # Scan codes come from the keyboard layout of the window the keys go to, the one that reads them.
+    try { $layout = [IntPtr](Get-WindowKeyboardLayout $Control) } catch { $layout = [IntPtr]::Zero }
     foreach ($ev in @((ConvertFrom-AhkSend $Keys).Events)) {
         if ($ev.Char) {
             if ($ev.Up) { continue }
             foreach ($c in [char]::ConvertFromUtf32([int]$ev.Char).ToCharArray()) {
-                [void][Macropad.WindowApi]::Post($Control, 0x102, [IntPtr][int]$c, [IntPtr]1)
+                Send-ControlMessage $Control 0x102 ([IntPtr][int]$c) ([IntPtr]1)
             }
         } else {
-            $scan = [long][Macropad.Native]::MapVirtualKey([uint32]$ev.Vk, 0)
+            # -1 when that layout cannot be read: then the macropad's own layout, as before.
+            $scan = [long](Get-LayoutScanCode ([int]$ev.Vk) $layout)
+            if ($scan -lt 0) { $scan = [long][Macropad.Native]::MapVirtualKey([uint32]$ev.Vk, 0) }
             $lParam = 1L -bor ($scan -shl 16)
             $msg = 0x100
             if ($ev.Up) { $lParam = $lParam -bor 0xC0000000L; $msg = 0x101 }
-            [void][Macropad.WindowApi]::Post($Control, $msg, [IntPtr][long]$ev.Vk, [IntPtr]$lParam)
+            Send-ControlMessage $Control $msg ([IntPtr][long]$ev.Vk) ([IntPtr]$lParam)
         }
     }
+}
+
+# A seam for tests: one message posted to a control.
+function Send-ControlMessage {
+    param([IntPtr]$Control, [int]$Msg, [IntPtr]$WParam, [IntPtr]$LParam)
+    [void][Macropad.WindowApi]::Post($Control, $Msg, $WParam, $LParam)
 }

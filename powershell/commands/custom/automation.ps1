@@ -26,14 +26,19 @@ function Test-ChordText {
     try { [void](ConvertTo-KeyEvent $Chord); $true } catch { $false }
 }
 
+# The last form built under each name, shown or not (Application.OpenForms lists only shown ones).
+$script:AutomationForms = @{}
+
 function New-AutomationForm {
     param([string]$Name, [string]$Title, [int]$Height)
     # Showing a form again replaces the previous one and cancels the send it scheduled.
-    foreach ($old in @([System.Windows.Forms.Application]::OpenForms | Where-Object { $_.Name -eq $Name })) {
+    $old = $script:AutomationForms[$Name]
+    if ($null -ne $old) {
         if ($old.Tag -is [hashtable] -and $null -ne $old.Tag.PendingTimer) { $old.Tag.PendingTimer.Stop(); $old.Tag.PendingTimer.Dispose() }
-        $old.Dispose()
+        if (-not $old.IsDisposed) { $old.Dispose() }
     }
     $form = New-Object System.Windows.Forms.Form
+    $script:AutomationForms[$Name] = $form
     $form.Name = $Name
     $form.Text = $Title
     $form.TopMost = $true

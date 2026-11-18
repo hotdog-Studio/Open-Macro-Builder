@@ -162,19 +162,23 @@ Describe 'Start-PendingTimer' {
     }
 }
 Describe 'Delayed key and click forms' {
-    It '<Command> cancels its pending send when the form is opened again' -ForEach @(
-        @{ Command = 'ShowDelayedKeyForm'; Name = 'MacropadDelayedKeyForm' }
-        @{ Command = 'ShowDelayedClickForm'; Name = 'MacropadDelayedClickForm' }
+    # Built with the builders ShowDelayedKeyForm / ShowDelayedClickForm call, never shown: no window
+    # appears or takes focus while the tests run.
+    It '<Builder> cancels the pending send of the form it replaces' -ForEach @(
+        @{ Builder = 'New-DelayedKeyForm' }
+        @{ Builder = 'New-DelayedClickForm' }
     ) {
+        $old = & $Builder
+        $new = $null
         try {
-            & $Command $null
-            $old = [System.Windows.Forms.Application]::OpenForms[$Name]
             Start-PendingTimer $old 60000 { param($sender, $e) }
             $timer = $old.Tag.PendingTimer
-            & $Command $null
+            $new = & $Builder
             $timer.Enabled | Should -BeFalse
+            $old.IsDisposed | Should -BeTrue
+            $new.Visible | Should -BeFalse
         } finally {
-            foreach ($form in @([System.Windows.Forms.Application]::OpenForms | Where-Object { $_.Name -eq $Name })) { $form.Dispose() }
+            foreach ($form in @($old, $new)) { if ($null -ne $form -and -not $form.IsDisposed) { $form.Dispose() } }
         }
     }
 }

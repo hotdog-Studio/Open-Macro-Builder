@@ -70,6 +70,8 @@ function step(scan: ListScan, ch: string): ListPart {
   scan.bracket = Math.max(0, scan.bracket + (BRACKET[ch] ?? 0))
   if (outside) return 'before'
   if (scan.paren === 0) return 'end'
+  // No split inside brackets, for a type such as `[Dictionary[string,int]]`. So an unclosed `[` hides
+  // the parameters after it, on purpose: while it is typed it cannot be told from such a type whose `]` is still to come.
   return ch === ',' && scan.paren === 1 && scan.bracket === 0 ? 'split' : 'text'
 }
 

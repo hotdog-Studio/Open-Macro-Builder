@@ -480,6 +480,13 @@ describe('PowerShell findFunctions', () => {
     expect(paramMismatches({ ahk: 'OpenIt(Macro) {\n}\n', ps })).toEqual([])
   })
 
+  it('hides the parameters after an unclosed [, which while typing cannot be told from a type with a comma whose ] is still to come', () => {
+    const type = 'function A {\n    param(\n        [Dictionary[string,\n            int]]$Map,\n        $Y\n    )\n}'
+    const kept = LANGUAGES.ps.findFunctions(type)[0].doc.params.map((p) => [p.name, p.type.replaceAll(/\s/g, '')])
+    expect(kept).toEqual([['Map', 'Dictionary[string,int]'], ['Y', '']])
+    expect(LANGUAGES.ps.findFunctions('function A {\n    param([int$X, $Y, $Z)\n}')[0].params).toEqual(['X'])
+  })
+
   it('reads a type with a comma inside brackets, and a type after a comment', () => {
     expect(LANGUAGES.ps.findFunctions('function A {\n    param([Dictionary[string,int]]$Map, $B)\n}')[0].doc.params.map((p) => p.type))
       .toEqual(['Dictionary[string,int]', ''])

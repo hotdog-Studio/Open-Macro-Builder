@@ -56,7 +56,7 @@ Press **Open folder** and pick this repository.
 | `npm run test:electron` | `configurator/` | Builds and launches the desktop app, drags a key, saves and checks the file on disk, and sets up a fresh copy in an empty folder. Skips itself without the Electron binary or a display. |
 | `npm run lint` and `npm run build` | `configurator/` | ESLint, then the type check and the production build. |
 | `powershell -NoProfile -File powershell\tests\run.ps1` | the repository root, on Windows | The Pester suite of the PowerShell version. |
-| `powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd` | the repository root, on Windows with AutoHotkey v2 and Python | The end-to-end test of both versions, below. `-Case 'Name\|Other'` runs only the cases whose name matches. |
+| `powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd` | the repository root, on Windows with AutoHotkey v2 and Python | The end-to-end test of both versions, below. `-Case 'Name\|Other'` runs only the cases whose name matches; `-Repeat 12` runs each moment of the Calculator series 12 times (2 by default). |
 
 Tests never read anything under `local/`.
 
@@ -67,13 +67,13 @@ Tests never read anything under `local/`.
 While it runs, for a few minutes, the test has the keyboard, the mouse and the screen. It:
 
 - shows a banner at the top of the screen for the whole run, three seconds before the first key;
-- stops any macropad that runs, of either language, and starts each again at the end from its own command line and folder, also when a case fails (the banner process does it if the test process dies);
+- stops any macropad that runs, of either language, and starts each again at the end from its own command line and folder, also when a case fails (when the test process dies, the banner starts the clean-up below), never twice: a macropad of the same script that already runs is not started again;
 - opens and closes small dark stand-in windows, File Explorer, PowerShell and Command Prompt, Calculator, Notepad, Control Panel and message boxes; snaps, maximizes and minimizes a stand-in; shows Task View and the screen capture once per macropad, and the desktop with two presses per macropad; makes a virtual desktop, switches to and fro, and closes it, once per macropad;
 - moves the mouse pointer for the delayed-click form, and puts it back.
 
-A case does not run, saying why, where it would act on a window of yours: for example while your own File Explorer, Notepad or Settings window is open. Close those windows first for a full run. Under `-Ci` such a window fails the case instead, since the CI desktop must be clean. A conditional case does not run where what it needs is missing (Task Manager and Services need a standard user: for an administrator they would ask for or take elevation). The run ends by listing every case that did not run, with the reason.
+A case does not run, saying why, where it would act on a window of yours: for example while your own File Explorer, Notepad or Settings window is open. Close those windows first for a full run. Under `-Ci` such a window fails the case instead, since the CI desktop must be clean. Only windows the command itself could pick count (visible ones, as its helper looks for them), so a hidden console of the CI agent is not one. A key is pressed only into the window the case names, never into whatever is in front: on your desktop, if another window has the keyboard, the case fails and says which; only under `-Ci` is a window of Windows' own shell that came up by itself (Snap Assist, the desktop) put away once. A conditional case does not run where what it needs is missing (Task Manager and Services need a standard user: for an administrator they would ask for or take elevation). The run ends by listing every case that did not run, with the reason.
 
-A run that did not end itself (a crash, a Jenkins abort) is cleaned up by the next run, or at once by `powershell -NoProfile -File powershell\tests\run.ps1 -EndToEndCleanup`: it ends the run's processes, closes the windows and virtual desktops it opened, lets go of held keys, starts again the macropads it stopped and removes its folder. The Jenkins stage runs it before and after the test.
+A run that did not end itself (a crash, a Jenkins abort) is cleaned up by the next run, or at once by `powershell -NoProfile -File powershell\tests\run.ps1 -EndToEndCleanup`: it ends the run's processes, closes the windows and virtual desktops it opened, lets go of held keys, starts again the macropads it stopped and removes its folder. It touches only what the run's state file shows is still the run's: each process by its pid and start time, each window by its handle, process and class, each virtual desktop by its id, and nothing at all once Windows has restarted since (then only the folder goes). It exits 1 when it could not do everything. The Jenkins stage runs it before and after the test, and a clean-up that fails fails the build.
 
 ### Where a configurator test goes
 

@@ -99,11 +99,13 @@ Describe 'Get-KeyNameFromKeys' {
         $name | Should -Be '#'
         Get-VirtualKey $name | Should -Be 0xDE -Because 'the recorded name must press the recorded key again'
     }
-    It 'keeps the WinForms name of a key that types nothing the layout can name back' {
+    It 'keeps the WinForms name of a key whose character, as a name, does not press it again' {
         Mock Get-LayoutVirtualKey { -1 }
         Mock Get-LayoutCharacter { '' }
         Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Apps) | Should -Be 'Apps'
+        # The key types #, but the name # presses another key (vk DE), so recording # would send that one.
         Mock Get-LayoutCharacter { '#' }
+        Mock Get-LayoutVirtualKey { 0xDE } -ParameterFilter { $Char -eq '#' }
         Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem102) | Should -Be ([System.Windows.Forms.Keys]::Oem102).ToString() -Because '# does not press that key again'
     }
 }

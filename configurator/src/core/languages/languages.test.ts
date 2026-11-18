@@ -270,20 +270,12 @@ describe('AutoHotkey findFunctions', () => {
     expect(LANGUAGES.ahk.findFunctions('x := 1 */\nB() {\n}')[0].doc.form).toBe('none')
   })
 
-  it("does not take an earlier function's one-line block for a stray */ above another", () => {
-    const fns = LANGUAGES.ahk.findFunctions('/** A docs. */\nA() {\n}\n */\nB() {\n}')
-    expect(fns[0].doc.summary).toBe('A docs.')
-    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
-  })
-
-  it("does not take an earlier function's block for a stray */ above another", () => {
-    const fns = LANGUAGES.ahk.findFunctions('/**\n * A docs.\n */\nA() {\n}\n */\nB() {\n}')
-    expect(fns[0].doc.summary).toBe('A docs.')
-    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
-  })
-
-  it("does not take an earlier function's block for a comment at the end of a line of code", () => {
-    const fns = LANGUAGES.ahk.findFunctions('/**\n * A docs.\n */\nA() {\n}\nx := 1 /* tweak */\nB() {\n}')
+  it.each([
+    ['one-line block for a stray */ above another', '/** A docs. */\nA() {\n}\n */\nB() {\n}'],
+    ['block for a stray */ above another', '/**\n * A docs.\n */\nA() {\n}\n */\nB() {\n}'],
+    ['block for a comment at the end of a line of code', '/**\n * A docs.\n */\nA() {\n}\nx := 1 /* tweak */\nB() {\n}'],
+  ])("does not take an earlier function's %s", (_shape, text) => {
+    const fns = LANGUAGES.ahk.findFunctions(text)
     expect(fns[0].doc.summary).toBe('A docs.')
     expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
   })
@@ -494,38 +486,23 @@ describe('PowerShell findFunctions', () => {
     expect(LANGUAGES.ps.findFunctions('function A {\n    param(\n        # left\n        [int]$X)\n}')[0].doc.params[0].type).toBe('int')
   })
 
-  it('reads no docs from a #> with no <# above it', () => {
-    expect(LANGUAGES.ps.findFunctions('#>\nfunction A {\n}')[0].doc.form).toBe('none')
-  })
-
-  it("does not take an earlier function's one-line block for a stray #> above another", () => {
-    const fns = LANGUAGES.ps.findFunctions('<# .SYNOPSIS A. #>\nfunction A {\n}\n#>\nfunction B {\n}')
-    expect(fns[0].doc.summary).toBe('A.')
+  it.each([
+    ['one-line block for a stray #> above another', '<# .SYNOPSIS A. #>\nfunction A {\n}\n#>\nfunction B {\n}', 'A.'],
+    ['block for a stray #> above another', '<#\n.SYNOPSIS\nA.\n#>\nfunction A {\n}\n#>\nfunction B {\n}', 'A.'],
+    ['block for a comment at the end of a line of code', '<#\n.SYNOPSIS\nDoes A.\n#>\nfunction A {\n}\n$y = 2 <# tweak #>\nfunction B {\n}', 'Does A.'],
+  ])("does not take an earlier function's %s", (_shape, text, summary) => {
+    const fns = LANGUAGES.ps.findFunctions(text)
+    expect(fns[0].doc.summary).toBe(summary)
     expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
   })
 
-  it("does not take an earlier function's block for a stray #> above another", () => {
-    const fns = LANGUAGES.ps.findFunctions('<#\n.SYNOPSIS\nA.\n#>\nfunction A {\n}\n#>\nfunction B {\n}')
-    expect(fns[0].doc.summary).toBe('A.')
-    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
-  })
-
-  it("does not take an earlier function's block for a comment at the end of a line of code", () => {
-    const fns = LANGUAGES.ps.findFunctions('<#\n.SYNOPSIS\nDoes A.\n#>\nfunction A {\n}\n$y = 2 <# tweak #>\nfunction B {\n}')
-    expect(fns[0].doc.summary).toBe('Does A.')
-    expect(fns[1].doc).toMatchObject({ form: 'none', summary: '' })
-  })
-
-  it('reads a help block whose last text line closes it', () => {
-    expect(LANGUAGES.ps.findFunctions('<#\n.SYNOPSIS\nDoes it. #>\nfunction A {\n}')[0].doc).toMatchObject({ form: 'block', summary: 'Does it.' })
-  })
-
-  it('keeps a help block without a synopsis a block', () => {
-    expect(LANGUAGES.ps.findFunctions('<#\n.DESCRIPTION\nMore.\n#>\nfunction A {\n}')[0].doc).toMatchObject({ form: 'block', summary: 'More.' })
-  })
-
-  it('reads a help block on one line', () => {
-    expect(LANGUAGES.ps.findFunctions('<# .SYNOPSIS Does it. #>\nfunction A {\n}')[0].doc).toMatchObject({ form: 'block', summary: 'Does it.' })
+  it.each([
+    ['no docs from a #> with no <# above it', '#>\nfunction A {\n}', { form: 'none', summary: '' }],
+    ['a help block whose last text line closes it', '<#\n.SYNOPSIS\nDoes it. #>\nfunction A {\n}', { form: 'block', summary: 'Does it.' }],
+    ['a help block without a synopsis as a block', '<#\n.DESCRIPTION\nMore.\n#>\nfunction A {\n}', { form: 'block', summary: 'More.' }],
+    ['a help block on one line', '<# .SYNOPSIS Does it. #>\nfunction A {\n}', { form: 'block', summary: 'Does it.' }],
+  ])('reads %s', (_shape, text, doc) => {
+    expect(LANGUAGES.ps.findFunctions(text)[0].doc).toMatchObject(doc)
   })
 
   it("reads a .PARAMETER named in another case, and text on the keyword's line", () => {

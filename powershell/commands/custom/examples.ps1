@@ -8,4 +8,7 @@ function ExampleOpenProgram { param($Macro) ActivateOrOpen 'notepad.exe' 'notepa
 # is translated on a Windows in another language (change 'Calculator' to match).
 
 function OpenCalculator { param($Macro) ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe' }
-function ExampleOpenFolder { param($Macro) Open-ExplorerWindow ([Environment]::GetFolderPath('MyDocuments')) }
+# Windows says where Documents is (OneDrive or another drive may hold it); tests replace this lookup.
+
+function Get-DocumentsFolder { [Environment]::GetFolderPath('MyDocuments') }
+function ExampleOpenFolder { param($Macro) Open-ExplorerWindow (Get-DocumentsFolder) }

@@ -128,8 +128,13 @@ Describe 'File Explorer commands' {
 Describe 'Example commands' {
     BeforeEach { Mock Open-ExplorerWindow {}; Mock ActivateOrOpenWindow {}; Mock ActivateOrOpen {} }
     It 'ExampleOpenFolder opens the Documents folder that Windows names, wherever it was moved' {
+        # A folder that is not under the profile, so the test fails on any PC if the path is built from USERPROFILE.
+        Mock Get-DocumentsFolder { 'X:\Moved\Documents' }
         ExampleOpenFolder $null
-        Should -Invoke Open-ExplorerWindow -Times 1 -Exactly -ParameterFilter { $Path -eq [Environment]::GetFolderPath('MyDocuments') }
+        Should -Invoke Open-ExplorerWindow -Times 1 -Exactly -ParameterFilter { $Path -eq 'X:\Moved\Documents' }
+    }
+    It 'Get-DocumentsFolder asks Windows for the Documents folder' {
+        Get-DocumentsFolder | Should -Be ([Environment]::GetFolderPath('MyDocuments'))
     }
     It 'OpenCalculator finds the Calculator window, which belongs to ApplicationFrameHost.exe' {
         OpenCalculator $null

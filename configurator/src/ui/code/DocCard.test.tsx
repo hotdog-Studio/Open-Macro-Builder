@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildDictionary, type DictEntry } from '../../core/commands/dictionary'
 import { newTextFile } from '../../core/folder/textFile'
 import { commandFileAt, LANGUAGES, type CommandFile } from '../../core/languages'
@@ -77,6 +77,54 @@ describe('DocCard', () => {
     render(<DocCard entry={borrowedEntry()} />)
     expect(screen.getByText('Opens the thing.')).toBeTruthy()
     expect(screen.getByText('From the AutoHotkey version')).toBeTruthy()
+  })
+
+  it('shows an example given twice, twice', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const text = '<#\n.SYNOPSIS\nDoes it.\n.EXAMPLE\nInvoke-Twice\n.EXAMPLE\nInvoke-Twice\n#>\nfunction Invoke-Twice {\n}\n'
+      const { container } = render(<DocCard entry={entryOf('powershell/commands/helper.ps1', text, 'Invoke-Twice')} />)
+      expect(container.querySelectorAll('pre')).toHaveLength(2)
+      expect(error.mock.calls.filter(([m]) => String(m).includes('same key'))).toEqual([])
+    } finally {
+      error.mockRestore()
+    }
+  })
+
+  it('shows a parameter typed twice while a list is half written, twice', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const text = '<#\n.SYNOPSIS\nDoes it.\n.PARAMETER X\nThe x.\n#>\nfunction Get-Two {\n    param([int]$X, [int]$X\n}\n'
+      const { container } = render(<DocCard entry={entryOf('powershell/commands/helper.ps1', text, 'Get-Two')} />)
+      expect(container.querySelectorAll('li')).toHaveLength(2)
+      expect(error.mock.calls.filter(([m]) => String(m).includes('same key'))).toEqual([])
+    } finally {
+      error.mockRestore()
+    }
+  })
+
+  it('shows the type of a parameter, and a row for a parameter that has only a type', () => {
+    const { container } = render(<DocCard entry={entryOf('powershell/commands/helper.ps1', 'function Move-It {\n    param([int]$X, $Y)\n}\n', 'Move-It')} />)
+    const items = [...container.querySelectorAll('li')]
+    expect(items.map((li) => li.textContent)).toEqual(['X int'])
+  })
+
+  it('says what a default means in plain words', () => {
+    const text = [
+      'function Set-It {',
+      "    param($A = '', $B = \"\", $C = $null, [switch]$D = $true, [switch]$E = $false, $F = 3)",
+      '}',
+    ].join('\n')
+    const { container } = render(<DocCard entry={entryOf('powershell/commands/helper.ps1', text, 'Set-It')} />)
+    const notes = [...container.querySelectorAll('li')].map((li) => li.lastElementChild!.textContent)
+    expect(notes).toEqual([
+      'Optional, empty when left out.',
+      'Optional, empty when left out.',
+      'Optional.',
+      'Optional, on when left out.',
+      'Optional, off when left out.',
+      'Optional, 3 when left out.',
+    ])
   })
 
   it('shows markup from a script as text', () => {

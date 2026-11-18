@@ -214,7 +214,8 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
    * did not change keep their entry, unparsed.
    */
   async function recheckLibrary(folder: FolderAccess): Promise<void> {
-    const n = ++libraryReads
+    libraryReads++
+    const n = libraryReads
     const before = deps.getState()
     let fresh: LibraryFile[]
     try {

@@ -308,7 +308,7 @@ function Get-WindowStyle {
 .SYNOPSIS
 Changes the style number of a window. It stands in for AutoHotkey's WinSetStyle and WinSetExStyle, and for ControlSetStyle and ControlSetExStyle.
 .DESCRIPTION
-A window's style is a number in which each bit switches one feature on or off; Get-WindowStyle explains it. This writes a new style and then redraws the window's frame so a change to its borders shows. A wrong style can make a window hard to use, and Add and Remove change only the bits you name, so they are safer than Set. Pass a control's handle from Find-Control as the window to change a control's style.
+A window's style is a number in which each bit switches one feature on or off; Get-WindowStyle explains it. For example, with -Ex, the bit 0x40000 gives the window a taskbar button. This writes a new style and then redraws the window's frame so a change to its borders shows. A wrong style can make a window hard to use, and Add and Remove change only the bits you name, so they are safer than Set. Pass a control's handle from Find-Control as the window to change a control's style.
 .PARAMETER Window
 The window to act on: a window handle (the number Windows uses to name one window, as Find-Window returns it; a plain integer works too) or a WinTitle string. A WinTitle string is text that describes a window, such as 'ahk_exe notepad.exe' (the windows of that program), part of a title such as 'Untitled', or 'A' for the active window; Find-Window lists every form. An error is raised when no window is found. Leaving it out matches the first visible window, which is rarely the one you mean.
 .PARAMETER Value
@@ -342,11 +342,11 @@ function Set-WindowStyle {
 .SYNOPSIS
 Finds a control, such as a button or a text box, inside a window. It stands in for AutoHotkey's ControlGetHwnd.
 .DESCRIPTION
-A control is a part inside a window, such as a button, a text box or a list. This goes through the window's controls in the order Windows lists them and returns the first that fits. An error is raised when none does. The result is a window handle, because each control is a small window of its own. Pass it to Get-ControlText, Set-ControlText, Invoke-ControlClick or Send-ControlKeys.
+A control is a part inside a window, such as a button, a text box or a list. This goes through the window's controls in the order Windows lists them and returns the first that fits. An error is raised when none does. The result is a window handle, because each control is a small window of its own. Pass it to Get-ControlText, Set-ControlText, Invoke-ControlClick or Send-ControlKeys. The example needs the Run dialog open: press Win+R first.
 .PARAMETER Window
 The window to act on: a window handle (the number Windows uses to name one window, as Find-Window returns it; a plain integer works too) or a WinTitle string. A WinTitle string is text that describes a window, such as 'ahk_exe notepad.exe' (the windows of that program), part of a title such as 'Untitled', or 'A' for the active window; Find-Window lists every form. An error is raised when no window is found. Leaving it out matches the first visible window, which is rarely the one you mean.
 .PARAMETER Control
-Which control: either its ClassNN, which is the control's class name followed by its number counting that class from 1 ('Edit1' is the first text box, 'Button2' the second button), or its text exactly as shown, such as 'OK'. Case counts.
+Which control: either its ClassNN, which is the control's class name followed by its number counting that class from 1 ('Edit1' is the first text box, 'Button2' the second button), or its text exactly as the window holds it, such as 'OK'. That text includes the & that marks a keyboard shortcut letter, so a button shown as Browse... may be '&Browse...'. Case counts.
 .OUTPUTS
 The window handle of the control (the number Windows uses to name one window), as the other control functions take it.
 .EXAMPLE
@@ -370,7 +370,7 @@ function Find-Control {
 .SYNOPSIS
 Reads the text of a control, such as what is typed in a text box. It stands in for AutoHotkey's ControlGetText.
 .DESCRIPTION
-Asks the control for its text and waits up to 5 seconds for the program to answer; an error is raised when it does not.
+Asks the control for its text and waits up to 5 seconds for each of the two answers it needs (the length of the text, then the text), so up to about 10 seconds in all; an error is raised when the program does not answer in time. The example needs the Run dialog open: press Win+R first.
 .PARAMETER Control
 The window handle of the control to read, as Find-Control returns it. A window handle is the number Windows uses to name one window, and each control is one. Leaving it out raises an error.
 .OUTPUTS
@@ -387,7 +387,7 @@ function Get-ControlText {
 .SYNOPSIS
 Replaces the text of a control, such as what is in a text box. It stands in for AutoHotkey's ControlSetText.
 .DESCRIPTION
-Gives the control a new text in place of its old one. To type keys into a control as if they were pressed, use Send-ControlKeys.
+Gives the control a new text in place of its old one. To type keys into a control as if they were pressed, use Send-ControlKeys. The example needs the Run dialog open: press Win+R first.
 .PARAMETER Control
 The window handle of the control to change, as Find-Control returns it. A window handle is the number Windows uses to name one window, and each control is one. Leaving it out raises an error.
 .PARAMETER Text
@@ -438,7 +438,7 @@ function Send-WindowMessage {
 .SYNOPSIS
 Clicks a control without moving the mouse. It stands in for AutoHotkey's ControlClick.
 .DESCRIPTION
-Posts a button-down and a button-up message straight to the control, at a point inside it: its middle unless X and Y say otherwise. The mouse pointer does not move. To click at a point on the screen with the real mouse, use Send-Click.
+Posts a button-down and a button-up message straight to the control, at a point inside it: its middle unless X and Y say otherwise. The mouse pointer does not move. To click at a point on the screen with the real mouse, use Send-Click. The example needs the Run dialog open: press Win+R first.
 .PARAMETER Control
 The window handle of the control to click, as Find-Control returns it. A window handle is the number Windows uses to name one window, and each control is one. Leaving it out raises an error.
 .PARAMETER Button
@@ -452,7 +452,7 @@ Nothing. The messages are queued, and there is no sign of whether the control re
 .EXAMPLE
 Invoke-ControlClick (Find-Control 'Run' 'Cancel')
 .EXAMPLE
-Invoke-ControlClick (Find-Control 'Run' 'Edit1') -Button 'Right' -X 10 -Y 5
+Invoke-ControlClick (Find-Control 'Run' 'Edit1') -X 10 -Y 5
 #>
 function Invoke-ControlClick {
     param([IntPtr]$Control, [ValidateSet('Left', 'Right', 'Middle')][string]$Button = 'Left', [int]$X = -1, [int]$Y = -1)
@@ -469,7 +469,7 @@ function Invoke-ControlClick {
 .SYNOPSIS
 Types keys into a control without using the keyboard. It stands in for AutoHotkey's ControlSend and ControlSendText.
 .DESCRIPTION
-Posts the keys straight to the control, so the real keyboard and the active window are not involved. Characters are posted as characters and keys such as Enter as key presses. The modifier keys (^ ! + #) are posted as key presses of their own and do not change what the control sees as held down, so shortcuts such as '^a' may not act as a real keypress would.
+Posts the keys straight to the control, so the real keyboard and the active window are not involved. Characters are posted as characters and keys such as Enter as key presses. The modifier keys (^ ! + #) are posted as key presses of their own and do not change what the control sees as held down, so shortcuts such as '^a' may not act as a real keypress would. The example needs the Run dialog open: press Win+R first.
 .PARAMETER Control
 The window handle of the control to type into, as Find-Control returns it. A window handle is the number Windows uses to name one window, and each control is one. Leaving it out raises an error.
 .PARAMETER Keys

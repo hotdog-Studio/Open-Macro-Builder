@@ -32,7 +32,7 @@ function ConvertFrom-WinTitle {
 .SYNOPSIS
 Reads a window's title, class, program and process id. It stands in for AutoHotkey's WinGetTitle, WinGetClass, WinGetPID, WinGetProcessName, WinGetProcessPath and WinGetID.
 .DESCRIPTION
-Gathers the facts about one window into one object. Take the window handle from Find-Window, Test-WindowActive or Get-MousePosition. With the handle 0 ([IntPtr]::Zero) the fields come back empty and Visible is False.
+Gathers the facts about one window into one object. Take the window handle from Find-Window, Test-WindowActive or Get-MousePosition. With the handle 0 ([IntPtr]::Zero) the text fields come back empty, Hwnd and Pid are 0 and Visible is False.
 .PARAMETER Hwnd
 The window handle of the window to read: the number Windows uses to name one window, as Find-Window, Test-WindowActive and Get-MousePosition return it. Leaving it out raises an error.
 .OUTPUTS
@@ -108,6 +108,8 @@ $window = Find-Window 'ahk_exe notepad.exe'
 if ($window -ne [IntPtr]::Zero) { Switch-Window $window }
 .EXAMPLE
 (Find-Window 'ahk_exe chrome.exe' -All).Count
+.EXAMPLE
+Find-Window 'ahk_exe notepad.exe' -IncludeHidden
 #>
 function Find-Window {
     param([AllowEmptyString()][string]$WinTitle, [switch]$All, [switch]$IncludeHidden, $MatchMode = 2)

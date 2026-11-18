@@ -8,9 +8,9 @@ Reads the colour of one pixel on the screen. It stands in for AutoHotkey's Pixel
 .DESCRIPTION
 Looks at what is on the screen at that point. Positions are screen coordinates: pixels counted from the top-left corner of the screen.
 .PARAMETER X
-How far from the left edge of the screen, in pixels.
+How far from the left edge of the screen, in pixels. Leaving it out means 0.
 .PARAMETER Y
-How far from the top edge of the screen, in pixels.
+How far from the top edge of the screen, in pixels. Leaving it out means 0.
 .OUTPUTS
 The colour as one number, 0xRRGGBB: the red, green and blue amounts (0 to 255 each) side by side, so 0xFF0000 is pure red. PowerShell shows it in decimal; '{0:X6}' -f formats it as hex.
 .EXAMPLE
@@ -30,19 +30,19 @@ Looks for a colour inside a rectangle of the screen. It stands in for AutoHotkey
 .DESCRIPTION
 Looks at what is on the screen inside the rectangle, row by row from its top-left corner, and gives the first pixel whose colour is close enough to Color. The corners belong to the rectangle. Positions are screen coordinates: pixels counted from the top-left corner of the screen. X2 must not be smaller than X1, nor Y2 smaller than Y1.
 .PARAMETER X1
-The left edge of the rectangle, in pixels from the left edge of the screen.
+The left edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, the left edge of the screen.
 .PARAMETER Y1
-The top edge of the rectangle, in pixels from the top edge of the screen.
+The top edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, the top edge of the screen.
 .PARAMETER X2
-The right edge of the rectangle, in pixels from the left edge of the screen.
+The right edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, which is not a usable rectangle unless X1 is 0 too (then it is one pixel wide).
 .PARAMETER Y2
-The bottom edge of the rectangle, in pixels from the top edge of the screen.
+The bottom edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, which is not a usable rectangle unless Y1 is 0 too (then it is one pixel high).
 .PARAMETER Color
 The colour to look for, as 0xRRGGBB (the red, green and blue amounts, so 0xFF0000 is pure red). Leaving it out looks for black.
 .PARAMETER Variation
 How far each of red, green and blue may differ from Color, from 0 to 255. 0 needs an exact match.
 .OUTPUTS
-An object with X and Y, the screen position of the first pixel found, or nothing when no pixel fits.
+An object with X and Y, the screen position of the first pixel found, or $null when no pixel fits.
 .EXAMPLE
 $hit = Find-Pixel 0 0 800 600 0xFF0000
 if ($hit) { Move-Mouse $hit.X $hit.Y }
@@ -65,21 +65,21 @@ Looks for a picture inside a rectangle of the screen. It stands in for AutoHotke
 .DESCRIPTION
 Looks at what is on the screen inside the rectangle and searches it for the picture from an image file, row by row from the top-left corner, and gives the first place where every pixel fits. A large rectangle takes longer. The corners belong to the rectangle. Positions are screen coordinates: pixels counted from the top-left corner of the screen. X2 must not be smaller than X1, nor Y2 smaller than Y1.
 .PARAMETER X1
-The left edge of the rectangle, in pixels from the left edge of the screen.
+The left edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, the left edge of the screen.
 .PARAMETER Y1
-The top edge of the rectangle, in pixels from the top edge of the screen.
+The top edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, the top edge of the screen.
 .PARAMETER X2
-The right edge of the rectangle, in pixels from the left edge of the screen.
+The right edge of the rectangle, in pixels from the left edge of the screen. Leaving it out means 0, which is not a usable rectangle unless X1 is 0 too (then it is one pixel wide).
 .PARAMETER Y2
-The bottom edge of the rectangle, in pixels from the top edge of the screen.
+The bottom edge of the rectangle, in pixels from the top edge of the screen. Leaving it out means 0, which is not a usable rectangle unless Y1 is 0 too (then it is one pixel high).
 .PARAMETER Path
-The full path of the image file to look for, such as a PNG, BMP or JPEG file. An error is raised when there is no file at that path. Leaving it out raises an error too.
+The full path of the image file to look for, such as a PNG, BMP or JPEG file. An error is raised when there is no file at that path. Leaving it out raises an error too. The path in the example is only a placeholder: use the path of an image file of your own.
 .PARAMETER Variation
 How far each of red, green and blue may differ between the screen and the picture, from 0 to 255. 0 needs an exact match.
 .PARAMETER TransColor
 A colour in the picture, as 0xRRGGBB, that matches anything on the screen, so a picture can have parts that do not count. -1 means no such colour.
 .OUTPUTS
-An object with X and Y, the screen position of the picture's top-left corner where it was found, or nothing when it was not found (which includes a picture larger than the rectangle).
+An object with X and Y, the screen position of the picture's top-left corner where it was found, or $null when it was not found (which includes a picture larger than the rectangle).
 .EXAMPLE
 $hit = Find-Image 0 0 1000 800 'C:\Users\Public\Pictures\button.png'
 if ($hit) { Send-Click $hit.X $hit.Y }
@@ -148,9 +148,9 @@ Every position in these functions is a screen coordinate. If you know where some
 .PARAMETER Hwnd
 The window handle of the window the point is in: the number Windows uses to name one window, as Find-Window returns it. Leaving it out raises an error.
 .PARAMETER X
-How far from the left edge of the area inside the window, in pixels.
+How far from the left edge of the area inside the window, in pixels. Leaving it out means 0, the area's left edge.
 .PARAMETER Y
-How far from the top edge of the area inside the window, in pixels.
+How far from the top edge of the area inside the window, in pixels. Leaving it out means 0, the area's top edge.
 .OUTPUTS
 One object with X and Y, the point's position on the screen in pixels.
 .EXAMPLE
@@ -177,9 +177,9 @@ The note is a small window in the system's tooltip colours that stays on top of 
 .PARAMETER Text
 What the note says.
 .PARAMETER X
-How far from the left edge of the screen, in pixels. -1, or leaving it out, puts the note 16 pixels to the right of the mouse pointer.
+How far from the left edge of the screen, in pixels. Any negative number (-1 is usual), or leaving it out, puts the note 16 pixels to the right of the mouse pointer.
 .PARAMETER Y
-How far from the top edge of the screen, in pixels. -1, or leaving it out, puts the note 16 pixels below the mouse pointer.
+How far from the top edge of the screen, in pixels. Any negative number (-1 is usual), or leaving it out, puts the note 16 pixels below the mouse pointer.
 .PARAMETER Id
 Which note, from 1 to 20. Use different ids to show several notes at once.
 .OUTPUTS

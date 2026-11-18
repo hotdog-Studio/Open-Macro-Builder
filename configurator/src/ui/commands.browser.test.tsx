@@ -645,6 +645,37 @@ describe('Commands tab: docs on hover', () => {
     }
   })
 
+  it('keeps the pointer on a tall card of the list whose docs shrink under it', async () => {
+    await page.viewport(1280, 300)
+    try {
+      await start()
+      await openFile('windows')
+      const examples = Array.from({ length: 30 }, (_, i) => ` * @example Tool(${i})`)
+      replaceAll(['/**', ' * A tool.', ...examples, ' */', 'Tool(A)', '{', '}', ''].join('\n'))
+      const other = screen.getByRole('region', { name: 'Other commands available' })
+      const row = within(other).getByRole('button', { name: /^Tool\b/ })
+      row.scrollIntoView({ block: 'end' })
+      await hover(row)
+      const tip = await screen.findByRole('tooltip')
+      await waitFor(() => expect(getComputedStyle(tip).pointerEvents).toBe('auto'))
+      const tall = tip.getBoundingClientRect()
+      await hover({ x: tall.left + tall.width / 2, y: tall.bottom - 10 })
+      // The docs change while the pointer rests on the card, and now fit.
+      replaceAll('/**\n * A tool.\n */\nTool(A)\n{\n}\n')
+      await waitFor(() => expect(tip.textContent).not.toContain('Tool(29)'))
+      await waitFor(() => expect(within(tip).queryByText('More below. Scroll the card, or click the row.')).toBeNull())
+      // The card still takes the pointer: it is not taken away from under it.
+      expect(getComputedStyle(tip).pointerEvents).toBe('auto')
+      const fits = tip.getBoundingClientRect()
+      expect(tip.contains(document.elementFromPoint(fits.left + fits.width / 2, fits.top + fits.height / 2))).toBe(true)
+      // Once the pointer leaves it, the card goes.
+      await hover(nav())
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    } finally {
+      await page.viewport(1280, 900)
+    }
+  })
+
   it('lets the pointer pass over a card that fits, on its way to the editor', async () => {
     const other = await powerShellList()
     const row = within(other).getByRole('button', { name: /^Wait-Pump\b/ })

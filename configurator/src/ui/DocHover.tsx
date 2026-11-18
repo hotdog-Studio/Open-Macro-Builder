@@ -190,6 +190,8 @@ function FloatingCard({
   const box = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const { tall, more, measure } = useScrollState(scroller)
+  // A card the pointer is on keeps it until the pointer leaves, even when its docs change and fit.
+  const [pointerOn, setPointerOn] = useState(false)
   const update = useCallback(() => {
     if (box.current) place(box.current, row)
     measure()
@@ -203,10 +205,16 @@ function FloatingCard({
       ref={box}
       id={id}
       role="tooltip"
-      style={{ maxHeight: `calc(100vh - ${2 * GAP}px)`, pointerEvents: tall ? 'auto' : 'none' }}
+      style={{ maxHeight: `calc(100vh - ${2 * GAP}px)`, pointerEvents: tall || pointerOn ? 'auto' : 'none' }}
       className="fixed z-50 flex flex-col rounded-md border border-zinc-700 bg-zinc-900 shadow-xl"
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
+      onMouseEnter={() => {
+        setPointerOn(true)
+        onEnter()
+      }}
+      onMouseLeave={() => {
+        setPointerOn(false)
+        onLeave()
+      }}
     >
       <div ref={scroller} className="min-h-0 overflow-y-auto">
         <DocCard entry={entry} />

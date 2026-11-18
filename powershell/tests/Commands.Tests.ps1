@@ -75,6 +75,15 @@ Describe 'Get-KeyNameFromKeys' {
         Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem5) | Should -Be '\'
     }
     It 'round-trips through Get-VirtualKey' { Get-VirtualKey (Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::PageDown)) | Should -Be 0x22 }
+    It 'names a symbol key by the character it types on the keyboard layout in use' {
+        # en-GB: vk C0 types ', and the US ' key (vk DE) types #, which has no name.
+        Mock Get-LayoutVirtualKey { 0xC0 } -ParameterFilter { $Char -eq "'" }
+        Mock Get-LayoutVirtualKey { 0xDF } -ParameterFilter { $Char -eq '`' }
+        Mock Get-LayoutVirtualKey { -1 } -ParameterFilter { $Char -ne "'" -and $Char -ne '`' }
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem3) | Should -Be "'"
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem8) | Should -Be '`'
+        Get-KeyNameFromKeys ([System.Windows.Forms.Keys]::Oem7) | Should -Be 'Oem7'
+    }
 }
 Describe 'File Explorer commands' {
     BeforeEach { Mock Start-Program {}; Mock Set-ActiveWindow { $true }; Mock Wait-Pump {} }

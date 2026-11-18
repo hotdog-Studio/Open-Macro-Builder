@@ -2,11 +2,12 @@
 # Each form keeps its state in a hashtable on $form.Tag. Handlers are { param($sender, $e) } and reach
 # that state through $sender.FindForm().Tag, or $sender.Tag for timers, which carry the form.
 
-# Chord name for a WinForms key code (the reverse of Get-VirtualKey), e.g. Keys.Oem5 -> '\'.
+# Chord name for a WinForms key code (the reverse of Get-VirtualKey), e.g. Keys.Oem5 -> '\'. Asking
+# Get-VirtualKey keeps a symbol name true to the keyboard layout: the name given presses this key.
 function Get-KeyNameFromKeys {
     param([System.Windows.Forms.Keys]$KeyCode)
     $vk = [int]$KeyCode -band 0xFFFF
-    $names = @($script:VirtualKeys.GetEnumerator() | Where-Object { $_.Value -eq $vk -and $_.Key -ne 'Win' } | ForEach-Object { $_.Key })
+    $names = @($script:VirtualKeys.Keys | Where-Object { $_ -ne 'Win' -and (Get-VirtualKey $_) -eq $vk })
     if ($names.Count -gt 0) { return @($names | Sort-Object)[0] }
     $KeyCode.ToString()
 }

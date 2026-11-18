@@ -72,6 +72,23 @@ namespace Macropad
         private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
         [DllImport("kernel32.dll")]
         private static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern short VkKeyScanEx(char ch, IntPtr dwhkl);
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetKeyboardLayout(uint idThread);
+
+        // The virtual key that types ch on the keyboard layout of the active window (this thread's
+        // layout when no window is active), without the shift state; -1 when the layout has no such key.
+        public static int LayoutVirtualKey(char ch)
+        {
+            uint ignored;
+            IntPtr foreground = GetForegroundWindow();
+            uint thread = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out ignored);
+            IntPtr layout = GetKeyboardLayout(thread);
+            if (layout == IntPtr.Zero) layout = GetKeyboardLayout(0);
+            int vk = VkKeyScanEx(ch, layout) & 0xFF;
+            return vk == 0xFF ? -1 : vk;
+        }
 
         // Visible top-level windows owned by any of the pids, top of the Z-order first.
         public static IntPtr[] GetProcessWindows(int[] pids)

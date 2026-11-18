@@ -13,6 +13,11 @@ Describe 'Get-AhkVirtualKey' {
         Get-AhkVirtualKey 'numpad5' | Should -Be 0x65; Get-AhkVirtualKey 'Enter' | Should -Be 0x0D
     }
     It 'throws for unknown names' { { Get-AhkVirtualKey 'Bogus' } | Should -Throw "Unknown key name 'Bogus'" }
+    It 'finds a symbol key on the keyboard layout in use, as AutoHotkey does' {
+        Mock Get-LayoutVirtualKey { 0xC0 } -ParameterFilter { $Char -eq "'" }
+        Get-AhkVirtualKey "'" | Should -Be 0xC0
+        Fmt (ConvertFrom-AhkSend "^+'") | Should -Be '11v 10v C0v C0^ 10^ 11^'
+    }
 }
 Describe 'ConvertFrom-AhkSend' {
     It 'wraps a key in its modifiers' { Fmt (ConvertFrom-AhkSend '^c') | Should -Be '11v 43v 43^ 11^' }

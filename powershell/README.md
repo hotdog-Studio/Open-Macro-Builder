@@ -111,7 +111,7 @@ In PowerShell code, the same definitions can be built with `Hotkey` and `Hotstri
 
 Window functions take an AutoHotkey WinTitle such as `'ahk_exe chrome.exe'` or `'Untitled - Notepad ahk_class Notepad'`.
 
-The configurator's Commands tab reads these functions' docs. A function with a help block directly above it, with no blank line between, is listed under "Functions to call" in the right panel, and hovering its name in the editor shows the block: what it does (`.SYNOPSIS`, `.DESCRIPTION`), each `.PARAMETER`, `.OUTPUTS` and every `.EXAMPLE`. A function with only `#` notes above it shows them on hover but is not listed. The same blocks are what `Get-Help` reads. A helper of your own, in `../local/powershell/commands`, is documented the same way:
+The configurator's Commands tab reads these functions' docs. A function with a help block directly above it, with no blank line between, is listed under "Functions to call" in the right panel, and hovering its name in the editor shows the block: what it does (`.SYNOPSIS`, `.DESCRIPTION`), each `.PARAMETER`, `.OUTPUTS` and every `.EXAMPLE`. A function with only `#` notes above it shows them on hover but is not listed. A command (a function whose only parameter is `Macro`) is never listed under "Functions to call", block or not: a command in another command file is listed under "Commands in other files" instead. The same blocks are what `Get-Help` reads. A helper of your own, in `../local/powershell/commands`, is documented the same way:
 
 ```powershell
 <#
@@ -128,7 +128,7 @@ function Send-Greeting {
 }
 ```
 
-A parameter's `.PARAMETER` line must give its name as the function declares it. The first line of a library file, when it is a `#` comment, is the file's heading in the list.
+A parameter's `.PARAMETER` line must give its name as the function declares it. The first line of a library file (a file directly in `lib`), when it is a `#` comment, is the file's heading in the list. A first line that is `#requires`, `#region` or `#endregion` is not a heading; then, and when the first line is not a `#` comment, the file's name is the heading.
 
 ## Test
 
@@ -176,6 +176,5 @@ The twelve macro keys (F13 to F24) still use `RegisterHotKey` with `MOD_NOREPEAT
 ## Differences from the AutoHotkey version
 
 - The overlay never takes focus, so clicking it leaves keys going to the app you were in.
-- Keys are sent as chords (`'LWin+Left'`) instead of AutoHotkey `Send` syntax.
-- `Restart` uses `shutdown /r /t 1`.
+- The built-in commands send keys as chords (`'LWin+Left'`, with `Send-Chord`) instead of AutoHotkey `Send` syntax. Your own commands can use `Send` syntax too, with `Send-Ahk`.
 - The fluent `Layout` methods (`AddLayer`, `RemoveLayer`, `ShowLabel` and so on) are not ported.

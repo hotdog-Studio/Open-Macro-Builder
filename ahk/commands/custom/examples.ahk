@@ -21,17 +21,29 @@ ExampleOpenProgram(Macro) {
 }
 
 /**
- * Opens or activates Calculator.
+ * Opens or activates Calculator. It is a Store app, so its window belongs to ApplicationFrameHost.exe and is found by its title; on a Windows in another language, change "Calculator" to the translated title.
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 OpenCalculator(Macro) {
-    ActivateOrOpen("ahk_exe Calculator.exe", "C:\Windows\System32\calc.exe", "")
+    ActivateOrOpen("Calculator ahk_exe ApplicationFrameHost.exe", "calc.exe", "")
 }
 
 /**
- * Example: opens your Documents folder in File Explorer, the pattern for any folder or share.
+ * Example: opens your Documents folder in File Explorer, wherever Windows keeps it, and brings the new window to the front: the pattern for any folder or share.
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 ExampleOpenFolder(Macro) {
-    Run('explorer.exe "' EnvGet("USERPROFILE") '\Documents"')
+    before := "|"
+    for hwnd in WinGetList("ahk_class CabinetWClass")  ; the File Explorer windows open now
+        before .= hwnd "|"
+    Run('explorer.exe "' A_MyDocuments '"')
+    Loop 50 {  ; look for the new window for about 5 seconds
+        for hwnd in WinGetList("ahk_class CabinetWClass") {
+            if !InStr(before, "|" hwnd "|") {
+                WinActivate("ahk_id " hwnd)
+                return
+            }
+        }
+        Sleep(100)
+    }
 }

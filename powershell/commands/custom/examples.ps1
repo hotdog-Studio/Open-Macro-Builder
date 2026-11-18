@@ -4,5 +4,8 @@
 
 function ExampleOpenWebsite { param($Macro) ActivateOrOpenChrome 'https://example.com/' }
 function ExampleOpenProgram { param($Macro) ActivateOrOpen 'notepad.exe' 'notepad.exe' }
-function OpenCalculator { param($Macro) ActivateOrOpen 'Calculator.exe' 'C:\Windows\System32\calc.exe' }
-function ExampleOpenFolder { param($Macro) Open-ExplorerWindow (Join-Path $env:USERPROFILE 'Documents') }
+# Calculator is a Store app: its window belongs to ApplicationFrameHost.exe and is found by its title, which
+# is translated on a Windows in another language (change 'Calculator' to match).
+
+function OpenCalculator { param($Macro) ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe' }
+function ExampleOpenFolder { param($Macro) Open-ExplorerWindow ([Environment]::GetFolderPath('MyDocuments')) }

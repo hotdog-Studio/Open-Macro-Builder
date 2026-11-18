@@ -244,7 +244,7 @@ Opens a File Explorer window and brings it to the front.
 .DESCRIPTION
 Starts File Explorer, at the folder in Path when one is given, and activates the new window as soon as it appears. It looks for about 5 seconds; if no new window shows up in that time, it gives up without an error.
 .PARAMETER Path
-The folder to show. Without it, File Explorer opens where it normally starts.
+The folder to show; spaces and commas in it are fine. Without it, File Explorer opens where it normally starts.
 .EXAMPLE
 Open-ExplorerWindow
 .EXAMPLE
@@ -253,7 +253,11 @@ Open-ExplorerWindow -Path 'C:\Users\Public\Documents'
 function Open-ExplorerWindow {
     param([string]$Path = '')
     $before = Get-ExplorerWindows
-    Start-Program 'explorer' $Path
+    # Explorer reads a comma as the end of a switch (/select,<path>), so a path with a comma or a space
+    # goes in double quotes, without a closing backslash (which would escape the quote).
+    $folder = $Path
+    if ($Path -match '[ ,]') { $folder = '"{0}"' -f $Path.TrimEnd('\') }
+    Start-Program 'explorer' $folder
     for ($i = 0; $i -lt 50; $i++) {
         $now = Get-ExplorerWindows
         $new = @($now | Where-Object { $before -notcontains $_ })

@@ -89,11 +89,31 @@ Describe 'File Explorer commands' {
         OpenFileExplorer $null
         Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' }
     }
-    It 'ExampleOpenFolder opens the folder and activates the new window' {
+    It 'Open-ExplorerWindow opens the folder and activates the new window' {
         $script:finds = 0
         Mock Find-Window { $script:finds++; if ($script:finds -eq 1) { , [IntPtr[]]@([IntPtr]5) } else { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) } } -ParameterFilter { $WinTitle -eq 'ahk_class CabinetWClass' }
-        ExampleOpenFolder $null
-        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' -and $Arguments -eq (Join-Path $env:USERPROFILE 'Documents') }
+        Open-ExplorerWindow 'D:\Users\Public\Documents'
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' -and $Arguments -eq 'D:\Users\Public\Documents' }
         Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]7 }
+    }
+    It 'Open-ExplorerWindow quotes a folder whose path has a comma or a space, without a closing backslash' -ForEach @(
+        @{ Path = 'C:\Users\Smith, John\Documents'; Expected = '"C:\Users\Smith, John\Documents"' }
+        @{ Path = 'C:\My Files\'; Expected = '"C:\My Files"' }
+        @{ Path = '\\server\share\'; Expected = '\\server\share\' }
+    ) {
+        Mock Find-Window { , [IntPtr[]]@() } -ParameterFilter { $WinTitle -eq 'ahk_class CabinetWClass' }
+        Open-ExplorerWindow $Path
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'explorer' -and $Arguments -eq $Expected }
+    }
+}
+Describe 'Example commands' {
+    BeforeEach { Mock Open-ExplorerWindow {}; Mock ActivateOrOpenWindow {}; Mock ActivateOrOpen {} }
+    It 'ExampleOpenFolder opens the Documents folder that Windows names, wherever it was moved' {
+        ExampleOpenFolder $null
+        Should -Invoke Open-ExplorerWindow -Times 1 -Exactly -ParameterFilter { $Path -eq [Environment]::GetFolderPath('MyDocuments') }
+    }
+    It 'OpenCalculator finds the Calculator window, which belongs to ApplicationFrameHost.exe' {
+        OpenCalculator $null
+        Should -Invoke ActivateOrOpenWindow -Times 1 -Exactly -ParameterFilter { ($WinTitle -join '|') -eq 'Calculator ahk_exe ApplicationFrameHost.exe' -and $Program -eq 'calc.exe' }
     }
 }

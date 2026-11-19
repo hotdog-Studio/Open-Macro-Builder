@@ -105,7 +105,12 @@ Describe 'End-to-end accounting: <Title>' -Tag EndToEnd -ForEach $Langs {
         }
         $bad | Should -BeNullOrEmpty
         Write-Host ("End-to-end, {0}: {1} covered, {2} conditional, {3} excluded, of {4} commands." -f $Title, $covered.Count, $conditional.Count, $excluded.Count, $shared.Count)
-        foreach ($c in $cases | Where-Object { $conditional -contains $_.Command } | Sort-Object Command -Unique) { Write-Host "  conditional: $($c.Command): $($c.Needs.Why)" }
+        # One line for every conditional command, with what it needs: this is where a reader learns
+        # what the suite does not prove on their machine. From the names, not from the cases: a case is
+        # a hashtable, and Sort-Object <key> -Unique does not compare hashtables by a key (it kept one).
+        $lines = @(foreach ($name in $conditional) { "  conditional: ${name}: $(@($cases | Where-Object { $_.Command -eq $name } | ForEach-Object { $_.Needs.Why } | Sort-Object -Unique) -join '; ')" })
+        $lines.Count | Should -Be $conditional.Count -Because 'every conditional command is printed, once, with what it needs'
+        foreach ($line in $lines) { Write-Host $line }
         foreach ($name in $excluded.Keys | Sort-Object) { Write-Host "  excluded: ${name}: $($excluded[$name])" }
     }
     It 'names only commands that exist, and excludes nothing it covers' {

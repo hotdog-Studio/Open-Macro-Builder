@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, server } from 'vitest/browser'
 import { size } from '../core/config/model'
 import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, repoFiles, startApp, startOpenScreen, unmount, ws } from '../../test/browser/harness'
 
@@ -80,6 +80,22 @@ const layoutPath = () => screen.getByText('local/config.json')
 const shown = (el: Element) => el.getBoundingClientRect().width > 0
 
 describe('the header', () => {
+  it('leaves out the path of the layout file in a window narrower than 1440 px, and shows it from there on', async () => {
+    await page.viewport(1439, 900)
+    await startApp()
+    expect(shown(layoutPath())).toBe(false)
+    await page.viewport(1440, 900)
+    await waitFor(() => expect(shown(layoutPath())).toBe(true))
+  })
+})
+
+// How many of the header's controls fit one row depends on how wide the machine's font draws them.
+// The header is sized for Segoe UI, the font of Windows, where the desktop app runs. A wider font,
+// such as the one on the Linux build agent, wraps it at these widths, as it is built to do. So, like
+// the pictures of the pad (visual.browser.test.tsx), these run on Windows only.
+const withWindowsFonts = describe.skipIf(server.platform !== 'win32')
+
+withWindowsFonts('the header, drawn with the fonts of Windows', () => {
   it('is one row in the browser at 1280 wide, without the path of the layout file', async () => {
     await startApp()
     expect(screen.getByRole('link', { name: /Download/ })).toBeTruthy()
@@ -96,7 +112,7 @@ describe('the header', () => {
     expect(shown(layoutPath())).toBe(false)
   })
 
-  it('shows the path of the layout file when the window is wide', async () => {
+  it('is one row with the path of the layout file shown when the window is wide', async () => {
     await page.viewport(1700, 900)
     await startApp('Pad shape', undefined, { folderName: 'Open Macro Builder' })
     expect(oneRow()).toBe(true)

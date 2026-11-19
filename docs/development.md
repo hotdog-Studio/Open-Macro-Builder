@@ -95,6 +95,8 @@ npx vitest run --config vitest.browser.config.ts src/ui/visual.browser.test.tsx 
 
 A change to the width of a side panel can move the pad by half a pixel at the tests' window size, which makes every picture one pixel wider. Run this suite after such a change too.
 
+The tests that the header fits on one row (`the header, drawn with the fonts of Windows` in `src/ui/layout.browser.test.tsx`) skip themselves off Windows for the same reason: a wider font wraps the header, as it is built to do.
+
 ## Icons and logo
 
 `img/icon.svg` is the hotdog; `img/logo.svg` is the hotdog on a key. `img/icon.ico` (the tray icon of both macropad versions, and the icon of the desktop app and its installer) and `img/logo.png` are made from them. After editing an SVG:

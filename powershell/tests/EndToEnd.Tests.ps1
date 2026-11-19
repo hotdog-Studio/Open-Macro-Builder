@@ -153,7 +153,11 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
         # process and cleans up when it has ended, so the process must end when the run does: never a
         # person's own console.
         if ($env:OMB_E2E -ne '1' -or [Environment]::CommandLine -notmatch '(?i)-file\s+"?[^"]*run\.ps1') {
-            $script:E2eSkip = 'it takes the desktop, and runs only in a process of its own; run it with: powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd'
+            $why = 'it takes the desktop, and runs only in a process of its own; run it with: powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd'
+            # Under -Ci this can only mean that the check or the way the stage starts the test broke: the
+            # suite fails rather than skip every case and leave a green build that ran none.
+            if ($env:OMB_E2E_CI -eq '1') { throw "The end-to-end test cannot run in this process ($([Environment]::CommandLine)): $why." }
+            $script:E2eSkip = $why
         }
         elseif (-not (Get-AhkExe)) {
             $why = "AutoHotkey v2 is not installed ($env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe does not exist); it runs the AutoHotkey macropad, the stand-ins and the banner"

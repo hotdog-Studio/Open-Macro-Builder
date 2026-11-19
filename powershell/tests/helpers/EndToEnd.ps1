@@ -772,12 +772,20 @@ function Get-E2eLaunches {
 
 function Get-E2eLaunchMark { @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'launches.log')).Count }
 
+# The working directory of a process, or $null when it cannot be read (ProcessInfo.CurrentDirectory).
+# A function of its own, so that the tests of the clean-up can give one without a real process.
+function Get-E2eWorkingDirectory {
+    param([int]$Id)
+    [OmbE2e.ProcessInfo]::CurrentDirectory($Id)
+}
+
 # The processes that are in a folder: those that run from it (in a run's folder: stand-ins, copies of
 # AutoHotkey, the launcher) and, with -OrWorkingIn, those whose working directory is in it. The test
 # and the macropads under test work in the run's folder, and a program one of them starts inherits
 # that, so a program that outlives its window is found there, and keeps the folder from being removed
-# until it has ended. This process and the ones it descends from never count (a clean-up called from a
-# shell that stands in the folder; the steps of a build). Each row has WorkingIn (that directory, or ''
+# until it has ended. With -OrWorkingIn, which every clean-up uses, this process and the ones it
+# descends from never count (a clean-up called from a shell that stands in the folder; the steps of a
+# build). Each row has WorkingIn (that directory, or ''
 # for a process that runs from the folder) and StartTicks (when it started, in UTC ticks; 0 when that
 # cannot be read): where a process is and when it started say whose it is.
 function Get-E2eRunProcesses {
@@ -801,7 +809,7 @@ function Get-E2eRunProcesses {
     }
     @($from | Where-Object { $mine -notcontains [int]$_.ProcessId }) + @(foreach ($p in $all) {
             if ($from -contains $p -or $mine -contains [int]$p.ProcessId) { continue }
-            $cwd = [OmbE2e.ProcessInfo]::CurrentDirectory([int]$p.ProcessId)
+            $cwd = Get-E2eWorkingDirectory ([int]$p.ProcessId)
             if ($cwd -and ($cwd.TrimEnd('\') + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { & $row $p $cwd }
         })
 }

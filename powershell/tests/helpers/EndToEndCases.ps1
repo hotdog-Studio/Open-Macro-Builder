@@ -439,15 +439,28 @@ function Get-E2eCases {
             }
         }
         @{ Command = 'E2eStep'; File = 'e2e'; Kind = 'Custom'; Covers = 'ActivateOrOpen brings the top window of the program forward, then, while one of its windows is active, the bottom one'
-            Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A') }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A'); $ctx.Marks = @(Get-E2eMarks).Count }
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd; $c = $ctx.Run.Standins['C'].Hwnd
+                # The program's windows as the command finds them, from the top.
+                $order = { @(foreach ($h in (Get-E2eWindows 'ahk_exe e2eapp.exe' -IncludeCloaked)) { "'$([Macropad.WindowApi]::Title($h))'" }) -join ', ' }
                 $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 6000
                 $waited | Should -BeTrue -Because "the program's top window comes forward first (in front: $(Get-E2eForegroundText))"
+                Wait-ScreenChange -Observed  # B came forward just now: the next change keeps its distance from this one
+                # The key is pressed again only when the command has returned from the first press, which
+                # its mark says. B in front is too early: the AutoHotkey macropad ignores a key while its
+                # earlier press is still being handled (one thread per hotkey, AutoHotkey's default), and
+                # WinActivate keeps the command for about 100 ms after the window is in front.
+                $waited = Wait-E2eMark $ctx.Marks 'step done' -TimeoutMs 6000
+                $waited | Should -Be 'step done' -Because "the command returns from the first press (marks since that press: $((Get-E2eMarks $ctx.Marks) -join ' / '); in front: $(Get-E2eForegroundText))"
+                $marks = @(Get-E2eMarks).Count
+                $before = & $order
                 Invoke-E2eCaseKey $ctx -Front $b
                 $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $c } -TimeoutMs 6000
-                $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText))"
+                # What tells a key the macropad did not take (the command ran 0 times) from an activation
+                # that Windows refused or that went to another window (it ran, and the order shows where).
+                $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText); the command ran $(@(Get-E2eMarks $marks).Count) time(s) for this press; the program's windows from the top, before the press: $before; now: $(& $order))"
             }
         }
         (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Covers 'opens or brings forward a File Explorer window, not the taskbar, where File Explorer starts' `

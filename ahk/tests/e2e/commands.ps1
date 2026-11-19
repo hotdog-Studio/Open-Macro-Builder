@@ -79,8 +79,13 @@ function E2eNeverAppears {
     E2eWrite 'marks.log' "never $([int][bool]$r)"
 }
 
-# ActivateOrOpen brings the top window of the program forward, then the bottom one.
-function E2eStep { param($Macro) ActivateOrOpen 'e2eapp.exe' (E2eLauncher) }
+# ActivateOrOpen brings the top window of the program forward, then the bottom one. The mark says that
+# it has returned: the test waits for it before it presses the key again (see commands.ahk).
+function E2eStep {
+    param($Macro)
+    ActivateOrOpen 'e2eapp.exe' (E2eLauncher)
+    E2eWrite 'marks.log' 'step done'
+}
 
 # Chrome gets an address with & in it whole, and comes forward.
 function E2eChromeUrl { param($Macro) ActivateOrOpenChrome 'https://example.com/?a=1&b=2' }

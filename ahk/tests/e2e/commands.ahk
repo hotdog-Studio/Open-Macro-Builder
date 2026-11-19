@@ -112,11 +112,14 @@ E2eNeverAppears(Macro) {
 }
 
 /**
- * ActivateOrOpen brings the top window of the program forward, then the bottom one.
+ * ActivateOrOpen brings the top window of the program forward, then the bottom one. The mark says
+ * that it has returned: the test waits for it before it presses the key again, since AutoHotkey
+ * ignores a key whose earlier press is still being handled.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eStep(Macro) {
     ActivateOrOpen("ahk_exe e2eapp.exe", E2eLauncher())
+    E2eWrite("marks.log", "step done")
 }
 
 /**

@@ -466,9 +466,9 @@ function Get-E2eRepeat {
     2
 }
 
-# Starts a program for the run and remembers it, so that it is ended at the end of the run (or by the
-# watchdog, or by Clear-E2eLeftovers). Environment entries are added to this process's own, minus the
-# test's own variables; this process's own environment is never changed.
+# Starts a program for the run and remembers it, so that the clean-up ends it (Clear-E2eLeftovers, at
+# the run's end or after a run that did not end itself). Environment entries are added to this process's
+# own, minus the test's own variables; this process's own environment is never changed.
 function Start-E2eProcess {
     param([Parameter(Mandatory)][string]$File, [string]$Arguments = '', [hashtable]$Environment = @{}, [string]$WorkingDirectory = '', [switch]$NoTrack)
     $si = [System.Diagnostics.ProcessStartInfo]::new($File, $Arguments)

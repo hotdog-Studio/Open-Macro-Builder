@@ -478,8 +478,11 @@ function Start-E2eProcess {
     foreach ($k in $script:E2eOwnVariables) { [void]$si.EnvironmentVariables.Remove($k) }
     foreach ($k in $Environment.Keys) { $si.EnvironmentVariables[$k] = [string]$Environment[$k] }
     $p = [System.Diagnostics.Process]::Start($si)
-    if (-not $NoTrack) {
-        $script:E2eRun.Processes.Add([pscustomobject]@{ Pid = $p.Id; Name = [System.IO.Path]::GetFileName($File); Start = (Get-E2eStartTicks $p.Id) })
+    # The start time of a process just started can always be read while it runs: none means that it has
+    # already ended, and then there is nothing to end later and nothing to record.
+    $start = Get-E2eStartTicks $p.Id
+    if (-not $NoTrack -and $start -ne 0) {
+        $script:E2eRun.Processes.Add([pscustomobject]@{ Pid = $p.Id; Name = [System.IO.Path]::GetFileName($File); Start = $start })
         Write-E2eState
     }
     $p
@@ -756,10 +759,29 @@ function Get-E2eLaunches {
 function Get-E2eLaunchMark { @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'launches.log')).Count }
 
 # The processes running from a folder (the run's own: stand-ins, copies of AutoHotkey, the launcher).
+# With -OrWorkingIn, also those whose working directory is in it: the macropads under test work in the
+# run's copy, and a program one of them starts inherits that, so a program that outlives its window is
+# found here, and keeps the folder from being removed until it has ended. This process and the ones it
+# descends from never count (a clean-up called from a shell that stands in the folder). Each row has
+# WorkingIn: that directory, or '' for a process that runs from the folder.
 function Get-E2eRunProcesses {
-    param([string]$Dir = $script:E2eRun.Dir)
+    param([string]$Dir = $script:E2eRun.Dir, [switch]$OrWorkingIn)
     $prefix = $Dir.TrimEnd('\') + '\'
-    @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+    $all = @(Get-CimInstance Win32_Process)
+    $from = @($all | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+    foreach ($p in $from) { $p | Add-Member WorkingIn '' -Force }
+    if (-not $OrWorkingIn) { return $from }
+    $mine = @($PID)
+    for ($i = 0; $i -lt 20; $i++) {
+        $parent = @($all | Where-Object { [int]$_.ProcessId -eq $mine[-1] })[0]
+        if (-not $parent -or $mine -contains [int]$parent.ParentProcessId) { break }
+        $mine += [int]$parent.ParentProcessId
+    }
+    $from + @(foreach ($p in $all) {
+            if ($from -contains $p -or $mine -contains [int]$p.ProcessId) { continue }
+            $cwd = [OmbE2e.ProcessInfo]::CurrentDirectory([int]$p.ProcessId)
+            if ($cwd -and ($cwd.TrimEnd('\') + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { $p | Add-Member WorkingIn $cwd -Force -PassThru }
+        })
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -1127,7 +1149,8 @@ function Assert-E2eMacropadRuns {
 # ---------------------------------------------------------------------------------------------------
 # The macropad under test.
 
-# Starts the macropad of Lang (from the run's copy) with the layout of one chunk of the cases.
+# Starts the macropad of Lang (from the run's copy, and working in it, so that what it starts works
+# there too and not in the folder the test was called from) with the layout of one chunk of the cases.
 function Start-E2eMacropad {
     param([Parameter(Mandatory)][ValidateSet('ahk', 'ps')][string]$Lang, [int]$Chunk = 1)
     $envs = Get-E2eMacropadEnvironment
@@ -1135,11 +1158,11 @@ function Start-E2eMacropad {
     $app = Join-Path $script:E2eRun.Dir 'app'
     if ($Lang -eq 'ahk') {
         $arguments = '/ErrorStdOut=UTF-8 /include "{0}" "{1}"' -f (Join-Path $script:E2eFixtures 'commands.ahk'), (Join-Path $app 'ahk\main.ahk')
-        $p = Start-E2eProcess (Get-AhkExe) $arguments -Environment $envs
+        $p = Start-E2eProcess (Get-AhkExe) $arguments -Environment $envs -WorkingDirectory $app
     } else {
         # With launch.vbs's switches and -File, through a loader that adds the test's own commands.
         $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f (Join-Path $script:E2eRun.Dir 'start-ps.ps1')
-        $p = Start-E2eProcess 'powershell.exe' $arguments -Environment $envs
+        $p = Start-E2eProcess 'powershell.exe' $arguments -Environment $envs -WorkingDirectory $app
     }
     $script:E2eRun.Macropad = [pscustomobject]@{ Lang = $Lang; Process = $p; Layer = 1; Chunk = $Chunk }
     # Ready when it answers a key: the first key of the first layer runs E2eMark, which writes a line.
@@ -1475,14 +1498,17 @@ function Complete-E2eRun {
 # believed only as far as it can be checked: a process is ended only when its pid and start time are
 # still those recorded; a window is closed only when its handle, process, that process's start and
 # class still match; a virtual desktop is closed by its id. What cannot be checked (a start time that
-# cannot be read) is left alone, and that is a problem. A folder from before Windows last started is a
-# problem too: nothing it names is touched, the folder goes, and a virtual desktop it names that is
-# still there is reported. A step that fails is a problem and its line stays in the state file, so the
-# next clean-up tries again. The folder, and with it the record, goes in one place, and only when
-# nothing is left. One clean-up at a time works on a folder (a lock file beside it, omb-e2e-<pid>.lock,
-# held until the folder is done or gone): another waits for it, then looks again. Whenever a step
-# changes the screen a banner is up, and every such change is paced. Returns @{ Done; Problems }: what
-# was done, and what was not.
+# cannot be read) is left alone, and that is a problem. A process that runs from the run's folder or
+# works in it (a program a macropad under test started and that outlived its window) is the run's by
+# where it is: it is ended, and the clean-up says which. Of a folder from before Windows last started,
+# no process or window it names is touched (they ended with Windows): the macropads it stopped are
+# started again, a virtual desktop it names that is still there is a problem, and the folder goes. A
+# step that fails is a problem and its line stays in the state file, so the next clean-up tries again.
+# What a clean-up cleared is done, not a problem, whichever run left it. The folder, and with it the
+# record, goes in one place, and only when nothing is left. One clean-up at a time works on a folder
+# (a lock file beside it, omb-e2e-<pid>.lock, held until the folder is done or gone): another waits
+# for it, then looks again. Whenever a step changes the screen a banner is up, and every such change
+# is paced. Returns @{ Done; Problems }: what was done, and what was not.
 
 function Get-E2eStateLines {
     param([string]$Dir)
@@ -1591,13 +1617,15 @@ function Clear-E2eFolder {
     foreach ($line in $header) { if ($line -match '^boot (\d+)$') { $sameBoot = [math]::Abs([long]$Matches[1] - $boot) -lt 600000000 } }  # within a minute
     # A folder with no state names nothing (a run that ended while it made its folder): it only goes.
     if ($lines.Count -gt 0 -and -not $sameBoot) {
-        # Nothing it names is touched: after a restart a pid, a handle or a start time says nothing.
-        $Problems.Add("${name}: left by a run from before Windows last started (or unreadable); nothing it names was touched, and the folder is removed")
+        # No process or window it names is touched: after a restart a pid, a handle or a start time
+        # says nothing, and what they named ended with Windows. A virtual desktop outlives a restart,
+        # and so does the duty to start again a macropad the run stopped.
+        $Done.Add("${name}: left by a run from before Windows last started (or its state cannot be read); the processes and windows it names ended with Windows and were not touched")
         $desktops = Get-E2eDesktops
         foreach ($line in $lines) {
             if ($line -match '^desktop ([0-9a-f]{32})$' -and $desktops -contains $Matches[1]) { $Problems.Add("${name}: the virtual desktop $($Matches[1]) that run made is still there; close it by hand (Win+Ctrl+F4 on it)") }
         }
-        $lines = @()
+        $lines = @($lines | Where-Object { $_ -match '^run ' })
     }
     $left = [System.Collections.Generic.List[string]]::new()
     $try = {
@@ -1627,11 +1655,15 @@ function Clear-E2eFolder {
         }
     }
     foreach ($line in $lines) { if ($line -match '^kill (\d+) (\d+) (.+)$') { & $end $line $Matches[3] ([int]$Matches[1]) ([long]$Matches[2]) } }
-    # The programs in the run's own folder (its copies of AutoHotkey, the launcher) are its own.
-    foreach ($p in Get-E2eRunProcesses $Dir) {
-        & $try '' "ending $($p.Name) $($p.ProcessId)" { Show-E2eCleanupBanner; Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $Done.Add("ended $($p.Name) $($p.ProcessId)") }
+    # The programs that run from the run's own folder (its copies of AutoHotkey, the launcher) or work
+    # in it (what a macropad under test started and nothing closed) are the run's own: while one lives,
+    # the folder cannot be removed.
+    $where = { param($p) if ($p.WorkingIn) { "$($p.Name) $($p.ProcessId), which worked in the run's folder ($($p.WorkingIn))" } else { "$($p.Name) $($p.ProcessId), which ran from the run's folder" } }
+    foreach ($p in Get-E2eRunProcesses $Dir -OrWorkingIn) {
+        $what = & $where $p
+        & $try '' "ending $what" { Show-E2eCleanupBanner; Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $Done.Add("ended $what") }
     }
-    [void](Wait-E2eCondition { @(Get-E2eRunProcesses $Dir).Count -eq 0 } -TimeoutMs 5000)
+    [void](Wait-E2eCondition { @(Get-E2eRunProcesses $Dir -OrWorkingIn).Count -eq 0 } -TimeoutMs 5000)
     foreach ($line in $lines) {
         if ($line -match '^window (\d+) (\d+) (\d+) (.+)$') {
             $h = [IntPtr][long]$Matches[1]; $id = [int]$Matches[2]; $start = [long]$Matches[3]; $class = $Matches[4]
@@ -1672,11 +1704,13 @@ function Clear-E2eFolder {
     $parent = [int](Get-CimInstance Win32_Process -Filter "ProcessId = $PID").ParentProcessId
     foreach ($line in $lines) { if ($line -match '^banner (\d+) (\d+)$' -and [int]$Matches[1] -ne $parent) { & $end $line 'the banner' ([int]$Matches[1]) ([long]$Matches[2]) } }
     $keep = @($left | Where-Object { $_ })
-    if ($keep.Count -gt 0 -or @(Get-E2eRunProcesses $Dir).Count -gt 0) {
+    $still = @(Get-E2eRunProcesses $Dir -OrWorkingIn)
+    if ($still.Count -gt 0) { $Problems.Add("${name}: still running after it was ended: $(($still | ForEach-Object { & $where $_ }) -join '; ')") }
+    if ($keep.Count -gt 0 -or $still.Count -gt 0) {
         [System.IO.File]::WriteAllLines((Join-Path $Dir 'state.txt'), [string[]](@($header) + $keep))
         return
     }
     # The one place that deletes a run's record: nothing it names is left to do.
     try { Remove-Item -LiteralPath $Dir -Recurse -Force -ErrorAction Stop; $Done.Add("removed $Dir") }
-    catch { $Problems.Add("removing ${Dir}: $($_.Exception.Message)") }
+    catch { $Problems.Add("removing ${Dir}: $($_.Exception.Message) No process that runs from the folder or works in it can be seen from here (one of another user, an elevated one or a 32-bit one cannot be); the next clean-up tries again.") }
 }

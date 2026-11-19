@@ -142,7 +142,7 @@ powershell -NoProfile -File powershell\tests\run.ps1
 powershell -NoProfile -File powershell\tests\run.ps1 -ExcludeTag Integration
 ```
 
-The Integration tests send real keys and clicks, open and close Character Map, and run AutoHotkey check scripts. They type only into their own test windows, and the Fn hook swallows their ScrollLock press. Exclude them when you do not want keys sent or other programs started. The unit tests still flash a few of their own windows while they run: a tooltip, and the small test windows that the window tests move, resize, minimize and close. The overlay and the delayed key and click forms are built but never shown.
+The Integration tests send real keys and clicks, open and close Character Map, and run AutoHotkey check scripts. They type only into their own test windows, and the Fn hook swallows their ScrollLock press. One of them (in `Send.Tests.ps1`) switches NumLock, which is the whole keyboard's, for about a third of a second, and puts it back, also when it fails. Exclude them when you do not want keys sent or other programs started. The unit tests still flash a few of their own windows while they run: a tooltip, and the small test windows that the window tests move, resize, minimize and close. The overlay and the delayed key and click forms are built but never shown.
 
 The end-to-end test is left out of both, and runs alone:
 
@@ -150,7 +150,7 @@ The end-to-end test is left out of both, and runs alone:
 powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd
 ```
 
-It starts the real macropad, this version and the AutoHotkey one in turn, presses the macro keys and checks what every command did (see "The end-to-end test" in `docs/development.md`). It flashes more than the unit tests, at most three changes of the screen a second: it opens and closes File Explorer, consoles, Calculator, Notepad and small dark test windows, snaps and maximizes one, and shows Task View, the desktop, the screen capture and a second virtual desktop once per macropad (twice a run). It stops any macropad that runs and starts it again at the end, as it was started; the macropads it tests start from a copy that leaves out your own commands in `local/`. It needs AutoHotkey v2 and Python, and skips itself without AutoHotkey (under `-Ci` it fails instead).
+It starts the real macropad, this version and the AutoHotkey one in turn, presses the macro keys and checks what every command did (see "The end-to-end test" in `docs/development.md`). It flashes more than the unit tests, at most three changes of the screen a second; the list of what it opens, moves and shows is under "The end-to-end test" in `docs/development.md`. It stops any macropad that runs and starts it again at the end, as it was started; the macropads it tests start from a copy that leaves out your own commands in `local/`. It needs AutoHotkey v2 and Python, and skips itself without AutoHotkey (under `-Ci` it fails instead).
 
 `tools/spike-hotkeys.ps1` and `tools/preview-overlay.ps1` are manual checks for the hotkeys and the overlay.
 

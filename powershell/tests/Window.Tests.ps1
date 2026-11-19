@@ -11,18 +11,27 @@ Describe 'Get-ProcessWindow' {
 Describe 'Get-AppWindow' {
     BeforeAll { . "$PSScriptRoot\..\lib\Interop.ps1"; . "$PSScriptRoot\..\lib\WinTitle.ps1" }
     It 'returns the frame windows that carry the app''s application id, topmost first, whatever their titles' {
-        Mock Find-Window { , [IntPtr[]]@([IntPtr]5, [IntPtr]6, [IntPtr]7) } -ParameterFilter { $WinTitle -eq 'ahk_class ApplicationFrameWindow' -and $All }
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5, [IntPtr]6, [IntPtr]7) } -ParameterFilter { $WinTitle -eq 'ahk_class ApplicationFrameWindow' -and $All -and -not $IncludeHidden }
         Mock Get-WindowAppId { @{ 5 = 'Some.App_abc!App'; 6 = 'Other.App_xyz!App'; 7 = 'some.app_ABC!app' }[[int]$Hwnd] }
         $r = Get-AppWindow 'Some.App_abc!App'
         , $r | Should -BeOfType [System.Array]
         $r -join ',' | Should -Be '5,7'
     }
     It 'returns an empty array when no frame carries the id' {
-        Mock Find-Window { , [IntPtr[]]@([IntPtr]6) } -ParameterFilter { $All }
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]6) } -ParameterFilter { $All -and -not $IncludeHidden }
         Mock Get-WindowAppId { 'Other.App_xyz!App' }
         $r = Get-AppWindow 'Some.App_abc!App'
         , $r | Should -BeOfType [System.Array]
         $r.Count | Should -Be 0
+    }
+    It 'never asks for hidden windows: a frame that an app keeps, hidden, while it closes is not one to bring forward' {
+        # A hidden frame of the app, which only a search with -IncludeHidden gives, must not be picked.
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]9) } -ParameterFilter { $IncludeHidden }
+        Mock Find-Window { , [IntPtr[]]@() } -ParameterFilter { -not $IncludeHidden }
+        Mock Get-WindowAppId { 'Some.App_abc!App' }
+        (Get-AppWindow 'Some.App_abc!App').Count | Should -Be 0
+        Should -Invoke Find-Window -Times 0 -Exactly -ParameterFilter { $IncludeHidden }
+        Should -Invoke Find-Window -Times 1 -Exactly -ParameterFilter { $WinTitle -eq 'ahk_class ApplicationFrameWindow' -and $All -and -not $IncludeHidden }
     }
     It 'reads no application id from a window that has none' {
         Get-WindowAppId ([IntPtr]::Zero) | Should -Be ''

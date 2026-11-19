@@ -563,10 +563,15 @@ function Get-E2eCases {
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
         }
         # Then Calculator is closed and the key pressed again as soon as the pacing allows: a new window
-        # must come, shown and active. By then the closed window is gone (it still existed at none of
-        # 24 paced presses, 12 per language, when this was written), so the moment at which a press
-        # could find the closing window is not one this test may reach: that takes a press sooner
-        # after the close than three changes of the screen a second allow.
+        # must come, shown and active. What this cannot prove: that a press while the closed window
+        # still exists opens a new Calculator. Traced on a PC: after its close the window is visible but
+        # cloaked for about 15 ms (a state both versions' helpers still pick), hidden for 30 to 45 ms
+        # more, then gone, and a paced press comes 350 ms after the close (the window still existed at
+        # none of 24 such presses). The test cannot make that state itself either: a Calculator window
+        # that the test hides is hidden but not cloaked, and the app's own window is still in it. That
+        # the PowerShell helper never asks for hidden windows is pinned in Window.Tests.ps1; the
+        # AutoHotkey version has no test of that (it relies on AutoHotkey's default, hidden windows
+        # not detected).
         @{ Command = 'OpenCalculator'; Name = 'OpenCalculator (closed and opened again)'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'ApplicationFrameHost.exe', 'CalculatorApp.exe'
             Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'a press after Calculator was closed opens a new one, every time'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eCalculator -IncludeCloaked }

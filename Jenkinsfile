@@ -249,14 +249,27 @@ node {
         // the run's folder; only what the run's state file shows is still the run's) before the
         // test and again after it, whatever happened. The clean-up exits 1 when it could not do
         // everything, and that marks the build failed, as a failed test does.
+        // A program that an earlier build left working in the workspace keeps Windows from removing
+        // the folder itself, though not what is in it. The stage then goes on: a held, empty folder
+        // can be checked out into, and the first clean-up, which then has its code, ends what an
+        // earlier build left there (-EarlierBuilds) and prints what it was. What it cleared does not
+        // fail this build.
         def label = env.OMB_WINDOWS_DESKTOP_LABEL ?: 'windows-desktop'
         def cleanUp = 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -EndToEndCleanup'
         if (!onAgent(label, 45) {
             try {
-                deleteDir()
+                try {
+                    deleteDir()
+                } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+                    throw e
+                } catch (e) {
+                    echo "the workspace could not be removed, so something still works in it (${e.message}); checking out into it"
+                }
                 checkout scm
+                // Whatever the removal left must not pass for this build's (an old result file).
+                if (bat(returnStatus: true, script: 'git clean -ffdx') != 0) { echo 'git clean could not remove everything that is not part of the checkout' }
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the clean-up before the end-to-end test failed') {
-                    bat cleanUp
+                    bat cleanUp + ' -EarlierBuilds'
                 }
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci -EndToEnd'

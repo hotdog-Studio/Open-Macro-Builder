@@ -12,14 +12,24 @@
 # did not end themselves (ends their processes, closes their windows and virtual desktops, lets go of
 # held keys, starts again the macropads they stopped, removes their folders), touching only what each
 # run's state file shows is still that run's; it exits 1 when something could not be cleaned up.
+# -EarlierBuilds, with -EndToEndCleanup and only in a Jenkins build (BUILD_TAG and WORKSPACE set, this
+# script inside that workspace), first ends what an earlier build of the job left in the workspace: a
+# process that runs from it or works in it and started before this clean-up did, the build's own steps
+# left out. It prints each one. Never use it on your own checkout: your shells stand in it.
 # -LimitMinutes changes the end-to-end run's time limit (20 minutes), after which it stops and cleans
 # up. -Repeat says how many times the cases that repeat a moment (the Calculator series) run it (2).
-param([string[]]$ExcludeTag = @(), [switch]$Ci, [switch]$EndToEnd, [string]$Case, [switch]$EndToEndCleanup, [int]$LimitMinutes = 20, [int]$Repeat = 0)
+param([string[]]$ExcludeTag = @(), [switch]$Ci, [switch]$EndToEnd, [string]$Case, [switch]$EndToEndCleanup, [switch]$EarlierBuilds, [int]$LimitMinutes = 20, [int]$Repeat = 0)
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if ($EndToEndCleanup) {
     foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'AhkSyntax', 'WinTitle', 'WindowOps', 'Window') { . (Join-Path $root "powershell\lib\$f.ps1") }
     foreach ($f in 'Ahk', 'CommandSource', 'EndToEnd') { . (Join-Path $PSScriptRoot "helpers\$f.ps1") }
-    $result = Clear-E2eLeftovers
+    $workspace = ''
+    if ($EarlierBuilds) {
+        $inWorkspace = $env:WORKSPACE -and ($root.TrimEnd('\') + '\').StartsWith($env:WORKSPACE.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
+        if ($env:BUILD_TAG -and $inWorkspace) { $workspace = $env:WORKSPACE.TrimEnd('\') }
+        else { Write-Host 'End-to-end clean-up: -EarlierBuilds is for a Jenkins build only (BUILD_TAG, and WORKSPACE with this script in it); nothing outside the runs'' own folders is looked at.' }
+    }
+    $result = Clear-E2eLeftovers -Workspace $workspace
     Write-Host "End-to-end clean-up: $($result.Done.Count) thing(s) done, $($result.Problems.Count) not done."
     if ($result.Problems.Count -gt 0) { exit 1 }
     exit 0

@@ -1547,8 +1547,10 @@ function Complete-E2eRun {
 # still those recorded; a window is closed only when its handle, process, that process's start and
 # class still match; a virtual desktop is closed by its id. What cannot be checked (a start time that
 # cannot be read) is left alone, and that is a problem. A process that runs from the run's folder or
-# works in it (a program a macropad under test started and that outlived its window) is the run's by
-# where it is: it is ended, and the clean-up says which. Of a folder from before Windows last started,
+# works in it (a program the test or a macropad under test started and that outlived its window) is
+# the run's by where it is and when it started, after the run's test did: it is ended, and the
+# clean-up says which. Under Jenkins the same holds for the workspace and an earlier build
+# (Clear-E2eWorkspace). Of a folder from before Windows last started,
 # no process or window it names is touched (they ended with Windows): the macropads it stopped are
 # started again, a virtual desktop it names that is still there is a problem, and the folder goes. A
 # step that fails is a problem and its line stays in the state file, so the next clean-up tries again.
@@ -1619,10 +1621,36 @@ function Show-E2eCleanupBanner {
     if ((Find-Window $script:E2eBannerWindow) -eq [IntPtr]::Zero) { $script:E2eCleanupBanner = Start-E2eBanner }
 }
 
+# Under Jenkins only (run.ps1 -EarlierBuilds decides): what an earlier build of the job left in the
+# workspace. A process that runs from the workspace or works in it, that started before this clean-up
+# did and is neither this process nor one it descends from (the build's own steps), cannot be this
+# build's. It is listed with all that says which case started it, ended, and done: this build is not
+# failed for what it has just cleared. One whose start cannot be read, or that cannot be ended, is a
+# problem. Never on a developer's desktop: there the checkout is a person's folder, and their shells
+# stand in it.
+function Clear-E2eWorkspace {
+    param([string]$Workspace, [System.Collections.Generic.List[string]]$Done, [System.Collections.Generic.List[string]]$Problems)
+    $mine = Get-E2eStartTicks $PID
+    $found = @(Get-E2eRunProcesses $Workspace -OrWorkingIn)
+    Write-Host "End-to-end clean-up: $($found.Count) process(es) of an earlier build in the workspace $Workspace (running from it or working in it, this build's own steps left out)."
+    foreach ($p in $found) {
+        $what = Get-E2eProcessText $p
+        if ($p.StartTicks -eq 0 -or $mine -eq 0) { $Problems.Add("in the workspace, left alone because it cannot be told when it started: $what"); continue }
+        if ($p.StartTicks -ge $mine) { continue }
+        try {
+            Show-E2eCleanupBanner
+            Wait-ScreenChange
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
+            [void](Wait-E2eCondition { -not (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) } -TimeoutMs 5000)
+            $Done.Add("ended what an earlier build left in the workspace: $what")
+        } catch { $Problems.Add("an earlier build left it in the workspace, and it could not be ended ($($_.Exception.Message)): $what") }
+    }
+}
+
 # Cleans up every leftover run folder; with Ended, only that folder, the one of the run that calls this
-# at its own end.
+# at its own end. With Workspace (a Jenkins build's), first what an earlier build left there.
 function Clear-E2eLeftovers {
-    param([string]$Ended = '')
+    param([string]$Ended = '', [string]$Workspace = '')
     $done = [System.Collections.Generic.List[string]]::new()
     $problems = [System.Collections.Generic.List[string]]::new()
     $script:E2eCleanupBanner = 0
@@ -1632,6 +1660,7 @@ function Clear-E2eLeftovers {
         $dirs = @(Get-ChildItem -LiteralPath $temp -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^omb-e2e-\d+(-\d+)?$' })
     }
     try {
+        if ($Workspace) { Clear-E2eWorkspace $Workspace $done $problems }
         foreach ($dir in $dirs) {
             if (-not $Ended -and (Test-E2eRunAlive $dir.FullName (Get-E2eStateLines $dir.FullName))) { continue }
             $lock = Lock-E2eFolder $dir.FullName $problems

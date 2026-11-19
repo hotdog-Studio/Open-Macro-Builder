@@ -186,3 +186,4 @@ The twelve macro keys (F13 to F24) still use `RegisterHotKey` with `MOD_NOREPEAT
 - The overlay never takes focus, so clicking it leaves keys going to the app you were in.
 - The built-in commands send keys as chords (`'LWin+Left'`, with `Send-Chord`) instead of AutoHotkey `Send` syntax. Your own commands can use `Send` syntax too, with `Send-Ahk`.
 - The fluent `Layout` methods (`AddLayer`, `RemoveLayer`, `ShowLabel` and so on) are not ported.
+- The helpers for your own commands (`commands/helper.ps1`) are not quite the same set. The first parameter of `ActivateOrOpen`, `Open` and `EnsureActiveOrOpen` is the program's exe name (`'notepad.exe'`), where the AutoHotkey version takes a WinTitle (`"ahk_exe notepad.exe"`). Only this version has `ActivateOrOpenWindow` (a window found by its WinTitle, such as a shell in Windows Terminal), `Show-MessageBox` (AutoHotkey's `MsgBox`), `Get-ExplorerWindows` and `Open-ExplorerWindow`.

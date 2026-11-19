@@ -321,6 +321,12 @@ $script:E2eExplorer = 'ahk_class CabinetWClass'
 # of those. A wait that is met takes no longer for it; only one that fails does.
 $script:E2eSlowStartMs = 20000
 
+# How long a case of the delayed-key and delayed-click forms waits for a key or a click that must
+# arrive: what a form sends through its timer with a delay of 0, and the key typed after a form was
+# closed. On the CI machine (2 cores) the scheduled key took 1.2 s to be seen, against a limit of 1.5 s
+# then; 8 s is what every key case gives its keys to reach the stand-in.
+$script:E2eFormSendMs = 8000
+
 # What a conditional case needs.
 $script:E2eNeedsStandardUser = { -not (Test-E2eAdministrator) }
 
@@ -724,7 +730,7 @@ function Get-E2eCases {
                 Wait-ScreenChange
                 Invoke-E2eButton $ctx.Form 'Schedule'
                 # A delay of 0 sends at once (it used to cancel the timer).
-                $taps = Wait-E2eTaps { Get-E2eWatchTaps } 1 -TimeoutMs 1500 -SettleMs 300
+                $taps = Wait-E2eTaps { Get-E2eWatchTaps } 1 -TimeoutMs $script:E2eFormSendMs -SettleMs 300
                 ($taps -join ', ') | Should -Be 'F7' -Because "a delay of 0 sends the key at once (the key watch saw: $([OmbE2e.KeyWatch]::Events() -join ' / '); the form says: $(Get-E2eFormText $ctx.Form))"
                 [Macropad.WindowApi]::Visible($ctx.Form) | Should -BeFalse -Because 'Schedule hides the form'
             }
@@ -758,7 +764,7 @@ function Get-E2eCases {
                 $b = Use-E2eStandin 'B'
                 $mark = Get-E2eStandinMark $b
                 Send-E2eChordTo $b.Hwnd 'a'
-                $taps = Wait-E2eTaps { Get-E2eStandinTaps $b $mark } 1 -TimeoutMs 2000
+                $taps = Wait-E2eTaps { Get-E2eStandinTaps $b $mark } 1 -TimeoutMs $script:E2eFormSendMs
                 ($taps -join ', ') | Should -Be 'a' -Because 'a recording the form left running would hold the key back'
             }
         }
@@ -782,7 +788,7 @@ function Get-E2eCases {
                 Set-ControlText (Get-E2eEdits $ctx.Form)[0] '0'
                 Wait-ScreenChange
                 Invoke-E2eButton $ctx.Form 'Schedule'
-                $click = Wait-E2eCondition { Get-E2eStandinEvents $b $mark | Where-Object Kind -eq 'click' | Select-Object -First 1 } -TimeoutMs 2000
+                $click = Wait-E2eCondition { Get-E2eStandinEvents $b $mark | Where-Object Kind -eq 'click' | Select-Object -First 1 } -TimeoutMs $script:E2eFormSendMs
                 $click | Should -Not -BeNullOrEmpty -Because "the recorded click is replayed at once with a delay of 0 (B's log since the first click: $((@(Read-E2eLog $b.Log) | Select-Object -Skip ($mark - 2)) -join ' / '); form visible: $([Macropad.WindowApi]::Visible($ctx.Form)))"
                 $click.Line | Should -Match '^click left ' -Because 'the recorded click was a left click'
             }

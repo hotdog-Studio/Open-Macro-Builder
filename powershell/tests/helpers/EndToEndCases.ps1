@@ -74,7 +74,8 @@ function Assert-E2eLaunch {
     $launch.Arguments | Should -BeExactly $Arguments -Because "$Exe must be given exactly these arguments (it was started by $($launch.Parent) as: $($launch.Exe) $($launch.Arguments))"
     $launch.Parent | Should -Be (Get-E2eMacropadExeName $ctx.Lang) -Because 'the macropad must start the program itself, not through cmd.exe'
     if ($Front -ne [IntPtr]::Zero) {
-        (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $Front } -TimeoutMs $TimeoutMs) | Should -BeTrue -Because "the program's window must come forward (in front: $(Get-E2eForegroundText))"
+        $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $Front } -TimeoutMs $TimeoutMs
+        $waited | Should -BeTrue -Because "the program's window must come forward (in front: $(Get-E2eForegroundText))"
     }
 }
 
@@ -177,7 +178,8 @@ function New-E2ePlacementCase {
         Assert  = {
             param($ctx)
             $a = $ctx.Run.Standins['A'].Hwnd
-            (Wait-E2eCondition { & $ctx.Case.Test $a } -TimeoutMs 4000) | Should -BeTrue -Because "the active window must be $($ctx.Case.Expect) (now: $((Get-WindowRect $a) | Out-String) state $(Get-WindowState $a))"
+            $waited = Wait-E2eCondition { & $ctx.Case.Test $a } -TimeoutMs 4000
+            $waited | Should -BeTrue -Because "the active window must be $($ctx.Case.Expect) (now: $((Get-WindowRect $a) | Out-String) state $(Get-WindowState $a))"
             Wait-ScreenChange -Observed
         }
         CleanUp = {
@@ -422,7 +424,8 @@ function Get-E2eCases {
             Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A'); $ctx.Marks = @(Get-E2eMarks).Count }
             Assert  = {
                 param($ctx)
-                Wait-E2eMark $ctx.Marks 'ensure *' | Should -Be 'ensure 1' -Because "EnsureActiveOrOpen says that a window of the program is active (marks since the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eMark $ctx.Marks 'ensure *'
+                $waited | Should -Be 'ensure 1' -Because "EnsureActiveOrOpen says that a window of the program is active (marks since the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); in front: $(Get-E2eForegroundText))"
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'the top window of the program comes forward'
             }
         }
@@ -430,7 +433,8 @@ function Get-E2eCases {
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Marks = @(Get-E2eMarks).Count; $ctx.Launches = Get-E2eLaunchMark }
             Assert  = {
                 param($ctx)
-                Wait-E2eMark $ctx.Marks 'never *' -TimeoutMs 25000 | Should -Be 'never 0' -Because "the three helpers give up after 5 s each and EnsureActiveOrOpen says no (marks within 25 s of the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); errors: $((Get-E2eErrorLines) -join ' / '))"
+                $waited = Wait-E2eMark $ctx.Marks 'never *' -TimeoutMs 25000
+                $waited | Should -Be 'never 0' -Because "the three helpers give up after 5 s each and EnsureActiveOrOpen says no (marks within 25 s of the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); errors: $((Get-E2eErrorLines) -join ' / '))"
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 3 -Because 'Open, ActivateOrOpen and EnsureActiveOrOpen each start the program'
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'nothing is activated when no window appears'
             }
@@ -440,9 +444,11 @@ function Get-E2eCases {
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd; $c = $ctx.Run.Standins['C'].Hwnd
-                (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 6000) | Should -BeTrue -Because "the program's top window comes forward first (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 6000
+                $waited | Should -BeTrue -Because "the program's top window comes forward first (in front: $(Get-E2eForegroundText))"
                 Invoke-E2eCaseKey $ctx -Front $b
-                (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $c } -TimeoutMs 6000) | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $c } -TimeoutMs 6000
+                $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText))"
             }
         }
         (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Covers 'AHK-8 (fix 1: item 11)' `
@@ -491,7 +497,8 @@ function Get-E2eCases {
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd
-                (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 4000) | Should -BeTrue -Because "Alt+Tab goes to the window used before (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 4000
+                $waited | Should -BeTrue -Because "Alt+Tab goes to the window used before (in front: $(Get-E2eForegroundText))"
             }
         }
         @{ Command = 'PreviousWindow'; File = 'windows'; Kind = 'Custom'; Covers = 'AHK-10 (fix 1: item 13)'
@@ -608,7 +615,8 @@ function Get-E2eCases {
                 param($ctx)
                 $ctx.Window = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -Active -TimeoutMs 8000
                 $ctx.Window | Should -Not -BeNullOrEmpty -Because "a new File Explorer window must come forward (in front: $(Get-E2eForegroundText))"
-                (Wait-E2eCondition { Get-E2eExplorerFolder $ctx.Window } -TimeoutMs 5000) | Should -Be (Join-Path $ctx.Run.Dir 'E2E Test\Smith, John') -Because "the new window shows the folder with the comma in its name (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { Get-E2eExplorerFolder $ctx.Window } -TimeoutMs 5000
+                $waited | Should -Be (Join-Path $ctx.Run.Dir 'E2E Test\Smith, John') -Because "the new window shows the folder with the comma in its name (in front: $(Get-E2eForegroundText))"
             }
             CleanUp = { param($ctx) if ($ctx.Window) { Close-E2eWindow $ctx.Window } }
         }
@@ -621,7 +629,8 @@ function Get-E2eCases {
             Assert  = {
                 param($ctx)
                 $a = $ctx.Run.Standins['A'].Hwnd
-                (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $a } -TimeoutMs 6000) | Should -BeTrue -Because "Chrome's window comes forward (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $a } -TimeoutMs 6000
+                $waited | Should -BeTrue -Because "Chrome's window comes forward (in front: $(Get-E2eForegroundText))"
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 0 -Because 'Chrome is not started again while it has a window'
             }
         }
@@ -694,7 +703,8 @@ function Get-E2eCases {
                 $ctx.Form = Wait-E2eForm 'Send key after delay'
                 $edits = Get-E2eEdits $ctx.Form
                 Invoke-E2eButton $ctx.Form 'Record key'
-                (Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Press a key' } -TimeoutMs 3000) | Should -Not -BeNullOrEmpty -Because "Record key must ask for a key within 3 s (the form says: $(Get-E2eFormText $ctx.Form))"
+                $waited = Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Press a key' } -TimeoutMs 3000
+                $waited | Should -Not -BeNullOrEmpty -Because "Record key must ask for a key within 3 s (the form says: $(Get-E2eFormText $ctx.Form))"
                 if ($ctx.Lang -eq 'ahk') { $chord = 'F7'; $want = '{F7}' } else { $chord = 'Ctrl+Shift+t'; $want = 'Ctrl+Shift+t' }
                 Send-E2eChordTo $ctx.Form $chord
                 $got = Wait-E2eCondition { $t = Get-ControlText $edits[0]; if ($t -eq $want) { $t } } -TimeoutMs 3000
@@ -723,7 +733,8 @@ function Get-E2eCases {
                 param($ctx)
                 $ctx.Form = Wait-E2eForm 'Click after delay'
                 Invoke-E2eButton $ctx.Form 'Record click'
-                (Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Click a mouse button' } -TimeoutMs 3000) | Should -Not -BeNullOrEmpty -Because "Record click must ask for a click within 3 s (the form says: $(Get-E2eFormText $ctx.Form))"
+                $waited = Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Click a mouse button' } -TimeoutMs 3000
+                $waited | Should -Not -BeNullOrEmpty -Because "Record click must ask for a click within 3 s (the form says: $(Get-E2eFormText $ctx.Form))"
                 $b = $ctx.Run.Standins['B']
                 $r = Get-WindowRect $b.Hwnd
                 $x = $r.X + 200; $y = $r.Y + 110
@@ -869,11 +880,13 @@ function Get-E2eCases {
             Assert  = {
                 param($ctx)
                 $a = $ctx.Run.Standins['A'].Hwnd
-                (Wait-E2eCondition { Test-E2eDesktopShown $a } -TimeoutMs 4000) | Should -BeTrue -Because "the desktop must show (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { Test-E2eDesktopShown $a } -TimeoutMs 4000
+                $waited | Should -BeTrue -Because "the desktop must show (in front: $(Get-E2eForegroundText))"
                 # The second press goes where the first left the keyboard: the desktop.
                 Invoke-E2eCaseKey $ctx -FrontDesktop
                 # Which window gets the keyboard back is Windows' choice; the windows must be back.
-                (Wait-E2eCondition { -not (Test-E2eDesktopShown $a) } -TimeoutMs 4000) | Should -BeTrue -Because "a second press brings the windows back (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { -not (Test-E2eDesktopShown $a) } -TimeoutMs 4000
+                $waited | Should -BeTrue -Because "a second press brings the windows back (in front: $(Get-E2eForegroundText))"
                 Wait-ScreenChange -Observed
             }
             CleanUp = {
@@ -931,7 +944,8 @@ function Get-E2eCases {
             Assert  = {
                 param($ctx)
                 $a = $ctx.Run.Standins['A'].Hwnd
-                (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $a } -TimeoutMs 6000) | Should -BeTrue -Because "Chrome's window comes forward (in front: $(Get-E2eForegroundText))"
+                $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $a } -TimeoutMs 6000
+                $waited | Should -BeTrue -Because "Chrome's window comes forward (in front: $(Get-E2eForegroundText))"
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 0 -Because 'Chrome is not started again while it has a window'
             }
         }

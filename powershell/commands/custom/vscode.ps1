@@ -1,5 +1,5 @@
 # VS Code shortcuts (ahk/commands/custom/vscode.ahk).
-# VsCodePauseDebugging sends F6, VS Code's Debug: Pause; both versions used to send Restart's chord.
+# VsCodePauseDebugging sends F6, VS Code's key for Debug: Pause (Restart is Ctrl+Shift+F5).
 # Key names: see VS Code's default keyboard shortcuts (code.visualstudio.com/docs/reference/default-keybindings).
 
 function VsCodeToggleBottomPanel { param($Macro) Send-Chord 'Ctrl+j' }

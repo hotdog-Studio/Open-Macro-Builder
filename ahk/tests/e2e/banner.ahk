@@ -17,6 +17,10 @@
 ;
 ;   AutoHotkey64.exe banner.ahk <pid to watch> <state file> <deadline, seconds since 1970 UTC, or 0>
 
+; It works in the temporary folder: not in this script's folder, which is AutoHotkey's default and lies
+; in the checkout (a banner that outlived a build would keep Jenkins from removing its workspace), and
+; not in the run's folder, which the clean-up it waits for must remove.
+SetWorkingDir(A_Temp)
 testPid := Integer(A_Args[1])
 stateFile := A_Args[2]
 deadline := Integer(A_Args[3])

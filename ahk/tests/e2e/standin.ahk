@@ -28,6 +28,11 @@
 ; next one waits in the window's queue, in its order), and a timer writes the list to the file.
 
 logFile := A_Args[1]
+; It works where its log is, in the run's folder: not in this script's folder, which is AutoHotkey's
+; default and lies in the checkout. Nothing of a run works there, so nothing that outlives a run can
+; keep a Jenkins workspace from being removed.
+SplitPath(logFile, , &logDir)
+SetWorkingDir(logDir)
 name := A_Args.Length >= 2 ? A_Args[2] : "stand-in"
 x := A_Args.Length >= 3 ? A_Args[3] : 40
 y := A_Args.Length >= 4 ? A_Args[4] : 120

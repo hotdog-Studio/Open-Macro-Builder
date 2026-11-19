@@ -676,6 +676,12 @@ function New-E2eRun {
     # Clear-E2eLeftovers to carry out.
     if (Test-Path -LiteralPath $dir) { Rename-Item -LiteralPath $dir -NewName "omb-e2e-$PID-$([DateTime]::UtcNow.Ticks)" }
     foreach ($sub in 'bin', 'path', 'temp', 'E2E Test', 'app') { [void](New-Item -ItemType Directory -Path (Join-Path $dir $sub)) }
+    # From here on the test works in the run's folder, and so does whatever it starts without saying
+    # where. Nothing of a run works in the folder the test was called from (a checkout, a Jenkins
+    # workspace): a program that outlives the run can then keep only the run's folder, which the
+    # clean-up handles, never the workspace of the next build.
+    Set-Location -LiteralPath $dir
+    [Environment]::CurrentDirectory = $dir
     $script:E2eRun = [pscustomobject]@{
         Dir          = $dir
         LimitMinutes = $LimitMinutes
@@ -1506,6 +1512,8 @@ function Complete-E2eRun {
     & $step 'letting go of held keys' { Clear-E2eHeldKeys }
     & $step 'stopping the macropad under test' { Stop-E2eMacropad }
     if ($r.NotRun.Count -gt 0) { Write-Host ("End-to-end: cases that did not run:`n  " + ($r.NotRun -join "`n  ")) }
+    # The test leaves the run's folder, where it worked, so that the folder can be removed.
+    & $step 'leaving the run''s folder' { $temp = [OmbE2e.ProcessInfo]::LongPath([System.IO.Path]::GetTempPath()); Set-Location -LiteralPath $temp; [Environment]::CurrentDirectory = $temp }
     $script:E2eRun = $null
     & $step 'the clean-up' { foreach ($p in (Clear-E2eLeftovers -Ended $r.Dir).Problems) { $problems.Add($p) } }
     if ($problems.Count -gt 0) { throw ("The end-to-end clean-up had problems: " + ($problems -join '; ')) }

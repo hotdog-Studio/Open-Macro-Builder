@@ -28,7 +28,7 @@ BeforeDiscovery {
                 OpenCommandPrompt = 'activates or opens a program'
                 OpenTaskManager   = 'activates or opens a program'
                 OpenControlPanel  = 'starts a program'
-                OpenSettings      = 'starts a program'
+                OpenSettings      = 'activates or opens a program'
                 OpenServices      = 'starts a program'
                 SnippingTool      = 'starts a program'
             }

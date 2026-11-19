@@ -55,11 +55,11 @@ OpenControlPanel(Macro) {
 }
 
 /**
- * Opens the Windows Settings app.
+ * Brings the Windows Settings window to the front, or opens Settings when no Settings window is open and brings its window to the front. Its window belongs to ApplicationFrameHost.exe, and Windows may leave a started Settings behind the active window.
  * @param {Macro} Macro - The macro object (not used).
  */
 OpenSettings(Macro) {
-    Run("ms-settings:")
+    ActivateOrOpen("Settings ahk_exe ApplicationFrameHost.exe", "ms-settings:")
 }
 
 /**

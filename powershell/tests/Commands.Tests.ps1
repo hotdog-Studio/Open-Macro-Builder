@@ -76,6 +76,12 @@ Describe 'Shell commands' {
             ($WinTitle -join '|') -eq 'ahk_exe cmd.exe|Command Prompt ahk_exe WindowsTerminal.exe|cmd.exe ahk_exe WindowsTerminal.exe' -and $Program -eq 'cmd'
         }
     }
+    It 'OpenSettings brings the Settings window forward, or opens Settings and then brings its window forward' {
+        Mock Start-Program {}
+        OpenSettings $null
+        Should -Invoke ActivateOrOpenWindow -Times 1 -Exactly -ParameterFilter { ($WinTitle -join '|') -eq 'Settings ahk_exe ApplicationFrameHost.exe' -and $Program -eq 'ms-settings:' }
+        Should -Invoke Start-Program -Times 0 -Exactly
+    }
 }
 Describe 'Get-KeyNameFromKeys' {
     It 'maps WinForms key codes back to chord names' {

@@ -14,7 +14,9 @@ function OpenPowershell { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe 
 function OpenCommandPrompt { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe' -Program 'cmd' }
 function OpenTaskManager { param($Macro) ActivateOrOpen 'taskmgr.exe' 'taskmgr' }
 function OpenControlPanel { param($Macro) Start-Program 'control' }
-function OpenSettings { param($Macro) Start-Program 'ms-settings:' }
+# Settings' window belongs to ApplicationFrameHost.exe, and Windows may leave a started Settings behind
+# the active window, so it is found and brought forward, as OpenCalculator does.
+function OpenSettings { param($Macro) ActivateOrOpenWindow 'Settings ahk_exe ApplicationFrameHost.exe' 'ms-settings:' }
 function OpenServices { param($Macro) Start-Program 'services.msc' }
 function SnippingTool { param($Macro) Start-Program 'ms-screenclip:' }
 

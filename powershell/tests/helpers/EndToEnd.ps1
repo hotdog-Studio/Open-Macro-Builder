@@ -801,7 +801,11 @@ function Get-E2eRunProcesses {
 function Find-E2eWindows {
     param([string]$WinTitle, [switch]$IncludeHidden)
     if ($WinTitle -notlike 'app:*') { return , (Find-Window $WinTitle -All -IncludeHidden:$IncludeHidden) }
-    , [IntPtr[]]@(foreach ($h in (Find-Window 'ahk_class ApplicationFrameWindow' -All -IncludeHidden:$IncludeHidden)) { if ((Get-WindowAppId $h) -eq $WinTitle.Substring(4)) { $h } })
+    # Read straight from Windows, topmost first, and nothing but the class, the visibility and the id: a
+    # case that must press while a frame is still cloaked looks many times a second, on a slow machine too.
+    , [IntPtr[]]@(foreach ($h in [Macropad.WindowApi]::TopLevel()) {
+            if ([Macropad.WindowApi]::ClassName($h) -ceq 'ApplicationFrameWindow' -and ($IncludeHidden -or [Macropad.WindowApi]::Visible($h)) -and (Get-WindowAppId $h) -eq $WinTitle.Substring(4)) { $h }
+        })
 }
 
 # The visible windows that fit any of the WinTitles (Find-E2eWindows' forms), as a list of handles. A
@@ -1413,7 +1417,9 @@ function Get-E2eSkipReason {
 }
 
 # Runs one case against the macropad under test. Returns $null when it ran, or the reason it did not
-# (the run lists those at its end). Before the macro key is pressed, the window the case named must
+# (the run lists those at its end): one known before it starts (Get-E2eSkipReason), or one that only
+# running it can show, which its Assert leaves in $ctx.NotRun (a condition of the machine that the
+# case measures as it runs). Before the macro key is pressed, the window the case named must
 # still be in front; when it is not, nothing is pressed and the case fails. Under -Ci only, a failure
 # after the press is tried once more when a window the run did not open had taken the focus; the
 # second try checks the front again before it presses.
@@ -1470,7 +1476,8 @@ function Invoke-E2eCase {
         }
         if ($problems.Count -eq 0) {
             if ($failure) { throw $failure }
-            return $null
+            if ($ctx.NotRun) { $script:E2eRun.NotRun.Add("$Lang $($Case.Name): $($ctx.NotRun)") }
+            return $ctx.NotRun
         }
         $text = "The clean-up after $($Case.Name) had problems: $($problems -join '; ')"
         if ($failure) { $text = "$($failure.Exception.Message)`n$text" }

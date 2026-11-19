@@ -165,9 +165,8 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
 
         Write-Host $script:E2eWarning
         $limit = 20; if ($env:OMB_E2E_LIMIT) { $limit = [int]$env:OMB_E2E_LIMIT }
-        [void](New-E2eRun -LimitMinutes $limit)
-        Start-E2eBanner
-        Wait-Pump 3000  # the banner is up three seconds before the first key or change of the screen
+        # The banner is up three seconds before the first key or change of the screen.
+        [void](Start-E2eBanner (New-E2eRun -LimitMinutes $limit))
         # What an earlier run that did not end itself left (a crash, a Jenkins abort): the clean-up
         # touches only what each state file shows is still that run's.
         $left = Clear-E2eLeftovers

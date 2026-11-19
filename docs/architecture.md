@@ -53,7 +53,7 @@ One file per tab (`GetStarted`, `ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsT
 
 `Toast.tsx` shows the one message the store holds (`banner`) as a floating toast. A notice or a refused action leaves by itself. A failure stays until dismissed, and so does a notice raised while a folder loads.
 
-`DocCard` (`code/DocCard.tsx`) is the one card of a function's docs. `hoverDocs` shows it over a name in the code editor, and `OtherCommands` shows it beside a row of the right panel's list of what a command can call.
+`DocCard` (`code/DocCard.tsx`) is the one card of a function's docs. `hoverDocs` shows it over a name in the code editor. In the right panel, `DocHover.tsx` owns the one card for both of its lists, the outline of the file's commands and `OtherCommands` (what a command can call): `CommandsTab` wraps both in its `DocHoverProvider`, each row asks for the card through `useDocHover`, and the card is shown beside the panel, so a row of one list never leaves a card of the other up.
 
 `PadGrid.tsx` draws the pad on all three pad tabs and owns the drag and drop, built on [dnd-kit](https://dndkit.com/):
 

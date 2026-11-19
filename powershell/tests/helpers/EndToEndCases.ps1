@@ -551,8 +551,13 @@ function Get-E2eCases {
                     # makes active while it is still cloaked.
                     $fg = [Macropad.WindowApi]::Foreground()
                     if (-not [OmbE2e.Dwm]::Cloaked($first)) { $moments.Add("$seen ms, already shown when first seen") }
-                    elseif ($fg -ne $b -and $fg -ne $first) { $moments.Add("$seen ms, cloaked, but $(Get-E2eForegroundText) was in front") }
-                    else {
+                    elseif ($fg -ne $b -and $fg -ne $first) {
+                        # The state was reached, but the key had nowhere to go: that is a failure of
+                        # this try (as a press into the wrong window is anywhere else), never a
+                        # condition of the machine.
+                        $moments.Add("$seen ms, cloaked, not pressed")
+                        $failed.Add("try ${tries}: not pressed: the first window was still cloaked, but neither it nor the stand-in B was in front; $(Get-E2eForegroundText) was")
+                    } else {
                         $ctx.Pressed = $true
                         Invoke-E2eMacroKey $ctx.Case.Slot
                         if ([OmbE2e.Dwm]::Cloaked($first)) { $hit++; $moments.Add("$seen ms, pressed while cloaked") } else { $moments.Add("$seen ms, shown while the key went down") }
@@ -565,6 +570,7 @@ function Get-E2eCases {
                 $told = "{0} reached in {1} tries, {2} failed. First window seen after the first press: {3}" -f $hit, $tries, $failed.Count, ($moments -join '; ')
                 Write-Host "End-to-end Calculator series, $($ctx.Lang), second press while it starts: $told"
                 ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every try must end with exactly one Calculator window, shown and active'
+                # Every miss left here is "already shown when first seen" or "shown while the key went down".
                 if ($hit -eq 0) { $ctx.NotRun = "conditional: on this machine the first Calculator window was never still cloaked when the second press could come ($told)" }
             }
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }

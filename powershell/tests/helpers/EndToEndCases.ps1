@@ -618,8 +618,8 @@ function Get-E2eCases {
                 $why = Test-E2eOneCalculator $ctx.Before
                 if ($why) { throw "The first press: $why" }
                 foreach ($try in 1..$n) {
-                    $old = [Macropad.WindowApi]::Foreground()
-                    if ((Get-E2eCalculatorWindows $ctx.Before) -notcontains $old) { throw "Try ${try}: the Calculator window was not in front before the close; $(Get-E2eForegroundText) was." }
+                    $old = Wait-E2eCondition { $f = [Macropad.WindowApi]::Foreground(); if ((Get-E2eCalculatorWindows $ctx.Before) -contains $f) { $f } } -TimeoutMs 3000
+                    if (-not $old) { throw "Try ${try}: the Calculator window was not in front before the close, also 3 s later; $(Get-E2eForegroundText) was." }
                     Wait-ScreenChange
                     [void][Macropad.WindowApi]::Post($old, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)  # WM_CLOSE, as its close button
                     # Windows gives the keyboard back to the window before it, B. The key goes into B
@@ -862,8 +862,12 @@ function Get-E2eCases {
                     if ($now -and $now -ne $ctx.CurrentBefore -and $ctx.DesktopsBefore -notcontains $now) { Add-E2eNewDesktop $now; $true }
                 } -TimeoutMs 4000
                 $made | Should -BeTrue -Because 'a new virtual desktop must be made and shown'
-                (Get-E2eDesktopCount) | Should -Be ($ctx.Run.DesktopCount + 1) -Because 'the key makes one desktop'
-                [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) | Should -BeFalse -Because 'the new desktop is shown'
+                # The count and where A is are read from other places than the desktop that is shown
+                # (the list of desktops; Windows' answer about a window): each is waited for.
+                $waited = Wait-E2eCondition { (Get-E2eDesktopCount) -eq ($ctx.Run.DesktopCount + 1) } -TimeoutMs 4000
+                $waited | Should -BeTrue -Because "the key makes one desktop (there were $($ctx.Run.DesktopCount); there are $(Get-E2eDesktopCount))"
+                $waited = Wait-E2eCondition { -not [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) } -TimeoutMs 4000
+                $waited | Should -BeTrue -Because 'the new desktop is shown, and A is not on it'
                 Wait-ScreenChange -Observed
             }
         }

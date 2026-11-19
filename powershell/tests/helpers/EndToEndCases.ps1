@@ -313,6 +313,14 @@ function New-E2eOpenerCase {
 
 $script:E2eExplorer = 'ahk_class CabinetWClass'
 
+# How long a case waits for the window of a Windows program that starts slowly: File Explorer,
+# Settings, Task Manager, the management console. The number comes from the CI machine (2 cores), where
+# the run's own list of slow waits showed a new File Explorer window in front after 6.4 to 8.3 s and
+# Settings after 7.5 to 7.8 s, against limits of 8 and 10 s then, and where the cases of Task Manager
+# and the management console took up to 9.4 and 11.4 s in all. 20 s leaves more than twice the longest
+# of those. A wait that is met takes no longer for it; only one that fails does.
+$script:E2eSlowStartMs = 20000
+
 # What a conditional case needs.
 $script:E2eNeedsStandardUser = { -not (Test-E2eAdministrator) }
 
@@ -463,7 +471,7 @@ function Get-E2eCases {
                 $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText); the command ran $(@(Get-E2eMarks $marks).Count) time(s) for this press; the program's windows from the top, before the press: $before; now: $(& $order))"
             }
         }
-        (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Covers 'opens or brings forward a File Explorer window, not the taskbar, where File Explorer starts' `
+        (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -TimeoutMs $script:E2eSlowStartMs -Covers 'opens or brings forward a File Explorer window, not the taskbar, where File Explorer starts' `
                 -Folder { param($p) $p -and -not $p.StartsWith($script:E2eControlPanel) } -FolderWhat 'where File Explorer starts (not Control Panel)' -SkipIf {
                 $f = Get-E2eForeignWindows $script:E2eExplorer
                 if ($f.Count -gt 0) { "File Explorer windows the test did not open are on the desktop ($($f -join ', ')); the key would bring one of them forward" }
@@ -476,14 +484,14 @@ function Get-E2eCases {
                 [void](Use-E2eStandin 'B')
                 Wait-ScreenChange
                 Start-Process explorer.exe -ArgumentList ('"{0}"' -f (Join-Path $ctx.Run.Dir 'E2E Test'))
-                $ctx.Other = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -TimeoutMs 8000
+                $ctx.Other = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -TimeoutMs $script:E2eSlowStartMs
                 if (-not $ctx.Other) { throw 'The test could not open the first File Explorer window.' }
                 [void](Set-E2eActive $ctx.Other)
                 $ctx.Before = Get-E2eWindows $script:E2eExplorer -IncludeCloaked
             }
             Assert  = {
                 param($ctx)
-                $ctx.Window = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -Active -TimeoutMs 8000
+                $ctx.Window = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -Active -TimeoutMs $script:E2eSlowStartMs
                 $ctx.Window | Should -Not -BeNullOrEmpty -Because "a new File Explorer window must come forward (in front: $(Get-E2eForegroundText))"
                 $shown = Wait-E2eCondition { Get-E2eExplorerFolder $ctx.Window } -TimeoutMs 5000
                 $shown | Should -Be ([Environment]::GetFolderPath('MyDocuments')) -Because "the new window shows the Documents folder (in front: $(Get-E2eForegroundText))"
@@ -640,7 +648,7 @@ function Get-E2eCases {
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eExplorer -IncludeCloaked }
             Assert  = {
                 param($ctx)
-                $ctx.Window = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -Active -TimeoutMs 8000
+                $ctx.Window = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -Active -TimeoutMs $script:E2eSlowStartMs
                 $ctx.Window | Should -Not -BeNullOrEmpty -Because "a new File Explorer window must come forward (in front: $(Get-E2eForegroundText))"
                 $waited = Wait-E2eCondition { Get-E2eExplorerFolder $ctx.Window } -TimeoutMs 5000
                 $waited | Should -Be (Join-Path $ctx.Run.Dir 'E2E Test\Smith, John') -Because "the new window shows the folder with the comma in its name (in front: $(Get-E2eForegroundText))"
@@ -800,20 +808,17 @@ function Get-E2eCases {
         foreach ($c in 'PreviousTrack', 'PlayPause', 'NextTrack', 'VolumeDown', 'VolumeUp') { @{ Command = $c; File = 'media'; Kind = 'Watch' } }
 
         # ---- windows ----
-        # Task Manager and the management console are given 20 s to show their window, not 10: on the CI
-        # machine (2 cores) their cases took up to 9.4 s and 11.4 s in all, and such a case without that
-        # wait takes about 2 s there (Notepad's: 4 s with Notepad's start).
-        (New-E2eOpenerCase 'OpenTaskManager' 'windows' 'ahk_exe taskmgr.exe' -Targets 'taskmgr.exe' -TimeoutMs 20000 `
+        (New-E2eOpenerCase 'OpenTaskManager' 'windows' 'ahk_exe taskmgr.exe' -Targets 'taskmgr.exe' -TimeoutMs $script:E2eSlowStartMs `
                 -Needs @{ Why = 'needs a standard user: for an administrator Task Manager starts elevated, and the test, which is not, could not close it'; Met = $script:E2eNeedsStandardUser } -SkipIf {
                 if ((Get-E2eForeignWindows 'ahk_exe taskmgr.exe').Count -gt 0) { 'a Task Manager the test did not open is on the desktop' }
             })
-        (New-E2eOpenerCase 'OpenControlPanel' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Folder { param($p) $p -and $p.StartsWith($script:E2eControlPanel) } -FolderWhat 'Control Panel')
+        (New-E2eOpenerCase 'OpenControlPanel' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -TimeoutMs $script:E2eSlowStartMs -Folder { param($p) $p -and $p.StartsWith($script:E2eControlPanel) } -FolderWhat 'Control Panel')
         # The first press is a cold start: no Settings window, hidden ones included, is there (SkipIf),
         # and Settings ends when its window closes. The second, with Settings running behind B, a warm one.
-        (New-E2eOpenerCase 'OpenSettings' 'windows' $script:E2eSettings -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -SecondPress -Covers 'Settings comes forward on a cold start and on a warm one' -SkipIf {
+        (New-E2eOpenerCase 'OpenSettings' 'windows' $script:E2eSettings -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -TimeoutMs $script:E2eSlowStartMs -SecondPress -Covers 'Settings comes forward on a cold start and on a warm one' -SkipIf {
                 if ((Get-E2eForeignWindows $script:E2eSettings -IncludeHidden).Count -gt 0) { 'a Settings window the test did not open is on the desktop; the key would bring it forward' }
             })
-        (New-E2eOpenerCase 'OpenServices' 'windows' 'ahk_exe mmc.exe' -Targets 'mmc.exe' -TimeoutMs 20000 `
+        (New-E2eOpenerCase 'OpenServices' 'windows' 'ahk_exe mmc.exe' -Targets 'mmc.exe' -TimeoutMs $script:E2eSlowStartMs `
                 -Needs @{ Why = 'needs a standard user: mmc.exe asks for the highest rights the user has, so for an administrator Windows shows its elevation prompt'; Met = $script:E2eNeedsStandardUser } -SkipIf {
                 if ((Get-E2eForeignWindows 'ahk_exe mmc.exe').Count -gt 0) { 'a management console the test did not open is on the desktop' }
             })

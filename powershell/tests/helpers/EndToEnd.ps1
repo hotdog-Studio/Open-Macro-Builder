@@ -225,7 +225,8 @@ namespace OmbE2e
             return buffer;
         }
 
-        // null when it cannot be read (another user's process, a 32-bit process).
+        // null when it cannot be read: a process of another user or an elevated one, or any process
+        // when this one is 32-bit. A 32-bit process is read too, its directory as it is now.
         public static string CurrentDirectory(int pid)
         {
             if (IntPtr.Size != 8) return null;

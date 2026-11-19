@@ -798,11 +798,10 @@ function Get-E2eCases {
             }
             CleanUp = {
                 param($ctx)
-                # Should the Shut Down dialog have opened, it is closed by a message to that dialog
-                # (WM_CLOSE, as its Cancel), never by a key.
-                foreach ($w in (Get-E2eWindows 'ahk_class #32770 ahk_exe explorer.exe' -IncludeCloaked)) {
-                    if ($ctx.Dialogs -notcontains $w) { Wait-ScreenChange; [void][Macropad.WindowApi]::Post($w, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }
-                }
+                # Should the Shut Down dialog have opened: a new dialog of File Explorer's is not one the
+                # case recorded, so the one rule decides (closed under -Ci by a message to it, as its
+                # Cancel, never by a key; on a developer's desktop left open, and said so).
+                if ($null -ne $ctx.Dialogs) { Close-E2eUnrecordedWindows 'ahk_class #32770 ahk_exe explorer.exe' $ctx.Dialogs }
             }
         }
         @{ Command = 'CreateDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'

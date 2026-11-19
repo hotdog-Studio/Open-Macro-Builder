@@ -38,7 +38,7 @@ export interface Session {
   libraryFiles: LibraryFile[]
 }
 
-/** The open screen: nothing loaded. */
+/** The start screen: nothing loaded. */
 export interface OpenState {
   screen: 'open'
   /** Why the last folder did not open (inspectFolder, ConfigError, EncodingError, lost, …). */

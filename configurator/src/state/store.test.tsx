@@ -113,7 +113,7 @@ describe('the reducer', () => {
     expect(reducer(state, { type: 'dismiss-disk' })).toBe(state)
   })
 
-  it('leaves the editor when told to show the open screen', () => {
+  it('leaves the editor when told to show the start screen', () => {
     expect(reducer(editing(), { type: 'show-open', message: 'Gone', reopen: 'repo' })).toEqual({
       screen: 'open',
       message: 'Gone',

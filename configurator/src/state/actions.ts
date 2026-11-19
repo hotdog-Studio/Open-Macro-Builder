@@ -38,7 +38,7 @@ export interface AppActions {
   /** On start: reopens the remembered folder, or offers Reopen <name>, or says it is gone. */
   restore(): Promise<void>
   /**
-   * The Open folder button, on the open screen and in the editor's header. A cancelled
+   * The Open folder button, on the start screen and in the editor's header. A cancelled
    * picker changes nothing; the header asks before discarding edits.
    */
   openFolder(): Promise<void>
@@ -62,7 +62,7 @@ export interface AppActions {
   chooseLanguage(lang: LangId): Promise<void>
   /** I run: ignored when it would leave no language; saved straight away. */
   setLanguages(languages: LangId[]): Promise<void>
-  /** Back to the open screen without writing anything. */
+  /** Back to the start screen without writing anything. */
   closeFolder(): void
   /**
    * Save config.json: checkWorkspace, then <configPath>.bak, then the file itself.
@@ -133,7 +133,7 @@ interface Held {
 const PERSONAL_CONFIG = 'local/config.json'
 const EXAMPLE_CONFIG = 'config.json'
 
-/** What the open screen shows for an error while opening a folder. */
+/** What the start screen shows for an error while opening a folder. */
 export function openError(e: unknown): string {
   if (e instanceof ConfigError || e instanceof EncodingError) return e.message
   return `The folder could not be opened: ${e instanceof Error ? e.message : String(e)}`
@@ -148,7 +148,7 @@ function checkContext(state: EditState): CheckContext {
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-/** What the open screen shows when setting up a fresh copy failed. */
+/** What the start screen shows when setting up a fresh copy failed. */
 function setupError(e: unknown): string {
   // Refused before the first write: there is no partial copy to warn about.
   if (e instanceof StarterError && e.message === NOT_EMPTY) return e.message
@@ -157,7 +157,7 @@ function setupError(e: unknown): string {
   return `Setting up stopped part-way: ${reason}. The folder may hold a partial copy: delete it, or pick another empty folder.`
 }
 
-/** What the open screen shows when the starter's own chunk could not be fetched (a page older than its server). */
+/** What the start screen shows when the starter's own chunk could not be fetched (a page older than its server). */
 function starterLoadError(e: unknown): string {
   return `Nothing was copied: the starter files could not be loaded (${messageOf(e)}). Reload and try again.`
 }
@@ -405,7 +405,7 @@ export function createActions(
     else dispatch({ type: 'pick-language', session })
   }
 
-  /** Runs one step of opening a folder; any failure goes back to the open screen with its message. */
+  /** Runs one step of opening a folder; any failure goes back to the start screen with its message. */
   async function guarded(token: number, step: () => Promise<void>): Promise<void> {
     try {
       await step()
@@ -446,7 +446,7 @@ export function createActions(
 
   /**
    * Copies the starter into an empty folder, then opens it like any other. A failure goes back to
-   * the open screen; a newer load drops the outcome (the copy itself cannot be stopped).
+   * the start screen; a newer load drops the outcome (the copy itself cannot be stopped).
    */
   async function setUp(folder: FolderAccess, token: number): Promise<void> {
     dispatch({ type: 'setup', folder, writing: true })
@@ -462,7 +462,7 @@ export function createActions(
     await load(folder)
   }
 
-  /** Loads the starter, then writes it; false when either failed, and the open screen says why. */
+  /** Loads the starter, then writes it; false when either failed, and the start screen says why. */
   async function copyStarter(folder: FolderAccess, token: number): Promise<boolean> {
     let files: StarterFile[]
     try {
@@ -558,7 +558,7 @@ export function createActions(
         showOpen(openError(e))
         return
       }
-      // Cancelled: the open screen stays as it is.
+      // Cancelled: the start screen stays as it is.
       if (!folder) return
       forget()
       // The folder was named for this, so an empty one is set up without asking again.

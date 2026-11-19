@@ -142,7 +142,7 @@ describe('opening an empty folder', () => {
     expect(screen.queryByRole('article', { name: 'Get started' })).toBeNull()
   })
 
-  it('Cancel goes back to the open screen with nothing written', async () => {
+  it('Cancel goes back to the start screen with nothing written', async () => {
     const folder = empty()
     const user = await openFolder(fakePlatform(folder))
     const dialog = await screen.findByRole('dialog', { name: 'This folder is empty' })

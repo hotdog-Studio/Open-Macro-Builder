@@ -212,7 +212,7 @@ describe('opening a folder from the header', () => {
     expect(h.edit().dirty).toBe(true)
   })
 
-  it('shows the message on the open screen when no folder is open', async () => {
+  it('shows the message on the start screen when no folder is open', async () => {
     const h = harness({ openFolder: () => Promise.reject(new Error('The picker is busy.')) })
     await h.actions.openFolder()
     expect(h.state()).toMatchObject({ screen: 'open', message: 'The folder could not be opened: The picker is busy.' })
@@ -427,7 +427,7 @@ describe('choosing the language', () => {
     expect(JSON.parse(folder.text(SETTINGS_PATH)!)).toEqual({ languages: ['ps'] })
   })
 
-  it('goes back to the open screen with the reason when the choice cannot be saved', async () => {
+  it('goes back to the start screen with the reason when the choice cannot be saved', async () => {
     const folder = repoFolder({ noSettings: true })
     const h = harness()
     await h.actions.load(folder)
@@ -517,7 +517,7 @@ describe('loading', () => {
     expect(h.state()).toEqual({ screen: 'open', message: null, reopen: null })
   })
 
-  it('closing the folder returns to the open screen and stops saving', async () => {
+  it('closing the folder returns to the start screen and stops saving', async () => {
     const h = await opened({}, {}, true)
     h.actions.closeFolder()
     expect(h.state()).toEqual({ screen: 'open', message: null, reopen: null })

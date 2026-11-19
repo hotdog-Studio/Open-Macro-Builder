@@ -465,7 +465,7 @@ describe('a remembered folder', () => {
     expect(asked).toBe(1)
   })
 
-  it('stays on the open screen quietly when permission is declined', async () => {
+  it('stays on the start screen quietly when permission is declined', async () => {
     const user = renderApp(
       fakePlatform(null, {
         restoreFolder: async () => ({ needsPermission: 'repo' }),

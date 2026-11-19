@@ -765,13 +765,22 @@ function Get-E2eRunProcesses {
 # ---------------------------------------------------------------------------------------------------
 # Windows that commands open.
 
-# The visible windows that fit any of the WinTitles (Find-Window's form), as a list of handles. A
+# The windows that fit one entry of a case's WinTitle list: a WinTitle as Find-Window reads it, or
+# 'app:<application id>' for the frame windows of a Store app (Settings, Calculator), whose titles are
+# translated and whose application id is the same in every display language.
+function Find-E2eWindows {
+    param([string]$WinTitle, [switch]$IncludeHidden)
+    if ($WinTitle -notlike 'app:*') { return , (Find-Window $WinTitle -All -IncludeHidden:$IncludeHidden) }
+    , [IntPtr[]]@(foreach ($h in (Find-Window 'ahk_class ApplicationFrameWindow' -All -IncludeHidden:$IncludeHidden)) { if ((Get-WindowAppId $h) -eq $WinTitle.Substring(4)) { $h } })
+}
+
+# The visible windows that fit any of the WinTitles (Find-E2eWindows' forms), as a list of handles. A
 # cloaked window (Windows keeps it off the screen: a Store app's frame while the app starts, a window
 # on another virtual desktop) is left out unless IncludeCloaked says otherwise.
 function Get-E2eWindows {
     param([string[]]$WinTitle, [switch]$IncludeCloaked, [switch]$IncludeHidden)
     $seen = [System.Collections.Generic.List[IntPtr]]::new()
-    foreach ($t in $WinTitle) { foreach ($h in (Find-Window $t -All -IncludeHidden:$IncludeHidden)) { if (-not $seen.Contains($h) -and ($IncludeCloaked -or -not [OmbE2e.Dwm]::Cloaked($h))) { $seen.Add($h) } } }
+    foreach ($t in $WinTitle) { foreach ($h in (Find-E2eWindows $t -IncludeHidden:$IncludeHidden)) { if (-not $seen.Contains($h) -and ($IncludeCloaked -or -not [OmbE2e.Dwm]::Cloaked($h))) { $seen.Add($h) } } }
     , $seen.ToArray()
 }
 

@@ -91,7 +91,7 @@ function Assert-E2eChromeUrl {
 # a failure message.
 function Get-E2eWindowReport {
     param([string[]]$WinTitle)
-    $all = foreach ($t in $WinTitle) { foreach ($h in (Find-Window $t -All -IncludeHidden)) { $h } }
+    $all = foreach ($t in $WinTitle) { foreach ($h in (Find-E2eWindows $t -IncludeHidden)) { $h } }
     (@($all | ForEach-Object { $i = Get-WindowInfo $_; "$($_) '$($i.Title)' $($i.Class) visible=$($i.Visible) cloaked=$([OmbE2e.Dwm]::Cloaked($_))" }) -join '; ')
 }
 
@@ -309,9 +309,11 @@ $script:E2eExplorer = 'ahk_class CabinetWClass'
 # What a conditional case needs.
 $script:E2eNeedsStandardUser = { -not (Test-E2eAdministrator) }
 
-# Calculator: the window ActivateOrOpenWindow / ActivateOrOpen look for, what a Calculator case needs,
-# and when it would act on a Calculator a person left open.
-$script:E2eCalculator = 'Calculator ahk_exe ApplicationFrameHost.exe'
+# Settings and Calculator are Store apps: their windows are found by the app's application id (as
+# Get-StartApps lists it), whatever the display language, never by a title. Then what a Calculator case
+# needs, and when it would act on a Calculator a person left open.
+$script:E2eSettings = 'app:windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel'
+$script:E2eCalculator = 'app:Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'
 $script:E2eNeedsCalculator = @{ Why = 'needs the Calculator app, which a Windows may not have'; Met = { [bool](Get-AppxPackage Microsoft.WindowsCalculator -ErrorAction SilentlyContinue) } }
 $script:E2eCalculatorSkipIf = {
     $f = Get-E2eForeignWindows $script:E2eCalculator
@@ -747,8 +749,8 @@ function Get-E2eCases {
         (New-E2eOpenerCase 'OpenControlPanel' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Folder { param($p) $p -and $p.StartsWith($script:E2eControlPanel) } -FolderWhat 'Control Panel')
         # The first press is a cold start: no Settings window, hidden ones included, is there (SkipIf),
         # and Settings ends when its window closes. The second, with Settings running behind B, a warm one.
-        (New-E2eOpenerCase 'OpenSettings' 'windows' 'Settings ahk_exe ApplicationFrameHost.exe' -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -SecondPress -Covers 'Settings comes forward on a cold start and on a warm one' -SkipIf {
-                if ((Get-E2eForeignWindows 'Settings ahk_exe ApplicationFrameHost.exe' -IncludeHidden).Count -gt 0) { 'a Settings window the test did not open is on the desktop; the key would bring it forward' }
+        (New-E2eOpenerCase 'OpenSettings' 'windows' $script:E2eSettings -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -SecondPress -Covers 'Settings comes forward on a cold start and on a warm one' -SkipIf {
+                if ((Get-E2eForeignWindows $script:E2eSettings -IncludeHidden).Count -gt 0) { 'a Settings window the test did not open is on the desktop; the key would bring it forward' }
             })
         (New-E2eOpenerCase 'OpenServices' 'windows' 'ahk_exe mmc.exe' -Targets 'mmc.exe' `
                 -Needs @{ Why = 'needs a standard user: mmc.exe asks for the highest rights the user has, so for an administrator Windows shows its elevation prompt'; Met = $script:E2eNeedsStandardUser } -SkipIf {

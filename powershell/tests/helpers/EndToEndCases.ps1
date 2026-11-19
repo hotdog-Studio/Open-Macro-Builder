@@ -548,8 +548,16 @@ function Get-E2eCases {
                     $seen = $sincePress.ElapsedMilliseconds
                     # Into a window the case names only: B, or that Calculator window, which Windows
                     # makes active while it is still cloaked.
+                    # While Windows hands activation over, no window has the keyboard for a moment:
+                    # the read is made again, for up to 100 ms, before it is judged. Still none after
+                    # that is a miss, made again; another window in front is a failure.
                     $fg = [Macropad.WindowApi]::Foreground()
+                    if ($fg -eq [IntPtr]::Zero) {
+                        $fg = Wait-E2eCondition { $f = [Macropad.WindowApi]::Foreground(); if ($f -ne [IntPtr]::Zero) { $f } } -TimeoutMs 100 -EveryMs 5
+                        if ($null -eq $fg) { $fg = [IntPtr]::Zero }
+                    }
                     if (-not [OmbE2e.Dwm]::Cloaked($first)) { $moments.Add("$seen ms, already shown when first seen") }
+                    elseif ($fg -eq [IntPtr]::Zero) { $moments.Add("$seen ms, cloaked, but no window had the keyboard for 100 ms") }
                     elseif ($fg -ne $b -and $fg -ne $first) {
                         # The state was reached, but the key had nowhere to go: that is a failure of
                         # this try (as a press into the wrong window is anywhere else), never a
@@ -569,7 +577,8 @@ function Get-E2eCases {
                 $told = "{0} reached in {1} tries, {2} failed. First window seen after the first press: {3}" -f $hit, $tries, $failed.Count, ($moments -join '; ')
                 Write-Host "End-to-end Calculator series, $($ctx.Lang), second press while it starts: $told"
                 ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every try must end with exactly one Calculator window, shown and active'
-                # Every miss left here is "already shown when first seen" or "shown while the key went down".
+                # Every miss left here is "already shown when first seen", "no window had the keyboard"
+                # or "shown while the key went down".
                 if ($hit -eq 0) { $ctx.NotRun = "conditional: on this machine the first Calculator window was never still cloaked when the second press could come ($told)" }
             }
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }

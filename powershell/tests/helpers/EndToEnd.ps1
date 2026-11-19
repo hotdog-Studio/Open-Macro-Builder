@@ -1632,7 +1632,8 @@ function Show-E2eCleanupBanner {
 # Under Jenkins only (run.ps1 -EarlierBuilds decides): what an earlier build of the job left in the
 # workspace. A process that runs from the workspace or works in it, that started before this clean-up
 # did and is neither this process nor one it descends from (the build's own steps), cannot be this
-# build's. It is listed with all that says which case started it, ended, and done: this build is not
+# stage's: an earlier build left it, or an earlier stage of this build that ran in the same workspace
+# (the Pester stage, on the same machine). It is listed with all that says which case started it, ended, and done: this build is not
 # failed for what it has just cleared. One whose start cannot be read, or that cannot be ended, is a
 # problem. Never on a developer's desktop: there the checkout is a person's folder, and their shells
 # stand in it.
@@ -1640,7 +1641,10 @@ function Clear-E2eWorkspace {
     param([string]$Workspace, [System.Collections.Generic.List[string]]$Done, [System.Collections.Generic.List[string]]$Problems)
     $mine = Get-E2eStartTicks $PID
     $found = @(Get-E2eRunProcesses $Workspace -OrWorkingIn)
-    Write-Host "End-to-end clean-up: $($found.Count) process(es) of an earlier build in the workspace $Workspace (running from it or working in it, this build's own steps left out)."
+    $earlier = @($found | Where-Object { $_.StartTicks -ne 0 -and $mine -ne 0 -and $_.StartTicks -lt $mine }).Count
+    # Left by an earlier build, or by an earlier stage of this one in the same workspace (the Pester
+    # stage on the same machine): what started before this clean-up did is not this stage's.
+    Write-Host "End-to-end clean-up: $earlier process(es) in the workspace $Workspace that started before this clean-up did (running from it or working in it, this build's own steps left out), $($found.Count - $earlier) other(s) found there."
     foreach ($p in $found) {
         $what = Get-E2eProcessText $p
         if ($p.StartTicks -eq 0 -or $mine -eq 0) { $Problems.Add("in the workspace, left alone because it cannot be told when it started: $what"); continue }
@@ -1650,8 +1654,8 @@ function Clear-E2eWorkspace {
             Wait-ScreenChange
             Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
             [void](Wait-E2eCondition { -not (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) } -TimeoutMs 5000)
-            $Done.Add("ended what an earlier build left in the workspace: $what")
-        } catch { $Problems.Add("an earlier build left it in the workspace, and it could not be ended ($($_.Exception.Message)): $what") }
+            $Done.Add("ended what was left in the workspace before this clean-up started: $what")
+        } catch { $Problems.Add("it was left in the workspace before this clean-up started, and it could not be ended ($($_.Exception.Message)): $what") }
     }
 }
 

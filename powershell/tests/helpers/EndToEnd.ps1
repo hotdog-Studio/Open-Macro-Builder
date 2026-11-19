@@ -310,18 +310,30 @@ function Assert-E2eTime {
 }
 
 # Calls Condition about every 50 ms until it returns something other than $null or $false, and returns
-# that; $null when TimeoutMs pass first.
+# that; $null when TimeoutMs pass first. A wait that is met only after two thirds of its limit is noted
+# (Add-E2eSlowWait), and the run lists those at its end.
 function Wait-E2eCondition {
     param([Parameter(Mandatory)][scriptblock]$Condition, [int]$TimeoutMs = 5000, [int]$EveryMs = 50)
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while ($true) {
         Assert-E2eTime
         $value = & $Condition
-        if ($null -ne $value -and $value -isnot [bool]) { return $value }
-        if ($value -is [bool] -and $value) { return $true }
+        if ($null -ne $value -and $value -isnot [bool]) { Add-E2eSlowWait $sw.ElapsedMilliseconds $TimeoutMs; return $value }
+        if ($value -is [bool] -and $value) { Add-E2eSlowWait $sw.ElapsedMilliseconds $TimeoutMs; return $true }
         if ($sw.ElapsedMilliseconds -ge $TimeoutMs) { return $null }
         Wait-Pump $EveryMs
     }
+}
+
+# Notes a wait of a run that was met, but only after two thirds of its limit: how long it took, its
+# limit, the case, and where in the cases and the harness it was asked for. A case's time in the log is
+# one number for all its waits; this says which wait a slower machine would fail on, before it does.
+# Limits under a second are left out: they are the steps of a longer wait.
+function Add-E2eSlowWait {
+    param([long]$Ms, [int]$TimeoutMs)
+    if ($null -eq $script:E2eRun -or $TimeoutMs -lt 1000 -or $Ms * 3 -lt $TimeoutMs * 2) { return }
+    $where = @(Get-PSCallStack | Select-Object -Skip 2 | Where-Object { $_.ScriptName -like '*EndToEnd*.ps1' } | Select-Object -First 3 | ForEach-Object { "$(Split-Path $_.ScriptName -Leaf):$($_.ScriptLineNumber)" })
+    $script:E2eRun.SlowWaits.Add("$($script:E2eRun.Case): $Ms ms of $TimeoutMs ms at $($where -join ', called from ')")
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -703,6 +715,8 @@ function New-E2eRun {
         CleanupStarted = $false
         LastActivated = [IntPtr]::Zero
         NotRun       = [System.Collections.Generic.List[string]]::new()
+        Case         = ''
+        SlowWaits    = [System.Collections.Generic.List[string]]::new()
         Chunks       = 1
     }
     Write-E2eState
@@ -1475,6 +1489,7 @@ function Invoke-E2eCase {
     else { $arrange = $script:E2eChordArrange; $assert = $script:E2eChordAssert }
     if ($Case.Arrange) { $arrange = $Case.Arrange }
     if ($Case.Assert) { $assert = $Case.Assert }
+    $script:E2eRun.Case = "$Lang $($Case.Name)"  # for the list of waits that came close to their limit
     [void](Use-E2eMacropad $Lang $Case.Chunk)
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         $ctx = @{ Case = $Case; Lang = $Lang; Run = $script:E2eRun; Pressed = $false }
@@ -1549,6 +1564,7 @@ function Complete-E2eRun {
     & $step 'letting go of held keys' { Clear-E2eHeldKeys }
     & $step 'stopping the macropad under test' { Stop-E2eMacropad }
     if ($r.NotRun.Count -gt 0) { Write-Host ("End-to-end: cases that did not run:`n  " + ($r.NotRun -join "`n  ")) }
+    if ($r.SlowWaits.Count -gt 0) { Write-Host ("End-to-end: waits that were met only after two thirds of their limit (a slower run could pass that limit):`n  " + ($r.SlowWaits -join "`n  ")) }
     # The test leaves the run's folder, where it worked, so that the folder can be removed.
     & $step 'leaving the run''s folder' { $temp = [OmbE2e.ProcessInfo]::LongPath([System.IO.Path]::GetTempPath()); Set-Location -LiteralPath $temp; [Environment]::CurrentDirectory = $temp }
     $script:E2eRun = $null

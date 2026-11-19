@@ -13,12 +13,17 @@ E2eDir() {
 }
 
 E2eLogError(Err, Mode) {
-    try FileAppend("error in " Err.What ": " Err.Message "`n", E2eDir() "\errors.log", "UTF-8-RAW")
+    try E2eWrite("errors.log", "error in " Err.What ": " Err.Message)
     return 1
 }
 
+; A line for the test, which reads these files while the macropad writes them. FileOpen shares reading
+; and writing, as the test's reader does, so neither is refused when both have the file at the same
+; moment. Not FileAppend: it shares nothing, and fails whenever the test is reading the file.
 E2eWrite(File, Line) {
-    FileAppend(Line "`n", E2eDir() "\" File, "UTF-8-RAW")
+    f := FileOpen(E2eDir() "\" File, "a", "UTF-8-RAW")
+    f.Write(Line "`n")
+    f.Close()
 }
 
 /**

@@ -1082,14 +1082,25 @@ function Wait-E2eStandinLog {
     } -TimeoutMs $TimeoutMs
 }
 
-# The lines of a log file that another process may be writing; none when it does not exist yet.
+# The lines of a log file that another process may be writing; none when it does not exist yet. The
+# file is opened sharing reading and writing, and so it is by every writer of the suite (E2eWrite in
+# commands.ahk and commands.ps1, the stand-in; the launcher's File.AppendAllText shares reading, which
+# is enough beside a reader), so the test and a writer never refuse each other, however their opens
+# fall. One log has a writer that is not the suite's: the PowerShell macropad's own (Write-MacropadLog,
+# Add-Content), which shares only writing and so refuses a reader for the moment of its write. For that
+# the reader waits for the file as for any other condition, for up to 300 ms, and then fails saying
+# what refused it.
 function Read-E2eLog {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
-    $stream = $null
-    for ($i = 0; $null -eq $stream; $i++) {
-        try { $stream = [System.IO.FileStream]::new($Path, 'Open', 'Read', 'ReadWrite') }
-        catch [System.IO.IOException] { if ($i -ge 20) { throw }; [System.Threading.Thread]::Sleep(15) }  # the writer has it open
+    $refused = @{}
+    $stream = Wait-E2eCondition {
+        try { [System.IO.FileStream]::new($Path, 'Open', 'Read', 'ReadWrite') }
+        catch [System.IO.IOException] { $refused.Message = $_.Exception.GetBaseException().Message }
+    } -TimeoutMs 300 -EveryMs 15
+    if ($null -eq $stream) {
+        throw ("The log $Path could not be opened for reading for 300 ms: $($refused.Message) A program that does not share reading has had it open " +
+            'for longer than a write takes (in Windows PowerShell, an Add-Content that was refused keeps its file open until its process collects garbage).')
     }
     try {
         $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)

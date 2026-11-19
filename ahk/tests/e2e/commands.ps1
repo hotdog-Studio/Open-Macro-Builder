@@ -3,9 +3,16 @@
 # test's layout can put these on keys beside the shared commands. OMB_E2E_DIR names the run's folder.
 # commands.ahk beside this file has the same commands for the AutoHotkey macropad.
 
+# A line for the test, which reads these files while the macropad writes them. The file is opened
+# sharing reading and writing, as the test's reader opens it, so neither is refused when both have it
+# at the same moment. Not Add-Content: in Windows PowerShell 5.1 it shares only writing, so it is
+# refused while the test reads, and can then keep the file open, refusing every reader, until its
+# process next collects garbage.
 function E2eWrite {
     param([string]$File, [string]$Line)
-    Add-Content -LiteralPath (Join-Path $env:OMB_E2E_DIR $File) -Value $Line -Encoding UTF8
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes("$Line`n")
+    $stream = [System.IO.FileStream]::new((Join-Path $env:OMB_E2E_DIR $File), 'Append', 'Write', 'ReadWrite')
+    try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
 }
 
 # Writes the macro's name to marks.log: the test presses it until the macropad answers.

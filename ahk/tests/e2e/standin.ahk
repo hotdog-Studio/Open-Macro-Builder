@@ -46,8 +46,10 @@ StandinLog(Line) {
     pending.Push(Line)
 }
 
-; Writes what has come since the last time. When the file cannot be written (the test may be reading
-; it at that moment), the text is kept and goes out with the next tick, before anything newer.
+; Writes what has come since the last time. FileOpen shares reading and writing, as the test's reader
+; does, so neither is refused when both have the file at the same moment (FileAppend shares nothing).
+; Should the file not open all the same, the text is kept and goes out with the next tick, before
+; anything newer.
 StandinWrite() {
     global pending, unwritten, logFile
     taken := pending, pending := []
@@ -56,7 +58,9 @@ StandinWrite() {
     if (unwritten = "")
         return
     try {
-        FileAppend(unwritten, logFile, "UTF-8-RAW")
+        f := FileOpen(logFile, "a", "UTF-8-RAW")
+        f.Write(unwritten)
+        f.Close()
         unwritten := ""
     }
 }

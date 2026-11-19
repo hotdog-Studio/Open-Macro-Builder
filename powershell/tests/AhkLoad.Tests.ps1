@@ -21,14 +21,16 @@ Describe 'The AutoHotkey version' {
         $r.ExitCode | Should -Be 0 -Because $r.Err
         ($r.Out + $r.Err).Trim() | Should -BeNullOrEmpty -Because 'AutoHotkey printed an error or a warning on loading main.ahk'
     }
-    It 'sets #Warn nowhere under ahk, so the include above decides where warnings go' {
-        # A #Warn of the scripts' own comes after the include and wins: a warning would then be a dialog
-        # again, and the test above would fail only at its timeout, without the warning's text.
+    It 'sets no #Warn under ahk but one that sends its warnings to StdOut, where the test above reads them' {
+        # A #Warn of the scripts' own comes after the include and wins. One that sends to StdOut (such as
+        # "#Warn All, StdOut") is fine: its warnings still print, and the test above fails on them. Any
+        # other makes a warning a dialog again, or hides it, and the test above would fail only at its
+        # timeout, without the warning's text. A StdOut in a comment after the line does not count.
         $bad = foreach ($file in Get-ChildItem (Join-Path $root 'ahk') -Recurse -Filter *.ahk) {
             Select-String -LiteralPath $file.FullName -Pattern '^\s*#Warn\b' |
-                Where-Object { $_.Line -notmatch '\bStdOut\b' } |
+                Where-Object { ($_.Line -replace '\s;.*$', '') -notmatch '\bStdOut\b' } |
                 ForEach-Object { '{0}:{1}: {2}' -f $file.FullName.Substring($root.Length + 1), $_.LineNumber, $_.Line.Trim() }
         }
-        $bad | Should -BeNullOrEmpty -Because "a script's own #Warn overrides the load test's include, so a warning would open a dialog"
+        $bad | Should -BeNullOrEmpty -Because "a script's own #Warn overrides the load test's include, so its warnings would open a dialog or go unseen: add ', StdOut' to the line (as in '#Warn All, StdOut'), or take the line out"
     }
 }

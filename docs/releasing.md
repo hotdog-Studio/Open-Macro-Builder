@@ -31,7 +31,7 @@ The `PATCH` in `package.json` stays `0`. The installer and the desktop app get t
 
 ## What Jenkins does
 
-Every branch is linted, tested and sent to SonarQube (see [development.md](development.md#ci)). A build of `develop` that passes the quality gate then goes on, and is the only one to use the Windows and the arm64 agent:
+Every branch is linted, tested and sent to SonarQube (see [development.md](development.md#ci)). Every branch also uses the Windows agents: the Pester suite runs on the Windows agent (`windows-x64`), and the end-to-end test on the Windows agent with a logged-in desktop (`windows-desktop`); both must pass for a release. A build of `develop` that passes them and the quality gate then goes on, and is the only one to package the desktop app and to use the arm64 agent:
 
 1. **Desktop app.** The Windows agent runs `npm ci` and `npm run dist` and hands back the two `.exe` files.
 2. **Container images.** The controller builds the image for both architectures. The page is built once and copied onto each architecture's web server, so the arm64 image needs no emulation. `docker/smoke.sh` then starts each image and asks it for the page: the amd64 one on the controller, the arm64 one on the arm64 agent.
@@ -44,9 +44,10 @@ The tag goes first so that a number is taken only once its tag exists. If a late
 
 ### When a build releases nothing
 
-A `develop` build ends UNSTABLE, with the reason in its log, and takes no number when:
+A `develop` build ends FAILURE when a test fails, the Pester suite and the end-to-end test included, or when the clean-up around the end-to-end test could not do everything; it then takes no number. It ends UNSTABLE, with the reason in its log, and takes no number when:
 
 - the Windows agent did not take the work within 45 minutes, for the Pester suite or for the desktop app (it is a desktop PC, and may be off);
+- the Windows agent with a desktop did not take the end-to-end test within 45 minutes;
 - the arm64 agent did not take the work within 20 minutes;
 - Jenkins has no GitHub credential (below), or the pipeline cannot see the checkout credential that pushes the tag.
 
@@ -54,7 +55,7 @@ Build it again once the cause is gone.
 
 ### What Jenkins needs
 
-- Agents labelled `windows-x64` (Node, Git, AutoHotkey v2, and Pester 5.5 or newer installed for all users) and `linux-arm64` (Docker). The `Jenkinsfile` header has the globals that rename them.
+- Agents labelled `windows-x64` (Node, Git, AutoHotkey v2, and Pester 5.5 or newer installed for all users), `windows-desktop` (what `windows-x64` needs, plus a real, logged-in desktop that the build takes over for a few minutes, and Python on `PATH`) and `linux-arm64` (Docker). One machine may carry both Windows labels. The `Jenkinsfile` header has the globals that rename them.
 - The job's SSH checkout credential must be allowed to push tags.
 - A **Username with password** credential with the id `omb-github`: a GitHub user name, and as the password a token of that user that may write this repository's contents (for the release) and write packages (for ghcr.io). A classic token with the `repo` and `write:packages` scopes does both.
 - Optional: the global `OMB_REGISTRY`, the `host:port` of a private registry that takes a push without a login. Each release then also pushes the `linux/amd64` image there, as `<version>` and then `latest`, after the GitHub release. If that push fails the build ends unstable and the release stands. `OMB_REGISTRY_REPO` renames the repository (default `hotdogstudio/open-macro-builder`).

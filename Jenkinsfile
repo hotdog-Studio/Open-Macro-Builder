@@ -8,8 +8,9 @@
 //   OMB_NTFY_URL           ntfy topic URL for build notifications (none are sent when unset)
 //   OMB_SONAR_PROJECT_KEY  overrides sonar.projectKey from sonar-project.properties
 //   OMB_WINDOWS_LABEL      label of the Windows agent (default windows-x64). It runs the Pester
-//                          suite and packages the desktop app, so it needs Windows PowerShell 5.1,
-//                          Pester 5.5+ installed for all users, AutoHotkey v2, Node and Git.
+//                          suite (every branch) and packages the desktop app (develop), so it needs
+//                          Windows PowerShell 5.1, Pester 5.5+ installed for all users, AutoHotkey
+//                          v2, Node and Git.
 //   OMB_WINDOWS_DESKTOP_LABEL  label of the Windows agent with a real, logged-in desktop that runs
 //                          the end-to-end test (default windows-desktop), on every branch. It needs
 //                          what OMB_WINDOWS_LABEL needs, plus Python on PATH.
@@ -32,19 +33,22 @@
 // scripts/ci-version.mjs. MAJOR.MINOR is the version in configurator/package.json; PATCH counts
 // the v* git tags. A green build of develop is a release: the Release stage pushes the tag
 // v<version> FIRST, then the two Linux images and their shared tags, then the GitHub release with
-// the installer and the portable exe. Only develop uses the Windows and the arm64 agent: on any
-// other branch the Windows tests, Desktop app, Container images and Release stages are skipped.
-// The end-to-end test is the exception: it runs on the desktop agent on every branch.
+// the installer and the portable exe. Only develop builds the desktop app, the images and the
+// release: on any other branch the Desktop app, Container images and Release stages are skipped,
+// and the arm64 agent is not used. The Windows tests and the end-to-end test run on every branch,
+// so a branch proves itself on the Windows agents before it is merged; on develop either one that
+// fails, or that found no agent, stops the release.
 //
 // STAGES, in order: Checkout → Version → Validate config (scripts/validate-config.mjs: config.json's
 // structure, icons, and every action defined in both versions) → Script tests (node:test,
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
 // installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron: the
 // desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (the
-// Pester suite, on the Windows agent) → Windows end-to-end (the real macropad on the desktop agent,
-// every branch) → SonarQube analysis → quality gate → Desktop app (the installer and the portable exe,
-// on the Windows agent) → Container images (linux/amd64 and linux/arm64, both built here, the
-// arm64 one tried on the arm64 agent) → Release (develop only) → Cleanup. Nothing is deployed
+// Pester suite, on the Windows agent, every branch) → Windows end-to-end (the real macropad on the
+// desktop agent, every branch) → SonarQube analysis → quality gate → Desktop app (the installer and
+// the portable exe, on the Windows agent, develop only) → Container images (linux/amd64 and
+// linux/arm64, both built here, the arm64 one tried on the arm64 agent, develop only) → Release
+// (develop only) → Cleanup. Nothing is deployed
 // from here, the macropad runs on the desktop it drives.
 
 // Push the build outcome to the ntfy topic in OMB_NTFY_URL. Missing URL or credential → a log
@@ -216,12 +220,11 @@ node {
     stage('Windows Tests') {
         // The Pester suite (powershell/tests) exercises the PowerShell version against real Win32,
         // WinForms and AutoHotkey, so it needs a Windows agent. -Ci writes JUnit XML and leaves out
-        // the Integration-tagged tests, which open windows and send real keys.
+        // the Integration-tagged tests, which open windows and send real keys. It runs on every
+        // branch, so a branch's tests prove themselves on the agent before it is merged.
         // The agent is a desktop PC that may be off, hence the long wait.
         def label = env.OMB_WINDOWS_LABEL ?: 'windows-x64'
-        if (!releasing) {
-            echo "Skipping the Windows tests: only develop builds on the '${label}' agent"
-        } else if (!onAgent(label, 45) {
+        if (!onAgent(label, 45) {
             try {
                 deleteDir()
                 checkout scm
@@ -233,7 +236,7 @@ node {
                 cleanWs(notFailBuild: true)
             }
         }) {
-            unstable "the Windows tests did not run (no '${label}' agent): nothing is released"
+            unstable "the Windows tests did not run (no '${label}' agent)${releasing ? ': nothing is released' : ''}"
         }
         stopIfFailed('Windows tests')
     }
@@ -282,7 +285,7 @@ node {
                 cleanWs(notFailBuild: true)
             }
         }) {
-            unstable "the end-to-end test did not run (no '${label}' agent)"
+            unstable "the end-to-end test did not run (no '${label}' agent)${releasing ? ': nothing is released' : ''}"
         }
         stopIfFailed('Windows end-to-end test')
     }

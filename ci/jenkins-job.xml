@@ -5,7 +5,7 @@
      in Jenkins that can read the repository. -->
 <org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject plugin="workflow-multibranch">
   <actions/>
-  <description>Open Macro Builder: config validation and script tests, the Pester suite on a Windows agent when OMB_WINDOWS_LABEL is set, then SonarQube analysis and the quality gate. Defined in ci/jenkins-job.xml in the repository.</description>
+  <description>Open Macro Builder: config validation, script tests and the configurator's tests, then on every branch the Pester suite on the Windows agent (windows-x64) and the end-to-end test on the Windows agent with a logged-in desktop (windows-desktop), then SonarQube analysis and the quality gate. A green build of develop also packages the desktop app, builds the container images and publishes a release. The pipeline is the Jenkinsfile; this job is defined in ci/jenkins-job.xml in the repository.
   <displayName>Open Macro Builder</displayName>
   <properties/>
   <folderViews class="jenkins.branch.MultiBranchProjectViewHolder" plugin="branch-api">

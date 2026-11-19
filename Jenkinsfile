@@ -111,6 +111,24 @@ def onAgent(String label, int minutes, Closure body) {
     }
 }
 
+// Checks this build out into the workspace of a Windows stage. A program that an earlier build left
+// working in the workspace keeps Windows from removing the folder itself, though not what is in it:
+// the stage then checks out into the held folder, and removes what is not part of the checkout, so
+// that nothing left there (an old result file) passes for this build's. An abort or a timeout while
+// the folder is removed is thrown on. Both Windows labels are one machine, so the Windows tests and
+// the end-to-end test share the workspace.
+def checkoutIntoWorkspace() {
+    try {
+        deleteDir()
+    } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+        throw e
+    } catch (e) {
+        echo "the workspace could not be removed, so something still works in it (${e.message}); checking out into it"
+    }
+    checkout scm
+    if (bat(returnStatus: true, script: 'git clean -ffdx') != 0) { echo 'git clean could not remove everything that is not part of the checkout' }
+}
+
 // The build can still release: nothing failed and nothing was skipped.
 def green() {
     return currentBuild.result == null || currentBuild.result == 'SUCCESS'
@@ -222,12 +240,13 @@ node {
         // WinForms and AutoHotkey, so it needs a Windows agent. -Ci writes JUnit XML and leaves out
         // the Integration-tagged tests, which open windows and send real keys. It runs on every
         // branch, so a branch's tests prove themselves on the agent before it is merged.
-        // The agent is a desktop PC that may be off, hence the long wait.
+        // The agent is a desktop PC that may be off, hence the long wait. Like the end-to-end stage,
+        // it can start in a workspace that an earlier build still holds (checkoutIntoWorkspace);
+        // what that build left working there is ended by the end-to-end stage's first clean-up.
         def label = env.OMB_WINDOWS_LABEL ?: 'windows-x64'
         if (!onAgent(label, 45) {
             try {
-                deleteDir()
-                checkout scm
+                checkoutIntoWorkspace()
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci'
                 }
@@ -261,16 +280,7 @@ node {
         def cleanUp = 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -EndToEndCleanup'
         if (!onAgent(label, 45) {
             try {
-                try {
-                    deleteDir()
-                } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
-                    throw e
-                } catch (e) {
-                    echo "the workspace could not be removed, so something still works in it (${e.message}); checking out into it"
-                }
-                checkout scm
-                // Whatever the removal left must not pass for this build's (an old result file).
-                if (bat(returnStatus: true, script: 'git clean -ffdx') != 0) { echo 'git clean could not remove everything that is not part of the checkout' }
+                checkoutIntoWorkspace()
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the clean-up before the end-to-end test failed') {
                     bat cleanUp + ' -EarlierBuilds'
                 }

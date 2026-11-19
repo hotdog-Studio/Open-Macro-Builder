@@ -6,8 +6,9 @@
 # helpers\EndToEndCases.ps1, the harness in helpers\EndToEnd.ps1, the fixtures in ahk\tests\e2e.
 #
 # Run it with: powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd
-# It takes the keyboard, the mouse and the screen for a few minutes. Photosensitivity warning: it
-# opens, moves and closes windows (at most three changes a second; see Wait-ScreenChange).
+# run.ps1 starts a process for it, and the desktop part refuses to run anywhere else. It takes the
+# keyboard, the mouse and the screen for a few minutes. Photosensitivity warning: it opens, moves and
+# closes windows (at most three changes a second; see Wait-ScreenChange).
 #
 # Why the coverage of the two languages differs where it does (the parity test below holds the rest):
 # - The PowerShell version also has unit tests with mocks (Commands.Tests.ps1, Chrome.Tests.ps1,
@@ -148,7 +149,12 @@ Describe 'End-to-end parity of the two languages' -Tag EndToEnd {
 Describe 'End-to-end on the desktop' -Tag EndToEnd {
     BeforeAll {
         $script:E2eSkip = $null
-        if ($env:OMB_E2E -ne '1') { $script:E2eSkip = 'it takes the desktop; run it with powershell\tests\run.ps1 -EndToEnd' }
+        # It runs only in the process that run.ps1 -EndToEnd starts for it. The banner watches that
+        # process and cleans up when it has ended, so the process must end when the run does: never a
+        # person's own console.
+        if ($env:OMB_E2E -ne '1' -or [Environment]::CommandLine -notmatch '(?i)-file\s+"?[^"]*run\.ps1') {
+            $script:E2eSkip = 'it takes the desktop, and runs only in a process of its own; run it with: powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd'
+        }
         elseif (-not (Get-AhkExe)) {
             $why = "AutoHotkey v2 is not installed ($env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe does not exist); it runs the AutoHotkey macropad, the stand-ins and the banner"
             # Under -Ci the agent must have it: the suite fails rather than skip every case.

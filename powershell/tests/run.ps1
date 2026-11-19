@@ -3,6 +3,8 @@
 # results/pester/test-results.xml at the repo root and leaves out the Integration tests, which
 # open windows and send real keys. The end-to-end test (tag EndToEnd) is left out of every run but
 # -EndToEnd, which runs it alone: it takes the keyboard, the mouse and the screen for a few minutes.
+# -EndToEnd always runs it in a PowerShell process started here for it, never in the shell this script
+# was called from: the test's banner watches that process and cleans up when it has ended.
 # With -Ci -EndToEnd its JUnit XML goes to results/pester/end-to-end-results.xml, and a case that
 # would act on a window left open on the desktop fails instead of skipping (the CI desktop must be
 # clean). -Case runs only the end-to-end cases whose name matches a regular expression, such as
@@ -22,6 +24,20 @@ if ($EndToEndCleanup) {
     if ($result.Problems.Count -gt 0) { exit 1 }
     exit 0
 }
+if ($EndToEnd -and $env:OMB_E2E -ne '1') {
+    # The process the end-to-end test runs in: it gets what was asked for through these variables.
+    $env:OMB_E2E = '1'
+    if ($Ci) { $env:OMB_E2E_CI = '1' }
+    if ($Case) { $env:OMB_E2E_CASE = $Case }
+    $env:OMB_E2E_LIMIT = "$LimitMinutes"
+    if ($Repeat -gt 0) { $env:OMB_E2E_REPEAT = "$Repeat" }
+    try {
+        $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-EndToEnd') + @(if ($Ci) { '-Ci' })
+        & powershell.exe @arguments
+        $code = $LASTEXITCODE
+    } finally { Remove-Item Env:\OMB_E2E, Env:\OMB_E2E_CASE, Env:\OMB_E2E_CI, Env:\OMB_E2E_LIMIT, Env:\OMB_E2E_REPEAT -ErrorAction SilentlyContinue }
+    exit $code
+}
 Import-Module Pester -MinimumVersion 5.0 -Force
 $c = New-PesterConfiguration
 $c.Run.Path = @($PSScriptRoot) + @(Join-Path $root 'local\powershell\tests' | Where-Object { Test-Path -LiteralPath $_ })
@@ -33,11 +49,6 @@ if ($EndToEnd) {
     $c.Run.Path = @(Join-Path $PSScriptRoot 'EndToEnd.Tests.ps1')
     $c.Filter.Tag = @('EndToEnd')
     $resultFile = 'end-to-end-results.xml'
-    $env:OMB_E2E = '1'
-    if ($Ci) { $env:OMB_E2E_CI = '1' }
-    if ($Case) { $env:OMB_E2E_CASE = $Case }
-    $env:OMB_E2E_LIMIT = "$LimitMinutes"
-    if ($Repeat -gt 0) { $env:OMB_E2E_REPEAT = "$Repeat" }
 } else {
     $ExcludeTag = @($ExcludeTag) + 'EndToEnd'
 }
@@ -50,4 +61,4 @@ if ($Ci) {
     $c.TestResult.OutputPath = Join-Path $results $resultFile
 }
 $c.Filter.ExcludeTag = $ExcludeTag
-try { Invoke-Pester -Configuration $c } finally { if ($EndToEnd) { Remove-Item Env:\OMB_E2E, Env:\OMB_E2E_CASE, Env:\OMB_E2E_CI, Env:\OMB_E2E_LIMIT, Env:\OMB_E2E_REPEAT -ErrorAction SilentlyContinue } }
+Invoke-Pester -Configuration $c

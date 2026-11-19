@@ -1,6 +1,8 @@
 BeforeAll {
     $ps = Split-Path $PSScriptRoot -Parent
     foreach ($f in 'Native', 'Interop', 'Pump', 'Assets', 'Input', 'Model', 'Overlay', 'Window', 'Engine', 'AhkSyntax', 'Send', 'WinTitle', 'WindowOps', 'Hotkeys', 'Screen', 'Sound') { . "$ps\lib\$f.ps1" }
+    # Show-MessageBox, the port of MsgBox, is a helper for commands.
+    . "$ps\commands\helper.ps1"
     $rows = Get-Content "$ps\docs\ahk-builtins.md" | Where-Object { $_ -match '^\|' -and $_ -notmatch '^\|\s*-' } | ForEach-Object {
         $cells = @($_.Trim().Trim('|').Split('|') | ForEach-Object { $_.Trim() })
         [pscustomobject]@{ Ahk = $cells[0]; PowerShell = $cells[1]; Kind = $cells[2]; Notes = $cells[3] }

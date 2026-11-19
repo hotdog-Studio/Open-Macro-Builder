@@ -82,7 +82,7 @@ Describe 'Help blocks of the functions for commands' {
         } | Where-Object Kind -eq 'port'
         $ports = $rows | ForEach-Object { [regex]::Matches($_.PowerShell, '`([A-Z][A-Za-z]*(?:-[A-Z][A-Za-z]*)?)`') | ForEach-Object { $_.Groups[1].Value } } |
             Sort-Object -Unique | Where-Object { $_ -notin 'Hotkey', 'Hotstring' }
-        $ports.Count | Should -Be 42
+        $ports.Count | Should -Be 43
         $ports | Where-Object { $name = $_; -not ($Functions | Where-Object { $_.Name -eq $name -and $_.Help }) } | Should -BeNullOrEmpty
     }
     It 'gives a help block to nothing else in the library' {

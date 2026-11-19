@@ -2,12 +2,12 @@
 
 AutoHotkey's built-in functions are thin wrappers over Win32, so nearly all of them can be ported. They fall into four groups:
 
-1. **Native.** PowerShell or .NET already does it (`Run`, `MsgBox`, `Gui`, timers, files, the registry, regular expressions, the clipboard, monitors). No code was needed.
+1. **Native.** PowerShell or .NET already does it (`Run`, `Gui`, timers, files, the registry, regular expressions, the clipboard, monitors). No code was needed.
 2. **One Win32 call each.** Window queries and actions, styles, messages, the mouse position, pixel colours and the volume.
 3. **AutoHotkey internals rebuilt in C#.** WinTitle matching, `Send` syntax, the hotkey syntax (`~ * < > up`, `a & b`), `#HotIfWinActive`, hotstrings, and image and pixel search.
 4. **Not ported.** Each has its reason in the table.
 
-Port functions use PowerShell Verb-Noun names, because AutoHotkey names would collide with command functions (`Shutdown`) and built-in aliases (`sleep`). The ports live in `lib/Send.ps1`, `lib/WinTitle.ps1`, `lib/WindowOps.ps1`, `lib/Hotkeys.ps1`, `lib/Screen.ps1`, `lib/Sound.ps1`, `lib/Pump.ps1` and `lib/Input.ps1`. `tests/BuiltinMap.Tests.ps1` checks this table against the code.
+Port functions use PowerShell Verb-Noun names, because AutoHotkey names would collide with command functions (`Shutdown`) and built-in aliases (`sleep`). The ports live in `lib/Send.ps1`, `lib/WinTitle.ps1`, `lib/WindowOps.ps1`, `lib/Hotkeys.ps1`, `lib/Screen.ps1`, `lib/Sound.ps1`, `lib/Pump.ps1` and `lib/Input.ps1`, and `Show-MessageBox` in `commands/helper.ps1`. `tests/BuiltinMap.Tests.ps1` checks this table against the code.
 
 | AutoHotkey | PowerShell | Kind | Notes |
 | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ Port functions use PowerShell Verb-Noun names, because AutoHotkey names would co
 | `SoundGetVolume` / `SoundSetVolume` | `Get-SoundVolume`, `Set-SoundVolume` | port | Default playback device only. |
 | `SoundGetMute` / `SoundSetMute` | `Get-SoundMute`, `Set-SoundMute`, `Switch-SoundMute` | port | Default playback device only. |
 | `Run` / `RunWait` | `Start-Process` | native | `-Wait` for RunWait. |
-| `MsgBox` | `[System.Windows.Forms.MessageBox]::Show` | native | |
+| `MsgBox` | `Show-MessageBox` | port | In `commands/helper.ps1`. The box opens in front of the active window and the macro waits until it is closed; `[System.Windows.Forms.MessageBox]::Show` would open it behind the active window. |
 | `InputBox` | `[Microsoft.VisualBasic.Interaction]::InputBox` | native | Load `Microsoft.VisualBasic` first. |
 | `Gui` | WinForms | native | |
 | `Menu` / `A_TrayMenu` | `NotifyIcon` and `ContextMenuStrip` | native | See `lib/Tray.ps1`. |

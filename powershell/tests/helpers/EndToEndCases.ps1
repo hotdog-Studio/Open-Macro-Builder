@@ -71,7 +71,7 @@ function Assert-E2eLaunch {
     $path = Join-Path $Folder $Exe
     $launch = Wait-E2eCondition { Get-E2eLaunches $ctx.Launches | Where-Object { [OmbE2e.ProcessInfo]::LongPath($_.Exe) -eq [OmbE2e.ProcessInfo]::LongPath($path) } | Select-Object -First 1 } -TimeoutMs $TimeoutMs
     $launch | Should -Not -BeNullOrEmpty -Because "the command must start $Exe (the run's stand-in, $path)"
-    $launch.Arguments | Should -BeExactly $Arguments
+    $launch.Arguments | Should -BeExactly $Arguments -Because "$Exe must be given exactly these arguments (it was started by $($launch.Parent) as: $($launch.Exe) $($launch.Arguments))"
     $launch.Parent | Should -Be (Get-E2eMacropadExeName $ctx.Lang) -Because 'the macropad must start the program itself, not through cmd.exe'
     if ($Front -ne [IntPtr]::Zero) {
         (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $Front } -TimeoutMs $TimeoutMs) | Should -BeTrue -Because "the program's window must come forward (in front: $(Get-E2eForegroundText))"
@@ -405,7 +405,7 @@ function Get-E2eCases {
                 param($ctx)
                 # Through cmd.exe, the & would end the command and the file would hold nothing or 'a'.
                 $text = Wait-E2eCondition { if (Test-Path -LiteralPath $ctx.File) { [System.IO.File]::ReadAllText($ctx.File) } } -TimeoutMs 8000
-                $text | Should -BeExactly 'a&b'
+                $text | Should -BeExactly 'a&b' -Because "the program must get the argument with its & whole and write it to $($ctx.File) (the file exists: $(Test-Path -LiteralPath $ctx.File))"
                 [void](Wait-E2eMark $ctx.Marks 'ampersand done' -TimeoutMs 10000)
             }
         }
@@ -422,7 +422,7 @@ function Get-E2eCases {
             Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A'); $ctx.Marks = @(Get-E2eMarks).Count }
             Assert  = {
                 param($ctx)
-                Wait-E2eMark $ctx.Marks 'ensure *' | Should -Be 'ensure 1'
+                Wait-E2eMark $ctx.Marks 'ensure *' | Should -Be 'ensure 1' -Because "EnsureActiveOrOpen says that a window of the program is active (marks since the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); in front: $(Get-E2eForegroundText))"
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'the top window of the program comes forward'
             }
         }
@@ -430,7 +430,7 @@ function Get-E2eCases {
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Marks = @(Get-E2eMarks).Count; $ctx.Launches = Get-E2eLaunchMark }
             Assert  = {
                 param($ctx)
-                Wait-E2eMark $ctx.Marks 'never *' -TimeoutMs 25000 | Should -Be 'never 0'
+                Wait-E2eMark $ctx.Marks 'never *' -TimeoutMs 25000 | Should -Be 'never 0' -Because "the three helpers give up after 5 s each and EnsureActiveOrOpen says no (marks within 25 s of the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); errors: $((Get-E2eErrorLines) -join ' / '))"
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 3 -Because 'Open, ActivateOrOpen and EnsureActiveOrOpen each start the program'
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'nothing is activated when no window appears'
             }
@@ -468,7 +468,7 @@ function Get-E2eCases {
                 $ctx.Window = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -Active -TimeoutMs 8000
                 $ctx.Window | Should -Not -BeNullOrEmpty -Because "a new File Explorer window must come forward (in front: $(Get-E2eForegroundText))"
                 $shown = Wait-E2eCondition { Get-E2eExplorerFolder $ctx.Window } -TimeoutMs 5000
-                $shown | Should -Be ([Environment]::GetFolderPath('MyDocuments'))
+                $shown | Should -Be ([Environment]::GetFolderPath('MyDocuments')) -Because "the new window shows the Documents folder (in front: $(Get-E2eForegroundText))"
             }
             CleanUp = { param($ctx) foreach ($w in $ctx.Window, $ctx.Other) { if ($w) { Close-E2eWindow $w } } }
         }
@@ -505,7 +505,7 @@ function Get-E2eCases {
                 $moved | Should -Not -BeNullOrEmpty -Because 'another window must come forward'
                 $moved | Should -Not -Be $b -Because 'B is where Alt+Tab goes, not Alt+Shift+Tab'
                 $ours = @($ctx.Run.Standins.Values | ForEach-Object { $_.Hwnd })
-                if ($ours -contains $moved) { $moved | Should -Be $c }
+                if ($ours -contains $moved) { $moved | Should -Be $c -Because "of the test's own windows, C is the one used longest ago (in front: $(Get-E2eForegroundText))" }
             }
             CleanUp = { param($ctx) [void](Use-E2eStandin 'A') }
         }
@@ -608,7 +608,7 @@ function Get-E2eCases {
                 param($ctx)
                 $ctx.Window = Wait-E2eNewWindow $script:E2eExplorer -Before $ctx.Before -Active -TimeoutMs 8000
                 $ctx.Window | Should -Not -BeNullOrEmpty -Because "a new File Explorer window must come forward (in front: $(Get-E2eForegroundText))"
-                (Wait-E2eCondition { Get-E2eExplorerFolder $ctx.Window } -TimeoutMs 5000) | Should -Be (Join-Path $ctx.Run.Dir 'E2E Test\Smith, John')
+                (Wait-E2eCondition { Get-E2eExplorerFolder $ctx.Window } -TimeoutMs 5000) | Should -Be (Join-Path $ctx.Run.Dir 'E2E Test\Smith, John') -Because "the new window shows the folder with the comma in its name (in front: $(Get-E2eForegroundText))"
             }
             CleanUp = { param($ctx) if ($ctx.Window) { Close-E2eWindow $ctx.Window } }
         }
@@ -645,8 +645,8 @@ function Get-E2eCases {
                 Wait-Pump 6500
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 1 -Because 'the command starts Chrome when it has no window'
                 (Get-E2eWatchTaps) -join ', ' | Should -BeNullOrEmpty -Because 'no key may be sent when Chrome did not come forward'
-                (Get-E2eStandinTaps $ctx.B $ctx.Mark) -join ', ' | Should -BeNullOrEmpty
-                [Macropad.WindowApi]::Foreground() | Should -Be $ctx.B.Hwnd
+                (Get-E2eStandinTaps $ctx.B $ctx.Mark) -join ', ' | Should -BeNullOrEmpty -Because "no key may reach the window in front when Chrome did not come forward (B's lines: $((@(Read-E2eLog $ctx.B.Log) | Select-Object -Skip $ctx.Mark) -join ' / '))"
+                [Macropad.WindowApi]::Foreground() | Should -Be $ctx.B.Hwnd -Because "nothing comes forward when Chrome shows no window (in front: $(Get-E2eForegroundText))"
             }
             CleanUp = { param($ctx) Wait-ScreenChange; Set-WindowState $ctx.Run.Standins['A'].Hwnd Show }
         }
@@ -681,7 +681,7 @@ function Get-E2eCases {
                 Invoke-E2eButton $ctx.Form 'Schedule'
                 # A delay of 0 sends at once (it used to cancel the timer).
                 $taps = Wait-E2eTaps { Get-E2eWatchTaps } 1 -TimeoutMs 1500 -SettleMs 300
-                ($taps -join ', ') | Should -Be 'F7'
+                ($taps -join ', ') | Should -Be 'F7' -Because "a delay of 0 sends the key at once (the key watch saw: $([OmbE2e.KeyWatch]::Events() -join ' / '); the form says: $(Get-E2eFormText $ctx.Form))"
                 [Macropad.WindowApi]::Visible($ctx.Form) | Should -BeFalse -Because 'Schedule hides the form'
             }
             CleanUp = { param($ctx) [void](Use-E2eStandin 'B') }
@@ -699,7 +699,7 @@ function Get-E2eCases {
                 Send-E2eChordTo $ctx.Form $chord
                 $got = Wait-E2eCondition { $t = Get-ControlText $edits[0]; if ($t -eq $want) { $t } } -TimeoutMs 3000
                 Wait-Pump 300
-                $got | Should -Be $want
+                $got | Should -Be $want -Because "the form records the key pressed into it (the box holds '$(Get-ControlText $edits[0])'; the form says: $(Get-E2eFormText $ctx.Form); in front: $(Get-E2eForegroundText))"
                 Get-ControlText $edits[0] | Should -Be $want -Because 'nothing more may be recorded after the key'
                 (Get-E2eStatusText $ctx.Form 'Recorded') | Should -Be "Recorded $want." -Because "the form says what it recorded (it says: $(Get-E2eFormText $ctx.Form))"
                 # Record again and close the form while it waits for a key: the next key typed must
@@ -738,7 +738,7 @@ function Get-E2eCases {
                 Invoke-E2eButton $ctx.Form 'Schedule'
                 $click = Wait-E2eCondition { Get-E2eStandinEvents $b $mark | Where-Object Kind -eq 'click' | Select-Object -First 1 } -TimeoutMs 2000
                 $click | Should -Not -BeNullOrEmpty -Because "the recorded click is replayed at once with a delay of 0 (B's log since the first click: $((@(Read-E2eLog $b.Log) | Select-Object -Skip ($mark - 2)) -join ' / '); form visible: $([Macropad.WindowApi]::Visible($ctx.Form)))"
-                $click.Line | Should -Match '^click left '
+                $click.Line | Should -Match '^click left ' -Because 'the recorded click was a left click'
             }
             CleanUp = { param($ctx) if ($ctx.Mouse) { [void][OmbE2e.Input]::MoveMouse($ctx.Mouse[0], $ctx.Mouse[1]) } }
         }

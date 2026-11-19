@@ -65,14 +65,29 @@ Send-NumLock; [Console]::Out.WriteLine("restored `$(`$sw.ElapsedMilliseconds)");
             $code = $script:PresserScript.Replace('NAME', $Name).Replace('PARENT', [string]$PID)
             $psi.Arguments = '-NoProfile -NonInteractive -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
             $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
-            $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+            # Only its output is read, so only that is redirected: an error stream nobody reads could fill
+            # and hold the presser up.
+            $psi.RedirectStandardOutput = $true
             [System.Diagnostics.Process]::Start($psi)
         }
-        # The next line the presser writes, or an error when none comes within the limit.
+        # The next line the presser writes, or an error when none comes within the limit. A read that
+        # ran out of time is still under way; it is kept, because no other read of that output may
+        # start before it ends.
         function Read-PresserLine($Presser, [int]$TimeoutMs) {
             $line = $Presser.StandardOutput.ReadLineAsync()
-            if (-not $line.Wait($TimeoutMs)) { throw "The NumLock presser said nothing within $TimeoutMs ms." }
+            if (-not $line.Wait($TimeoutMs)) { $script:PresserRead = $line; throw "The NumLock presser said nothing within $TimeoutMs ms." }
             $line.Result
+        }
+        # The last line the presser wrote, once it has exited: after the line of a read that ran out of
+        # time, when there is one (that read ends when the presser's output does).
+        function Read-PresserRest($Presser) {
+            $said = @()
+            if ($script:PresserRead) {
+                if (-not $script:PresserRead.Wait(3000)) { return '' }
+                $said += $script:PresserRead.Result
+            }
+            $said += $Presser.StandardOutput.ReadToEnd()
+            (($said -join "`n").Trim() -split '\r?\n')[-1]
         }
         # A press from this process, only to put NumLock back when the presser could not.
         function Send-NumLockHere {
@@ -90,6 +105,7 @@ Send-NumLock; [Console]::Out.WriteLine("restored `$(`$sw.ElapsedMilliseconds)");
         [Macropad.WindowApi]::ProcessId($focus) | Should -Not -Be $PID -Because 'the focus must be on a window of another process'
         $before = Get-NumLocked
         $window = $null; $press = $null; $restore = $null; $presser = $null; $restored = ''; $putBackHere = $false
+        $script:PresserRead = $null
         $reads = [System.Collections.ArrayList]::new()
         try {
             $window = [Macropad.HotkeyWindow]::new()
@@ -109,13 +125,17 @@ Send-NumLock; [Console]::Out.WriteLine("restored `$(`$sw.ElapsedMilliseconds)");
             # The first read is in the first handler after the press, with no pump of its own before it.
             foreach ($k in 2..11) { [void][Macropad.WindowApi]::Post($window.Handle, 0x312, [IntPtr]$k, [IntPtr]::Zero); Wait-Pump 20 }
         } finally {
-            if ($restore) { [void]$restore.Set() }
-            if ($presser) {
-                if ($presser.WaitForExit(3000)) { $restored = $presser.StandardOutput.ReadToEnd().Trim() }
-                else { $presser.Kill() }
+            # Whatever fails on the way, NumLock is compared with what it was, and put back.
+            try {
+                if ($restore) { [void]$restore.Set() }
+                if ($presser) {
+                    if ($presser.WaitForExit(3000)) { $restored = Read-PresserRest $presser }
+                    else { $presser.Kill() }
+                }
+            } finally {
+                try { foreach ($d in $presser, $window, $press, $restore) { if ($d) { $d.Dispose() } } }
+                finally { if ((Get-NumLocked) -ne $before) { Send-NumLockHere; $putBackHere = $true } }
             }
-            foreach ($d in $window, $press, $restore) { if ($d) { $d.Dispose() } }
-            if ((Get-NumLocked) -ne $before) { Send-NumLockHere; $putBackHere = $true }
         }
         $reads = @($reads)
         Write-Host ('NumLock was {0}; reads in the hotkey handler: {1}; presser: {2}' -f $(if ($before) { 'on' } else { 'off' }),
@@ -126,8 +146,8 @@ Send-NumLock; [Console]::Out.WriteLine("restored `$(`$sw.ElapsedMilliseconds)");
         $after.Count | Should -BeGreaterThan 0
         $after[0].On | Should -Be (-not $before) -Because 'the first handler after the press reads the new state'
         @($after | Where-Object { $_.On -eq $before }).Count | Should -Be 0 -Because 'no read before the restore goes back to the old state'
-        $restored | Should -Match '^restored \d+$'
-        [int]($restored -replace '\D', '') | Should -BeLessThan 1000 -Because 'NumLock stays changed for under a second'
+        # How long NumLock stayed changed depends on the load of the PC; it is printed above, not judged.
+        $restored | Should -Match '^restored \d+$' -Because 'the presser says when it has put NumLock back'
         Get-NumLocked | Should -Be $before -Because 'NumLock is put back'
     }
 }

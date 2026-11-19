@@ -40,5 +40,3 @@ VsStudioBuild(Macro) {
 VsStudioGoToDefinition(Macro) {
     Send("{F12}")
 }
-
-; *********************** Debugger Functions *********************

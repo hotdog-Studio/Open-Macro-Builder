@@ -257,6 +257,9 @@ namespace OmbE2e
 $script:E2eRepo = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 $script:E2eFixtures = Join-Path $script:E2eRepo 'ahk\tests\e2e'
 $script:E2eFloorMs = 350
+# How long a check before a press waits for the window it expects, while one of the test's own windows
+# still has the keyboard (Wait-E2eFront).
+$script:E2eFrontMs = 3000
 $script:E2eChangeClock = $null
 $script:E2eWarning = 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
 # The banner's window (ahk\tests\e2e\banner.ahk), as Find-Window reads it.
@@ -383,33 +386,76 @@ function Clear-E2eHeldKeys {
     }
 }
 
-# Before a key is pressed into a window: that window must be the one in front. Nothing is pressed when
-# it is not; the error says what was in front.
+# True when the window that has the keyboard is one a check may wait behind: a window of a process the
+# run started (a stand-in, the macropad under test), a window the run recorded as opened by a case's own
+# key, or no window at all (the keyboard is on its way from one window to the next). Any other window is
+# a person's or another program's.
+function Test-E2eOwnFront {
+    param([IntPtr]$Hwnd)
+    if ($Hwnd -eq [IntPtr]::Zero) { return $true }
+    if ($null -eq $script:E2eRun) { return $false }
+    if ($script:E2eRun.Windows -contains $Hwnd) { return $true }
+    $ours = @($script:E2eRun.Processes | ForEach-Object { $_.Pid })
+    if ($null -ne $script:E2eRun.Macropad) { $ours += $script:E2eRun.Macropad.Process.Id }
+    $ours -contains (Get-WindowInfo $Hwnd).Pid
+}
+
+# Waits for the window a key is about to be pressed into to be the one in front (with -Desktop: the
+# desktop itself). '' when it is, else what to say. The keyboard reaches a window a little after the
+# state a case waited for, and later on a slow machine: after Show Desktop the windows are minimized
+# before the desktop has the keyboard, and for that moment the window that was active still has it. So
+# while what is in front is the test's own (Test-E2eOwnFront), this waits for the expected window, for
+# up to E2eFrontMs. A window that is not the test's ends the wait at once: nothing is pressed into it,
+# nothing is taken back from it, and nothing waits for a person to go away. A wait that was needed is
+# said in the log, with what had the keyboard and for how long: that is how often, and by how much, a
+# machine is late.
+function Wait-E2eFront {
+    param([IntPtr]$Hwnd, [string]$What = 'the window the case made active', [switch]$Desktop)
+    $first = @{}
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $seen = Wait-E2eCondition {
+        $fg = [Macropad.WindowApi]::Foreground()
+        if ($Desktop) { if (Test-E2eDesktopFront) { return 'front' } } elseif ($fg -eq $Hwnd) { return 'front' }
+        if (-not (Test-E2eOwnFront $fg)) { return 'other' }
+        if (-not $first.Text) { $first.Text = Get-E2eForegroundText }
+    } -TimeoutMs $script:E2eFrontMs -EveryMs 15
+    if ($seen -eq 'front') {
+        if ($first.Text) { Write-Host "End-to-end: $What was not in front yet when a key was to be pressed; $($first.Text) still had the keyboard. It came in front $($sw.ElapsedMilliseconds) ms later, and the key was pressed then." }
+        return ''
+    }
+    $waited = if ($seen) { '' } else { " It was waited for for $($script:E2eFrontMs) ms, while a window of the test's own had the keyboard." }
+    "Not pressed: $What was not in front; $(Get-E2eForegroundText) was.$waited"
+}
+
+# Before a key is pressed into a window: that window must be the one in front (Wait-E2eFront). Nothing
+# is pressed when it is not; the error says what was in front.
 function Assert-E2eFront {
     param([IntPtr]$Hwnd, [string]$What = 'the window the case made active')
-    $front = [Macropad.WindowApi]::Foreground()
-    if ($front -ne $Hwnd) { throw "Not pressed: $What was not in front; $(Get-E2eForegroundText) was." }
+    $why = Wait-E2eFront $Hwnd $What
+    if ($why) { throw $why }
 }
 
 # Under -Ci only (OMB_E2E_CI: nobody sits at that desktop), Windows' own shell may have come up by
 # itself a moment after a case (Snap Assist after a snap, the desktop after a desktop switch) and taken
 # the keyboard. Once, such a window of explorer.exe is put away (Escape, only while that overlay is in
 # front) and Front is brought back, paced. On a developer's desktop nothing is taken back from a
-# person: nothing happens here, and Assert-E2eFront refuses to press, saying what was in front.
+# person: nothing happens here, and the press is refused, saying what was in front. True when it did
+# something.
 function Restore-E2eFront {
     param([IntPtr]$Front)
-    if ($env:OMB_E2E_CI -ne '1') { return }
+    if ($env:OMB_E2E_CI -ne '1') { return $false }
     $fg = [Macropad.WindowApi]::Foreground()
-    if ($fg -eq $Front) { return }
+    if ($fg -eq $Front) { return $false }
     $info = Get-WindowInfo $fg
-    if ($info.Exe -ne 'explorer.exe' -or $info.Class -notin $script:E2eShellClasses) { return }
+    if ($info.Exe -ne 'explorer.exe' -or $info.Class -notin $script:E2eShellClasses) { return $false }
     Write-Host "End-to-end (CI): $(Get-E2eForegroundText) had the keyboard; it is put away once and the case's window brought back."
     if ($info.Class -eq 'XamlExplorerHostIslandWindow') {
         Wait-ScreenChange
-        Send-E2eChordTo $fg 'Escape'
+        [void](Send-E2eChordTo $fg 'Escape')
         [void](Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -ne $fg } -TimeoutMs 1500)
     }
     [void](Set-E2eActive $Front)
+    $true
 }
 
 # True when the desktop itself (or the taskbar) has the keyboard, or no window has: where a key that
@@ -424,20 +470,23 @@ function Test-E2eDesktopFront {
 # Presses a case's macro key: paced, and only while the window the case names (Front) is in front.
 # With -FrontDesktop, the case names the desktop itself (after Show Desktop, or on a new virtual
 # desktop), and the desktop must have the keyboard. With neither, nothing is pressed: the window a key
-# goes into is never taken from whatever happens to be in front.
+# goes into is never taken from whatever happens to be in front. The window is waited for while one of
+# the test's own still has the keyboard (Wait-E2eFront); only after that wait is Windows' own shell put
+# away, under -Ci (Restore-E2eFront).
 function Invoke-E2eCaseKey {
     param($ctx, [IntPtr]$Front = $ctx.Front, [int]$Slot = $ctx.Case.Slot, [switch]$FrontDesktop)
     Wait-ScreenChange
     if ($FrontDesktop) {
-        if (-not (Test-E2eDesktopFront)) { throw "Not pressed: the desktop was not in front; $(Get-E2eForegroundText) was." }
+        $why = Wait-E2eFront -Desktop -What 'the desktop'
     } else {
         if ($Front -eq [IntPtr]::Zero) { throw 'Not pressed: the case names no window to press into (no known front).' }
-        if ([Macropad.WindowApi]::Foreground() -ne $Front) {
-            Restore-E2eFront $Front
+        $why = Wait-E2eFront $Front
+        if ($why -and (Restore-E2eFront $Front)) {
             Wait-ScreenChange  # the restore changed the screen; the press may change it again
+            $why = Wait-E2eFront $Front
         }
-        Assert-E2eFront $Front
     }
+    if ($why) { throw $why }
     $ctx.Pressed = $true
     Invoke-E2eMacroKey $Slot
 }

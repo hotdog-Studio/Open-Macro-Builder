@@ -912,7 +912,10 @@ function Get-E2eCases {
                 $a = $ctx.Run.Standins['A'].Hwnd
                 $waited = Wait-E2eCondition { Test-E2eDesktopShown $a } -TimeoutMs 4000
                 $waited | Should -BeTrue -Because "the desktop must show (in front: $(Get-E2eForegroundText))"
-                # The second press goes where the first left the keyboard: the desktop.
+                Wait-ScreenChange -Observed
+                # The second press goes where the first left the keyboard: the desktop. Windows minimizes
+                # the windows first and gives the desktop the keyboard a moment later: until then A,
+                # minimized, still has it, and the press waits (Wait-E2eFront).
                 Invoke-E2eCaseKey $ctx -FrontDesktop
                 # Which window gets the keyboard back is Windows' choice; the windows must be back.
                 $waited = Wait-E2eCondition { -not (Test-E2eDesktopShown $a) } -TimeoutMs 4000

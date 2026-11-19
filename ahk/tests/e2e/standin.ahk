@@ -17,6 +17,15 @@
 ;   close
 ; Every other key message is answered here and not passed on, so a key never does anything in the
 ; stand-in itself (Alt+F4 does not close it, F10 opens no menu).
+;
+; No event may be lost or change places, however slow the machine is. AutoHotkey treats a message
+; that arrives while its function still runs for an earlier message of the same number as
+; unmonitored, and lets the function of another message interrupt it
+; (https://www.autohotkey.com/docs/v2/lib/OnMessage.htm). A function that wrote to the file itself
+; ran long enough for both on a slow machine: the second key of a chord lost its "down", and lines
+; changed places. So a function here only puts its line in a list, as a thread nothing interrupts
+; (Critical on its first line, with an interval in which AutoHotkey looks at no other message: the
+; next one waits in the window's queue, in its order), and a timer writes the list to the file.
 
 logFile := A_Args[1]
 name := A_Args.Length >= 2 ? A_Args[2] : "stand-in"
@@ -24,15 +33,26 @@ x := A_Args.Length >= 3 ? A_Args[3] : 40
 y := A_Args.Length >= 4 ? A_Args[4] : 120
 w := A_Args.Length >= 5 ? A_Args[5] : 420
 h := A_Args.Length >= 6 ? A_Args[6] : 160
+pending := []  ; the lines not yet taken by the writer, in the order of their events
+unwritten := ""  ; what the writer has taken and could not write yet
 
 StandinLog(Line) {
-    global logFile
-    Loop 20 {  ; the test may be reading the file at that moment
-        try {
-            FileAppend(Line "`n", logFile, "UTF-8-RAW")
-            return
-        }
-        Sleep(10)
+    global pending
+    pending.Push(Line)
+}
+
+; Writes what has come since the last time. When the file cannot be written (the test may be reading
+; it at that moment), the text is kept and goes out with the next tick, before anything newer.
+StandinWrite() {
+    global pending, unwritten, logFile
+    taken := pending, pending := []
+    for line in taken
+        unwritten .= line "`n"
+    if (unwritten = "")
+        return
+    try {
+        FileAppend(unwritten, logFile, "UTF-8-RAW")
+        unwritten := ""
     }
 }
 
@@ -43,6 +63,7 @@ StandinMods() {
 }
 
 StandinKey(wParam, lParam, msg, hwnd) {
+    Critical(1000)
     if ((wParam & 0xFF) = 0xE7)  ; VK_PACKET, a typed character: let Windows turn it into WM_CHAR
         return
     up := (msg = 0x101 || msg = 0x105)
@@ -51,11 +72,14 @@ StandinKey(wParam, lParam, msg, hwnd) {
     return 0
 }
 
-StandinClick(button) {
-    return (wParam, lParam, msg, hwnd) => (StandinLog("click " button " " (lParam & 0xFFFF) " " ((lParam >> 16) & 0xFFFF)), 0)
+StandinClick(button, wParam, lParam, msg, hwnd) {
+    Critical(1000)
+    StandinLog("click " button " " (lParam & 0xFFFF) " " ((lParam >> 16) & 0xFFFF))
+    return 0
 }
 
 StandinChar(wParam, lParam, msg, hwnd) {
+    Critical(1000)
     StandinLog("char " Format("{:04X}", wParam))
     return 0
 }
@@ -63,12 +87,12 @@ StandinChar(wParam, lParam, msg, hwnd) {
 for message in [0x100, 0x101, 0x104, 0x105]  ; WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP
     OnMessage(message, StandinKey)
 OnMessage(0x102, StandinChar)  ; WM_CHAR, made only from typed characters (VK_PACKET)
-OnMessage(0x201, StandinClick("left"))    ; WM_LBUTTONDOWN
-OnMessage(0x204, StandinClick("right"))   ; WM_RBUTTONDOWN
-OnMessage(0x207, StandinClick("middle"))  ; WM_MBUTTONDOWN
+OnMessage(0x201, StandinClick.Bind("left"))    ; WM_LBUTTONDOWN
+OnMessage(0x204, StandinClick.Bind("right"))   ; WM_RBUTTONDOWN
+OnMessage(0x207, StandinClick.Bind("middle"))  ; WM_MBUTTONDOWN
 ; A second click on the same spot soon after the first comes as a double click.
-OnMessage(0x203, StandinClick("left"))    ; WM_LBUTTONDBLCLK
-OnMessage(0x206, StandinClick("right"))   ; WM_RBUTTONDBLCLK
+OnMessage(0x203, StandinClick.Bind("left"))    ; WM_LBUTTONDBLCLK
+OnMessage(0x206, StandinClick.Bind("right"))   ; WM_RBUTTONDBLCLK
 
 window := Gui("+Resize -DPIScale", "OMB e2e stand-in: " name)
 window.BackColor := "404040"
@@ -77,3 +101,4 @@ window.AddText("x12 y10 w" (w - 24), "Open Macro Builder end-to-end test: stand-
 window.OnEvent("Close", (*) => (StandinLog("close"), true))  ; logged, and the window stays
 window.Show("x" x " y" y " w" w " h" h)
 StandinLog("start " name " pid=" ProcessExist() " hwnd=" window.Hwnd)
+SetTimer(StandinWrite, 15)

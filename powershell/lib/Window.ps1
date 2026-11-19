@@ -24,9 +24,9 @@ function Get-ProcessWindow {
 
 <#
 .SYNOPSIS
-Lists the visible windows of a Store app, topmost first, found by its application id.
+Lists the visible windows of an app shown in Windows' app frame, by its application id.
 .DESCRIPTION
-An app from the Microsoft Store, or one built into Windows such as Settings or Calculator, shows its window in a frame that belongs to ApplicationFrameHost.exe, not to the app's own program, and the window's title is translated. So Get-ProcessWindow does not find such a window, and a title fits one display language only. Windows keeps the app's application id on the frame, and that id is the same in every display language: this returns each visible frame window (class ApplicationFrameWindow) whose application id is AppId, the one on top of the screen first.
+Some apps, such as Settings and Calculator, have their window shown by Windows in its app frame: the window belongs to ApplicationFrameHost.exe, not to the app's own program, and its title is translated. So Get-ProcessWindow does not find such a window, and a title fits one display language only. Windows keeps the app's application id on the frame, and that id is the same in every display language: this returns each visible frame window (class ApplicationFrameWindow) whose application id is AppId, the one on top of the screen first. It returns nothing for a program that has a window of its own, such as Notepad, Paint or Terminal on Windows 11, although Get-StartApps lists an id for it: Get-ProcessWindow finds those.
 .PARAMETER AppId
 The app's application id, such as 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'. In PowerShell, Get-StartApps lists the name and the application id of every installed app. The case does not matter.
 .OUTPUTS

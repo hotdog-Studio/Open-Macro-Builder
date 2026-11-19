@@ -29,15 +29,15 @@ function ActivateOrOpen {
 .SYNOPSIS
 Brings forward a window that fits a WinTitle, or starts a program when none does.
 .DESCRIPTION
-ActivateOrOpen for windows that are found by title or class rather than by the program that starts them, such as Calculator (its window belongs to ApplicationFrameHost.exe) or a shell that Windows Terminal shows. When a window fits, the topmost one is activated; when one of them is already active, the bottom one comes forward instead, so pressing the key again steps through them. When none fits, the program is started, up to 5 seconds are given for a fitting window to appear, and it is activated. The macropad's own windows never count. A title fits one display language only: for a Store app such as Calculator or Settings, whose title is translated, use ActivateOrOpenApp.
+ActivateOrOpen for windows that are found by title or class rather than by the program that starts them, such as a shell that Windows Terminal shows (its window belongs to WindowsTerminal.exe, whatever shell runs in it). When a window fits, the topmost one is activated; when one of them is already active, the bottom one comes forward instead, so pressing the key again steps through them. When none fits, the program is started, up to 5 seconds are given for a fitting window to appear, and it is activated. The macropad's own windows never count. A title fits one display language only: for an app that Windows shows in its app frame, such as Calculator or Settings, whose title is translated, use ActivateOrOpenApp.
 .PARAMETER WinTitle
-Describes the windows, as Find-Window reads it, such as 'Calculator ahk_exe ApplicationFrameHost.exe'. Give several to accept a window that fits any of them.
+Describes the windows, as Find-Window reads it, such as 'Command Prompt ahk_exe WindowsTerminal.exe'. Give several to accept a window that fits any of them.
 .PARAMETER Program
-What to start when no window fits: a program name such as 'calc.exe', or the full path of a file.
+What to start when no window fits: a program name such as 'cmd', or the full path of a file.
 .PARAMETER Arguments
 Text given to the program on its command line when it is started. Not used when a window already fits.
 .EXAMPLE
-ActivateOrOpenWindow 'Calculator ahk_exe ApplicationFrameHost.exe' 'calc.exe'
+ActivateOrOpenWindow 'Command Prompt ahk_exe WindowsTerminal.exe' 'cmd'
 .EXAMPLE
 ActivateOrOpenWindow -WinTitle 'ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe' -Program 'cmd'
 #>
@@ -67,9 +67,9 @@ function ActivateOrOpenWindow {
 
 <#
 .SYNOPSIS
-Brings a Store app's window forward, or starts the app when it has no window.
+Brings forward the window of an app shown in Windows' app frame, or starts the app.
 .DESCRIPTION
-ActivateOrOpen for an app from the Microsoft Store or one built into Windows, such as Settings or Calculator. Such an app's window belongs to ApplicationFrameHost.exe and its title is translated, so the window is found by the app's application id, which is the same in every display language. When the app has a window, the topmost one is activated; when one of them is already active, the bottom one comes forward instead, so pressing the key again steps through them. When it has none, the program is started, up to 5 seconds are given for a window of the app to appear, and it is activated.
+ActivateOrOpen for an app whose window Windows shows in its app frame, such as Settings or Calculator. Such a window belongs to ApplicationFrameHost.exe, not to the app's own program, and its title is translated, so it is found by the app's application id, which is the same in every display language. It finds no other kind of window: a program that has a window of its own, such as Notepad, Paint or Terminal on Windows 11, is not found by its application id, although Get-StartApps lists one for it. For those use ActivateOrOpen with the program's name, or ActivateOrOpenWindow. (Get-WindowInfo says which program a window belongs to.) When the app has a window, the topmost one is activated; when one of them is already active, the bottom one comes forward instead, so pressing the key again steps through them. When it has none, the program is started, up to 5 seconds are given for a window of the app to appear, and it is activated.
 .PARAMETER AppId
 The app's application id, such as 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'. In PowerShell, Get-StartApps lists the name and the application id of every installed app.
 .PARAMETER Program

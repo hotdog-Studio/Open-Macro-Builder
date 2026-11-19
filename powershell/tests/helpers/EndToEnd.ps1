@@ -1396,7 +1396,11 @@ function Invoke-E2eCase {
     [void](Use-E2eMacropad $Lang $Case.Chunk)
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         $ctx = @{ Case = $Case; Lang = $Lang; Run = $script:E2eRun; Pressed = $false }
-        $caught = $false
+        $failure = $null
+        $foreign = $null
+        # What the clean-up after the case could not do: every step of it runs whatever the one before
+        # did, and a step that fails is reported beside the case's own failure, never in its place.
+        $problems = [System.Collections.Generic.List[string]]::new()
         try {
             Select-E2eLayer $Case.Layer
             $errorsBefore = @(Get-E2eErrorLines).Count
@@ -1411,27 +1415,33 @@ function Invoke-E2eCase {
             & $assert $ctx
             $errors = @(Get-E2eErrorLines | Select-Object -Skip $errorsBefore)
             $errors -join "`n" | Should -BeNullOrEmpty -Because 'the macropad must not report an error'
-            return $null
         } catch {
-            $caught = $true
+            $failure = $_
             $foreign = Get-E2eForeignForeground $Case
-            # Only under -Ci, where nobody is at the desktop, is a case tried again after another
-            # window took the focus; on a developer's desktop the case fails, saying what was in front.
-            if ($attempt -eq 1 -and $env:OMB_E2E_CI -eq '1' -and $ctx.Pressed -and $foreign -and $_.Exception.Message -notlike 'Not pressed:*') {
-                Write-Host "End-to-end: $($Case.Name) failed while $foreign had the focus, a window the test did not open; trying once more. The failure was: $($_.Exception.Message)"
-                continue
-            }
-            throw
         } finally {
             [OmbE2e.KeyWatch]::Swallow = $false
-            Clear-E2eHeldKeys
-            if ($Case.CleanUp) { & $Case.CleanUp $ctx }
+            $step = { param([scriptblock]$Do) try { & $Do } catch { $problems.Add($_.Exception.Message) } }
+            & $step { Clear-E2eHeldKeys }
+            & $step { if ($Case.CleanUp) { & $Case.CleanUp $ctx } }
             # A form or message box of the macropad's that the case left open would stand in the way
             # of the next case: it is closed, and the case fails (unless it failed already).
             $left = Get-E2eMacropadWindows -Others  # already a list
-            foreach ($w in $left) { Close-E2eWindow $w }
-            if ($left.Count -gt 0 -and -not $caught) { throw "The macropad still showed $($left.Count) window(s) after $($Case.Name): $(($left | ForEach-Object { "'$([Macropad.WindowApi]::Title($_))'" }) -join ', ')" }
+            if ($left.Count -gt 0 -and -not $failure) { $problems.Add("the macropad still showed $($left.Count) window(s): $(($left | ForEach-Object { "'$([Macropad.WindowApi]::Title($_))'" }) -join ', ')") }
+            foreach ($w in $left) { & $step { Close-E2eWindow $w } }
         }
+        # Only under -Ci, where nobody is at the desktop, is a case tried again after another window
+        # took the focus; on a developer's desktop the case fails, saying what was in front.
+        if ($failure -and $problems.Count -eq 0 -and $attempt -eq 1 -and $env:OMB_E2E_CI -eq '1' -and $ctx.Pressed -and $foreign -and $failure.Exception.Message -notlike 'Not pressed:*') {
+            Write-Host "End-to-end: $($Case.Name) failed while $foreign had the focus, a window the test did not open; trying once more. The failure was: $($failure.Exception.Message)"
+            continue
+        }
+        if ($problems.Count -eq 0) {
+            if ($failure) { throw $failure }
+            return $null
+        }
+        $text = "The clean-up after $($Case.Name) had problems: $($problems -join '; ')"
+        if ($failure) { $text = "$($failure.Exception.Message)`n$text" }
+        throw $text
     }
 }
 

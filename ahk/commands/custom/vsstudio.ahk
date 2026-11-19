@@ -18,7 +18,7 @@ VsStudioShowTestExplorer(Macro) {
 }
 
 /**
- * Splits the Panel.
+ * Presses V while Ctrl and W are held (Ctrl+W+V), meant to split the editor. Visual Studio binds nothing to these keys by default, so the key splits the editor only where you bound them to a command such as Window.Split (Tools > Options > Environment > Keyboard). In Visual Studio's General profile Ctrl+W alone closes the document window.
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 VsStudioSplitPanel(Macro) {

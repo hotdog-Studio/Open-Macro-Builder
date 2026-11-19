@@ -95,7 +95,7 @@ SnapWindowLeft(Macro) {
 }
 
 /**
- * Snaps the active window to the left third of the screen.
+ * Presses Win+Alt+Left, meant to snap the active window to the left third of the screen. Windows binds nothing to these keys by default (its list of shortcuts has Win+Alt+Up and Win+Alt+Down, which snap to the top or bottom half, but no Left or Right), so the key does this only where a tool you installed binds Win+Alt+Left to it.
  * @param {Macro} Macro - The macro object (not used).
  */
 SnapThirdsLeft(Macro) {
@@ -111,7 +111,7 @@ SnapWindowRight(Macro) {
 }
 
 /**
- * Snaps the active window to the right third of the screen.
+ * Presses Win+Alt+Right, meant to snap the active window to the right third of the screen. Windows binds nothing to these keys by default (its list of shortcuts has Win+Alt+Up and Win+Alt+Down, which snap to the top or bottom half, but no Left or Right), so the key does this only where a tool you installed binds Win+Alt+Right to it.
  * @param {Macro} Macro - The macro object (not used).
  */
 SnapThirdsRight(Macro) {

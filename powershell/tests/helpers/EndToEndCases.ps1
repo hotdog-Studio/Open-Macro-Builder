@@ -800,7 +800,10 @@ function Get-E2eCases {
         foreach ($c in 'PreviousTrack', 'PlayPause', 'NextTrack', 'VolumeDown', 'VolumeUp') { @{ Command = $c; File = 'media'; Kind = 'Watch' } }
 
         # ---- windows ----
-        (New-E2eOpenerCase 'OpenTaskManager' 'windows' 'ahk_exe taskmgr.exe' -Targets 'taskmgr.exe' `
+        # Task Manager and the management console are given 20 s to show their window, not 10: on the CI
+        # machine (2 cores) their cases took up to 9.4 s and 11.4 s in all, and such a case without that
+        # wait takes about 2 s there (Notepad's: 4 s with Notepad's start).
+        (New-E2eOpenerCase 'OpenTaskManager' 'windows' 'ahk_exe taskmgr.exe' -Targets 'taskmgr.exe' -TimeoutMs 20000 `
                 -Needs @{ Why = 'needs a standard user: for an administrator Task Manager starts elevated, and the test, which is not, could not close it'; Met = $script:E2eNeedsStandardUser } -SkipIf {
                 if ((Get-E2eForeignWindows 'ahk_exe taskmgr.exe').Count -gt 0) { 'a Task Manager the test did not open is on the desktop' }
             })
@@ -810,7 +813,7 @@ function Get-E2eCases {
         (New-E2eOpenerCase 'OpenSettings' 'windows' $script:E2eSettings -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -SecondPress -Covers 'Settings comes forward on a cold start and on a warm one' -SkipIf {
                 if ((Get-E2eForeignWindows $script:E2eSettings -IncludeHidden).Count -gt 0) { 'a Settings window the test did not open is on the desktop; the key would bring it forward' }
             })
-        (New-E2eOpenerCase 'OpenServices' 'windows' 'ahk_exe mmc.exe' -Targets 'mmc.exe' `
+        (New-E2eOpenerCase 'OpenServices' 'windows' 'ahk_exe mmc.exe' -Targets 'mmc.exe' -TimeoutMs 20000 `
                 -Needs @{ Why = 'needs a standard user: mmc.exe asks for the highest rights the user has, so for an administrator Windows shows its elevation prompt'; Met = $script:E2eNeedsStandardUser } -SkipIf {
                 if ((Get-E2eForeignWindows 'ahk_exe mmc.exe').Count -gt 0) { 'a management console the test did not open is on the desktop' }
             })

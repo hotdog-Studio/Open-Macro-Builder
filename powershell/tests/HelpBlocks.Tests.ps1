@@ -93,7 +93,7 @@ Describe 'Help blocks of the functions for commands' {
         # The library and the files named above; a block in another command file is checked, not forbidden.
         $named = $Functions | Where-Object { $_.File -like 'lib\*' -or $MustHave.Contains($_.File) }
         ($named | Where-Object { $_.Help -and $listed -notcontains $_.Name }).Name | Should -BeNullOrEmpty
-        @($listed).Count | Should -Be 64
+        @($listed).Count | Should -Be 66
     }
     It 'writes each example as a call that parses, calls only commands that exist and names whole parameters each command has' {
         # Every documented function, by name, so a call to another one inside an example is checked too.

@@ -98,6 +98,35 @@ Describe 'ActivateOrOpenWindow' {
         Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]7 }
     }
 }
+Describe 'ActivateOrOpenApp' {
+    BeforeEach { Mock Start-Program {}; Mock Set-ActiveWindow { $true }; Mock Wait-Pump {}; Mock Test-WindowActive { [IntPtr]99 } }
+    It 'activates the topmost window of the app, without starting the program' {
+        Mock Get-AppWindow { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) } -ParameterFilter { $AppId -eq 'Some.App_abc!App' }
+        ActivateOrOpenApp 'Some.App_abc!App' 'someapp.exe'
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]5 }
+        Should -Invoke Start-Program -Times 0 -Exactly
+    }
+    It 'brings the bottom window forward when one of the app''s windows is already active' {
+        Mock Get-AppWindow { , [IntPtr[]]@([IntPtr]5, [IntPtr]7) }
+        Mock Test-WindowActive { [IntPtr]5 }
+        ActivateOrOpenApp 'Some.App_abc!App' 'someapp.exe'
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]7 }
+    }
+    It 'starts the program when the app has no window and activates the window that appears' {
+        $script:finds = 0
+        Mock Get-AppWindow { $script:finds++; if ($script:finds -lt 3) { , [IntPtr[]]@() } else { , [IntPtr[]]@([IntPtr]8) } }
+        ActivateOrOpenApp 'Some.App_abc!App' 'ms-someapp:' -Arguments '-x'
+        Should -Invoke Start-Program -Times 1 -Exactly -ParameterFilter { $Program -eq 'ms-someapp:' -and $Arguments -eq '-x' }
+        Should -Invoke Set-ActiveWindow -Times 1 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]8 }
+    }
+    It 'gives up after about 5 seconds when no window appears' {
+        Mock Get-AppWindow { , [IntPtr[]]@() }
+        ActivateOrOpenApp 'Some.App_abc!App' 'someapp.exe'
+        Should -Invoke Start-Program -Times 1 -Exactly
+        Should -Invoke Wait-Pump -Times 50 -Exactly -ParameterFilter { $Milliseconds -eq 100 }
+        Should -Invoke Set-ActiveWindow -Times 0 -Exactly
+    }
+}
 Describe 'Script helpers' {
     BeforeEach { Mock Start-Program {} }
     It 'RunPythonScript quotes the path and adds the arguments' {

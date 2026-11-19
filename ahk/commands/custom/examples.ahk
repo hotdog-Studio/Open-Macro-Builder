@@ -21,11 +21,11 @@ ExampleOpenProgram(Macro) {
 }
 
 /**
- * Opens or activates Calculator. It is a Store app, so its window belongs to ApplicationFrameHost.exe and is found by its title; on a Windows in another language, change "Calculator" to the translated title.
+ * Opens or activates Calculator. It is a Store app: its window belongs to ApplicationFrameHost.exe and its title is translated, so it is found by the app's application id, in any display language. In PowerShell, Get-StartApps lists the application id of every installed app.
  * @param {Macro} Macro - The macro object (not used in this function).
  */
 OpenCalculator(Macro) {
-    ActivateOrOpen("Calculator ahk_exe ApplicationFrameHost.exe", "calc.exe", "")
+    ActivateOrOpenApp("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", "calc.exe")
 }
 
 /**

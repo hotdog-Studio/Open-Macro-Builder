@@ -24,6 +24,23 @@ function Get-ProcessWindow {
 
 <#
 .SYNOPSIS
+Lists the visible windows of a Store app, topmost first, found by its application id.
+.DESCRIPTION
+An app from the Microsoft Store, or one built into Windows such as Settings or Calculator, shows its window in a frame that belongs to ApplicationFrameHost.exe, not to the app's own program, and the window's title is translated. So Get-ProcessWindow does not find such a window, and a title fits one display language only. Windows keeps the app's application id on the frame, and that id is the same in every display language: this returns each visible frame window (class ApplicationFrameWindow) whose application id is AppId, the one on top of the screen first.
+.PARAMETER AppId
+The app's application id, such as 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'. In PowerShell, Get-StartApps lists the name and the application id of every installed app. The case does not matter.
+.OUTPUTS
+A list of window handles, topmost first; empty when the app has no visible window. A window handle is the number Windows uses to name one window, and Set-ActiveWindow takes it.
+.EXAMPLE
+Get-AppWindow 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'
+#>
+function Get-AppWindow {
+    param([Parameter(Mandatory)][string]$AppId)
+    , [IntPtr[]]@(foreach ($h in (Find-Window 'ahk_class ApplicationFrameWindow' -All)) { if ((Get-WindowAppId $h) -eq $AppId) { $h } })
+}
+
+<#
+.SYNOPSIS
 Picks which of a program's windows to bring to the front.
 .DESCRIPTION
 Gives the top window of the list, or the bottom one when one of the windows is already the active window, so that repeated presses step through all of a program's windows. This is what AutoHotkey's WinActivateBottom does. It only chooses; it does not activate anything.

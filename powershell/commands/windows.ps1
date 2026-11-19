@@ -14,9 +14,10 @@ function OpenPowershell { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe 
 function OpenCommandPrompt { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe' -Program 'cmd' }
 function OpenTaskManager { param($Macro) ActivateOrOpen 'taskmgr.exe' 'taskmgr' }
 function OpenControlPanel { param($Macro) Start-Program 'control' }
-# Settings' window belongs to ApplicationFrameHost.exe, and Windows may leave a started Settings behind
-# the active window, so it is found and brought forward, as OpenCalculator does.
-function OpenSettings { param($Macro) ActivateOrOpenWindow 'Settings ahk_exe ApplicationFrameHost.exe' 'ms-settings:' }
+# Settings is a Store app: its window belongs to ApplicationFrameHost.exe and its title is translated, so
+# it is found by the app's application id, in any display language. Windows may leave a started Settings
+# behind the active window, so the window is brought forward, as OpenCalculator does.
+function OpenSettings { param($Macro) ActivateOrOpenApp 'windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel' 'ms-settings:' }
 function OpenServices { param($Macro) Start-Program 'services.msc' }
 function SnippingTool { param($Macro) Start-Program 'ms-screenclip:' }
 

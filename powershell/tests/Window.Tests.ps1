@@ -8,6 +8,26 @@ Describe 'Select-WindowToActivate' {
 Describe 'Get-ProcessWindow' {
     It 'returns an empty array for a process that is not running' { $r = Get-ProcessWindow 'definitely-not-running.exe'; ,$r | Should -BeOfType [System.Array]; $r.Count | Should -Be 0 }
 }
+Describe 'Get-AppWindow' {
+    BeforeAll { . "$PSScriptRoot\..\lib\Interop.ps1"; . "$PSScriptRoot\..\lib\WinTitle.ps1" }
+    It 'returns the frame windows that carry the app''s application id, topmost first, whatever their titles' {
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]5, [IntPtr]6, [IntPtr]7) } -ParameterFilter { $WinTitle -eq 'ahk_class ApplicationFrameWindow' -and $All }
+        Mock Get-WindowAppId { @{ 5 = 'Some.App_abc!App'; 6 = 'Other.App_xyz!App'; 7 = 'some.app_ABC!app' }[[int]$Hwnd] }
+        $r = Get-AppWindow 'Some.App_abc!App'
+        , $r | Should -BeOfType [System.Array]
+        $r -join ',' | Should -Be '5,7'
+    }
+    It 'returns an empty array when no frame carries the id' {
+        Mock Find-Window { , [IntPtr[]]@([IntPtr]6) } -ParameterFilter { $All }
+        Mock Get-WindowAppId { 'Other.App_xyz!App' }
+        $r = Get-AppWindow 'Some.App_abc!App'
+        , $r | Should -BeOfType [System.Array]
+        $r.Count | Should -Be 0
+    }
+    It 'reads no application id from a window that has none' {
+        Get-WindowAppId ([IntPtr]::Zero) | Should -Be ''
+    }
+}
 Describe 'ActivateOrOpen' {
     It 'starts the program only when no window exists' {
         Mock Invoke-WindowActivation { $false }; Mock Start-Program {}; Mock Wait-ProcessWindow { @() }

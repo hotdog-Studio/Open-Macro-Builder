@@ -73,6 +73,68 @@ EnsureActiveOrOpen(Window, Program, Args := "")
 }
 
 /**
+ * Activates the window of a Store app, or opens the Program when the app has no window. It is ActivateOrOpen for an app from the Microsoft Store or one built into Windows, such as Settings or Calculator: such an app's window belongs to ApplicationFrameHost.exe and its title is translated, so the window is found by the app's application id, which is the same in every display language. When one of the app's windows is already active, the bottom one comes forward instead, so pressing the key again steps through them. If no window appears within 5 seconds of starting the Program, nothing is activated.
+ * @param {String} AppId - The app's application id, such as "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App". In PowerShell, Get-StartApps lists the name and the application id of every installed app.
+ * @param {String} Program - The Program to run if the app has no window: a program such as "calc.exe", or an address that opens the app, such as "ms-settings:".
+ * @param {String} [Args=""] - Text that follows the Program on its command line, as given.
+ * @example ActivateOrOpenApp("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", "calc.exe")
+ */
+ActivateOrOpenApp(AppId, Program, Args := "")
+{
+    frames := AppFrames()
+    if (frames.Length = 0)
+    {   ; start the requested Program and give its window 5 seconds
+        Run('"' Program '"' (Args != "" ? " " Args : ""))
+        started := A_TickCount
+        while (frames.Length = 0 && A_TickCount - started < 5000)
+        {
+            Sleep(100)
+            frames := AppFrames()
+        }
+        if (frames.Length = 0)
+            return
+    }
+    ; the topmost of the app's windows, or the bottom one when one of them is already active
+    target := frames[1]
+    for frame in frames
+        if WinActive("ahk_id " frame)
+            target := frames[frames.Length]
+    WinActivate("ahk_id " target)
+
+    ; The app's windows, topmost first: the frame windows that carry its application id.
+    AppFrames()
+    {
+        found := []
+        for candidate in WinGetList("ahk_class ApplicationFrameWindow")
+            if (FrameAppId(candidate) = AppId)
+                found.Push(candidate)
+        return found
+    }
+
+    ; The application id Windows keeps for a window (its property System.AppUserModel.ID), or "".
+    FrameAppId(Hwnd)
+    {
+        static iid := Buffer(16), key := Buffer(20), ready := false
+        if !ready
+        {
+            DllCall("ole32\CLSIDFromString", "Str", "{886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}", "Ptr", iid)  ; IPropertyStore
+            DllCall("ole32\CLSIDFromString", "Str", "{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}", "Ptr", key)  ; System.AppUserModel.ID
+            NumPut("UInt", 5, key, 16)
+            ready := true
+        }
+        if DllCall("shell32\SHGetPropertyStoreForWindow", "Ptr", Hwnd, "Ptr", iid, "Ptr*", &store := 0, "Int") != 0 || !store
+            return ""
+        value := Buffer(24, 0)
+        id := ""
+        if ComCall(5, store, "Ptr", key, "Ptr", value, "Int") = 0 && NumGet(value, 0, "UShort") = 31  ; IPropertyStore::GetValue, VT_LPWSTR
+            id := StrGet(NumGet(value, 8, "Ptr"), "UTF-16")
+        DllCall("ole32\PropVariantClear", "Ptr", value)
+        ObjRelease(store)
+        return id
+    }
+}
+
+/**
  * Runs a Python script with optional arguments: python, then the script's path in double quotes (spaces in it are fine), then Args.
  * @param {String} ScriptPath - The path to the Python script.
  * @param {String} [Args=""] - Text that follows the script's path on its command line, as given. Put a path with spaces in double quotes.

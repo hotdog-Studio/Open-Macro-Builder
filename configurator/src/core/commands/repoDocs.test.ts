@@ -17,11 +17,11 @@ async function sections(lang: LangId) {
 }
 
 describe('the real scripts, as the Commands tab reads them', () => {
-  // 64 functions have a help block; Message and ReplaceMe of helper.ps1 are commands, so 62 are functions to call.
-  it('lists the 62 documented PowerShell functions to call, each with a summary and an example', async () => {
+  // 66 functions have a help block; Message and ReplaceMe of helper.ps1 are commands, so 64 are functions to call.
+  it('lists the 64 documented PowerShell functions to call, each with a summary and an example', async () => {
     const { functions } = await sections('ps')
     const entries = functions.flatMap((g) => g.entries)
-    expect(entries).toHaveLength(62)
+    expect(entries).toHaveLength(64)
     expect(entries.filter((e) => e.summary === '' || e.fn.doc.examples.length === 0).map((e) => e.fn.name)).toEqual([])
     expect(entries.filter((e) => e.fn.doc.params.some((p) => p.text === '')).map((e) => e.fn.name)).toEqual([])
   })
@@ -54,7 +54,7 @@ describe('the real scripts, as the Commands tab reads them', () => {
     const { functions } = await sections('ahk')
     const helper = functions.find((g) => g.group.label === 'helper')!
     expect(helper.entries.map((e) => e.fn.name)).toEqual(
-      ['ActivateOrOpen', 'Open', 'EnsureActiveOrOpen', 'RunPythonScript', 'RunPowerShellScript', 'RunBatchScript'],
+      ['ActivateOrOpen', 'Open', 'EnsureActiveOrOpen', 'ActivateOrOpenApp', 'RunPythonScript', 'RunPowerShellScript', 'RunBatchScript'],
     )
   })
 
@@ -80,6 +80,7 @@ describe('the real scripts, as the Commands tab reads them', () => {
       'ActivateOrOpen',
       'Open',
       'EnsureActiveOrOpen',
+      'ActivateOrOpenApp',
       'RunPythonScript',
       'RunPowerShellScript',
       'RunBatchScript',

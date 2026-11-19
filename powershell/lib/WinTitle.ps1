@@ -60,6 +60,10 @@ function Get-WindowInfo {
     }
 }
 
+# A seam for tests: the application id Windows keeps for a window, '' when it has none (Get-AppWindow
+# finds the windows of a Store app by it).
+function Get-WindowAppId { param([IntPtr]$Hwnd) [Macropad.WindowApi]::AppId($Hwnd) }
+
 # Pure: does the window described by $Info satisfy $Criteria? $MatchMode is 1 (starts with),
 # 2 (contains), 3 (exact) or 'RegEx', applied to the title case-sensitively.
 function Test-WindowMatch {

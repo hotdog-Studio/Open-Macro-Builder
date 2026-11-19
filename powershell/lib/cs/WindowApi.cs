@@ -259,5 +259,52 @@ namespace Macropad
         {
             return SendMessage(hWnd, WM_SETTEXT, IntPtr.Zero, text) != IntPtr.Zero;
         }
+
+        // ---- application ids (Window.ps1) ----
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROPERTYKEY { public Guid fmtid; public uint pid; }
+
+        [StructLayout(LayoutKind.Explicit, Size = 24)]
+        private struct PROPVARIANT { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr pointer; }
+
+        [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IPropertyStore
+        {
+            [PreserveSig] int GetCount(out uint count);
+            [PreserveSig] int GetAt(uint index, out PROPERTYKEY key);
+            [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
+            [PreserveSig] int SetValue(ref PROPERTYKEY key, ref PROPVARIANT value);
+            [PreserveSig] int Commit();
+        }
+
+        [DllImport("shell32.dll")]
+        private static extern int SHGetPropertyStoreForWindow(IntPtr hWnd, ref Guid riid, out IPropertyStore store);
+        [DllImport("ole32.dll")]
+        private static extern int PropVariantClear(ref PROPVARIANT value);
+
+        // The application id Windows keeps for a window (the property System.AppUserModel.ID, which the
+        // taskbar groups windows by); "" when the window has none. The frame window of a Store app
+        // carries that app's id, in every display language.
+        public static string AppId(IntPtr hWnd)
+        {
+            Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+            IPropertyStore store;
+            if (SHGetPropertyStoreForWindow(hWnd, ref iid, out store) != 0 || store == null) return "";
+            try
+            {
+                PROPERTYKEY key = new PROPERTYKEY();
+                key.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");  // System.AppUserModel.ID
+                key.pid = 5;
+                PROPVARIANT value;
+                if (store.GetValue(ref key, out value) != 0) return "";
+                try { return value.vt == 31 /* VT_LPWSTR */ ? Marshal.PtrToStringUni(value.pointer) : ""; }
+                finally { PropVariantClear(ref value); }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(store);
+            }
+        }
     }
 }

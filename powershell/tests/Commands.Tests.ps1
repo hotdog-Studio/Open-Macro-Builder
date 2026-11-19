@@ -63,7 +63,7 @@ Describe 'core commands send the right chords' {
     It 'Shutdown' { Shutdown $null; Should -Invoke Start-Program -ParameterFilter { $Program -eq 'shutdown' -and $Arguments -eq '/s /t 1' } }
 }
 Describe 'Shell commands' {
-    BeforeEach { Mock ActivateOrOpenWindow {}; Mock ActivateOrOpen {} }
+    BeforeEach { Mock ActivateOrOpenWindow {}; Mock ActivateOrOpen {}; Mock ActivateOrOpenApp {} }
     It 'OpenPowershell finds a PowerShell console or a Windows Terminal window running PowerShell' {
         OpenPowershell $null
         Should -Invoke ActivateOrOpenWindow -Times 1 -Exactly -ParameterFilter {
@@ -79,7 +79,9 @@ Describe 'Shell commands' {
     It 'OpenSettings brings the Settings window forward, or opens Settings and then brings its window forward' {
         Mock Start-Program {}
         OpenSettings $null
-        Should -Invoke ActivateOrOpenWindow -Times 1 -Exactly -ParameterFilter { ($WinTitle -join '|') -eq 'Settings ahk_exe ApplicationFrameHost.exe' -and $Program -eq 'ms-settings:' }
+        # By the app's application id, not by the window's title, which is translated.
+        Should -Invoke ActivateOrOpenApp -Times 1 -Exactly -ParameterFilter { $AppId -eq 'windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel' -and $Program -eq 'ms-settings:' }
+        Should -Invoke ActivateOrOpenWindow -Times 0 -Exactly
         Should -Invoke Start-Program -Times 0 -Exactly
     }
 }
@@ -146,7 +148,7 @@ Describe 'File Explorer commands' {
     }
 }
 Describe 'Example commands' {
-    BeforeEach { Mock Open-ExplorerWindow {}; Mock ActivateOrOpenWindow {}; Mock ActivateOrOpen {} }
+    BeforeEach { Mock Open-ExplorerWindow {}; Mock ActivateOrOpenWindow {}; Mock ActivateOrOpen {}; Mock ActivateOrOpenApp {} }
     It 'ExampleOpenFolder opens the Documents folder that Windows names, wherever it was moved' {
         # A folder that is not under the profile, so the test fails on any PC if the path is built from USERPROFILE.
         Mock Get-DocumentsFolder { 'X:\Moved\Documents' }
@@ -156,8 +158,9 @@ Describe 'Example commands' {
     It 'Get-DocumentsFolder asks Windows for the Documents folder' {
         Get-DocumentsFolder | Should -Be ([Environment]::GetFolderPath('MyDocuments'))
     }
-    It 'OpenCalculator finds the Calculator window, which belongs to ApplicationFrameHost.exe' {
+    It 'OpenCalculator finds the Calculator window by the app''s application id, in any display language' {
         OpenCalculator $null
-        Should -Invoke ActivateOrOpenWindow -Times 1 -Exactly -ParameterFilter { ($WinTitle -join '|') -eq 'Calculator ahk_exe ApplicationFrameHost.exe' -and $Program -eq 'calc.exe' }
+        Should -Invoke ActivateOrOpenApp -Times 1 -Exactly -ParameterFilter { $AppId -eq 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App' -and $Program -eq 'calc.exe' }
+        Should -Invoke ActivateOrOpenWindow -Times 0 -Exactly
     }
 }

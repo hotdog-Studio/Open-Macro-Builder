@@ -120,7 +120,7 @@ function Start-KeyRecording {
     [void]$st.ChordBox.Focus()
 }
 
-# The recording's 5 seconds are up.
+# Ends a recording that got no key in its 5 seconds, and says so on the form.
 function Stop-KeyRecording {
     param($Form)
     if ($Form.IsDisposed) { return }
@@ -131,8 +131,9 @@ function Stop-KeyRecording {
     }
 }
 
-# A key went down on the form ($KeyEvent: KeyEventArgs). While recording, the key and the modifiers
-# held with it become the chord, unless the key is a modifier alone or one Send-Chord cannot send.
+# Records the key that went down on the form ($KeyEvent: KeyEventArgs) while the form is recording:
+# the key and the modifiers held with it become the chord, unless the key is a modifier alone or one
+# Send-Chord cannot send.
 function Add-RecordedKey {
     param($Form, $KeyEvent)
     $st = $Form.Tag
@@ -224,7 +225,9 @@ function Start-ClickRecording {
     $st.Poll.Start()
 }
 
-# One look at the mouse while recording (the Poll timer, every 10 ms).
+# Looks once at the mouse while the form records a click (the Poll timer calls it every 10 ms): records
+# the first button pressed after the one that clicked Record was let go, or ends the recording after
+# 5 seconds.
 function Update-ClickCapture {
     param($Form)
     $st = $Form.Tag

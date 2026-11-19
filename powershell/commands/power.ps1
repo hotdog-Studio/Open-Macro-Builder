@@ -12,6 +12,7 @@ function TurnMonitorsOff {
 }
 
 # Seams for the tests: the calls into Windows that lock, sleep and hibernate.
+
 function Lock-Workstation { [Macropad.Native]::LockWorkStation() }
 function Invoke-SuspendState { param([bool]$Hibernate) [Macropad.Native]::SetSuspendState($Hibernate, $false, $false) }
 
@@ -26,5 +27,6 @@ function Hibernate {
 }
 
 # shutdown.exe, as in the AHK version: ExitWindowsEx would need a privilege the macropad does not enable.
+
 function Restart { param($Macro) Start-Program 'shutdown' '/r /t 1' }
 function Shutdown { param($Macro) Start-Program 'shutdown' '/s /t 1' }

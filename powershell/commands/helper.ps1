@@ -94,6 +94,7 @@ function ActivateOrOpenApp {
     }
     [void](Set-ActiveWindow (Select-WindowToActivate $windows (Test-WindowActive)))
 }
+
 <#
 .SYNOPSIS
 Starts a program and brings its window to the front.
@@ -252,6 +253,7 @@ function Show-MessageBox {
     # MB_OK with MB_SETFOREGROUND (0x10000): without it the box opens behind the active window.
     [void][Macropad.Native]::MessageBox([IntPtr]::Zero, $Text, $Title, 0x10000)
 }
+
 <#
 .SYNOPSIS
 Lists the open File Explorer windows.

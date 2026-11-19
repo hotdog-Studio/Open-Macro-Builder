@@ -27,8 +27,9 @@ function ActivateOrOpenChrome {
     }
 }
 
-# True when a Chrome window is the active window at the end (Chrome is started when it has none).
-# The commands below send their keys only then, so the keys never go to another program.
+# Makes a Chrome window the active one, starting Chrome when it has none, and returns true when a Chrome
+# window is the active window at the end. The commands below send their keys only then, so the keys
+# never go to another program.
 function EnsureActiveOrOpenChrome { param($Macro) EnsureActiveOrOpen 'chrome.exe' 'chrome.exe' }
 
 function OpenYoutube { param($Macro) ActivateOrOpenChrome 'https://www.youtube.com/' }
@@ -41,7 +42,9 @@ function ChromeOpenIncognitoWindow { param($Macro) if (EnsureActiveOrOpenChrome 
 function ChromeOpenDownloads { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+j' } }
 function ChromeOpenHistory { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+h' } }
 function ChromeOpenBookmarks { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+o' } }
+
 # Chrome has no shortcut for these pages, so they go through the address bar (Ctrl+L), given a moment to take the keys.
+
 function ChromeOpenExtensions { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+l'; Wait-Pump 100; Send-Text 'chrome://extensions'; Send-Key 'Enter' } }
 function ChromeOpenSettings { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+l'; Wait-Pump 100; Send-Text 'chrome://settings'; Send-Key 'Enter' } }
 

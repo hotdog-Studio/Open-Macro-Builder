@@ -23,6 +23,7 @@ function LoadPuttySession {
 }
 
 # Name a macro, or describe it, after a saved PuTTY session.
+
 function SshMacroName { param($Macro) LoadPuttySession $Macro.Name }
 function SshMacroDescription { param($Macro) LoadPuttySession $Macro.Description }
 

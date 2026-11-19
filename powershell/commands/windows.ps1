@@ -6,6 +6,7 @@ function OpenFileExplorer {
     if ($windows.Count -gt 0) { [void](Set-ActiveWindow (Select-WindowToActivate $windows ([Macropad.Native]::GetForegroundWindow()))) }
     else { Open-ExplorerWindow }
 }
+
 # Windows 11 shows a shell in Windows Terminal by default, and then its window belongs to WindowsTerminal.exe:
 # such a window counts when its title (the shell's, or its tab's) names the shell. Best effort: a title the
 # shell or the user changed, or a translated one, is not found, and the key opens another shell.
@@ -14,9 +15,11 @@ function OpenPowershell { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe 
 function OpenCommandPrompt { param($Macro) ActivateOrOpenWindow -WinTitle 'ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe' -Program 'cmd' }
 function OpenTaskManager { param($Macro) ActivateOrOpen 'taskmgr.exe' 'taskmgr' }
 function OpenControlPanel { param($Macro) Start-Program 'control' }
+
 # Settings is a Store app: its window belongs to ApplicationFrameHost.exe and its title is translated, so
 # it is found by the app's application id, in any display language. Windows may leave a started Settings
 # behind the active window, so the window is brought forward, as OpenCalculator does.
+
 function OpenSettings { param($Macro) ActivateOrOpenApp 'windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel' 'ms-settings:' }
 function OpenServices { param($Macro) Start-Program 'services.msc' }
 function SnippingTool { param($Macro) Start-Program 'ms-screenclip:' }
@@ -29,6 +32,7 @@ function SnapWindowRight { param($Macro) Send-Chord 'LWin+Right' }
 function SnapThirdsRight { param($Macro) Send-Chord 'LWin+LAlt+Right' }
 function MoveWindowUp { param($Macro) Send-Chord 'LWin+Up' }
 function MoveWindowDown { param($Macro) Send-Chord 'LWin+Down' }
+
 # Next goes where Alt+Tab goes; previous goes the other way through the list.
 
 function NextWindow { param($Macro) Send-Chord 'Alt+Tab' }

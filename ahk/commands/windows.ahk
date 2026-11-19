@@ -55,7 +55,7 @@ OpenControlPanel(Macro) {
 }
 
 /**
- * Brings the Windows Settings window to the front, or opens Settings when no Settings window is open and brings its window to the front. Settings is a Store app: its window belongs to ApplicationFrameHost.exe and its title is translated, so it is found by the app's application id, in any display language. Windows may leave a started Settings behind the active window.
+ * Brings the Windows Settings window to the front, or opens Settings when no Settings window is open and brings its window to the front. Settings is a Store app: its window belongs to ApplicationFrameHost.exe and its title is translated, so it is found by the app's application id, in any display language. Windows may leave a started Settings behind the active window, so the window is brought forward, as OpenCalculator does.
  * @param {Macro} Macro - The macro object (not used).
  */
 OpenSettings(Macro) {

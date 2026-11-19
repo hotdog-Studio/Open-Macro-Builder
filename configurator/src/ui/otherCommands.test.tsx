@@ -22,7 +22,7 @@ describe('Other commands available', () => {
     // helper.ahk has both documented functions and commands: its group is in each list, open under the first only.
     const helpers = within(other()).getAllByRole('button', { name: /^helper/ })
     expect(helpers.map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
-    expect(within(row('ActivateOrOpen')).getByText("Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows.")).toBeTruthy()
+    expect(within(row('ActivateOrOpen')).getByText("Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows. After starting the Program it waits up to 5 seconds for the Window to appear and activates it; if none appears in that time, nothing is activated.")).toBeTruthy()
     expect(within(other()).getByText("AutoHotkey's own functions, such as Send and Run, are not listed here. They are described at autohotkey.com/docs/v2.")).toBeTruthy()
     // Below the outline, in the same panel.
     const outline = screen.getByRole('region', { name: 'Commands in this file' })

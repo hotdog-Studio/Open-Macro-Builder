@@ -2,7 +2,7 @@
 
 ; ************************* Helper Functions *********************
 /**
- * Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows.
+ * Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows. After starting the Program it waits up to 5 seconds for the Window to appear and activates it; if none appears in that time, nothing is activated.
  * @param {String} Window - The Window to check for: a window title, or a string such as "ahk_exe notepad.exe" that names the program.
  * @param {String} Program - The Program to run if the Window does not exist.
  * @param {String} [Args=""] - Text that follows the Program on its command line, as given, such as several arguments or a web address. Put a path with spaces in double quotes.
@@ -101,7 +101,12 @@ ActivateOrOpenApp(AppId, Program, Args := "")
             target := frames[frames.Length]
     WinActivate("ahk_id " target)
 
-    ; The app's windows, topmost first: the frame windows that carry its application id.
+    ; The app's windows, topmost first: the frame windows that carry its application id. Visible ones
+    ; only: WinGetList does not see hidden windows while DetectHiddenWindows is off, which is
+    ; AutoHotkey's default and nothing in these scripts changes. That is what keeps a closed frame that
+    ; the app still keeps, hidden, for a moment from being picked (the PowerShell twin, Get-AppWindow,
+    ; is pinned by a test in Window.Tests.ps1). A script that turns DetectHiddenWindows on would let
+    ; such a frame be picked.
     AppFrames()
     {
         found := []

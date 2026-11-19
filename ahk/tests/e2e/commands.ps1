@@ -23,8 +23,8 @@ function E2eExit {
 function E2eTestDir { Join-Path $env:OMB_E2E_DIR 'E2E Test' }
 function E2eLauncher { Join-Path $env:OMB_E2E_DIR 'path\e2eapp.exe' }
 
-# AHK-1, AHK-2 twins: the script helpers, with arguments a command line could break. One at a time,
-# two seconds apart, so that their console windows do not flash.
+# The script helpers, with arguments a command line could break: an &, several arguments, none, and 0.
+# One at a time, two seconds apart, so that their console windows do not flash.
 function E2eRunScripts {
     param($Macro)
     $dir = E2eTestDir
@@ -55,7 +55,7 @@ function E2eOpenSpaces {
     E2eWrite 'marks.log' 'spaces done'
 }
 
-# PS-8: EnsureActiveOrOpen says whether the window is active at the end.
+# EnsureActiveOrOpen says whether the window is active at the end.
 function E2eEnsureActive {
     param($Macro)
     $r = EnsureActiveOrOpen 'e2eapp.exe' (E2eLauncher)
@@ -78,6 +78,6 @@ function E2eStep { param($Macro) ActivateOrOpen 'e2eapp.exe' (E2eLauncher) }
 # Chrome gets an address with & in it whole, and comes forward.
 function E2eChromeUrl { param($Macro) ActivateOrOpenChrome 'https://example.com/?a=1&b=2' }
 
-# PS-9: Open-ExplorerWindow shows a folder whose name has a comma and a space (PowerShell only: the
+# Open-ExplorerWindow shows a folder whose name has a comma and a space (PowerShell only: the
 # AutoHotkey version has no such helper).
 function E2eOpenFolderComma { param($Macro) Open-ExplorerWindow (Join-Path (E2eTestDir) 'Smith, John') }

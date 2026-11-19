@@ -32,8 +32,7 @@
 #             else the last window Arrange made active (Use-E2eStandin, Set-E2eActive); with
 #             $ctx.FrontDesktop, the desktop itself. A case that names none presses nothing and fails.
 #             A second press inside Assert goes through Invoke-E2eCaseKey, which checks the front first.
-#   Covers    the fixes of fix-scripts-1-report.md / fix-scripts-2-report.md it proves, and the parts of
-#             them it does not run, with the reason
+#   Covers    what the case proves, in words, and what of that it does not run, with the reason
 #
 # The stand-ins, open for the whole run: A (40,120) runs as chrome.exe; B (500,120) and C (500,320) run
 # as e2eapp.exe; P (40,320) runs as putty.exe. The launcher (ahk\tests\e2e\launcher.cs) is first on the
@@ -378,9 +377,9 @@ function Close-E2eCalculators {
 function Get-E2eCases {
     param([switch]$All)
     $cases = @(
-        # ======== The fixes no test proved (fix-scripts-1-report.md and fix-scripts-2-report.md) ========
+        # ======== The helpers' command lines and windows, and the commands only a desktop can prove ========
 
-        @{ Command = 'E2eRunScripts'; File = 'e2e'; Kind = 'Custom'; Covers = 'AHK-1, AHK-2 (fix 1: items 1-3)'
+        @{ Command = 'E2eRunScripts'; File = 'e2e'; Kind = 'Custom'; Covers = 'RunPythonScript, RunPowerShellScript and RunBatchScript run the script with its arguments as given: an & in them, several, none, and an Args of 0'
             Arrange = {
                 param($ctx)
                 [void](Use-E2eStandin 'B')
@@ -401,7 +400,7 @@ function Get-E2eCases {
                 [void](Use-E2eStandin 'B')
             }
         }
-        @{ Command = 'E2eAmpersand'; File = 'e2e'; Kind = 'Custom'; Covers = 'AHK-2 (fix 1: item 3a)'
+        @{ Command = 'E2eAmpersand'; File = 'e2e'; Kind = 'Custom'; Covers = 'an & in the Args of a program reaches the program whole: the command line is not cut there'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.File = Join-Path $ctx.Run.Dir 'E2E Test\amp.txt'; Remove-Item -LiteralPath $ctx.File -ErrorAction SilentlyContinue; $ctx.Marks = @(Get-E2eMarks).Count }
             Assert  = {
                 param($ctx)
@@ -411,7 +410,7 @@ function Get-E2eCases {
                 [void](Wait-E2eMark $ctx.Marks 'ampersand done' -TimeoutMs 10000)
             }
         }
-        @{ Command = 'E2eOpenSpaces'; File = 'e2e'; Kind = 'Custom'; Covers = 'AHK-2 (fix 1: item 4: the command line; that the window of a started program then comes forward is proven by the opener cases, OpenCalculator, OpenFileExplorer and the others)'
+        @{ Command = 'E2eOpenSpaces'; File = 'e2e'; Kind = 'Custom'; Covers = 'a program whose path has spaces starts with an argument in double quotes that has a space (the command line only; that the window of a started program then comes forward is proven by the opener cases, OpenCalculator, OpenFileExplorer and the others)'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Launches = Get-E2eLaunchMark; $ctx.Marks = @(Get-E2eMarks).Count }
             Assert  = {
                 param($ctx)
@@ -420,7 +419,7 @@ function Get-E2eCases {
                 [void](Wait-E2eMark $ctx.Marks 'spaces done' -TimeoutMs 10000)
             }
         }
-        @{ Command = 'E2eEnsureActive'; File = 'e2e'; Kind = 'Custom'; Covers = 'AHK-3, PS-8 (fix 1: items 5, 8)'
+        @{ Command = 'E2eEnsureActive'; File = 'e2e'; Kind = 'Custom'; Covers = 'EnsureActiveOrOpen, called without Args, says that a window of the program is active at the end and brings its top window forward'
             Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A'); $ctx.Marks = @(Get-E2eMarks).Count }
             Assert  = {
                 param($ctx)
@@ -429,7 +428,7 @@ function Get-E2eCases {
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'the top window of the program comes forward'
             }
         }
-        @{ Command = 'E2eNeverAppears'; File = 'e2e'; Kind = 'Custom'; Covers = 'AHK-4, PS-8 (fix 1: items 6, 8)'
+        @{ Command = 'E2eNeverAppears'; File = 'e2e'; Kind = 'Custom'; Covers = 'Open, ActivateOrOpen and EnsureActiveOrOpen with a program that shows no window: each starts it and gives up after 5 seconds without an error, nothing is activated, and EnsureActiveOrOpen says no'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Marks = @(Get-E2eMarks).Count; $ctx.Launches = Get-E2eLaunchMark }
             Assert  = {
                 param($ctx)
@@ -439,7 +438,7 @@ function Get-E2eCases {
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'nothing is activated when no window appears'
             }
         }
-        @{ Command = 'E2eStep'; File = 'e2e'; Kind = 'Custom'; Covers = 'AHK-5 (fix 1: item 7)'
+        @{ Command = 'E2eStep'; File = 'e2e'; Kind = 'Custom'; Covers = 'ActivateOrOpen brings the top window of the program forward, then, while one of its windows is active, the bottom one'
             Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A') }
             Assert  = {
                 param($ctx)
@@ -451,12 +450,12 @@ function Get-E2eCases {
                 $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText))"
             }
         }
-        (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Covers 'AHK-8 (fix 1: item 11)' `
+        (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Covers 'opens or brings forward a File Explorer window, not the taskbar, where File Explorer starts' `
                 -Folder { param($p) $p -and -not $p.StartsWith($script:E2eControlPanel) } -FolderWhat 'where File Explorer starts (not Control Panel)' -SkipIf {
                 $f = Get-E2eForeignWindows $script:E2eExplorer
                 if ($f.Count -gt 0) { "File Explorer windows the test did not open are on the desktop ($($f -join ', ')); the key would bring one of them forward" }
             })
-        @{ Command = 'ExampleOpenFolder'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'explorer.exe'; Covers = 'AHK-17, PS-3 and the twin fix (fix 1: item 15)'
+        @{ Command = 'ExampleOpenFolder'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'explorer.exe'; Covers = 'opens the Documents folder wherever Windows keeps it, and the new window comes forward while another File Explorer window is active'
             Arrange = {
                 param($ctx)
                 # Another File Explorer window is active first: the new one must still come forward.
@@ -478,7 +477,7 @@ function Get-E2eCases {
             }
             CleanUp = { param($ctx) foreach ($w in $ctx.Window, $ctx.Other) { if ($w) { Close-E2eWindow $w } } }
         }
-        (New-E2eOpenerCase 'OpenPowershell' 'windows' @('ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe') -Targets 'powershell.exe', 'WindowsTerminal.exe', 'OpenConsole.exe', 'conhost.exe' -SecondPress -Shell 'powershell.exe' -Covers 'AHK-9, PS-2 (fix 1: item 12)' -Needs @{
+        (New-E2eOpenerCase 'OpenPowershell' 'windows' @('ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe') -Targets 'powershell.exe', 'WindowsTerminal.exe', 'OpenConsole.exe', 'conhost.exe' -SecondPress -Shell 'powershell.exe' -Covers 'opens PowerShell, and a second press brings that shell forward, also when Windows Terminal shows it, instead of opening another' -Needs @{
                 # Looked at when the case comes up, not before the run: the command would bring such a
                 # window forward instead of opening one, and rightly so.
                 Why = 'needs a desktop with no PowerShell window that is not the test''s, since the key would bring that one forward (on the Jenkins agent its own console is one, shown by Windows Terminal)'
@@ -488,11 +487,11 @@ function Get-E2eCases {
                     $f.Count -eq 0
                 }
             })
-        (New-E2eOpenerCase 'OpenCommandPrompt' 'windows' @('ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe') -Targets 'cmd.exe', 'WindowsTerminal.exe', 'OpenConsole.exe', 'conhost.exe' -SecondPress -Shell 'cmd.exe' -Covers 'AHK-9, PS-2 (fix 1: item 12)' -SkipIf {
+        (New-E2eOpenerCase 'OpenCommandPrompt' 'windows' @('ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe') -Targets 'cmd.exe', 'WindowsTerminal.exe', 'OpenConsole.exe', 'conhost.exe' -SecondPress -Shell 'cmd.exe' -Covers 'opens Command Prompt, and a second press brings that shell forward, also when Windows Terminal shows it, instead of opening another' -SkipIf {
                 $f = Get-E2eForeignWindows @('ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe')
                 if ($f.Count -gt 0) { "Command Prompt windows the test did not open are on the desktop ($($f -join ', ')); the key would bring one of them forward" }
             })
-        @{ Command = 'NextWindow'; File = 'windows'; Kind = 'Custom'; Covers = 'AHK-10 (fix 1: item 13)'
+        @{ Command = 'NextWindow'; File = 'windows'; Kind = 'Custom'; Covers = 'Alt+Tab: the window used before comes forward'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A') }
             Assert  = {
                 param($ctx)
@@ -501,7 +500,7 @@ function Get-E2eCases {
                 $waited | Should -BeTrue -Because "Alt+Tab goes to the window used before (in front: $(Get-E2eForegroundText))"
             }
         }
-        @{ Command = 'PreviousWindow'; File = 'windows'; Kind = 'Custom'; Covers = 'AHK-10 (fix 1: item 13)'
+        @{ Command = 'PreviousWindow'; File = 'windows'; Kind = 'Custom'; Covers = 'Alt+Shift+Tab: the window used longest ago comes forward, not the one Alt+Tab goes to'
             Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A') }
             Assert  = {
                 param($ctx)
@@ -518,7 +517,7 @@ function Get-E2eCases {
         }
         # Calculator cloaks its window for about 250 ms while it starts (seen in 22 of 22 starts); the
         # window counts once Windows shows it, and the second press must find that same window.
-        (New-E2eOpenerCase 'OpenCalculator' 'custom\examples' $script:E2eCalculator -Targets 'ApplicationFrameHost.exe', 'CalculatorApp.exe' -SecondPress -Covers 'AHK-16, PS-1 (fix 1: item 14)' `
+        (New-E2eOpenerCase 'OpenCalculator' 'custom\examples' $script:E2eCalculator -Targets 'ApplicationFrameHost.exe', 'CalculatorApp.exe' -SecondPress -Covers 'opens Calculator, found by its application id, and a second press brings the open one forward instead of starting another' `
                 -Needs $script:E2eNeedsCalculator -SkipIf $script:E2eCalculatorSkipIf)
         # The Calculator series, each made Get-E2eRepeat times (run.ps1 -Repeat; 2 by default) and
         # counted per language. First, the second press comes while the first Calculator is still
@@ -615,7 +614,7 @@ function Get-E2eCases {
             }
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
         }
-        @{ Command = 'E2eOpenFolderComma'; File = 'e2e'; Kind = 'Custom'; Only = 'ps'; Why = 'Open-ExplorerWindow is a PowerShell helper; the AutoHotkey version has none'; Targets = 'explorer.exe'; Covers = 'PS-9 (fix 1: item 16)'
+        @{ Command = 'E2eOpenFolderComma'; File = 'e2e'; Kind = 'Custom'; Only = 'ps'; Why = 'Open-ExplorerWindow is a PowerShell helper; the AutoHotkey version has none'; Targets = 'explorer.exe'; Covers = 'Open-ExplorerWindow shows a folder whose name has a comma and a space'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eExplorer -IncludeCloaked }
             Assert  = {
                 param($ctx)
@@ -626,11 +625,11 @@ function Get-E2eCases {
             }
             CleanUp = { param($ctx) if ($ctx.Window) { Close-E2eWindow $ctx.Window } }
         }
-        @{ Command = 'E2eChromeUrl'; File = 'e2e'; Kind = 'Custom'; Targets = 'chrome.exe'; Covers = 'AHK-2, AHK-12, AHK-13 (fix 2: items 1, 2)'
+        @{ Command = 'E2eChromeUrl'; File = 'e2e'; Kind = 'Custom'; Targets = 'chrome.exe'; Covers = 'ActivateOrOpenChrome gives Chrome an address with & in it whole, and brings Chrome forward after starting it'
             Arrange = $script:E2eFromB
             Assert  = { param($ctx) Assert-E2eChromeUrl $ctx 'https://example.com/?a=1&b=2' }
         }
-        @{ Command = 'ChromeOpen'; File = 'custom\chrome'; Kind = 'Custom'; Covers = 'fix 2: item 3'
+        @{ Command = 'ChromeOpen'; File = 'custom\chrome'; Kind = 'Custom'; Covers = 'brings Chrome forward when it has a window, without starting it again'
             Arrange = $script:E2eFromB
             Assert  = {
                 param($ctx)
@@ -640,7 +639,7 @@ function Get-E2eCases {
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 0 -Because 'Chrome is not started again while it has a window'
             }
         }
-        @{ Name = 'ChromeNewTab (Chrome shows no window)'; Command = 'ChromeNewTab'; File = 'custom\chrome'; Kind = 'Custom'; Covers = 'AHK-13, PS-8, N2 (fix 2: items 4, 5: one of the eight guarded commands, since all eight call the same guard, EnsureActiveOrOpenChrome)'
+        @{ Name = 'ChromeNewTab (Chrome shows no window)'; Command = 'ChromeNewTab'; File = 'custom\chrome'; Kind = 'Custom'; Covers = 'when Chrome shows no window, the command starts it and sends no key, then or after the 5 seconds it waits, and nothing comes forward (one of the eight commands that bring Chrome forward first, since all eight call the same guard, EnsureActiveOrOpenChrome)'
             SkipIf  = {
                 $f = Get-E2eForeignWindows 'ahk_exe chrome.exe'
                 if ($f.Count -gt 0) { "a Chrome the test did not start has windows open; for this case Chrome must have none" }
@@ -666,21 +665,21 @@ function Get-E2eCases {
             CleanUp = { param($ctx) Wait-ScreenChange; Set-WindowState $ctx.Run.Standins['A'].Hwnd Show }
         }
         foreach ($c in 'ChromeNewTab', 'ChromeOpenNewWindow', 'ChromeOpenIncognitoWindow', 'ChromeOpenDownloads', 'ChromeOpenHistory', 'ChromeOpenBookmarks') {
-            @{ Command = $c; File = 'custom\chrome'; From = 'B'; Covers = 'PS-8, N2 (fix 2: item 6)' }
+            @{ Command = $c; File = 'custom\chrome'; From = 'B'; Covers = 'brings Chrome forward from another window, then sends its keys into Chrome only' }
         }
-        @{ Command = 'ChromeOpenExtensions'; File = 'custom\chrome'; From = 'B'; Chords = @('Ctrl+l', 'text:chrome://extensions', 'Enter'); Source = $script:E2eDocs.Chrome; Covers = 'PS-10 (fix 2: item 7)' }
-        @{ Command = 'ChromeOpenSettings'; File = 'custom\chrome'; From = 'B'; Chords = @('Ctrl+l', 'text:chrome://settings', 'Enter'); Source = $script:E2eDocs.Chrome; Covers = 'PS-10 (fix 2: item 7)' }
+        @{ Command = 'ChromeOpenExtensions'; File = 'custom\chrome'; From = 'B'; Chords = @('Ctrl+l', 'text:chrome://extensions', 'Enter'); Source = $script:E2eDocs.Chrome; Covers = 'brings Chrome forward, then opens the page through the address bar, since Chrome has no shortcut for it' }
+        @{ Command = 'ChromeOpenSettings'; File = 'custom\chrome'; From = 'B'; Chords = @('Ctrl+l', 'text:chrome://settings', 'Enter'); Source = $script:E2eDocs.Chrome; Covers = 'brings Chrome forward, then opens the page through the address bar, since Chrome has no shortcut for it' }
         @{ Command = 'SshMacroName'; File = 'custom\ssh'; Kind = 'Custom'; Macro = @{ name = 'e2e test' }; Targets = 'putty.exe'
-            Covers  = 'AHK-15, AHK-13 (fix 2: item 9. Not run: "PuTTY not installed", which shows an AutoHotkey error dialog by design, and "PuTTY never shows a window", the same WinWait path as E2eNeverAppears)'
+            Covers  = 'LoadPuttySession starts PuTTY with a session name that has a space, in double quotes, and brings the PuTTY window forward. Not run: "PuTTY not installed", which shows an AutoHotkey error dialog by design, and "PuTTY never shows a window", the same wait as E2eNeverAppears'
             Arrange = $script:E2eFromB
             Assert  = { param($ctx) Assert-E2eLaunch $ctx 'putty.exe' '-load "e2e test"' -Front $ctx.Run.Standins['P'].Hwnd -TimeoutMs 16000 }
         }
         foreach ($c in 'VsCodeRestartDebugging', 'VsCodePauseDebugging', 'VsCodePeekImplementations', 'VsCodeAddInlineBreakpoint', 'VsCodeSplitPanel', 'VsCodeOpenTerminal') {
-            @{ Command = $c; File = 'custom\vscode'; Covers = 'AHK-22 to AHK-26 (fix 2: item 10: the keys; no VS Code is used)' }
+            @{ Command = $c; File = 'custom\vscode'; Covers = 'the keys VS Code binds to the command; no VS Code is used' }
         }
-        @{ Command = 'VsStudioShowTestExplorer'; File = 'custom\vsstudio'; Covers = 'AHK-28, PS-7 (fix 2: item 12: the keys; no Visual Studio is used)' }
+        @{ Command = 'VsStudioShowTestExplorer'; File = 'custom\vsstudio'; Covers = 'Ctrl+E, then T without Ctrl, as Visual Studio expects; no Visual Studio is used' }
         @{ Command = 'ShowDelayedKeyForm'; File = 'custom\automation'; Kind = 'Custom'
-            Covers  = 'AHK-19 (fix 2: item 14. Not run: the 11-digit delay, since proving that nothing is sent takes 10 s of waiting in each language)'
+            Covers  = 'a delay of 0 sends the key at once, and Schedule hides the form. Not run: the 11-digit delay, since proving that nothing is sent takes 10 s of waiting in each language'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B') }
             Assert  = {
                 param($ctx)
@@ -702,7 +701,7 @@ function Get-E2eCases {
             CleanUp = { param($ctx) [void](Use-E2eStandin 'B') }
         }
         @{ Name = 'ShowDelayedKeyForm (records a key, lets go of the keyboard when closed)'; Command = 'ShowDelayedKeyForm'; File = 'custom\automation'; Kind = 'Custom'
-            Covers  = 'AHK-18 in part, AHK-20 (fix 2: items 13, 15), PS-11. Ctrl+Shift+T is recorded in PowerShell only: the AutoHotkey form reads whether Ctrl, Shift and Alt are physically held, which keys sent by a program never are, so it records F7 alone. Not run: "click Record twice", whose wait the closing part covers'
+            Covers  = 'the form records a key pressed into it, says what it recorded, and lets go of the keyboard when it is closed while it records. Ctrl+Shift+T is recorded in PowerShell only: the AutoHotkey form reads whether Ctrl, Shift and Alt are physically held, which keys sent by a program never are, so it records F7 alone. Not run: "click Record twice", whose wait the closing part covers'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B') }
             Assert  = {
                 param($ctx)
@@ -733,7 +732,7 @@ function Get-E2eCases {
                 ($taps -join ', ') | Should -Be 'a' -Because 'a recording the form left running would hold the key back'
             }
         }
-        @{ Command = 'ShowDelayedClickForm'; File = 'custom\automation'; Kind = 'Custom'; Covers = 'AHK-19 (fix 2: item 14, the click form)'
+        @{ Command = 'ShowDelayedClickForm'; File = 'custom\automation'; Kind = 'Custom'; Covers = 'the click form records a click held at the pointer, and replays it at once with a delay of 0'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Mouse = [OmbE2e.Input]::MousePosition() }
             Assert  = {
                 param($ctx)

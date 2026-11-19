@@ -48,8 +48,8 @@ E2eLauncher() {
 }
 
 /**
- * AHK-1, AHK-2: the script helpers, with arguments a command line could break. One at a time, two
- * seconds apart, so that their console windows do not flash.
+ * The script helpers, with arguments a command line could break: an &, several arguments, none, and
+ * 0. One at a time, two seconds apart, so that their console windows do not flash.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eRunScripts(Macro) {
@@ -67,7 +67,7 @@ E2eRunScripts(Macro) {
 }
 
 /**
- * AHK-2: an & in the arguments of a program reaches the program.
+ * An & in the arguments of a program reaches the program.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eAmpersand(Macro) {
@@ -76,7 +76,7 @@ E2eAmpersand(Macro) {
 }
 
 /**
- * AHK-2: a program whose path has spaces, with an argument in quotes that has a space.
+ * A program whose path has spaces, with an argument in quotes that has a space.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eOpenSpaces(Macro) {
@@ -85,8 +85,8 @@ E2eOpenSpaces(Macro) {
 }
 
 /**
- * AHK-3 (called with two arguments) and the PS-8 twin: EnsureActiveOrOpen says whether the window is
- * active at the end.
+ * EnsureActiveOrOpen, called with two arguments (Args left out), says whether the window is active at
+ * the end, as its PowerShell twin does.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eEnsureActive(Macro) {
@@ -95,8 +95,8 @@ E2eEnsureActive(Macro) {
 }
 
 /**
- * AHK-4 and the PS-8 twin: Open, ActivateOrOpen and EnsureActiveOrOpen with a program that shows no
- * window: no error, nothing activated, and EnsureActiveOrOpen says 0.
+ * Open, ActivateOrOpen and EnsureActiveOrOpen with a program that shows no window, as in the
+ * PowerShell twin: no error, nothing activated, and EnsureActiveOrOpen says 0.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eNeverAppears(Macro) {
@@ -107,7 +107,7 @@ E2eNeverAppears(Macro) {
 }
 
 /**
- * AHK-5: ActivateOrOpen brings the top window of the program forward, then the bottom one.
+ * ActivateOrOpen brings the top window of the program forward, then the bottom one.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eStep(Macro) {
@@ -115,7 +115,7 @@ E2eStep(Macro) {
 }
 
 /**
- * AHK-2, AHK-12, AHK-13: Chrome gets an address with & in it whole, and comes forward.
+ * Chrome gets an address with & in it whole, and comes forward after it was started.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eChromeUrl(Macro) {

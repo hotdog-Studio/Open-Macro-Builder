@@ -1651,7 +1651,8 @@ function Clear-E2eFolder {
         # No process or window it names is touched: after a restart a pid, a handle or a start time
         # says nothing, and what they named ended with Windows. A virtual desktop outlives a restart,
         # and so does the duty to start again a macropad the run stopped.
-        $Done.Add("${name}: left by a run from before Windows last started (or its state cannot be read); the processes and windows it names ended with Windows and were not touched")
+        if (@($header | Where-Object { $_ -match '^boot \d+$' }).Count -gt 0) { $Done.Add("${name}: left by a run from before Windows last started; the processes and windows it names ended with Windows and were not touched") }
+        else { $Problems.Add("${name}: its state does not say when Windows had started, so it cannot be told whether the processes and windows it names still run; they were not touched, and the folder is removed") }
         $desktops = Get-E2eDesktops
         foreach ($line in $lines) {
             if ($line -match '^desktop ([0-9a-f]{32})$' -and $desktops -contains $Matches[1]) { $Problems.Add("${name}: the virtual desktop $($Matches[1]) that run made is still there; close it by hand (Win+Ctrl+F4 on it)") }

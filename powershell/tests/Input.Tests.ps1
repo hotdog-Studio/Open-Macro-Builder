@@ -113,9 +113,13 @@ Describe 'The Latin-letter check of the tests on this PC' {
         @{ Name = 'en-US'; Hex = '04090409' }
         @{ Name = 'fr-FR AZERTY'; Hex = '040C040C' }
         @{ Name = 'US-Dvorak, a variant'; Hex = 'F0020409' }
+        # The three IME handles are identifiers Microsoft lists for the classic input methods: E0010411
+        # Japanese Input System, E0010412 Korean Input System, E00E0804 Chinese (Simplified) - Microsoft
+        # Pinyin IME 3.0 ("LP(MUI): How to add IME keyboards using the unattend .xml",
+        # https://learn.microsoft.com/en-us/archive/blogs/yongrhee/lpmuihow-to-add-ime-keyboards-using-the-unattend-xml).
         @{ Name = 'the Japanese IME'; Hex = 'E0010411' }
         @{ Name = 'the Korean IME'; Hex = 'E0010412' }
-        @{ Name = 'the Chinese (Simplified) IME'; Hex = 'E0080804' }
+        @{ Name = 'the Chinese (Simplified) Pinyin IME'; Hex = 'E00E0804' }
     ) {
         Get-NoLatinLetterReason ([Convert]::ToInt64($Hex, 16)) | Should -BeNullOrEmpty
     }

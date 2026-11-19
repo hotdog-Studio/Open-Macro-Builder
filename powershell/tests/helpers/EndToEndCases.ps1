@@ -579,7 +579,7 @@ function Get-E2eCases {
                 ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every try must end with exactly one Calculator window, shown and active'
                 # Every miss left here is "already shown when first seen", "no window had the keyboard"
                 # or "shown while the key went down".
-                if ($hit -eq 0) { $ctx.NotRun = "conditional: on this machine the first Calculator window was never still cloaked when the second press could come ($told)" }
+                if ($hit -eq 0) { $ctx.NotRun = "conditional: on this machine the second press never came while the first Calculator window was still cloaked: either the window was already shown, or no window had the keyboard when it could come ($told)" }
             }
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
         }

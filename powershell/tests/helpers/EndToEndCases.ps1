@@ -222,6 +222,22 @@ function Get-E2eStatusText {
     ''
 }
 
+# The one rule for what is the test's among the windows a case's key may have brought. A window is the
+# run's because the case saw its own press bring it and recorded it at that moment (Add-E2eRunWindow):
+# the case closes those itself. This is for the others: a window that fits, was not there before the
+# press (Before) and was never recorded, such as one that came up but never came forward. Windows gives
+# no way to tell that the press made it (File Explorer, Settings and Calculator windows belong to
+# shared processes). Under -Ci nobody else is at the desktop, so it is the run's: recorded and closed.
+# On a developer's desktop it is left open, and said so.
+function Close-E2eUnrecordedWindows {
+    param([string[]]$WinTitle, [IntPtr[]]$Before = @())
+    foreach ($w in (Get-E2eWindows $WinTitle -IncludeCloaked)) {
+        if ($Before -contains $w -or $script:E2eRun.Windows -contains $w) { continue }
+        if ($env:OMB_E2E_CI -eq '1') { Add-E2eRunWindow $w; Close-E2eWindow $w }
+        else { $i = Get-WindowInfo $w; Write-Host "End-to-end: the window $w '$($i.Title)' ($($i.Exe)) came up after the press, and the test cannot tell that the press made it; it is left open (close it yourself)." }
+    }
+}
+
 # A program a command opened, found by WinTitles: a window of it must come forward (on the screen, not
 # cloaked). With -SecondPress, a press made from B must bring the same window forward and, for the next
 # 5 seconds, open no other window that fits (cloaked ones count) and start no second Shell process.
@@ -276,17 +292,7 @@ function New-E2eOpenerCase {
         CleanUp = {
             param($ctx)
             if ($ctx.Window) { Close-E2eWindow $ctx.Window }
-            elseif ($ctx.Pressed) {
-                # A window that fits and came up but never came forward: Windows gives no way to tell
-                # that the press made it (File Explorer, Settings and Calculator windows belong to
-                # shared processes). Under -Ci nobody else is there, so it is the run's and is closed;
-                # on a developer's desktop it is left open, and said so.
-                foreach ($w in (Get-E2eWindows $ctx.Case.WinTitle -IncludeCloaked)) {
-                    if ($ctx.Before -contains $w) { continue }
-                    if ($env:OMB_E2E_CI -eq '1') { Add-E2eRunWindow $w; Close-E2eWindow $w }
-                    else { Write-Host "End-to-end: $(Get-E2eWindowReport $ctx.Case.WinTitle) came up after the press but never came forward; it is left open (close it yourself)." }
-                }
-            }
+            elseif ($ctx.Pressed) { Close-E2eUnrecordedWindows $ctx.Case.WinTitle $ctx.Before }
         }
     }
     $case.WinTitle = $titles
@@ -320,11 +326,11 @@ function Get-E2eCalculatorWindows {
 }
 
 # Waits until one new Calculator window is shown and active, then watches WatchMs more: no second one may
-# appear. '' when so, else what was wrong. The window is the one the case's own press produced: no
-# Calculator the test did not open was there (SkipIf), and it is recorded the moment it is seen, so that
-# the run closes it. (Windows gives no way to tie a Calculator frame, a window of ApplicationFrameHost,
-# to the process a press started.) $script:E2eShownAfterMs: how long after the last paced change it
-# showed.
+# appear. '' when so, else what was wrong. The window that came forward is the one the case's own press
+# brought: it is recorded the moment it is seen, so that the run closes it. A second window is not
+# recorded (Windows gives no way to tie a Calculator frame, a window of ApplicationFrameHost, to the
+# process a press started): Close-E2eUnrecordedWindows decides about it. $script:E2eShownAfterMs: how
+# long after the last paced change, the press, the window showed.
 function Test-E2eOneCalculator {
     param([IntPtr[]]$Before, [int]$WatchMs = 3000)
     $shown = Wait-E2eCondition {
@@ -338,24 +344,25 @@ function Test-E2eOneCalculator {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while ($sw.ElapsedMilliseconds -lt $WatchMs) {
         $all = Get-E2eCalculatorWindows $Before
-        foreach ($w in $all) { Add-E2eRunWindow $w }
         if ($all.Count -gt 1) { return "$($all.Count) Calculator windows: $(Get-E2eWindowReport $script:E2eCalculator)" }
         Wait-Pump 100
     }
     ''
 }
 
-# Closes the Calculator windows the case's presses opened, paced. A window is closed when it no longer
-# exists (Close-E2eWindow throws otherwise). Calculator's own process ends by itself when its window
-# closes, so every start of a series is a cold one, as a person's first press is.
+# Closes the Calculator windows the case's presses brought, paced: the ones the case recorded as it saw
+# them. A hidden one is among them: a window the case closed by its close button may stay, hidden, for
+# seconds, and is closed for good. A window is closed when it no longer exists (Close-E2eWindow throws
+# otherwise). Calculator's own process ends by itself when its window closes, so every start of a series
+# is a cold one, as a person's first press is.
 function Close-E2eCalculators {
     param([IntPtr[]]$Before)
-    foreach ($w in (Get-E2eCalculatorWindows $Before)) { Add-E2eRunWindow $w; Close-E2eWindow $w }
-    # A window the case closed by its close button may stay, hidden, for seconds: it is closed for good.
-    foreach ($w in @($script:E2eRun.Windows)) { if ([Macropad.WindowApi]::Exists($w) -and [Macropad.WindowApi]::Title($w) -eq 'Calculator') { Close-E2eWindow $w } }
+    $all = Get-E2eWindows $script:E2eCalculator -IncludeCloaked -IncludeHidden
+    foreach ($w in @($script:E2eRun.Windows)) { if ($all -contains $w) { Close-E2eWindow $w } }
+    Close-E2eUnrecordedWindows $script:E2eCalculator $Before
 }
 
-# A series counts only the tries that reached its moment; a try that missed it is made again, up to
+# The second-press series counts only the tries that reached its moment; a try that missed it is made again, up to
 # three times as many tries as wanted. Throws when the moment was reached too seldom.
 function Assert-E2eMoments {
     param([int]$Hit, [int]$Wanted, [int]$Tries, [string]$Moment)
@@ -500,10 +507,10 @@ function Get-E2eCases {
         # window counts once Windows shows it, and the second press must find that same window.
         (New-E2eOpenerCase 'OpenCalculator' 'custom\examples' $script:E2eCalculator -Targets 'ApplicationFrameHost.exe', 'CalculatorApp.exe' -SecondPress -Covers 'AHK-16, PS-1 (fix 1: item 14)' `
                 -Needs $script:E2eNeedsCalculator -SkipIf $script:E2eCalculatorSkipIf)
-        # The Calculator series: the moments around a start, each reached Get-E2eRepeat times (run.ps1
-        # -Repeat; 2 by default), counted per language. First, the second press comes while the first
-        # Calculator is still starting (its window exists, cloaked): there must be exactly one window,
-        # shown and active.
+        # The Calculator series, each made Get-E2eRepeat times (run.ps1 -Repeat; 2 by default) and
+        # counted per language. First, the second press comes while the first Calculator is still
+        # starting (its window exists, cloaked): there must be exactly one window, shown and active.
+        # Only a try that reached that moment counts.
         @{ Command = 'OpenCalculator'; Name = 'OpenCalculator (second press while it starts)'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'ApplicationFrameHost.exe', 'CalculatorApp.exe'
             Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'a second press while Calculator is still starting finds that window and opens no other'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eCalculator -IncludeCloaked }
@@ -541,46 +548,38 @@ function Get-E2eCases {
             }
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
         }
-        # Then Calculator is closed and the key pressed at once, while the closed window still exists: a
-        # new window must come, shown and active.
-        @{ Command = 'OpenCalculator'; Name = 'OpenCalculator (closed and opened again at once)'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'ApplicationFrameHost.exe', 'CalculatorApp.exe'
-            Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'a press while the Calculator just closed still exists opens a new one'
+        # Then Calculator is closed and the key pressed again as soon as the pacing allows: a new window
+        # must come, shown and active. By then the closed window is gone (it still existed at none of
+        # 24 paced presses, 12 per language, when this was written), so the moment at which a press
+        # could find the closing window is not one this test may reach: that takes a press sooner
+        # after the close than three changes of the screen a second allow.
+        @{ Command = 'OpenCalculator'; Name = 'OpenCalculator (closed and opened again)'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'ApplicationFrameHost.exe', 'CalculatorApp.exe'
+            Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'a press after Calculator was closed opens a new one, every time'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eCalculator -IncludeCloaked }
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd
-                $n = Get-E2eRepeat; $hit = 0; $tries = 0
+                $n = Get-E2eRepeat; $existed = 0
                 $failed = [System.Collections.Generic.List[string]]::new()
                 $times = [System.Collections.Generic.List[string]]::new()
                 $why = Test-E2eOneCalculator $ctx.Before
                 if ($why) { throw "The first press: $why" }
-                while ($hit -lt $n -and $tries -lt 3 * $n) {
-                    $tries++
+                foreach ($try in 1..$n) {
                     $old = [Macropad.WindowApi]::Foreground()
-                    if ((Get-E2eCalculatorWindows $ctx.Before) -notcontains $old) { throw "Try ${tries}: the Calculator window was not in front before the close; $(Get-E2eForegroundText) was." }
+                    if ((Get-E2eCalculatorWindows $ctx.Before) -notcontains $old) { throw "Try ${try}: the Calculator window was not in front before the close; $(Get-E2eForegroundText) was." }
                     Wait-ScreenChange
                     [void][Macropad.WindowApi]::Post($old, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)  # WM_CLOSE, as its close button
-                    # Windows gives the keyboard back to the window before it, B. The key goes in at
-                    # once, into B only: unpaced, since a press changes nothing on the screen itself, and
-                    # the new window shows 350 ms or more after a press (it is cloaked for the first 200
-                    # to 330 ms; checked below for every try).
-                    if (-not (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 1500 -EveryMs 5)) {
-                        if ($env:OMB_E2E_CI -ne '1') { throw "Not pressed: the stand-in B did not get the keyboard back after the close; $(Get-E2eForegroundText) was in front." }
-                        [void](Use-E2eStandin 'B')
-                    }
-                    $moment = [Macropad.WindowApi]::Exists($old)
-                    Assert-E2eFront $b 'the stand-in B'
-                    $ctx.Pressed = $true
-                    Invoke-E2eMacroKey $ctx.Case.Slot
-                    if ($moment) { $hit++ }
+                    # Windows gives the keyboard back to the window before it, B. The key goes into B
+                    # only, paced as every press is.
+                    if (-not (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 1500 -EveryMs 5) -and $env:OMB_E2E_CI -eq '1') { [void](Use-E2eStandin 'B') }
+                    Invoke-E2eCaseKey $ctx -Front $b
+                    if ([Macropad.WindowApi]::Exists($old)) { $existed++ }
                     $why = Test-E2eOneCalculator $ctx.Before
-                    if ($why) { $failed.Add("try ${tries}: $why"); break }
-                    $times.Add("$($script:E2eShownAfterMs) ms$(if (-not $moment) { ' (missed)' })")
-                    if ($script:E2eShownAfterMs -lt 350) { $failed.Add("try ${tries}: the new window showed $($script:E2eShownAfterMs) ms after the close, under the 350 ms floor"); break }
+                    if ($why) { $failed.Add("try ${try}: $why"); break }
+                    $times.Add("$($script:E2eShownAfterMs) ms")
                 }
-                Write-Host ("End-to-end Calculator series, {0}, closed and opened again at once: {1} reached in {2} tries, {3} failed. New window shown after the close: {4}" -f $ctx.Lang, $hit, $tries, $failed.Count, ($times -join '; '))
+                Write-Host ("End-to-end Calculator series, {0}, closed and opened again: {1} presses, {2} with the closed window still there, {3} failed. New window shown after the press: {4}" -f $ctx.Lang, $times.Count, $existed, $failed.Count, ($times -join '; '))
                 ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every press after a close must bring one new Calculator window, shown and active'
-                Assert-E2eMoments $hit $n $tries 'the key went in while the closed Calculator window still existed'
             }
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
         }

@@ -772,18 +772,26 @@ function Get-E2eLaunches {
 
 function Get-E2eLaunchMark { @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'launches.log')).Count }
 
-# The processes running from a folder (the run's own: stand-ins, copies of AutoHotkey, the launcher).
-# With -OrWorkingIn, also those whose working directory is in it: the macropads under test work in the
-# run's copy, and a program one of them starts inherits that, so a program that outlives its window is
-# found here, and keeps the folder from being removed until it has ended. This process and the ones it
-# descends from never count (a clean-up called from a shell that stands in the folder). Each row has
-# WorkingIn: that directory, or '' for a process that runs from the folder.
+# The processes that are in a folder: those that run from it (in a run's folder: stand-ins, copies of
+# AutoHotkey, the launcher) and, with -OrWorkingIn, those whose working directory is in it. The test
+# and the macropads under test work in the run's folder, and a program one of them starts inherits
+# that, so a program that outlives its window is found there, and keeps the folder from being removed
+# until it has ended. This process and the ones it descends from never count (a clean-up called from a
+# shell that stands in the folder; the steps of a build). Each row has WorkingIn (that directory, or ''
+# for a process that runs from the folder) and StartTicks (when it started, in UTC ticks; 0 when that
+# cannot be read): where a process is and when it started say whose it is.
 function Get-E2eRunProcesses {
     param([string]$Dir = $script:E2eRun.Dir, [switch]$OrWorkingIn)
     $prefix = $Dir.TrimEnd('\') + '\'
     $all = @(Get-CimInstance Win32_Process)
-    $from = @($all | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
-    foreach ($p in $from) { $p | Add-Member WorkingIn '' -Force }
+    $row = {
+        param($p, [string]$where)
+        $start = 0L
+        if ($p.CreationDate) { $start = $p.CreationDate.ToUniversalTime().Ticks }
+        $p | Add-Member WorkingIn $where -Force
+        $p | Add-Member StartTicks $start -Force -PassThru
+    }
+    $from = @($all | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { & $row $_ '' })
     if (-not $OrWorkingIn) { return $from }
     $mine = @($PID)
     for ($i = 0; $i -lt 20; $i++) {
@@ -791,11 +799,20 @@ function Get-E2eRunProcesses {
         if (-not $parent -or $mine -contains [int]$parent.ParentProcessId) { break }
         $mine += [int]$parent.ParentProcessId
     }
-    $from + @(foreach ($p in $all) {
+    @($from | Where-Object { $mine -notcontains [int]$_.ProcessId }) + @(foreach ($p in $all) {
             if ($from -contains $p -or $mine -contains [int]$p.ProcessId) { continue }
             $cwd = [OmbE2e.ProcessInfo]::CurrentDirectory([int]$p.ProcessId)
-            if ($cwd -and ($cwd.TrimEnd('\') + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { $p | Add-Member WorkingIn $cwd -Force -PassThru }
+            if ($cwd -and ($cwd.TrimEnd('\') + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { & $row $p $cwd }
         })
+}
+
+# One row of Get-E2eRunProcesses, with all that says what it is and what started it: a log is then
+# enough to tell which case left it.
+function Get-E2eProcessText {
+    param($Process)
+    $when = if ($Process.StartTicks) { ([DateTime]::new($Process.StartTicks, [DateTimeKind]::Utc)).ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss') } else { 'at a time that cannot be read' }
+    $where = if ($Process.WorkingIn) { "working in $($Process.WorkingIn)" } else { "running from $($Process.ExecutablePath)" }
+    "$($Process.Name) $($Process.ProcessId) (started $when by process $($Process.ParentProcessId), $where, command line: $($Process.CommandLine))"
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -1688,14 +1705,19 @@ function Clear-E2eFolder {
     }
     foreach ($line in $lines) { if ($line -match '^kill (\d+) (\d+) (.+)$') { & $end $line $Matches[3] ([int]$Matches[1]) ([long]$Matches[2]) } }
     # The programs that run from the run's own folder (its copies of AutoHotkey, the launcher) or work
-    # in it (what a macropad under test started and nothing closed) are the run's own: while one lives,
-    # the folder cannot be removed.
-    $where = { param($p) if ($p.WorkingIn) { "$($p.Name) $($p.ProcessId), which worked in the run's folder ($($p.WorkingIn))" } else { "$($p.Name) $($p.ProcessId), which ran from the run's folder" } }
-    foreach ($p in Get-E2eRunProcesses $Dir -OrWorkingIn) {
-        $what = & $where $p
+    # in it (what the test or a macropad under test started and nothing closed) are the run's own when
+    # they started after the run's test did: while one lives, the folder cannot be removed. One that
+    # was there before (a shell a person opened earlier and now stands in a kept folder) is not. Where
+    # the state does not say when the test started, or says it for before Windows last started, none
+    # is the run's.
+    $testStart = [long]::MaxValue
+    if ($sameBoot) { foreach ($line in $header) { if ($line -match '^test \d+ (\d+)') { $testStart = [long]$Matches[1] } } }
+    $ours = { @(Get-E2eRunProcesses $Dir -OrWorkingIn | Where-Object { $_.StartTicks -gt $testStart }) }
+    foreach ($p in (& $ours)) {
+        $what = Get-E2eProcessText $p
         & $try '' "ending $what" { Show-E2eCleanupBanner; Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $Done.Add("ended $what") }
     }
-    [void](Wait-E2eCondition { @(Get-E2eRunProcesses $Dir -OrWorkingIn).Count -eq 0 } -TimeoutMs 5000)
+    [void](Wait-E2eCondition { (& $ours).Count -eq 0 } -TimeoutMs 5000)
     foreach ($line in $lines) {
         if ($line -match '^window (\d+) (\d+) (\d+) (.+)$') {
             $h = [IntPtr][long]$Matches[1]; $id = [int]$Matches[2]; $start = [long]$Matches[3]; $class = $Matches[4]
@@ -1736,13 +1758,18 @@ function Clear-E2eFolder {
     $parent = [int](Get-CimInstance Win32_Process -Filter "ProcessId = $PID").ParentProcessId
     foreach ($line in $lines) { if ($line -match '^banner (\d+) (\d+)$' -and [int]$Matches[1] -ne $parent) { & $end $line 'the banner' ([int]$Matches[1]) ([long]$Matches[2]) } }
     $keep = @($left | Where-Object { $_ })
-    $still = @(Get-E2eRunProcesses $Dir -OrWorkingIn)
-    if ($still.Count -gt 0) { $Problems.Add("${name}: still running after it was ended: $(($still | ForEach-Object { & $where $_ }) -join '; ')") }
+    $there = @(Get-E2eRunProcesses $Dir -OrWorkingIn)
+    $still = @($there | Where-Object { $_.StartTicks -gt $testStart })
+    if ($still.Count -gt 0) { $Problems.Add("${name}: still running after it was ended: $(($still | ForEach-Object { Get-E2eProcessText $_ }) -join '; ')") }
     if ($keep.Count -gt 0 -or $still.Count -gt 0) {
         [System.IO.File]::WriteAllLines((Join-Path $Dir 'state.txt'), [string[]](@($header) + $keep))
         return
     }
     # The one place that deletes a run's record: nothing it names is left to do.
     try { Remove-Item -LiteralPath $Dir -Recurse -Force -ErrorAction Stop; $Done.Add("removed $Dir") }
-    catch { $Problems.Add("removing ${Dir}: $($_.Exception.Message) No process that runs from the folder or works in it can be seen from here (one of another user, an elevated one or a 32-bit one cannot be); the next clean-up tries again.") }
+    catch {
+        $others = @($there | Where-Object { $_.StartTicks -le $testStart } | ForEach-Object { Get-E2eProcessText $_ })
+        $seen = if ($others.Count -gt 0) { "In the folder, and left alone because nothing says it is the run's (it did not start after the run's test did, or when either started cannot be read): $($others -join '; ')." } else { 'No process that runs from the folder or works in it can be seen from here.' }
+        $Problems.Add("removing ${Dir}: $($_.Exception.Message) $seen What this clean-up cannot see or does not end: a process that has a file open in the folder, a process of another user or an elevated one, and the shell this clean-up was called from when it stands in the folder. The next clean-up tries again.")
+    }
 }

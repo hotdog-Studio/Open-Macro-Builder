@@ -472,9 +472,15 @@ function Get-E2eCases {
             }
             CleanUp = { param($ctx) foreach ($w in $ctx.Window, $ctx.Other) { if ($w) { Close-E2eWindow $w } } }
         }
-        (New-E2eOpenerCase 'OpenPowershell' 'windows' @('ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe') -Targets 'powershell.exe', 'WindowsTerminal.exe', 'OpenConsole.exe', 'conhost.exe' -SecondPress -Shell 'powershell.exe' -Covers 'AHK-9, PS-2 (fix 1: item 12)' -SkipIf {
-                $f = Get-E2eForeignWindows @('ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe')
-                if ($f.Count -gt 0) { "PowerShell windows the test did not open are on the desktop ($($f -join ', ')); the key would bring one of them forward" }
+        (New-E2eOpenerCase 'OpenPowershell' 'windows' @('ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe') -Targets 'powershell.exe', 'WindowsTerminal.exe', 'OpenConsole.exe', 'conhost.exe' -SecondPress -Shell 'powershell.exe' -Covers 'AHK-9, PS-2 (fix 1: item 12)' -Needs @{
+                # Looked at when the case comes up, not before the run: the command would bring such a
+                # window forward instead of opening one, and rightly so.
+                Why = 'needs a desktop with no PowerShell window that is not the test''s, since the key would bring that one forward (on the Jenkins agent its own console is one, shown by Windows Terminal)'
+                Met = {
+                    $f = Get-E2eForeignWindows @('ahk_exe powershell.exe', 'PowerShell ahk_exe WindowsTerminal.exe')
+                    if ($f.Count -gt 0) { Write-Host "End-to-end: PowerShell windows the test did not open: $($f -join ', ')" }
+                    $f.Count -eq 0
+                }
             })
         (New-E2eOpenerCase 'OpenCommandPrompt' 'windows' @('ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe') -Targets 'cmd.exe', 'WindowsTerminal.exe', 'OpenConsole.exe', 'conhost.exe' -SecondPress -Shell 'cmd.exe' -Covers 'AHK-9, PS-2 (fix 1: item 12)' -SkipIf {
                 $f = Get-E2eForeignWindows @('ahk_exe cmd.exe', 'Command Prompt ahk_exe WindowsTerminal.exe', 'cmd.exe ahk_exe WindowsTerminal.exe')

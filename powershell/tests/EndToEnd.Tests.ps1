@@ -183,7 +183,6 @@ Describe 'End-to-end on the desktop' -Tag EndToEnd {
         Write-E2eLayout @($script:E2eCaseTable.Values)
         Install-E2eLaunchers
         Install-E2eScripts
-        $script:E2eRun.Desktops = Get-E2eDesktops
         $script:E2eRun.DesktopCount = Get-E2eDesktopCount
         if (-not [OmbE2e.KeyWatch]::Start()) { throw 'Could not install the key watch (a low-level keyboard hook).' }
         Stop-E2eOwnerMacropads

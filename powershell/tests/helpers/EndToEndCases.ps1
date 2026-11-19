@@ -23,8 +23,8 @@
 #             aborted run) left open. On a developer's desktop the case then does not run; under CI
 #             the desktop must be clean, so the case fails instead
 #   Prior     a scriptblock giving a reason when an earlier case did not leave what this one starts from
-#             (CloseDesktop needs the desktop CreateDesktop made); the case then does not run, and the
-#             earlier case's failure is what fails the suite
+#             (CloseDesktop needs the desktop CreateDesktop made); the case then does not run. When the
+#             earlier case failed, that failure is what fails the suite
 #   Macro     @{ name; description } for the layout entry, when the command reads them
 #   Targets   programs whose windows the case expects in front (not a person's interference)
 #   Arrange, Assert, CleanUp   scriptblocks given the case's context ($ctx: Case, Lang, Run, Front, ...).
@@ -157,19 +157,18 @@ function Reset-E2eStandinA {
     [void](Use-E2eStandin 'A')
 }
 
-# Something of Windows' own shell that a key brought up over A (Snap Assist, Task View, the screen
-# capture), closed with Escape as a person would: only while that shell window is the one in front.
+# The overlay of Windows' own shell that the case's key brought up over A (Snap Assist, Task View, the
+# screen capture), the handle the case saw come up, closed with Escape as a person would: only while
+# that very window is in front, never another window of the same program (a person's File Explorer).
 function Close-E2eShellOverlay {
-    $a = $script:E2eRun.Standins['A'].Hwnd
-    for ($i = 0; $i -lt 3 -and [Macropad.WindowApi]::Foreground() -ne $a; $i++) {
-        $front = [Macropad.WindowApi]::Foreground()
-        if ((Get-WindowInfo $front).Exe -notin 'explorer.exe', 'ScreenClippingHost.exe', 'SnippingTool.exe', 'ShellExperienceHost.exe', 'ShellHost.exe') { break }
+    param([IntPtr[]]$Overlay = @())
+    foreach ($o in $Overlay) {
+        if ($o -eq [IntPtr]::Zero -or [Macropad.WindowApi]::Foreground() -ne $o) { continue }
         Wait-ScreenChange
-        Send-E2eChordTo $front 'Escape'
-        [void](Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $a } -TimeoutMs 1500)
+        Send-E2eChordTo $o 'Escape'
+        [void](Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -ne $o } -TimeoutMs 1500)
     }
 }
-
 # A window-placement case on A: the key must leave A as Test says, then A goes back.
 function New-E2ePlacementCase {
     param([string]$Command, [scriptblock]$Test, [string]$Expect, [hashtable]$Needs, [string]$Covers, [string]$Source)
@@ -186,9 +185,9 @@ function New-E2ePlacementCase {
             # After a snap, Windows may offer the other half to another window (Snap Assist), a moment
             # later; it is closed so that it does not take the next case's keys.
             if ($ctx.Case.Command -like 'SnapWindow*') {
-                [void](Wait-E2eCondition { $i = Get-WindowInfo ([Macropad.WindowApi]::Foreground()); $i.Exe -eq 'explorer.exe' -and $i.Class -eq 'XamlExplorerHostIslandWindow' } -TimeoutMs 1500)
+                $ctx.Overlay = Wait-E2eCondition { $f = [Macropad.WindowApi]::Foreground(); $i = Get-WindowInfo $f; if ($i.Exe -eq 'explorer.exe' -and $i.Class -eq 'XamlExplorerHostIslandWindow') { $f } } -TimeoutMs 1500
             }
-            Close-E2eShellOverlay
+            Close-E2eShellOverlay $ctx.Overlay
             Reset-E2eStandinA
         }
     }
@@ -235,14 +234,8 @@ function New-E2eOpenerCase {
         Command = $Command; File = $File; Kind = 'Custom'; Targets = $Targets; Covers = $Covers
         SkipIf  = $SkipIf; Needs = $Needs
         # Before: the windows on the screen (cloaked ones too). A window not in it is one the press made
-        # or showed: Windows may keep a hidden frame (Calculator's, Settings') and show that same window.
-        # A window of the program that an earlier case opened and that is still, or again, there (its
-        # handle is in the run's list) is closed first; a person's is never touched (SkipIf).
-        Arrange = {
-            param($ctx)
-            foreach ($w in (Get-E2eWindows $ctx.Case.WinTitle -IncludeCloaked)) { if ($ctx.Run.Windows -contains $w) { Write-Host "End-to-end: a window an earlier case opened is still there ($(Get-E2eWindowReport $ctx.Case.WinTitle)); it is closed first."; Close-E2eWindow $w } }
-            [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $ctx.Case.WinTitle -IncludeCloaked; $ctx.Started = Get-Date
-        }
+        # or showed: Windows may keep a hidden frame (Settings') and show that same window.
+        Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $ctx.Case.WinTitle -IncludeCloaked; $ctx.Started = Get-Date }
         Assert  = {
             param($ctx)
             $ctx.Window = Wait-E2eNewWindow $ctx.Case.WinTitle -Before $ctx.Before -Active -TimeoutMs $ctx.Case.TimeoutMs
@@ -252,6 +245,12 @@ function New-E2eOpenerCase {
                 (& $ctx.Case.Folder $path) | Should -BeTrue -Because "the window must show $($ctx.Case.FolderWhat) (it shows '$path')"
             }
             if ($ctx.Case.SecondPress) {
+                # The command may still be running after its window came forward (Settings' start
+                # returns late, and the command then brings that window forward itself): the window
+                # must stay in front for 1.5 s before the second press.
+                $held = [System.Diagnostics.Stopwatch]::new()
+                $steady = Wait-E2eCondition { if ([Macropad.WindowApi]::Foreground() -eq $ctx.Window) { if (-not $held.IsRunning) { $held.Start() }; $held.ElapsedMilliseconds -ge 1500 } else { $held.Reset(); $false } } -TimeoutMs 8000
+                $steady | Should -BeTrue -Because "the window must stay in front after the first press (in front: $(Get-E2eForegroundText))"
                 $b = Use-E2eStandin 'B'
                 Invoke-E2eCaseKey $ctx -Front $b.Hwnd
                 $again = Wait-E2eCondition { if ([Macropad.WindowApi]::Foreground() -eq $ctx.Window) { $true } } -TimeoutMs 6000
@@ -278,8 +277,15 @@ function New-E2eOpenerCase {
             param($ctx)
             if ($ctx.Window) { Close-E2eWindow $ctx.Window }
             elseif ($ctx.Pressed) {
-                # A window the press made or showed that never came forward is the run's too, and is closed.
-                foreach ($w in (Get-E2eWindows $ctx.Case.WinTitle -IncludeCloaked)) { if ($ctx.Before -notcontains $w) { Add-E2eRunWindow $w; Close-E2eWindow $w } }
+                # A window that fits and came up but never came forward: Windows gives no way to tell
+                # that the press made it (File Explorer, Settings and Calculator windows belong to
+                # shared processes). Under -Ci nobody else is there, so it is the run's and is closed;
+                # on a developer's desktop it is left open, and said so.
+                foreach ($w in (Get-E2eWindows $ctx.Case.WinTitle -IncludeCloaked)) {
+                    if ($ctx.Before -contains $w) { continue }
+                    if ($env:OMB_E2E_CI -eq '1') { Add-E2eRunWindow $w; Close-E2eWindow $w }
+                    else { Write-Host "End-to-end: $(Get-E2eWindowReport $ctx.Case.WinTitle) came up after the press but never came forward; it is left open (close it yourself)." }
+                }
             }
         }
     }
@@ -313,69 +319,48 @@ function Get-E2eCalculatorWindows {
     , @(foreach ($w in (Get-E2eWindows $script:E2eCalculator -IncludeCloaked)) { if ($Before -notcontains $w) { $w } })
 }
 
-# Waits until one new Calculator window (not Not, the one just closed) is shown and active, then
-# watches WatchMs more: no second one may appear, and Not may not be on the screen. '' when so, else
-# what was wrong. Every window seen is remembered, so that the run closes it.
+# Waits until one new Calculator window is shown and active, then watches WatchMs more: no second one may
+# appear. '' when so, else what was wrong. The window is the one the case's own press produced: no
+# Calculator the test did not open was there (SkipIf), and it is recorded the moment it is seen, so that
+# the run closes it. (Windows gives no way to tie a Calculator frame, a window of ApplicationFrameHost,
+# to the process a press started.) $script:E2eShownAfterMs: how long after the last paced change it
+# showed.
 function Test-E2eOneCalculator {
-    param([IntPtr[]]$Before, [IntPtr]$Not = [IntPtr]::Zero, [int]$WatchMs = 3000)
+    param([IntPtr[]]$Before, [int]$WatchMs = 3000)
     $shown = Wait-E2eCondition {
         $f = [Macropad.WindowApi]::Foreground()
-        if ($f -ne $Not -and (Get-E2eCalculatorWindows $Before) -contains $f -and -not [OmbE2e.Dwm]::Cloaked($f)) { $f }
-    } -TimeoutMs 10000
+        if ((Get-E2eCalculatorWindows $Before) -contains $f -and -not [OmbE2e.Dwm]::Cloaked($f)) { $f }
+    } -TimeoutMs 10000 -EveryMs 10
     if (-not $shown) { return "no Calculator window was shown and active within 10 s (in front: $(Get-E2eForegroundText); windows that fit: $(Get-E2eWindowReport $script:E2eCalculator))" }
+    $script:E2eShownAfterMs = $script:E2eChangeClock.ElapsedMilliseconds
     Wait-ScreenChange -Observed
     Add-E2eRunWindow $shown
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while ($sw.ElapsedMilliseconds -lt $WatchMs) {
-        $all = @(foreach ($w in (Get-E2eCalculatorWindows $Before)) { if ($w -ne $Not) { $w } })
+        $all = Get-E2eCalculatorWindows $Before
         foreach ($w in $all) { Add-E2eRunWindow $w }
         if ($all.Count -gt 1) { return "$($all.Count) Calculator windows: $(Get-E2eWindowReport $script:E2eCalculator)" }
         Wait-Pump 100
     }
-    if ($Not -ne [IntPtr]::Zero -and [Macropad.WindowApi]::Exists($Not) -and [Macropad.WindowApi]::Visible($Not) -and -not [OmbE2e.Dwm]::Cloaked($Not)) { return 'the closed Calculator window is still on the screen' }
     ''
 }
 
-# Closes the Calculator windows the case opened (cloaked ones too), paced, and waits until none is
-# left; throws when one stays.
-# Calculator keeps its process (CalculatorApp.exe) after its window closes, and may show a frame of it
-# again seconds later; so the Calculator processes that started during the run, the run's own, end
-# too, and the windows must stay gone for 1.5 s; up to three rounds. A Calculator that ran before the
-# run is never ended. Each start of the series is then a cold one, as a person's first press is.
+# Closes the Calculator windows the case's presses opened, paced. A window is closed when it no longer
+# exists (Close-E2eWindow throws otherwise). Calculator's own process ends by itself when its window
+# closes, so every start of a series is a cold one, as a person's first press is.
 function Close-E2eCalculators {
     param([IntPtr[]]$Before)
-    for ($round = 0; $round -lt 3; $round++) {
-        foreach ($w in (Get-E2eCalculatorWindows $Before)) { Add-E2eRunWindow $w; Close-E2eWindow $w }
-        foreach ($p in @(Get-Process CalculatorApp -ErrorAction SilentlyContinue)) {
-            if ($p.StartTime -ge $script:E2eRun.StartedAt) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; [void]$p.WaitForExit(5000) }
-        }
-        if (Wait-E2eCondition { (Get-E2eCalculatorWindows $Before).Count -eq 0 } -TimeoutMs 5000) {
-            $back = Wait-E2eCondition { (Get-E2eCalculatorWindows $Before).Count -gt 0 } -TimeoutMs 1500
-            if (-not $back) { return }
-        }
-    }
-    throw "Calculator windows stayed or came back after they were closed: $(Get-E2eWindowReport $script:E2eCalculator)"
+    foreach ($w in (Get-E2eCalculatorWindows $Before)) { Add-E2eRunWindow $w; Close-E2eWindow $w }
+    # A window the case closed by its close button may stay, hidden, for seconds: it is closed for good.
+    foreach ($w in @($script:E2eRun.Windows)) { if ([Macropad.WindowApi]::Exists($w) -and [Macropad.WindowApi]::Title($w) -eq 'Calculator') { Close-E2eWindow $w } }
 }
 
-# Before a Calculator case: a Calculator window the run itself opened in an earlier case (the handle is
-# in the run's list) and is still, or again, there is closed, and said so; a person's is never touched.
-function Clear-E2eRunCalculators {
-    $ours = @(foreach ($w in (Get-E2eCalculatorWindows)) { if ($script:E2eRun.Windows -contains $w) { $w } })
-    if ($ours.Count -eq 0) { return }
-    Write-Host "End-to-end: a Calculator window an earlier case opened is still there ($(Get-E2eWindowReport $script:E2eCalculator)); it is closed first."
-    foreach ($w in $ours) { Close-E2eWindow $w }
-    foreach ($p in @(Get-Process CalculatorApp -ErrorAction SilentlyContinue)) {
-        if ($p.StartTime -ge $script:E2eRun.StartedAt) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; [void]$p.WaitForExit(5000) }
-    }
-}
-
-# Opens Calculator from B and waits for its one window, shown and active; throws when it does not come.
-function Open-E2eCalculator {
-    param($ctx)
-    $b = Use-E2eStandin 'B'
-    Invoke-E2eCaseKey $ctx -Front $b.Hwnd
-    $why = Test-E2eOneCalculator $ctx.Before
-    if ($why) { throw "Calculator did not open: $why" }
+# A series counts only the tries that reached its moment; a try that missed it is made again, up to
+# three times as many tries as wanted. Throws when the moment was reached too seldom.
+function Assert-E2eMoments {
+    param([int]$Hit, [int]$Wanted, [int]$Tries, [string]$Moment)
+    if ($Hit -eq 0) { throw "The moment was not reached: in none of $Tries tries $Moment." }
+    if ($Hit -lt $Wanted) { throw "The moment was reached in only $Hit of $Tries tries ($Wanted wanted): $Moment." }
 }
 
 # ---- The table ----
@@ -515,78 +500,89 @@ function Get-E2eCases {
         # window counts once Windows shows it, and the second press must find that same window.
         (New-E2eOpenerCase 'OpenCalculator' 'custom\examples' $script:E2eCalculator -Targets 'ApplicationFrameHost.exe', 'CalculatorApp.exe' -SecondPress -Covers 'AHK-16, PS-1 (fix 1: item 14)' `
                 -Needs $script:E2eNeedsCalculator -SkipIf $script:E2eCalculatorSkipIf)
-        # The Calculator series: the moments around a start, each run Get-E2eRepeat times (run.ps1
+        # The Calculator series: the moments around a start, each reached Get-E2eRepeat times (run.ps1
         # -Repeat; 2 by default), counted per language. First, the second press comes while the first
-        # Calculator is still starting (its window exists, cloaked, and B still has the keyboard): there
-        # must be exactly one window, shown and active.
+        # Calculator is still starting (its window exists, cloaked): there must be exactly one window,
+        # shown and active.
         @{ Command = 'OpenCalculator'; Name = 'OpenCalculator (second press while it starts)'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'ApplicationFrameHost.exe', 'CalculatorApp.exe'
-            Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'I4 of the round-1 recheck: a second press while Calculator starts'
-            Arrange = { param($ctx) Clear-E2eRunCalculators; [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eCalculator -IncludeCloaked }
+            Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'a second press while Calculator is still starting finds that window and opens no other'
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eCalculator -IncludeCloaked }
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd
-                $n = Get-E2eRepeat; $hit = 0
+                $n = Get-E2eRepeat; $hit = 0; $tries = 0
                 $failed = [System.Collections.Generic.List[string]]::new()
                 $moments = [System.Collections.Generic.List[string]]::new()
-                for ($i = 1; $i -le $n; $i++) {
-                    if ($i -gt 1) { [void](Use-E2eStandin 'B'); Invoke-E2eCaseKey $ctx -Front $b }
+                while ($hit -lt $n -and $tries -lt 3 * $n) {
+                    $tries++
+                    if ($tries -gt 1) { [void](Use-E2eStandin 'B'); Invoke-E2eCaseKey $ctx -Front $b }
                     $first = Wait-E2eCondition { $w = Get-E2eCalculatorWindows $ctx.Before; if ($w.Count -gt 0) { $w[0] } } -TimeoutMs 10000 -EveryMs 10
-                    if (-not $first) { $failed.Add("run ${i}: no Calculator window appeared within 10 s"); continue }
-                    # When the window appeared (ms after the press, whose pacing restarted the clock),
-                    # and whether it was cloaked then: the moment, for the report.
-                    $seen = "$($script:E2eChangeClock.ElapsedMilliseconds) ms $(if ([OmbE2e.Dwm]::Cloaked($first)) { 'cloaked' } else { 'shown' })"
+                    if (-not $first) { $failed.Add("try ${tries}: no Calculator window appeared within 10 s"); continue }
+                    # When the window appeared (ms after the press, whose pacing restarted the clock).
+                    $seen = $script:E2eChangeClock.ElapsedMilliseconds
                     Add-E2eRunWindow $first
-                    # Paced first; then the press follows at once, only while the moment lasts (the
-                    # window still cloaked) and into a window the case names: B, or the Calculator
-                    # window the first press opened, which Windows makes active while it is still
-                    # cloaked.
+                    # Paced first; then the press follows at once, only while the window is still
+                    # cloaked, and into a window the case names: B, or that Calculator window, which
+                    # Windows makes active while it is still cloaked.
                     Wait-ScreenChange
                     $fg = [Macropad.WindowApi]::Foreground()
-                    $into = if ($fg -eq $b) { 'B' } elseif ($fg -eq $first) { 'Calculator' } else { 'another window' }
-                    $moments.Add("$seen, then $(if ([OmbE2e.Dwm]::Cloaked($first)) { 'cloaked' } else { 'shown' }) with $into active")
                     if ([OmbE2e.Dwm]::Cloaked($first) -and ($fg -eq $b -or $fg -eq $first)) {
                         $ctx.Pressed = $true
                         Invoke-E2eMacroKey $ctx.Case.Slot
-                        if ([OmbE2e.Dwm]::Cloaked($first)) { $hit++ }
-                    }
+                        if ([OmbE2e.Dwm]::Cloaked($first)) { $hit++; $moments.Add("$seen ms") } else { $moments.Add("$seen ms (shown before the press)") }
+                    } else { $moments.Add("$seen ms (missed)") }
                     $why = Test-E2eOneCalculator $ctx.Before
-                    if ($why) { $failed.Add("run ${i}: $why") }
+                    if ($why) { $failed.Add("try ${tries}: $why") }
                     Close-E2eCalculators $ctx.Before
                 }
-                Write-Host ("End-to-end Calculator series, {0}, second press while it starts: {1} runs, {2} pressed while the first window was still cloaked, {3} failed. First window after the press, and at the paced press: {4}" -f $ctx.Lang, $n, $hit, $failed.Count, ($moments -join '; '))
-                ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every run must end with exactly one Calculator window, shown and active'
-                $hit | Should -BeGreaterThan 0 -Because 'a second press must come while Calculator is still starting at least once, or the series proves nothing'
+                Write-Host ("End-to-end Calculator series, {0}, second press while it starts: {1} reached in {2} tries, {3} failed. First window after the press: {4}" -f $ctx.Lang, $hit, $tries, $failed.Count, ($moments -join '; '))
+                ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every try must end with exactly one Calculator window, shown and active'
+                Assert-E2eMoments $hit $n $tries 'the second press came while the first Calculator window was still cloaked'
             }
-            CleanUp = { param($ctx) if ($ctx.Before) { Close-E2eCalculators $ctx.Before } }
+            CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
         }
-        # Then Calculator is closed and the key pressed again at once (paced), while the frame of the
-        # closed one may still be there: a new window must come, shown and active, not the closed one.
+        # Then Calculator is closed and the key pressed at once, while the closed window still exists: a
+        # new window must come, shown and active.
         @{ Command = 'OpenCalculator'; Name = 'OpenCalculator (closed and opened again at once)'; File = 'custom\examples'; Kind = 'Custom'; Targets = 'ApplicationFrameHost.exe', 'CalculatorApp.exe'
-            Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'I4 of the round-1 recheck: a press while a closed Calculator may linger'
-            Arrange = { param($ctx) Clear-E2eRunCalculators; [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eCalculator -IncludeCloaked }
+            Needs = $script:E2eNeedsCalculator; SkipIf = $script:E2eCalculatorSkipIf; Covers = 'a press while the Calculator just closed still exists opens a new one'
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eCalculator -IncludeCloaked }
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd
-                $n = Get-E2eRepeat; $lingered = 0
+                $n = Get-E2eRepeat; $hit = 0; $tries = 0
                 $failed = [System.Collections.Generic.List[string]]::new()
+                $times = [System.Collections.Generic.List[string]]::new()
                 $why = Test-E2eOneCalculator $ctx.Before
                 if ($why) { throw "The first press: $why" }
-                for ($i = 1; $i -le $n; $i++) {
+                while ($hit -lt $n -and $tries -lt 3 * $n) {
+                    $tries++
                     $old = [Macropad.WindowApi]::Foreground()
-                    if ((Get-E2eCalculatorWindows $ctx.Before) -notcontains $old) { Close-E2eCalculators $ctx.Before; Open-E2eCalculator $ctx; $old = [Macropad.WindowApi]::Foreground() }
+                    if ((Get-E2eCalculatorWindows $ctx.Before) -notcontains $old) { throw "Try ${tries}: the Calculator window was not in front before the close; $(Get-E2eForegroundText) was." }
                     Wait-ScreenChange
                     [void][Macropad.WindowApi]::Post($old, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)  # WM_CLOSE, as its close button
-                    # Windows gives the keyboard back to the window before it, B; nothing is pressed before B has it.
-                    if (-not (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 1500 -EveryMs 10)) { [void](Use-E2eStandin 'B') }
-                    Invoke-E2eCaseKey $ctx -Front $b
-                    if ([Macropad.WindowApi]::Exists($old)) { $lingered++ }
-                    $why = Test-E2eOneCalculator $ctx.Before -Not $old
-                    if ($why) { $failed.Add("run ${i}: $why") }
+                    # Windows gives the keyboard back to the window before it, B. The key goes in at
+                    # once, into B only: unpaced, since a press changes nothing on the screen itself, and
+                    # the new window shows 350 ms or more after a press (it is cloaked for the first 200
+                    # to 330 ms; checked below for every try).
+                    if (-not (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 1500 -EveryMs 5)) {
+                        if ($env:OMB_E2E_CI -ne '1') { throw "Not pressed: the stand-in B did not get the keyboard back after the close; $(Get-E2eForegroundText) was in front." }
+                        [void](Use-E2eStandin 'B')
+                    }
+                    $moment = [Macropad.WindowApi]::Exists($old)
+                    Assert-E2eFront $b 'the stand-in B'
+                    $ctx.Pressed = $true
+                    Invoke-E2eMacroKey $ctx.Case.Slot
+                    if ($moment) { $hit++ }
+                    $why = Test-E2eOneCalculator $ctx.Before
+                    if ($why) { $failed.Add("try ${tries}: $why"); break }
+                    $times.Add("$($script:E2eShownAfterMs) ms$(if (-not $moment) { ' (missed)' })")
+                    if ($script:E2eShownAfterMs -lt 350) { $failed.Add("try ${tries}: the new window showed $($script:E2eShownAfterMs) ms after the close, under the 350 ms floor"); break }
                 }
-                Write-Host ("End-to-end Calculator series, {0}, closed and opened again at once: {1} runs, {2} pressed while the closed window was still there, {3} failed." -f $ctx.Lang, $n, $lingered, $failed.Count)
+                Write-Host ("End-to-end Calculator series, {0}, closed and opened again at once: {1} reached in {2} tries, {3} failed. New window shown after the close: {4}" -f $ctx.Lang, $hit, $tries, $failed.Count, ($times -join '; '))
                 ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every press after a close must bring one new Calculator window, shown and active'
+                Assert-E2eMoments $hit $n $tries 'the key went in while the closed Calculator window still existed'
             }
-            CleanUp = { param($ctx) if ($ctx.Before) { Close-E2eCalculators $ctx.Before } }
+            CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
         }
         @{ Command = 'E2eOpenFolderComma'; File = 'e2e'; Kind = 'Custom'; Only = 'ps'; Why = 'Open-ExplorerWindow is a PowerShell helper; the AutoHotkey version has none'; Targets = 'explorer.exe'; Covers = 'PS-9 (fix 1: item 16)'
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Before = Get-E2eWindows $script:E2eExplorer -IncludeCloaked }
@@ -750,8 +746,10 @@ function Get-E2eCases {
                 if ((Get-E2eForeignWindows 'ahk_exe taskmgr.exe').Count -gt 0) { 'a Task Manager the test did not open is on the desktop' }
             })
         (New-E2eOpenerCase 'OpenControlPanel' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -Folder { param($p) $p -and $p.StartsWith($script:E2eControlPanel) } -FolderWhat 'Control Panel')
-        (New-E2eOpenerCase 'OpenSettings' 'windows' 'Settings ahk_class ApplicationFrameWindow' -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -SkipIf {
-                if ((Get-E2eForeignWindows 'Settings ahk_class ApplicationFrameWindow' -IncludeHidden).Count -gt 0) { 'a Settings window the test did not open is on the desktop; the key would bring it forward' }
+        # The first press is a cold start: no Settings window, hidden ones included, is there (SkipIf),
+        # and Settings ends when its window closes. The second, with Settings running behind B, a warm one.
+        (New-E2eOpenerCase 'OpenSettings' 'windows' 'Settings ahk_exe ApplicationFrameHost.exe' -Targets 'ApplicationFrameHost.exe', 'SystemSettings.exe' -SecondPress -Covers 'Settings comes forward on a cold start and on a warm one' -SkipIf {
+                if ((Get-E2eForeignWindows 'Settings ahk_exe ApplicationFrameHost.exe' -IncludeHidden).Count -gt 0) { 'a Settings window the test did not open is on the desktop; the key would bring it forward' }
             })
         (New-E2eOpenerCase 'OpenServices' 'windows' 'ahk_exe mmc.exe' -Targets 'mmc.exe' `
                 -Needs @{ Why = 'needs a standard user: mmc.exe asks for the highest rights the user has, so for an administrator Windows shows its elevation prompt'; Met = $script:E2eNeedsStandardUser } -SkipIf {
@@ -793,18 +791,23 @@ function Get-E2eCases {
         }
         @{ Command = 'CreateDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
             SkipIf  = { if ($script:E2eRun.DesktopCount -gt 1) { "the desktop has $($script:E2eRun.DesktopCount) virtual desktops; the desktop cases start from one" } }
-            Arrange = { param($ctx) [void](Use-E2eStandin 'A') }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'A'); $ctx.DesktopsBefore = Get-E2eDesktops; $ctx.CurrentBefore = Get-E2eCurrentDesktop }
             Assert  = {
                 param($ctx)
-                $made = Wait-E2eCondition { (Get-E2eDesktopCount) -eq $ctx.Run.DesktopCount + 1 -and -not [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) } -TimeoutMs 4000
-                Update-E2eNewDesktops
+                # The desktop the key made is the new one Windows switches to: recorded the moment it is
+                # seen, so that an abort during the wait still leaves it to the clean-up.
+                $made = Wait-E2eCondition {
+                    $now = Get-E2eCurrentDesktop
+                    if ($now -and $now -ne $ctx.CurrentBefore -and $ctx.DesktopsBefore -notcontains $now) { Add-E2eNewDesktop $now; $true }
+                } -TimeoutMs 4000
                 $made | Should -BeTrue -Because 'a new virtual desktop must be made and shown'
+                (Get-E2eDesktopCount) | Should -Be ($ctx.Run.DesktopCount + 1) -Because 'the key makes one desktop'
+                [OmbE2e.Desktops]::OnCurrent($ctx.Run.Standins['A'].Hwnd) | Should -BeFalse -Because 'the new desktop is shown'
                 Wait-ScreenChange -Observed
             }
-            CleanUp = { param($ctx) Update-E2eNewDesktops }
         }
         @{ Command = 'PreviousDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
-            Prior   = { if (@($script:E2eRun.NewDesktops).Count -ne 1) { 'CreateDesktop did not leave the second virtual desktop these cases switch between' } }
+            Prior   = { if (@($script:E2eRun.NewDesktops).Count -ne 1) { 'no virtual desktop made by CreateDesktop in this run (it failed, was skipped or did not run)' } }
             # CreateDesktop left the new, empty desktop shown: the desktop itself has the keyboard.
             Arrange = { param($ctx) $ctx.FrontDesktop = $true }
             Assert  = {
@@ -814,7 +817,7 @@ function Get-E2eCases {
             }
         }
         @{ Command = 'NextDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
-            Prior   = { if (@($script:E2eRun.NewDesktops).Count -ne 1) { 'CreateDesktop did not leave the second virtual desktop these cases switch between' } }
+            Prior   = { if (@($script:E2eRun.NewDesktops).Count -ne 1) { 'no virtual desktop made by CreateDesktop in this run (it failed, was skipped or did not run)' } }
             # Back on A's desktop, A is the window the key goes into.
             Arrange = { param($ctx) [void](Use-E2eStandin 'A') }
             Assert  = {
@@ -824,7 +827,7 @@ function Get-E2eCases {
             }
         }
         @{ Command = 'CloseDesktop'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
-            Prior   = { if (@($script:E2eRun.NewDesktops).Count -ne 1) { 'CreateDesktop did not leave the second virtual desktop these cases switch between' } }
+            Prior   = { if (@($script:E2eRun.NewDesktops).Count -ne 1) { 'no virtual desktop made by CreateDesktop in this run (it failed, was skipped or did not run)' } }
             # NextDesktop left the new, empty desktop shown.
             Arrange = { param($ctx) $ctx.FrontDesktop = $true }
             Assert  = {
@@ -872,17 +875,18 @@ function Get-E2eCases {
             }
         }
         # Task View, Snap Assist and Alt+Tab are all windows of explorer.exe of the class
-        # XamlExplorerHostIslandWindow; the title tells them apart ('Task View', 'Snap Assist', 'Task
-        # Switching').
+        # XamlExplorerHostIslandWindow; only the title, which Windows translates, tells them apart
+        # ('Task View', 'Snap Assist', 'Task Switching' in English).
         @{ Command = 'TaskView'; File = 'windows'; Kind = 'Custom'; Targets = 'explorer.exe'
+            Needs   = @{ Why = 'needs an English display language: only the title of Task View (translated) tells it from Snap Assist and Alt+Tab, windows of the same class'; Met = { [System.Globalization.CultureInfo]::CurrentUICulture.Name -like 'en*' } }
             Arrange = { param($ctx) Reset-E2eStandinA }
             Assert  = {
                 param($ctx)
-                $shown = Wait-E2eCondition { $i = Get-WindowInfo ([Macropad.WindowApi]::Foreground()); if ($i.Exe -eq 'explorer.exe' -and $i.Class -eq 'XamlExplorerHostIslandWindow' -and $i.Title -eq 'Task View') { $i } } -TimeoutMs 4000
-                $shown | Should -Not -BeNullOrEmpty -Because "Task View must open (in front: $(Get-E2eForegroundText))"
+                $ctx.Overlay = Wait-E2eCondition { $f = [Macropad.WindowApi]::Foreground(); $i = Get-WindowInfo $f; if ($i.Exe -eq 'explorer.exe' -and $i.Class -eq 'XamlExplorerHostIslandWindow' -and $i.Title -eq 'Task View') { $f } } -TimeoutMs 4000
+                $ctx.Overlay | Should -Not -BeNullOrEmpty -Because "Task View must open (in front: $(Get-E2eForegroundText))"
                 Wait-ScreenChange -Observed
             }
-            CleanUp = { param($ctx) Close-E2eShellOverlay; Reset-E2eStandinA }
+            CleanUp = { param($ctx) Close-E2eShellOverlay $ctx.Overlay; Reset-E2eStandinA }
         }
         # Print Screen opens the screen capture over the whole screen or copies a screenshot to the
         # clipboard (a setting chooses), Alt+Print Screen replaces the clipboard: the keys are checked.
@@ -893,11 +897,11 @@ function Get-E2eCases {
             Arrange = { param($ctx) Reset-E2eStandinA }
             Assert  = {
                 param($ctx)
-                $shown = Wait-E2eCondition { $i = Get-WindowInfo ([Macropad.WindowApi]::Foreground()); if ($i.Exe -in 'ScreenClippingHost.exe', 'SnippingTool.exe') { $i } } -TimeoutMs 8000
-                $shown | Should -Not -BeNullOrEmpty -Because "the screen capture must open (in front: $(Get-E2eForegroundText))"
+                $ctx.Overlay = Wait-E2eCondition { $f = [Macropad.WindowApi]::Foreground(); if ((Get-WindowInfo $f).Exe -in 'ScreenClippingHost.exe', 'SnippingTool.exe') { $f } } -TimeoutMs 8000
+                $ctx.Overlay | Should -Not -BeNullOrEmpty -Because "the screen capture must open (in front: $(Get-E2eForegroundText))"
                 Wait-ScreenChange -Observed
             }
-            CleanUp = { param($ctx) Close-E2eShellOverlay; Reset-E2eStandinA }
+            CleanUp = { param($ctx) Close-E2eShellOverlay $ctx.Overlay; Reset-E2eStandinA }
         }
         foreach ($c in 'MoveFocusLeft', 'MoveFocusRight', 'Enter', 'Escape') { @{ Command = $c; File = 'windows' } }
 

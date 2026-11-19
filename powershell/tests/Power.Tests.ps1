@@ -6,10 +6,17 @@ BeforeAll {
     # The functions of power.ps1 other than Lock-Workstation and Invoke-SuspendState that use the type
     # [Macropad.Native] themselves, and each use of it outside a function, by line. The tests cannot mock
     # those. It reads the file's syntax tree, so any spelling counts ([ Macropad.Native ], another case),
-    # and so does the type kept in a variable ($n = [Macropad.Native]; $n::X()). It runs none of the file.
+    # and so does the type kept in a variable ($n = [Macropad.Native]; $n::X()). A string that names the
+    # type counts too, since the type can be looked up from one ([type]'Macropad.Native', -as [type],
+    # [Type]::GetType). What it cannot see is a name put together when the file runs ('Macropad.' +
+    # 'Native', a variable, Invoke-Expression of built text). It runs none of the file.
     function Get-DirectNativeCall {
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile("$ps\commands\power.ps1", [ref]$null, [ref]$null)
-        $uses = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.TypeExpressionAst] -and $n.TypeName.FullName -eq 'Macropad.Native' }, $true)
+        param([string]$Path = "$ps\commands\power.ps1")
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$null)
+        $uses = $ast.FindAll({ param($n)
+                ($n -is [System.Management.Automation.Language.TypeExpressionAst] -and $n.TypeName.FullName -eq 'Macropad.Native') -or
+                ($n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match 'Macropad\.Native') -or
+                ($n -is [System.Management.Automation.Language.ExpandableStringExpressionAst] -and $n.Value -match 'Macropad\.Native') }, $true)
         @(foreach ($use in $uses) {
                 $fn = $use.Parent
                 while ($fn -and $fn -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $fn = $fn.Parent }
@@ -25,6 +32,17 @@ Describe 'Power commands reach Windows only through the wrappers the tests mock'
     It 'calls [Macropad.Native] only inside Lock-Workstation and Invoke-SuspendState' {
         # When this fails, the block 'Power commands' below runs none of its tests (its BeforeAll stops it).
         Get-DirectNativeCall | Should -BeNullOrEmpty
+    }
+    It 'also sees the type looked up from a string, in a command or outside any function' {
+        # A planted file, read and never run.
+        $file = Join-Path $TestDrive 'planted.ps1'
+        Set-Content -LiteralPath $file -Value @'
+function Lock { param($Macro) ([type]'Macropad.Native')::LockWorkStation() }
+function WinSleep { param($Macro) $t = "Macropad.Native" -as [type]; $t::SetSuspendState($false, $false, $false) }
+function Lock-Workstation { [Macropad.Native]::LockWorkStation() }
+[Type]::GetType('macropad.native')
+'@
+        (Get-DirectNativeCall $file) -join '; ' | Should -Be 'Lock; WinSleep; line 4, outside any function'
     }
     It 'reads SetSuspendState''s one-byte BOOLEAN result as one byte' {
         # Read as a four-byte BOOL, a refusal with junk in the upper bytes would look like success.

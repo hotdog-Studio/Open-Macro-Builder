@@ -45,7 +45,7 @@ function ToastCard({ banner, dispatch }: Readonly<{ banner: Banner; dispatch: (a
     const ms = toastLifetime(banner)
     // Where the focus really is, so a replaced message that removed the focused button (the page gets
     // the focus back, with no blur event) ends the hold, and the focus coming back to it holds it again.
-    const focusHeld = frame.current !== null && frame.current.contains(document.activeElement)
+    const focusHeld = frame.current?.contains(document.activeElement) === true
     if (ms === null || pointerOn || focusHeld) return
     const timer = setTimeout(() => {
       if (showing.current === banner) dispatch({ type: 'banner', banner: null })

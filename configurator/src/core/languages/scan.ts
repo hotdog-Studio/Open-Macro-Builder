@@ -226,7 +226,7 @@ async function readLibraryFile(
 ): Promise<LibraryFile | null> {
   const raw = await folder.readBytes(path)
   if (raw === null) return null
-  if (held && held.version === (await hashBytes(raw))) return held
+  if (held?.version === (await hashBytes(raw))) return held
   const read = await decodeLenient(path, raw, NOT_UTF8[lang.id])
   const name = path.slice(path.lastIndexOf('/') + 1, path.length - lang.ext.length)
   return {

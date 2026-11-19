@@ -346,12 +346,18 @@ function Send-E2eChord {
     } finally { Clear-E2eHeldKeys }
 }
 
+# Clicks at a point of the screen. The button is held until Until (a condition, as Wait-E2eCondition
+# takes it) holds, at most TimeoutMs, and is let go however that ends: a program that looks for a held
+# button now and then (the delayed-click form does, every 10 ms) may miss a press that lasts a fixed
+# moment when the machine is slow. Without Until it is held for a moment.
 function Send-E2eClick {
-    param([int]$X, [int]$Y, [ValidateSet('Left', 'Right')][string]$Button = 'Left')
+    param([int]$X, [int]$Y, [ValidateSet('Left', 'Right')][string]$Button = 'Left', [scriptblock]$Until, [int]$TimeoutMs = 3000)
     [void][OmbE2e.Input]::MoveMouse($X, $Y)
     Wait-Pump 30
     $flags = @{ Left = @(2, 4); Right = @(8, 16) }[$Button]
-    [void][OmbE2e.Input]::Mouse($flags[0]); Wait-Pump 30; [void][OmbE2e.Input]::Mouse($flags[1])
+    [void][OmbE2e.Input]::Mouse($flags[0])
+    try { if ($Until) { [void](Wait-E2eCondition $Until -TimeoutMs $TimeoutMs) } else { Wait-Pump 30 } }
+    finally { [void][OmbE2e.Input]::Mouse($flags[1]) }
 }
 
 # Lets go of Shift, Ctrl, Alt, the Windows keys and Fn where Windows says one is still down, so that a
@@ -441,6 +447,8 @@ function Write-E2eState {
     if ($r.CleanupStarted) { $lines.Add('cleanup') }
     if ($r.BannerPid) { $lines.Add("banner $($r.BannerPid) $($r.BannerStart)") }
     foreach ($p in $r.Processes) { $lines.Add("kill $($p.Pid) $($p.Start) $($p.Name)") }
+    # A window that no longer exists (a closed one that its program kept, hidden, for a while) leaves the list.
+    foreach ($h in @($r.Windows)) { if (-not [Macropad.WindowApi]::Exists($h)) { [void]$r.Windows.Remove($h) } }
     foreach ($h in $r.Windows) { $i = $r.WindowInfo[[long]$h]; if ($i) { $lines.Add("window $([long]$h) $($i.Pid) $($i.Start) $($i.Class)") } }
     foreach ($d in $r.NewDesktops) { $lines.Add("desktop $d") }
     foreach ($o in $r.Owners) { $lines.Add("run $($o.Exe)`t$($o.Arguments)`t$($o.Cwd)") }
@@ -862,19 +870,27 @@ function Add-E2eRunWindow {
     Write-E2eState
 }
 
-# Closes a window a command opened (paced; with -Force its program is ended if it stays): the one way
-# the test closes a window and decides whether it is gone, during a run and in the clean-up after one.
-# A window is closed when it no longer exists: Calculator hides its window at once but may keep it for
-# seconds more, so this waits up to 10 s. One that still exists stays in the run's list, and this
-# throws, so that the run's end, or the clean-up after it, closes it.
+# Closes a window (paced), as its close button does: the one way the test closes a window and decides
+# whether it is closed, during a run and in the clean-up after one. A window is closed when it is off
+# the screen: it no longer exists, or its program keeps it, hidden (Calculator keeps a closed window
+# for a fraction of a second, at times for half a minute, and the macropad's own forms hide when they
+# are closed). That is a state, whatever time the program takes over the rest. A hidden window stays
+# in the run's list for as long as it exists, so that it is closed again should it be shown again. This
+# waits up to 10 s, and throws when the window is still on the screen, which leaves it in the run's
+# list for the run's end, or the clean-up after it.
 function Close-E2eWindow {
-    param([IntPtr]$Hwnd, [switch]$Force)
-    if ([Macropad.WindowApi]::Exists($Hwnd)) {
+    param([IntPtr]$Hwnd)
+    $shown = { [Macropad.WindowApi]::Exists($Hwnd) -and [Macropad.WindowApi]::Visible($Hwnd) }
+    if (& $shown) {
         Wait-ScreenChange
-        [void](Close-Window $Hwnd -Force:$Force -TimeoutMs 10000)
+        [void][Macropad.WindowApi]::Post($Hwnd, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)  # WM_CLOSE
+        [void](Wait-E2eCondition { -not (& $shown) } -TimeoutMs 10000)
     }
-    if ([Macropad.WindowApi]::Exists($Hwnd)) { throw "The window $Hwnd ('$([Macropad.WindowApi]::Title($Hwnd))') still exists 10 s after it was closed." }
-    if ($null -ne $script:E2eRun -and $script:E2eRun.Windows.Remove($Hwnd)) { Write-E2eState }
+    if (& $shown) {
+        $i = Get-WindowInfo $Hwnd
+        throw "The window $Hwnd ('$($i.Title)', $($i.Exe), class $($i.Class)) is still on the screen 10 s after it was closed."
+    }
+    if (-not [Macropad.WindowApi]::Exists($Hwnd) -and $null -ne $script:E2eRun -and $script:E2eRun.Windows.Remove($Hwnd)) { Write-E2eState }
 }
 
 function Test-E2eAdministrator {
@@ -1358,7 +1374,7 @@ $script:E2eChordAssert = {
     $want = @($ctx.Expected)
     try { $got = Wait-E2eTaps { Get-E2eStandinTaps $ctx.Standin $ctx.Mark } $want.Count -TimeoutMs 8000 }
     catch { throw "The stand-in's key events are not whole chords ($($_.Exception.Message)): $((@(Read-E2eLog $ctx.Standin.Log) | Select-Object -Skip $ctx.Mark) -join ' / ')" }
-    ($got -join ', ') | Should -Be ($want -join ', ') -Because "the stand-in must receive exactly the keys of $($ctx.Case.Command) (in front now: $(Get-E2eForegroundText))"
+    ($got -join ', ') | Should -Be ($want -join ', ') -Because "the stand-in must receive exactly the keys of $($ctx.Case.Command) (in front now: $(Get-E2eForegroundText); the stand-in's lines: $((@(Read-E2eLog $ctx.Standin.Log) | Select-Object -Skip $ctx.Mark) -join ' / '))"
     if ($ctx.Case.From) { [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Standin.Hwnd -Because 'the command brings its program forward' }
 }
 # A Watch case: the keys are seen by the key watch (a low-level hook), which keeps Windows from acting
@@ -1373,7 +1389,7 @@ $script:E2eWatchAssert = {
     param($ctx)
     $want = @($ctx.Expected)
     $got = Wait-E2eTaps { Get-E2eWatchTaps } $want.Count
-    ($got -join ', ') | Should -Be ($want -join ', ') -Because "the keys pressed must be exactly those of $($ctx.Case.Command)"
+    ($got -join ', ') | Should -Be ($want -join ', ') -Because "the keys pressed must be exactly those of $($ctx.Case.Command) (the key watch saw: $([OmbE2e.KeyWatch]::Events() -join ' / '))"
 }
 
 # Why a case does not run on this machine, or $null when it runs. A conditional case (Needs) does not
@@ -1671,7 +1687,7 @@ function Clear-E2eFolder {
                 if ([Macropad.WindowApi]::Exists($h) -and [Macropad.WindowApi]::ProcessId($h) -eq $id -and [Macropad.WindowApi]::ClassName($h) -eq $class -and (& $match $id $start)) {
                     Show-E2eCleanupBanner
                     Close-E2eWindow $h
-                    $Done.Add("closed window $h ($class)")
+                    $Done.Add("closed window $h ($class)$(if ([Macropad.WindowApi]::Exists($h)) { '; its program still keeps it, hidden' })")
                 }
             }
         }

@@ -112,7 +112,7 @@ function Assert-E2eMessageBox {
     $ctx.Window | Should -Not -BeNullOrEmpty -Because "a message box titled '$Title' must open"
     $active = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $ctx.Window } -TimeoutMs 3000
     $active | Should -BeTrue -Because "the message box must come forward, where the keyboard is (in front: $(Get-E2eForegroundText))"
-    Get-E2eStatusText $ctx.Window $Text | Should -BeExactly $Text
+    Get-E2eStatusText $ctx.Window $Text | Should -BeExactly $Text -Because "the box must say so (it says: $(Get-E2eFormText $ctx.Window))"
 }
 
 # True when Show Desktop is in effect: the window is minimized, or the desktop itself is in front.
@@ -212,14 +212,20 @@ function Invoke-E2eButton {
     [void](Send-WindowMessage (Find-Control $Form $Text) 0xF5 -Post)  # BM_CLICK
 }
 
-# The text of the form's control that starts with Prefix (a status line), or ''.
+# The text of the form's control that starts with Prefix (a status line); nothing when no control has
+# such a text, so that a wait for it (Wait-E2eCondition) goes on.
 function Get-E2eStatusText {
     param([IntPtr]$Form, [string]$Prefix)
     foreach ($c in [Macropad.WindowApi]::Children($Form)) {
         $t = Get-ControlText $c
         if ($t.StartsWith($Prefix)) { return $t }
     }
-    ''
+}
+
+# What a form says: the texts of its controls, for a failure message.
+function Get-E2eFormText {
+    param([IntPtr]$Form)
+    (@([Macropad.WindowApi]::Children($Form) | ForEach-Object { Get-ControlText $_ } | Where-Object { $_ }) -join ' | ')
 }
 
 # The one rule for what is the test's among the windows a case's key may have brought. A window is the
@@ -354,9 +360,9 @@ function Test-E2eOneCalculator {
 
 # Closes the Calculator windows the case's presses brought, paced: the ones the case recorded as it saw
 # them. A hidden one is among them: a window the case closed by its close button may stay, hidden, for
-# seconds, and is closed for good. A window is closed when it no longer exists (Close-E2eWindow throws
-# otherwise). Calculator's own process ends by itself when its window closes, so every start of a series
-# is a cold one, as a person's first press is.
+# a while, and is closed again here should it have come back (Close-E2eWindow says when a window is
+# gone, and throws otherwise). Calculator's own process ends by itself when its window closes, so every
+# start of a series is a cold one, as a person's first press is.
 function Close-E2eCalculators {
     param([IntPtr[]]$Before)
     $all = Get-E2eWindows $script:E2eCalculator -IncludeCloaked -IncludeHidden
@@ -677,14 +683,14 @@ function Get-E2eCases {
                 $ctx.Form = Wait-E2eForm 'Send key after delay'
                 $edits = Get-E2eEdits $ctx.Form
                 Invoke-E2eButton $ctx.Form 'Record key'
-                (Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Press a key' } -TimeoutMs 3000) | Should -Not -BeNullOrEmpty
+                (Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Press a key' } -TimeoutMs 3000) | Should -Not -BeNullOrEmpty -Because "Record key must ask for a key within 3 s (the form says: $(Get-E2eFormText $ctx.Form))"
                 if ($ctx.Lang -eq 'ahk') { $chord = 'F7'; $want = '{F7}' } else { $chord = 'Ctrl+Shift+t'; $want = 'Ctrl+Shift+t' }
                 Send-E2eChordTo $ctx.Form $chord
                 $got = Wait-E2eCondition { $t = Get-ControlText $edits[0]; if ($t -eq $want) { $t } } -TimeoutMs 3000
                 Wait-Pump 300
                 $got | Should -Be $want
                 Get-ControlText $edits[0] | Should -Be $want -Because 'nothing more may be recorded after the key'
-                (Get-E2eStatusText $ctx.Form 'Recorded') | Should -Be "Recorded $want."
+                (Get-E2eStatusText $ctx.Form 'Recorded') | Should -Be "Recorded $want." -Because "the form says what it recorded (it says: $(Get-E2eFormText $ctx.Form))"
                 # Record again and close the form while it waits for a key: the next key typed must
                 # still reach the window it is typed in.
                 Invoke-E2eButton $ctx.Form 'Record key'
@@ -706,12 +712,15 @@ function Get-E2eCases {
                 param($ctx)
                 $ctx.Form = Wait-E2eForm 'Click after delay'
                 Invoke-E2eButton $ctx.Form 'Record click'
-                (Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Click a mouse button' } -TimeoutMs 3000) | Should -Not -BeNullOrEmpty
+                (Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Click a mouse button' } -TimeoutMs 3000) | Should -Not -BeNullOrEmpty -Because "Record click must ask for a click within 3 s (the form says: $(Get-E2eFormText $ctx.Form))"
                 $b = $ctx.Run.Standins['B']
                 $r = Get-WindowRect $b.Hwnd
                 $x = $r.X + 200; $y = $r.Y + 110
-                Send-E2eClick $x $y
-                (Wait-E2eCondition { Get-E2eStatusText $ctx.Form 'Captured' } -TimeoutMs 3000) | Should -Be "Captured Left click at $x, $y."
+                # The button is held until the form says that it has the click: both forms look for a
+                # held button every 10 ms, and on a slow machine a press of a fixed length can fall
+                # between two looks (a person holds a button far longer than the test's 30 ms).
+                Send-E2eClick $x $y -Until { Get-E2eStatusText $ctx.Form 'Captured' }
+                Get-E2eStatusText $ctx.Form 'Captured' | Should -Be "Captured Left click at $x, $y." -Because "the form records a click held at the pointer (the form says: $(Get-E2eFormText $ctx.Form); in front: $(Get-E2eForegroundText); the pointer is at $([OmbE2e.Input]::MousePosition() -join ', '))"
                 $mark = Get-E2eStandinMark $b
                 Set-ControlText (Get-E2eEdits $ctx.Form)[0] '0'
                 Wait-ScreenChange

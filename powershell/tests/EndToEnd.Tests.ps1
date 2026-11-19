@@ -55,21 +55,36 @@ BeforeAll {
     }
 }
 
+# The pacing is a rule about two numbers: how long ago the screen last changed, and the floor. These
+# tests hand the rule its clock (how long ago) and look at what it asks Wait-Pump for. They do not live
+# through the time and measure it: a slow machine stretches that, and a test that measures it fails
+# there for no fault of the rule.
 Describe 'End-to-end pacing' -Tag EndToEnd {
-    It 'keeps at least 350 ms between two changes of the screen' {
+    BeforeEach { Mock Wait-Pump { } }
+    AfterEach { $script:E2eChangeClock = $null }
+
+    It 'waits for nothing before the first change, and counts it from then' {
         $script:E2eChangeClock = $null
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $at = foreach ($i in 1..4) { Wait-ScreenChange; $sw.ElapsedMilliseconds }
-        for ($i = 1; $i -lt $at.Count; $i++) { ($at[$i] - $at[$i - 1]) | Should -BeGreaterOrEqual 350 }
-        $at[0] | Should -BeLessThan 100 -Because 'the first change waits for nothing'
+        Wait-ScreenChange
+        Should -Invoke Wait-Pump -Times 0 -Exactly
+        $script:E2eChangeClock.IsRunning | Should -BeTrue
     }
-    It 'counts a change that was seen to happen, so the next one keeps its distance from it' {
+    It 'waits for what is left of 350 ms since the last change' {
+        $script:E2eChangeClock = [pscustomobject]@{ ElapsedMilliseconds = 120 }
         Wait-ScreenChange
-        Wait-Pump 200
+        Should -Invoke Wait-Pump -Times 1 -Exactly -ParameterFilter { $Milliseconds -eq 230 }
+        $script:E2eChangeClock.IsRunning | Should -BeTrue -Because 'the change is counted from when it is made'
+    }
+    It 'waits for nothing when the last change is <Ago> ms ago' -ForEach @(@{ Ago = 350 }, @{ Ago = 5000 }) {
+        $script:E2eChangeClock = [pscustomobject]@{ ElapsedMilliseconds = $Ago }
+        Wait-ScreenChange
+        Should -Invoke Wait-Pump -Times 0 -Exactly
+    }
+    It 'counts a change that was seen to happen, without waiting, so the next one keeps its distance from it' {
+        $script:E2eChangeClock = [pscustomobject]@{ ElapsedMilliseconds = 5000 }
         Wait-ScreenChange -Observed
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        Wait-ScreenChange
-        $sw.ElapsedMilliseconds | Should -BeGreaterOrEqual 340
+        Should -Invoke Wait-Pump -Times 0 -Exactly
+        $script:E2eChangeClock.IsRunning | Should -BeTrue -Because 'the change that was seen is the last one now'
     }
 }
 

@@ -310,17 +310,19 @@ function Assert-E2eTime {
 }
 
 # Calls Condition about every 50 ms until it returns something other than $null or $false, and returns
-# that; $null when TimeoutMs pass first. A wait that is met only after two thirds of its limit is noted
-# (Add-E2eSlowWait), and the run lists those at its end.
+# that; $null when TimeoutMs pass first. The limit is time spent waiting: it runs from the end of the
+# first look, and the first look is always followed by another, however long it took (the first one in
+# a process can take longer than a short limit). A wait that is met only after two thirds of its limit
+# is noted (Add-E2eSlowWait), and the run lists those at its end.
 function Wait-E2eCondition {
     param([Parameter(Mandatory)][scriptblock]$Condition, [int]$TimeoutMs = 5000, [int]$EveryMs = 50)
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $sw = [System.Diagnostics.Stopwatch]::new()
     while ($true) {
         Assert-E2eTime
         $value = & $Condition
         if ($null -ne $value -and $value -isnot [bool]) { Add-E2eSlowWait $sw.ElapsedMilliseconds $TimeoutMs; return $value }
         if ($value -is [bool] -and $value) { Add-E2eSlowWait $sw.ElapsedMilliseconds $TimeoutMs; return $true }
-        if ($sw.ElapsedMilliseconds -ge $TimeoutMs) { return $null }
+        if (-not $sw.IsRunning) { $sw.Start() } elseif ($sw.ElapsedMilliseconds -ge $TimeoutMs) { return $null }
         Wait-Pump $EveryMs
     }
 }

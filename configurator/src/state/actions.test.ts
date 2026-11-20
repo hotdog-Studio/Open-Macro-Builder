@@ -4,6 +4,7 @@ import { ConflictError } from '../core/folder/textFile'
 import { MemoryFolder } from '../core/folder/memory'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
 import { SETTINGS_PATH } from '../core/settings'
+import { MANIFEST_PATH, readManifest } from '../core/update/manifest'
 import type { LangId } from '../core/languages'
 import type { Platform } from '../platform/types'
 import { writeConfig } from '../core/config/write'
@@ -1003,6 +1004,169 @@ describe('command files', () => {
       expect(await deleting).toBeNull()
       expect(h.state().screen).toBe('open')
       expect(h.folder.text(MINE)).toBeNull()
+    })
+  })
+
+  describe('the manifest and the shared command files', () => {
+    const SSH_PS = 'powershell/commands/custom/ssh.ps1'
+    const SSH_AHK = 'ahk/commands/custom/ssh.ahk'
+    const OTHER_PS = 'powershell/commands/custom/other.ps1'
+    const PS_TEXT = 'function Ssh-Open {\n}\n'
+    const AHK_TEXT = 'Ssh(Macro)\n{\n}\n'
+    const shared = {
+      [SSH_PS]: PS_TEXT,
+      [OTHER_PS]: 'function Other-Open {\n}\n',
+      [SSH_AHK]: AHK_TEXT,
+    }
+    // Compact on purpose: the app writes it indented, so a rewrite shows as a change of bytes.
+    const manifestOf = (files: string[], deleted: string[] = []) =>
+      JSON.stringify({ version: '1.2.0', files: Object.fromEntries(files.map((p) => [p, 'a'.repeat(64)])), deleted, offered: {} })
+    const withManifest = (text: string) => ({ files: { ...shared, [MANIFEST_PATH]: text } })
+    const deletedIn = async (folder: FolderAccess) => (await readManifest(folder))?.deleted
+
+    it('notes a deleted shared command file as deleted and keeps its entry among the files', async () => {
+      const h = await opened(withManifest(manifestOf([SSH_PS, SSH_AHK, OTHER_PS])))
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBeNull()
+      expect(h.folder.text(SSH_PS)).toBeNull()
+      const manifest = await readManifest(h.folder.inner)
+      expect(manifest?.deleted).toEqual([SSH_PS])
+      expect(Object.keys(manifest?.files ?? {})).toEqual([SSH_AHK, OTHER_PS, SSH_PS])
+    })
+
+    it('notes the path as it was deleted when the manifest spells it in another case', async () => {
+      const h = await opened(withManifest(manifestOf([SSH_PS.toUpperCase()])))
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBeNull()
+      expect(await deletedIn(h.folder.inner)).toEqual([SSH_PS])
+    })
+
+    it.each([
+      ['a file the manifest does not name (the person\'s own)', MINE, manifestOf([SSH_PS])],
+      ['a file the manifest already has among the deleted, in another case', SSH_PS, manifestOf([SSH_PS], [SSH_PS.toUpperCase()])],
+    ])('leaves the manifest byte for byte after deleting %s', async (_what, path, text) => {
+      const h = await opened({ files: { ...shared, ...withMine.files, [MANIFEST_PATH]: text } })
+      expect(await h.actions.deleteCommandFile(path)).toBeNull()
+      expect(h.folder.text(path)).toBeNull()
+      expect(h.folder.text(MANIFEST_PATH)).toBe(text)
+      expect(h.folder.writes).not.toContain(MANIFEST_PATH)
+    })
+
+    it('makes no manifest for a folder without one', async () => {
+      const h = await opened({ files: shared })
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBeNull()
+      expect(h.folder.text(MANIFEST_PATH)).toBeNull()
+    })
+
+    it('does not rewrite a manifest it cannot read', async () => {
+      const h = await opened({ files: { ...shared, [MANIFEST_PATH]: '{"version": 3' } })
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBeNull()
+      expect(h.folder.text(MANIFEST_PATH)).toBe('{"version": 3')
+    })
+
+    it('leaves the manifest as it was when the delete fails', async () => {
+      const text = manifestOf([SSH_PS])
+      const h = await opened(withManifest(text))
+      h.folder.onRemove = () => {
+        throw new Error('The file is locked.')
+      }
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBe(`${SSH_PS} was not deleted: The file is locked.`)
+      expect(h.folder.text(MANIFEST_PATH)).toBe(text)
+    })
+
+    it('notes both deletes when two are started together', async () => {
+      const h = await opened(withManifest(manifestOf([SSH_PS, OTHER_PS])))
+      const hold = gate()
+      let first = true
+      h.folder.onRead = async (path) => {
+        if (path !== MANIFEST_PATH || !first) return
+        first = false
+        // The manifest as it is now, delivered late: what a read that overlaps another change holds.
+        const bytes = await h.folder.inner.readBytes(path)
+        await hold.wait
+        return bytes
+      }
+      const both = Promise.all([h.actions.deleteCommandFile(SSH_PS), h.actions.deleteCommandFile(OTHER_PS)])
+      await vi.waitFor(() => expect(h.folder.text(OTHER_PS)).toBeNull())
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      hold.open()
+      expect(await both).toEqual([null, null])
+      expect(await deletedIn(h.folder.inner)).toEqual([OTHER_PS, SSH_PS])
+    })
+
+    it.each([
+      ['read', 'onRead'],
+      ['written', 'onWrite'],
+    ] as const)('still deletes the file, and says the next update will offer it again, when the manifest cannot be %s', async (_how, hook) => {
+      const text = manifestOf([SSH_PS])
+      const h = await opened(withManifest(text))
+      h.folder[hook] = (path) => {
+        if (path === MANIFEST_PATH) throw new Error('The disk is full.')
+      }
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBe(
+        `${MANIFEST_PATH} was not updated: The disk is full. The next update of the scripts will offer ${SSH_PS} again.`,
+      )
+      expect(h.folder.text(SSH_PS)).toBeNull()
+      expect(h.edit().commandFiles.some((f) => f.file.path === SSH_PS)).toBe(false)
+      expect(h.folder.text(MANIFEST_PATH)).toBe(text)
+    })
+
+    describe('creating the file again', () => {
+      const FRESH_PS = 'powershell/commands/custom/fresh.ps1'
+      const FRESH_AHK = 'ahk/commands/custom/fresh.ahk'
+      const request: { group: 'shared'; name: string; langs: LangId[] } = { group: 'shared', name: 'fresh', langs: ['ahk', 'ps'] }
+
+      it('takes both of its paths out of the deleted files, and nothing else', async () => {
+        const kept = 'powershell/commands/custom/gone.ps1'
+        const h = await opened({
+          files: { [MANIFEST_PATH]: manifestOf([FRESH_AHK, FRESH_PS, kept], [FRESH_AHK, FRESH_PS.toUpperCase(), kept]) },
+        })
+        expect(await h.actions.createCommandFiles(request)).toBeNull()
+        expect(h.folder.text(FRESH_PS)).not.toBeNull()
+        expect(h.folder.text(FRESH_AHK)).not.toBeNull()
+        expect(await deletedIn(h.folder.inner)).toEqual([kept])
+      })
+
+      it('brings a file back after it was deleted in the Commands tab', async () => {
+        const h = await opened(withManifest(manifestOf([SSH_AHK, SSH_PS])))
+        await h.actions.deleteCommandFile(SSH_AHK)
+        await h.actions.deleteCommandFile(SSH_PS)
+        expect(await deletedIn(h.folder.inner)).toEqual([SSH_AHK, SSH_PS])
+        expect(await h.actions.createCommandFiles({ group: 'shared', name: 'ssh', langs: ['ahk', 'ps'] })).toBeNull()
+        expect(await deletedIn(h.folder.inner)).toEqual([])
+      })
+
+      it('leaves the manifest byte for byte when its file is not among the deleted', async () => {
+        const text = manifestOf([FRESH_PS], ['powershell/commands/custom/gone.ps1'])
+        const h = await opened({ files: { [MANIFEST_PATH]: text } })
+        expect(await h.actions.createCommandFiles(request)).toBeNull()
+        expect(h.folder.text(MANIFEST_PATH)).toBe(text)
+        expect(h.folder.writes).not.toContain(MANIFEST_PATH)
+      })
+
+      it('makes no manifest for a folder without one', async () => {
+        const h = await opened()
+        expect(await h.actions.createCommandFiles(request)).toBeNull()
+        expect(h.folder.text(MANIFEST_PATH)).toBeNull()
+      })
+
+      it('also takes a file made again by createMissingFile out of the deleted files', async () => {
+        const h = await opened({ files: { ...withMine.files, [MANIFEST_PATH]: manifestOf([FRESH_AHK], [FRESH_AHK]) } })
+        expect(await h.actions.createMissingFile('shared:custom/fresh', 'ahk')).toBeNull()
+        expect(await deletedIn(h.folder.inner)).toEqual([])
+      })
+
+      it('still creates the files, and says the manifest was not updated, when it cannot be written', async () => {
+        const text = manifestOf([FRESH_PS], [FRESH_PS])
+        const h = await opened({ files: { [MANIFEST_PATH]: text } })
+        h.folder.onWrite = (path) => {
+          if (path === MANIFEST_PATH) throw new Error('The disk is full.')
+        }
+        expect(await h.actions.createCommandFiles({ ...request, langs: ['ps'] })).toBe(
+          `${MANIFEST_PATH} was not updated: The disk is full.`,
+        )
+        expect(h.folder.text(FRESH_PS)).not.toBeNull()
+        expect(h.edit().commandFiles.some((f) => f.file.path === FRESH_PS)).toBe(true)
+        expect(h.folder.text(MANIFEST_PATH)).toBe(text)
+      })
     })
   })
 })

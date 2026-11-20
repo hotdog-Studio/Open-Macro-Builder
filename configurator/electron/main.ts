@@ -28,16 +28,17 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // The page asks before closing or reloading while it has unsaved edits (useUnsavedGuard);
-  // Electron shows no question of its own, so ask here. Leave lets the page go.
+  // The page asks before closing or reloading while it has unsaved edits or an update of the scripts
+  // runs (useUnsavedGuard); Electron shows no question of its own, so ask here, in words true of both.
+  // Leave lets the page go.
   win.webContents.on('will-prevent-unload', (event) => {
     const choice = dialog.showMessageBoxSync(win, {
       type: 'question',
       buttons: ['Leave', 'Stay'],
       defaultId: 1,
       cancelId: 1,
-      message: 'You have unsaved changes.',
-      detail: 'Leave without saving?',
+      message: 'You have unsaved changes, or the scripts are being updated.',
+      detail: 'Leave anyway? Unsaved changes are lost, and an update stops part-way.',
     })
     if (choice === 0) event.preventDefault()
   })

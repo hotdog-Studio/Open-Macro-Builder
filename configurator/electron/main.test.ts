@@ -222,6 +222,15 @@ describe('unsaved changes', () => {
     expect(options).toMatchObject({ buttons: ['Leave', 'Stay'], defaultId: 1, cancelId: 1 })
     expect(options.buttons[options.defaultId]).toBe('Stay')
   })
+
+  it('asks in words that are true for unsaved changes and for an update of the scripts under way', async () => {
+    await unload(1)
+    const [, options] = electron.messageBox.mock.calls[0]
+    expect(options).toMatchObject({
+      message: 'You have unsaved changes, or the scripts are being updated.',
+      detail: 'Leave anyway? Unsaved changes are lost, and an update stops part-way.',
+    })
+  })
 })
 
 describe('page problems', () => {

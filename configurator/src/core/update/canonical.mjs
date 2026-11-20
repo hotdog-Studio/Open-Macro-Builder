@@ -54,6 +54,8 @@ function withoutSharedIncludes(data) {
  * and ahk/config.ahk leaves out the lines that include a shared command file (the app adds those
  * itself when someone makes a command, so they say nothing about the app's own copy).
  * Pictures are compared as they are. Paths are compared ignoring case.
+ * For a picture the result is the very array given, not a copy; for any other path it is a new one.
+ * Do not change the result in place.
  */
 export function canonicalBytes(path, data) {
   if (PICTURE.test(path)) return data

@@ -39,25 +39,26 @@ describe('listStarterFiles', () => {
 const roots = []
 const aText = 'MsgBox "a"\r\n'
 
-/** A small tree holding files the starter takes and files it must skip. */
-function madeUpTree() {
+/** A folder holding exactly these files ({ path: content }). */
+function treeOf(files) {
   const root = mkdtempSync(join(tmpdir(), 'omb-starter-'))
   roots.push(root)
-  const put = (rel, content = rel) => {
+  for (const [rel, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, rel)), { recursive: true })
     writeFileSync(join(root, rel), content)
   }
-  put('config.json', '{}')
-  put('ahk/a.ahk', aText)
-  put('ahk/tests/t.ahk')
-  put('ahk/x/local/p.ahk')
-  put('img/a.png', Buffer.from([0, 255, 128, 10, 13]))
-  put('img/a.xcf')
-  put('powershell/b.ps1')
-  put('powershell/b.ps1.bak')
-  put('powershell/c.omb-tmp')
-  put('qmk/q.json')
   return root
+}
+
+/** A small tree holding files the starter takes and files it must skip. */
+function madeUpTree() {
+  const named = (...paths) => Object.fromEntries(paths.map((rel) => [rel, rel]))
+  return treeOf({
+    ...named('ahk/tests/t.ahk', 'ahk/x/local/p.ahk', 'img/a.xcf', 'powershell/b.ps1', 'powershell/b.ps1.bak', 'powershell/c.omb-tmp', 'qmk/q.json'),
+    'config.json': '{}',
+    'ahk/a.ahk': aText,
+    'img/a.png': Buffer.from([0, 255, 128, 10, 13]),
+  })
 }
 
 afterAll(() => {
@@ -94,15 +95,29 @@ describe('starterIndex', () => {
     for (const hash of Object.values(index.files)) expect(hash).toMatch(/^[0-9a-f]{64}$/)
   })
 
-  it('gives a CRLF text file the fingerprint the page gives the same file with LF', async () => {
-    // The build hashes with node:crypto, the page with hashBytes (Web Crypto): they have to agree.
-    const index = starterIndex(madeUpTree(), '1.0.6')
-    expect(index.files['ahk/a.ahk']).toBe(await fingerprint('ahk/a.ahk', new TextEncoder().encode('MsgBox "a"\n')))
+  // The build hashes with node:crypto, the page with hashBytes (Web Crypto): they have to agree.
+  // A tree of its own, so the tests above keep the paths they pin.
+  const hashedTree = () =>
+    treeOf({
+      'config.json': '{}',
+      'ahk/crlf.ahk': 'a\r\nb\r\n',
+      'powershell/lf.ps1': 'a\nb\n',
+      'img/ends-crlf.png': Buffer.from([1, 13, 10]),
+      'img/ends-lf.ico': Buffer.from([10, 13]),
+    })
+
+  it.each([
+    ['a CRLF text file, the same file with LF', 'ahk/crlf.ahk', 'a\nb\n'],
+    ['an LF text file, its own bytes', 'powershell/lf.ps1', 'a\nb\n'],
+  ])('gives %s the fingerprint the page gives', async (_name, path, lfText) => {
+    expect(starterIndex(hashedTree(), '1.0.6').files[path]).toBe(await fingerprint(path, new TextEncoder().encode(lfText)))
   })
 
-  it('gives a picture the fingerprint of its bytes', async () => {
-    const index = starterIndex(madeUpTree(), '1.0.6')
-    expect(index.files['img/a.png']).toBe(await fingerprint('img/a.png', Uint8Array.of(0, 255, 128, 10, 13)))
+  it.each([
+    ['a picture holding a CRLF', 'img/ends-crlf.png', [1, 13, 10]],
+    ['a picture holding a CR and an LF', 'img/ends-lf.ico', [10, 13]],
+  ])('gives %s the fingerprint of its bytes', async (_name, path, picture) => {
+    expect(starterIndex(hashedTree(), '1.0.6').files[path]).toBe(await fingerprint(path, Uint8Array.from(picture)))
   })
 
   it('leaves the include lines of the real ahk/config.ahk out of its fingerprint', async () => {

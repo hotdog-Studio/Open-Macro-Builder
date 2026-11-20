@@ -8,7 +8,8 @@ import { updateSentence } from '../state/updateActions'
  */
 export function UpdateNotice() {
   const { state, actions } = useEditor()
-  if (!state.update || state.update.result !== null) return null
+  // No bar without an offer, nor once its update has run.
+  if (state.update?.result !== null) return null
   // An <output> is a status (a polite live region). It is inserted already filled, which some screen
   // readers do not announce.
   return (

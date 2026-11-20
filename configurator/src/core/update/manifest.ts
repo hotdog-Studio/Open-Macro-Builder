@@ -1,3 +1,4 @@
+import { compareText } from '../folder/path'
 import type { FolderAccess } from '../folder/types'
 
 /** The record of what a setup put into a folder, in the folder's root. */
@@ -55,19 +56,21 @@ export async function readManifest(folder: FolderAccess): Promise<Manifest | nul
   return parseManifest(text)
 }
 
+// The paths are sorted by code unit (compareText), never by locale (localeCompare): the file must come out
+// the same on every machine.
 const sortedRecord = (record: Record<string, string>): Record<string, string> =>
   Object.fromEntries(
     Object.keys(record)
-      .sort()
+      .sort(compareText)
       .map((path) => [path, record[path]]),
   )
 
-/** Writes the manifest as JSON indented by two spaces with a final newline, the paths sorted. */
+/** Writes the manifest as JSON indented by two spaces with a final newline, the paths sorted by code unit. */
 export async function writeManifest(folder: FolderAccess, manifest: Manifest): Promise<void> {
   const ordered: Manifest = {
     version: manifest.version,
     files: sortedRecord(manifest.files),
-    deleted: [...manifest.deleted].sort(),
+    deleted: [...manifest.deleted].sort(compareText),
     offered: sortedRecord(manifest.offered),
   }
   await folder.writeBytes(MANIFEST_PATH, new TextEncoder().encode(`${JSON.stringify(ordered, null, 2)}\n`))

@@ -2,6 +2,7 @@ import { execFile, spawn as nodeSpawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join, win32 } from 'node:path'
 import type { LangId } from '../src/core/languages'
+import { messageOf } from '../src/core/message'
 
 // Finds the running macropad and starts it again. No electron imports here, so the
 // module can be unit-tested in plain Node.
@@ -135,7 +136,7 @@ export function listProcesses(): Promise<ProcInfo[]> {
         try {
           resolve(parseProcessList(stdout))
         } catch (e) {
-          reject(e instanceof Error ? e : new Error(String(e)))
+          reject(e instanceof Error ? e : new Error(messageOf(e)))
         }
       },
     )

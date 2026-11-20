@@ -31,15 +31,18 @@ const includeText = (title: string, ...listed: string[]) =>
 const WINDOWS_FILE = 'ahk/commands/windows.ahk'
 const CHROME_FILE = 'ahk/commands/custom/chrome.ahk'
 const NEW_FILE = 'ahk/commands/custom/new.ahk'
+const MINE_FILE = 'ahk/commands/custom/mine.ahk'
 const GONE_FILE = 'ahk/commands/gone.ahk'
+const JSON_FILE = 'ahk/lib/json.ahk'
 const SSH_FILE = 'powershell/commands/custom/ssh.ps1'
+const OLD_PS1 = 'powershell/commands/old.ps1'
 
 /** The app's copy (1.0.6), as texts. */
 const APP: Texts = {
   'config.json': 'config 1.0.6\n',
   [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, CHROME, NEW),
-  'ahk/lib/json.ahk': 'json 1.0.6\n',
-  'ahk/commands/windows.ahk': 'windows 1.0.6\n',
+  [JSON_FILE]: 'json 1.0.6\n',
+  [WINDOWS_FILE]: 'windows 1.0.6\n',
   [CHROME_FILE]: 'chrome 1.0.6\n',
   /** New in 1.0.6: no release shipped it. */
   [NEW_FILE]: 'new 1.0.6\n',
@@ -50,19 +53,21 @@ const APP: Texts = {
 const OLD: Texts = {
   'config.json': 'config 1.0.5\n',
   [INCLUDE_FILE]: includeText('; config 1.0.5', WINDOWS, CHROME, GONE),
-  'ahk/lib/json.ahk': 'json 1.0.5\n',
-  'ahk/commands/windows.ahk': 'windows 1.0.5\n',
+  [JSON_FILE]: 'json 1.0.5\n',
+  [WINDOWS_FILE]: 'windows 1.0.5\n',
   [CHROME_FILE]: 'chrome 1.0.5\n',
   /** Gone in 1.0.6, like the next one. */
   [GONE_FILE]: 'gone 1.0.5\n',
   [SSH_FILE]: 'ssh 1.0.5\n',
-  'powershell/commands/old.ps1': 'old 1.0.5\n',
+  [OLD_PS1]: 'old 1.0.5\n',
 }
 
 /** An include file the person changed, listing what 1.0.5 shipped. */
 const MY_INCLUDE: Changes = { [INCLUDE_FILE]: includeText('; my config', WINDOWS, CHROME, GONE) }
+/** On a folder 1.0.5 set up: the app's copy, and nothing the app no longer has. */
+const UP_TO_DATE: Changes = { ...APP, [GONE_FILE]: null, [OLD_PS1]: null }
 
-const FILES: StarterFile[] =Object.entries(APP).map(([path, text]) => ({ path, data: encode(text) }))
+const FILES: StarterFile[] = Object.entries(APP).map(([path, text]) => ({ path, data: encode(text) }))
 
 /** Each path's text turned into its fingerprint. */
 async function printsOf(texts: Texts): Promise<Record<string, string>> {
@@ -126,8 +131,26 @@ async function guardedOf(folder: FolderAccess): Promise<GuardedFolder> {
   return new GuardedFolder(folder, mayRead)
 }
 
+/** The next check of the folder, by the same app. */
+async function nextPlan(folder: FolderAccess): Promise<UpdatePlan> {
+  const { index, known } = await FIXTURE
+  return planUpdate(folder, index, known)
+}
+
 const NO_PICKS: UpdatePicks = { replaceChanged: [], restoreDeleted: [] }
 const NOTHING_DONE: UpdateDone = { replaced: [], added: [], removed: [], kept: [], backups: [] }
+
+interface UpdateOptions {
+  picks?: UpdatePicks
+  /** Made between the plan and the update. */
+  later?: Changes
+  files?: StarterFile[]
+  index?: StarterIndex
+  known?: KnownReleases
+  /** A call to fail, through GuardedFolder's `fails`, with `failure`. */
+  fails?: GuardedFolder['fails']
+  failure?: unknown
+}
 
 interface Run {
   plan: UpdatePlan
@@ -136,11 +159,14 @@ interface Run {
 }
 
 /** Plans the update of `folder`, makes the `later` changes, then carries the plan out through a GuardedFolder. */
-async function update(folder: FolderAccess, picks = NO_PICKS, later: Changes = {}, files = FILES): Promise<Run> {
+async function update(folder: FolderAccess, options: UpdateOptions = {}): Promise<Run> {
+  const { picks = NO_PICKS, later = {}, files = FILES, fails = null, failure = new Error('disk full') } = options
   const { index, known } = await FIXTURE
-  const plan = await planUpdate(folder, index, known)
+  const plan = await planUpdate(folder, options.index ?? index, options.known ?? known)
   await change(folder, later)
   const guarded = await guardedOf(folder)
+  guarded.fails = fails
+  guarded.failure = failure
   return { plan, guarded, result: await applyUpdate(guarded, plan, picks, files) }
 }
 
@@ -160,6 +186,10 @@ async function filesUnder(folder: FolderAccess, dir: string): Promise<string[]> 
 const ahkCommandFilesIn = async (folder: FolderAccess) =>
   (await filesUnder(folder, 'ahk/commands')).filter((path) => path.toLowerCase().endsWith('.ahk'))
 
+/** Whether the folder's include file lists exactly the AutoHotkey command files it holds. */
+const listsWhatItHolds = async (folder: MemoryFolder) =>
+  listsExactly(folder.text(INCLUDE_FILE) ?? '', await ahkCommandFilesIn(folder))
+
 const LISTS = ['replaced', 'added', 'removed', 'kept', 'backups'] as const
 /** The lists of the result that name `path`. */
 const listsHolding = (result: UpdateResult, path: string) => LISTS.filter((list) => result[list].includes(path))
@@ -171,35 +201,35 @@ const listsHolding = (result: UpdateResult, path: string) => LISTS.filter((list)
  */
 const EVERY: Changes = {
   [INCLUDE_FILE]: includeText('; config 1.0.5', WINDOWS, GONE, MINE),
-  'ahk/lib/json.ahk': 'my json\n',
-  'ahk/commands/windows.ahk': 'my windows\n',
+  [JSON_FILE]: 'my json\n',
+  [WINDOWS_FILE]: 'my windows\n',
   [CHROME_FILE]: null,
-  'ahk/commands/custom/mine.ahk': 'mine\n',
+  [MINE_FILE]: 'mine\n',
   [SSH_FILE]: null,
-  'powershell/commands/old.ps1': 'my old\n',
+  [OLD_PS1]: 'my old\n',
   'local/configurator.json': '{}\n',
   'local/ahk/commands.ahk': 'x\n',
 }
-const EVERY_PICKS: UpdatePicks = { replaceChanged: ['ahk/commands/windows.ahk'], restoreDeleted: [SSH_FILE] }
+const EVERY_PICKS: UpdatePicks = { replaceChanged: [WINDOWS_FILE], restoreDeleted: [SSH_FILE] }
 const EVERY_DONE: UpdateDone = {
-  replaced: ['config.json', 'ahk/commands/windows.ahk', INCLUDE_FILE],
+  replaced: ['config.json', WINDOWS_FILE, INCLUDE_FILE],
   added: [NEW_FILE, SSH_FILE],
   removed: [GONE_FILE],
-  kept: ['ahk/lib/json.ahk', 'powershell/commands/old.ps1'],
-  backups: ['ahk/commands/windows.ahk.bak'],
+  kept: [JSON_FILE, OLD_PS1],
+  backups: [`${WINDOWS_FILE}.bak`],
 }
 
 describe('applyUpdate: a plan with every kind of entry', () => {
   it('reads and lists first, then writes the backups, the files, ahk/config.ahk, the removals, and the manifest last', async () => {
-    const { plan, guarded } = await update(await folderOf(EVERY), EVERY_PICKS)
+    const { plan, guarded } = await update(await folderOf(EVERY), { picks: EVERY_PICKS })
     expect(plan.list).toBe('replace')
     const changing = changesIn(guarded.calls)
     expect(guarded.calls.slice(guarded.calls.indexOf(changing[0]))).toEqual(changing)
     expect(changing).toEqual([
-      { op: 'writeBytes', path: 'ahk/commands/windows.ahk.bak' },
+      { op: 'writeBytes', path: `${WINDOWS_FILE}.bak` },
       { op: 'writeBytes', path: NEW_FILE },
       { op: 'writeBytes', path: 'config.json' },
-      { op: 'writeBytes', path: 'ahk/commands/windows.ahk' },
+      { op: 'writeBytes', path: WINDOWS_FILE },
       { op: 'writeBytes', path: SSH_FILE },
       { op: 'writeBytes', path: INCLUDE_FILE },
       { op: 'remove', path: GONE_FILE },
@@ -208,22 +238,22 @@ describe('applyUpdate: a plan with every kind of entry', () => {
   })
 
   it('says what it replaced, added, removed, kept and backed up', async () => {
-    const { result } = await update(await folderOf(EVERY), EVERY_PICKS)
+    const { result } = await update(await folderOf(EVERY), { picks: EVERY_PICKS })
     expect(result).toEqual({ ok: true, ...EVERY_DONE })
   })
 
-  it("keeps the person's bytes of a ticked changed file in its .bak, and writes the app's copy at its path", async () => {
+  it("keeps the person's bytes of a ticked changed file in its backup, and writes the app's copy at its path", async () => {
     const folder = await folderOf(EVERY)
-    await update(folder, EVERY_PICKS)
-    expect(folder.text('ahk/commands/windows.ahk.bak')).toBe('my windows\n')
-    expect(folder.text('ahk/commands/windows.ahk')).toBe(APP['ahk/commands/windows.ahk'])
-    expect(folder.text('ahk/lib/json.ahk')).toBe('my json\n')
-    expect(folder.text('ahk/lib/json.ahk.bak')).toBeNull()
+    await update(folder, { picks: EVERY_PICKS })
+    expect(folder.text(`${WINDOWS_FILE}.bak`)).toBe('my windows\n')
+    expect(folder.text(WINDOWS_FILE)).toBe(APP[WINDOWS_FILE])
+    expect(folder.text(JSON_FILE)).toBe('my json\n')
+    expect(folder.text(`${JSON_FILE}.bak`)).toBeNull()
   })
 
   it('brings a ticked deleted file back and takes it out of deleted; an unticked one stays deleted and stays in it', async () => {
     const folder = await folderOf(EVERY)
-    await update(folder, EVERY_PICKS)
+    await update(folder, { picks: EVERY_PICKS })
     expect(folder.text(SSH_FILE)).toBe(APP[SSH_FILE])
     expect(folder.text(CHROME_FILE)).toBeNull()
     expect((await readManifest(folder))?.deleted).toEqual([CHROME_FILE])
@@ -231,32 +261,47 @@ describe('applyUpdate: a plan with every kind of entry', () => {
 
   it('gives a folder without a manifest one, naming the deleted command files that were not ticked', async () => {
     const folder = await folderOf(EVERY)
-    const { plan } = await update(folder, EVERY_PICKS)
+    const { plan } = await update(folder, { picks: EVERY_PICKS })
     expect(plan.manifest).toBeNull()
     expect(await readManifest(folder)).toEqual({
       version: '1.0.6',
       files: {
         [INCLUDE_FILE]: await appPrint(INCLUDE_FILE),
         [NEW_FILE]: await appPrint(NEW_FILE),
-        'ahk/commands/windows.ahk': await appPrint('ahk/commands/windows.ahk'),
+        [WINDOWS_FILE]: await appPrint(WINDOWS_FILE),
         'config.json': await appPrint('config.json'),
         [SSH_FILE]: await appPrint(SSH_FILE),
       },
       deleted: [CHROME_FILE],
-      offered: { 'ahk/lib/json.ahk': await appPrint('ahk/lib/json.ahk') },
+      offered: { [JSON_FILE]: await appPrint(JSON_FILE) },
     })
   })
 
   it('lists exactly the AutoHotkey command files the folder holds afterwards', async () => {
     const folder = await folderOf(EVERY)
-    await update(folder, EVERY_PICKS)
+    await update(folder, { picks: EVERY_PICKS })
     expect(folder.text(INCLUDE_FILE)).toBe(includeText('; config 1.0.6', WINDOWS, NEW, MINE))
-    expect(listsExactly(folder.text(INCLUDE_FILE) ?? '', await ahkCommandFilesIn(folder))).toBe(true)
+    expect(await listsWhatItHolds(folder)).toBe(true)
+  })
+
+  it('leaves a folder the next check finds up to date, with nothing new to offer', async () => {
+    const folder = await folderOf(EVERY)
+    await update(folder, { picks: EVERY_PICKS })
+    expect(await nextPlan(folder)).toMatchObject({
+      replace: [],
+      add: [],
+      remove: [],
+      changed: [JSON_FILE],
+      deleted: [CHROME_FILE],
+      keptRemoved: [OLD_PS1],
+      list: 'none',
+      news: false,
+    })
   })
 
   it('reads, writes and removes nothing under local/', async () => {
     const folder = await folderOf(EVERY)
-    const { guarded } = await update(folder, EVERY_PICKS)
+    const { guarded } = await update(folder, { picks: EVERY_PICKS })
     expect(guarded.refused).toEqual([])
     expect(guarded.calls.filter((call) => call.path.toLowerCase().startsWith('local'))).toEqual([])
     expect(folder.text('local/configurator.json')).toBe('{}\n')
@@ -265,14 +310,14 @@ describe('applyUpdate: a plan with every kind of entry', () => {
 
   it('takes a pick in any case, and ignores one that names no changed or deleted path', async () => {
     const picks: UpdatePicks = {
-      replaceChanged: ['AHK/Commands/Windows.AHK', 'config.json', 'powershell/commands/old.ps1'],
-      restoreDeleted: ['Powershell/Commands/Custom/SSH.ps1', 'ahk/lib/json.ahk'],
+      replaceChanged: ['AHK/Commands/Windows.AHK', 'config.json', OLD_PS1],
+      restoreDeleted: ['Powershell/Commands/Custom/SSH.ps1', JSON_FILE],
     }
     const folder = await folderOf(EVERY)
-    const { result } = await update(folder, picks)
+    const { result } = await update(folder, { picks })
     expect(result).toEqual({ ok: true, ...EVERY_DONE })
-    expect(folder.text('ahk/lib/json.ahk')).toBe('my json\n')
-    expect(folder.text('powershell/commands/old.ps1')).toBe('my old\n')
+    expect(folder.text(JSON_FILE)).toBe('my json\n')
+    expect(folder.text(OLD_PS1)).toBe('my old\n')
     expect(folder.text('config.json.bak')).toBeNull()
   })
 })
@@ -280,17 +325,17 @@ describe('applyUpdate: a plan with every kind of entry', () => {
 describe('applyUpdate: the manifest', () => {
   it("holds the app's fingerprint for each path as the app has it, the old entry and an offer for a kept changed file", async () => {
     const folder = await folderOf(
-      { 'ahk/lib/json.ahk': 'my json\n', [CHROME_FILE]: APP[CHROME_FILE], 'powershell/commands/old.ps1': 'my old\n' },
+      { [JSON_FILE]: 'my json\n', [CHROME_FILE]: APP[CHROME_FILE], [OLD_PS1]: 'my old\n' },
       {
         version: '1.0.5',
-        files: { 'ahk/lib/json.ahk': 'json by 1.0.5-rc\n', [GONE_FILE]: OLD[GONE_FILE], 'powershell/commands/old.ps1': 'old by 1.0.5-rc\n' },
+        files: { [JSON_FILE]: 'json by 1.0.5-rc\n', [GONE_FILE]: OLD[GONE_FILE], [OLD_PS1]: 'old by 1.0.5-rc\n' },
         // Brought back by hand since: the entry goes, as the folder holds the file.
         deleted: [CHROME_FILE],
       },
     )
     const { plan, result } = await update(folder)
-    expect(plan.changed).toEqual(['ahk/lib/json.ahk'])
-    expect(plan.keptRemoved).toEqual(['powershell/commands/old.ps1'])
+    expect(plan.changed).toEqual([JSON_FILE])
+    expect(plan.keptRemoved).toEqual([OLD_PS1])
     expect(result.ok).toBe(true)
     expect(await readManifest(folder)).toEqual({
       version: '1.0.6',
@@ -298,15 +343,23 @@ describe('applyUpdate: the manifest', () => {
         [INCLUDE_FILE]: await appPrint(INCLUDE_FILE),
         [CHROME_FILE]: await appPrint(CHROME_FILE),
         [NEW_FILE]: await appPrint(NEW_FILE),
-        'ahk/commands/windows.ahk': await appPrint('ahk/commands/windows.ahk'),
-        'ahk/lib/json.ahk': await print('ahk/lib/json.ahk', 'json by 1.0.5-rc\n'),
+        [WINDOWS_FILE]: await appPrint(WINDOWS_FILE),
+        [JSON_FILE]: await print(JSON_FILE, 'json by 1.0.5-rc\n'),
         'config.json': await appPrint('config.json'),
-        'powershell/commands/old.ps1': await print('powershell/commands/old.ps1', 'old by 1.0.5-rc\n'),
+        [OLD_PS1]: await print(OLD_PS1, 'old by 1.0.5-rc\n'),
         [SSH_FILE]: await appPrint(SSH_FILE),
       },
       deleted: [],
-      offered: { 'ahk/lib/json.ahk': await appPrint('ahk/lib/json.ahk') },
+      offered: { [JSON_FILE]: await appPrint(JSON_FILE) },
     })
+  })
+
+  it('records the fingerprint of the include file as written', async () => {
+    const folder = await folderOf({ [MINE_FILE]: 'mine\n' })
+    await update(folder)
+    const written = folder.text(INCLUDE_FILE) ?? ''
+    expect(written).toBe(includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE))
+    expect((await readManifest(folder))?.files[INCLUDE_FILE]).toBe(await print(INCLUDE_FILE, written))
   })
 })
 
@@ -316,7 +369,7 @@ describe('applyUpdate: looking again before writing', () => {
     ['to remove', GONE_FILE],
   ])('leaves a file %s that changed after the plan as it is, keeps it, and offers nothing for it', async (_list, path) => {
     const folder = await folderOf()
-    const { guarded, result } = await update(folder, NO_PICKS, { [path]: 'edited after the plan\n' })
+    const { guarded, result } = await update(folder, { later: { [path]: 'edited after the plan\n' } })
     expect(result.ok).toBe(true)
     expect(listsHolding(result, path)).toEqual(['kept'])
     expect(changesIn(guarded.calls).filter((call) => call.path === path)).toEqual([])
@@ -324,12 +377,18 @@ describe('applyUpdate: looking again before writing', () => {
     const manifest = await readManifest(folder)
     expect(manifest?.offered).toEqual({})
     expect(Object.keys(manifest?.files ?? {})).not.toContain(path)
-    expect(listsExactly(folder.text(INCLUDE_FILE) ?? '', await ahkCommandFilesIn(folder))).toBe(true)
+    expect(await listsWhatItHolds(folder)).toBe(true)
+  })
+
+  it('leaves a file kept because it changed after the plan for the next check to offer', async () => {
+    const folder = await folderOf()
+    await update(folder, { later: { 'config.json': 'edited after the plan\n' } })
+    expect(await nextPlan(folder)).toMatchObject({ replace: [], add: [], remove: [], changed: ['config.json'], news: true })
   })
 
   it.each([['config.json'], [INCLUDE_FILE]])('does not write back %s, to replace, gone after the plan, nor name or record it', async (path) => {
     const folder = await folderOf()
-    const { guarded, result } = await update(folder, NO_PICKS, { [path]: null })
+    const { guarded, result } = await update(folder, { later: { [path]: null } })
     expect(result.ok).toBe(true)
     expect(listsHolding(result, path)).toEqual([])
     expect(changesIn(guarded.calls).filter((call) => call.path === path)).toEqual([])
@@ -337,32 +396,34 @@ describe('applyUpdate: looking again before writing', () => {
     expect(Object.keys((await readManifest(folder))?.files ?? {})).not.toContain(path)
   })
 
-  it.each<[string, Changes, string, string[]]>([
-    ['to replace, under an include file written whole', {}, WINDOWS_FILE, [WINDOWS_FILE]],
-    ['to remove, under an include file written whole', {}, GONE_FILE, []],
-    ['to replace, under an include file whose list is adjusted', MY_INCLUDE, WINDOWS_FILE, [WINDOWS_FILE]],
-    ['to remove, under an include file whose list is adjusted', MY_INCLUDE, GONE_FILE, []],
-  ])('leaves a command file %s that went after the plan out of the list, and deleted when the app has it', async (_case, changes, path, deleted) => {
-    const folder = await folderOf(changes)
-    const { result } = await update(folder, NO_PICKS, { [path]: null })
-    expect(result.ok).toBe(true)
-    expect(listsHolding(result, path)).toEqual([])
-    expect(folder.text(path)).toBeNull()
-    expect(listsExactly(folder.text(INCLUDE_FILE) ?? '', await ahkCommandFilesIn(folder))).toBe(true)
-    const { index, known } = await FIXTURE
-    const next = await planUpdate(folder, index, known)
-    expect(next.deleted).toEqual(deleted)
-    expect(next.add).toEqual([])
-  })
+  it.each<{ list: string; include: string; changes: Changes; path: string; deleted: string[] }>([
+    { list: 'replace', include: 'written whole', changes: {}, path: WINDOWS_FILE, deleted: [WINDOWS_FILE] },
+    { list: 'remove', include: 'written whole', changes: {}, path: GONE_FILE, deleted: [] },
+    { list: 'replace', include: 'adjusted', changes: MY_INCLUDE, path: WINDOWS_FILE, deleted: [WINDOWS_FILE] },
+    { list: 'remove', include: 'adjusted', changes: MY_INCLUDE, path: GONE_FILE, deleted: [] },
+  ])(
+    'unlists a command file to $list gone after the plan, under an include file $include, and records one the app has as deleted',
+    async ({ changes, path, deleted }) => {
+      const folder = await folderOf(changes)
+      const { result } = await update(folder, { later: { [path]: null } })
+      expect(result.ok).toBe(true)
+      expect(listsHolding(result, path)).toEqual([])
+      expect(folder.text(path)).toBeNull()
+      expect(await listsWhatItHolds(folder)).toBe(true)
+      const next = await nextPlan(folder)
+      expect(next.deleted).toEqual(deleted)
+      expect(next.add).toEqual([])
+    },
+  )
 
-  const TICK_CHROME: UpdatePicks ={ replaceChanged: [], restoreDeleted: [CHROME_FILE] }
-  it.each<[string, Changes, UpdatePicks, string, string, boolean]>([
-    ['to add that is there now as another copy', {}, NO_PICKS, NEW_FILE, 'theirs\n', true],
-    ["to add that is there now as the app's copy", {}, NO_PICKS, NEW_FILE, APP[NEW_FILE], false],
-    ['deleted and ticked that is there now', { [CHROME_FILE]: null }, TICK_CHROME, CHROME_FILE, 'theirs\n', true],
-  ])('leaves a file %s as it is', async (_case, changes, picks, path, text, kept) => {
+  const TICK_CHROME: UpdatePicks = { replaceChanged: [], restoreDeleted: [CHROME_FILE] }
+  it.each<{ row: string; changes: Changes; picks: UpdatePicks; path: string; text: string; kept: boolean }>([
+    { row: 'to add that is there now as another copy', changes: {}, picks: NO_PICKS, path: NEW_FILE, text: 'theirs\n', kept: true },
+    { row: "to add that is there now as the app's copy", changes: {}, picks: NO_PICKS, path: NEW_FILE, text: APP[NEW_FILE], kept: false },
+    { row: 'deleted and ticked that is there now', changes: { [CHROME_FILE]: null }, picks: TICK_CHROME, path: CHROME_FILE, text: 'theirs\n', kept: true },
+  ])('leaves a file $row as it is', async ({ changes, picks, path, text, kept }) => {
     const folder = await folderOf(changes)
-    const { guarded, result } = await update(folder, picks, { [path]: text })
+    const { guarded, result } = await update(folder, { picks, later: { [path]: text } })
     expect(changesIn(guarded.calls).filter((call) => call.path === path)).toEqual([])
     expect(folder.text(path)).toBe(text)
     expect(listsHolding(result, path)).toEqual(kept ? ['kept'] : [])
@@ -374,112 +435,145 @@ describe('applyUpdate: looking again before writing', () => {
   it.each<[string, string | null, string | null]>([
     ['edited again after the plan', 'edited again\n', 'edited again\n'],
     ['gone after the plan', null, null],
-  ])('replaces a ticked changed file %s, and keeps what is there now in its .bak', async (_case, later, backup) => {
-    const folder = await folderOf({ 'ahk/lib/json.ahk': 'my json\n' })
-    const picks: UpdatePicks = { replaceChanged: ['ahk/lib/json.ahk'], restoreDeleted: [] }
-    const { result } = await update(folder, picks, { 'ahk/lib/json.ahk': later })
-    expect(folder.text('ahk/lib/json.ahk')).toBe(APP['ahk/lib/json.ahk'])
-    expect(folder.text('ahk/lib/json.ahk.bak')).toBe(backup)
-    expect(result.backups).toEqual(backup === null ? [] : ['ahk/lib/json.ahk.bak'])
-    expect(listsHolding(result, 'ahk/lib/json.ahk')).toEqual(['replaced'])
+  ])('replaces a ticked changed file %s, and keeps what is there now in its backup', async (_case, later, backup) => {
+    const folder = await folderOf({ [JSON_FILE]: 'my json\n' })
+    const picks: UpdatePicks = { replaceChanged: [JSON_FILE], restoreDeleted: [] }
+    const { result } = await update(folder, { picks, later: { [JSON_FILE]: later } })
+    expect(folder.text(JSON_FILE)).toBe(APP[JSON_FILE])
+    expect(folder.text(`${JSON_FILE}.bak`)).toBe(backup)
+    expect(result.backups).toEqual(backup === null ? [] : [`${JSON_FILE}.bak`])
+    expect(listsHolding(result, JSON_FILE)).toEqual(['replaced'])
   })
 })
 
+interface IncludeRow {
+  row: string
+  /** The folder 1.0.5 set up, changed so before the plan. */
+  changes?: Changes
+  picks?: UpdatePicks
+  later?: Changes
+  /** The include file's text afterwards. */
+  text: string
+  /** The lists of the result that name it. */
+  lists?: string[]
+  written?: boolean
+}
+
 describe('applyUpdate: the include file', () => {
   const TICK_INCLUDE: UpdatePicks = { replaceChanged: [INCLUDE_FILE], restoreDeleted: [] }
-  const UP_TO_DATE = { ...APP, [GONE_FILE]: null, 'powershell/commands/old.ps1': null }
-  it.each<[string, Changes, UpdatePicks, Changes, string, string[], boolean]>([
-    ['missing: written whole, added', { [INCLUDE_FILE]: null }, NO_PICKS, {}, APP[INCLUDE_FILE], ['added'], true],
-    [
-      "of an earlier body: written whole with the person's own line and without an unticked deleted file's, replaced",
-      { [CHROME_FILE]: null, 'ahk/commands/custom/mine.ahk': 'mine\n' },
-      NO_PICKS,
-      {},
-      includeText('; config 1.0.6', WINDOWS, NEW, MINE),
-      ['replaced'],
-      true,
-    ],
-    [
-      "of an earlier body, the person's own file added after the plan: written whole with its line, replaced",
-      {},
-      NO_PICKS,
-      { 'ahk/commands/custom/mine.ahk': 'mine\n' },
-      includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
-      ['replaced'],
-      true,
-    ],
-    ['changed: its list adjusted, kept', MY_INCLUDE, NO_PICKS, {}, includeText('; my config', WINDOWS, CHROME, NEW), ['kept'], true],
-    ['changed and ticked: written whole, replaced', MY_INCLUDE, TICK_INCLUDE, {}, APP[INCLUDE_FILE], ['replaced'], true],
-    [
-      'of an earlier body changed after the plan: its list adjusted, kept',
-      {},
-      NO_PICKS,
-      { [INCLUDE_FILE]: includeText('; edited', WINDOWS, CHROME, GONE) },
-      includeText('; edited', WINDOWS, CHROME, NEW),
-      ['kept'],
-      true,
-    ],
-    [
-      "up to date, its list missing the person's own file: its list rebuilt, in no list",
-      { ...APP, 'ahk/commands/custom/mine.ahk': 'mine\n' },
-      NO_PICKS,
-      {},
-      includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
-      [],
-      true,
-    ],
-    [
-      'up to date, a deleted file ticked back: its line added, in no list',
-      { ...UP_TO_DATE, [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, NEW), [CHROME_FILE]: null },
-      { replaceChanged: [], restoreDeleted: [CHROME_FILE] },
-      {},
-      includeText('; config 1.0.6', WINDOWS, NEW, CHROME),
-      [],
-      true,
-    ],
-    [
-      'up to date, listing what the folder holds: not written',
-      { ...UP_TO_DATE, 'config.json': 'config 1.0.5\n' },
-      NO_PICKS,
-      {},
-      APP[INCLUDE_FILE],
-      [],
-      false,
-    ],
-  ])('%s, and lists exactly the AutoHotkey command files present', async (_row, changes, picks, later, text, lists, written) => {
+  const TICK_CHROME: UpdatePicks = { replaceChanged: [], restoreDeleted: [CHROME_FILE] }
+  /** Up to date, listing what it holds: the chrome command file deleted and its line out. */
+  const NO_CHROME: Changes = { ...UP_TO_DATE, [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, NEW), [CHROME_FILE]: null }
+  it.each<IncludeRow>([
+    { row: 'missing: written whole, added', changes: { [INCLUDE_FILE]: null }, text: APP[INCLUDE_FILE], lists: ['added'] },
+    {
+      row: "of an earlier body: written whole with the person's own line and without an unticked deleted file's, replaced",
+      changes: { [CHROME_FILE]: null, [MINE_FILE]: 'mine\n' },
+      text: includeText('; config 1.0.6', WINDOWS, NEW, MINE),
+      lists: ['replaced'],
+    },
+    {
+      row: "of an earlier body, the person's own file added after the plan: written whole with its line, replaced",
+      later: { [MINE_FILE]: 'mine\n' },
+      text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
+      lists: ['replaced'],
+    },
+    { row: 'changed: its list adjusted, kept', changes: MY_INCLUDE, text: includeText('; my config', WINDOWS, CHROME, NEW), lists: ['kept'] },
+    { row: 'changed and ticked: written whole, replaced', changes: MY_INCLUDE, picks: TICK_INCLUDE, text: APP[INCLUDE_FILE], lists: ['replaced'] },
+    {
+      row: 'of an earlier body changed after the plan: its list adjusted, kept',
+      later: { [INCLUDE_FILE]: includeText('; edited', WINDOWS, CHROME, GONE) },
+      text: includeText('; edited', WINDOWS, CHROME, NEW),
+      lists: ['kept'],
+    },
+    {
+      row: "up to date, its list missing the person's own file: its list rebuilt, in no list",
+      changes: { ...APP, [MINE_FILE]: 'mine\n' },
+      text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
+    },
+    {
+      row: 'up to date, a deleted file ticked back: its line added, in no list',
+      changes: NO_CHROME,
+      picks: TICK_CHROME,
+      text: includeText('; config 1.0.6', WINDOWS, NEW, CHROME),
+    },
+    {
+      row: 'up to date and changed after the plan, a deleted file ticked back: its line added, kept',
+      changes: NO_CHROME,
+      picks: TICK_CHROME,
+      later: { [INCLUDE_FILE]: includeText('; edited', WINDOWS, NEW) },
+      text: includeText('; edited', WINDOWS, NEW, CHROME),
+      lists: ['kept'],
+    },
+    {
+      row: 'changed, a ticked changed command file gone after the plan written back: its line added, kept',
+      changes: { [INCLUDE_FILE]: includeText('; my config', CHROME, GONE), [WINDOWS_FILE]: 'my windows\n' },
+      picks: { replaceChanged: [WINDOWS_FILE], restoreDeleted: [] },
+      later: { [WINDOWS_FILE]: null },
+      text: includeText('; my config', CHROME, NEW, WINDOWS),
+      lists: ['kept'],
+    },
+    {
+      row: 'up to date, its list put right by the person after the plan: not written, in no list',
+      changes: { ...APP, [MINE_FILE]: 'mine\n' },
+      later: { [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE) },
+      text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
+      written: false,
+    },
+    {
+      row: 'up to date, listing what the folder holds: not written',
+      changes: { ...UP_TO_DATE, 'config.json': 'config 1.0.5\n' },
+      text: APP[INCLUDE_FILE],
+      written: false,
+    },
+  ])('$row, and lists exactly the AutoHotkey command files present', async (row) => {
+    const { changes = {}, picks = NO_PICKS, later = {}, text, lists = [], written = true } = row
     const folder = await folderOf(changes)
-    const { guarded, result } = await update(folder, picks, later)
+    const { guarded, result } = await update(folder, { picks, later })
     expect(result.ok).toBe(true)
     expect(folder.text(INCLUDE_FILE)).toBe(text)
-    expect(listsExactly(text, await ahkCommandFilesIn(folder))).toBe(true)
+    expect(await listsWhatItHolds(folder)).toBe(true)
     expect(listsHolding(result, INCLUDE_FILE)).toEqual(lists)
     expect(changesIn(guarded.calls).some((call) => call.path === INCLUDE_FILE)).toBe(written)
+  })
+
+  it.each([
+    ['an earlier release had one', false],
+    ['no version ever had one', true],
+  ])('is left alone when neither the app nor the folder has one, and %s', async (_case, never) => {
+    const { index, known } = await FIXTURE
+    const without = <T>(record: Record<string, T>) =>
+      Object.fromEntries(Object.entries(record).filter(([path]) => path !== INCLUDE_FILE))
+    const folder = await folderOf({ [INCLUDE_FILE]: null })
+    const { guarded, result } = await update(folder, {
+      index: { ...index, files: without(index.files) },
+      known: never ? { ...known, files: without(known.files) } : known,
+      files: FILES.filter((file) => file.path !== INCLUDE_FILE),
+    })
+    expect(result.ok).toBe(true)
+    expect(folder.text(INCLUDE_FILE)).toBeNull()
+    expect(changesIn(guarded.calls).filter((call) => call.path === INCLUDE_FILE)).toEqual([])
   })
 })
 
 describe('applyUpdate: backups', () => {
-  const TICK_JSON: UpdatePicks = { replaceChanged: ['ahk/lib/json.ahk'], restoreDeleted: [] }
-  const backupName = (i: number) => (i === 0 ? 'ahk/lib/json.ahk.bak' : `ahk/lib/json.ahk.${i}.bak`)
+  const TICK_JSON: UpdatePicks = { replaceChanged: [JSON_FILE], restoreDeleted: [] }
+  const backupName = (i: number) => (i === 0 ? `${JSON_FILE}.bak` : `${JSON_FILE}.${i}.bak`)
 
   it('never replaces a file: with <path>.bak there, the backup is <path>.1.bak', async () => {
-    const folder = await folderOf({ 'ahk/lib/json.ahk': 'my json\n', 'ahk/lib/json.ahk.bak': 'an earlier backup\n' })
-    const { result } = await update(folder, TICK_JSON)
-    expect(result.backups).toEqual(['ahk/lib/json.ahk.1.bak'])
-    expect(folder.text('ahk/lib/json.ahk.bak')).toBe('an earlier backup\n')
-    expect(folder.text('ahk/lib/json.ahk.1.bak')).toBe('my json\n')
-    expect(folder.text('ahk/lib/json.ahk')).toBe(APP['ahk/lib/json.ahk'])
+    const folder = await folderOf({ [JSON_FILE]: 'my json\n', [`${JSON_FILE}.bak`]: 'an earlier backup\n' })
+    const { result } = await update(folder, { picks: TICK_JSON })
+    expect(result.backups).toEqual([`${JSON_FILE}.1.bak`])
+    expect(folder.text(`${JSON_FILE}.bak`)).toBe('an earlier backup\n')
+    expect(folder.text(`${JSON_FILE}.1.bak`)).toBe('my json\n')
+    expect(folder.text(JSON_FILE)).toBe(APP[JSON_FILE])
   })
 
   it('writes nothing when all ten backup names are taken, and says why', async () => {
     const taken = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [backupName(i), `backup ${i}\n`]))
-    const folder = await folderOf({ 'ahk/lib/json.ahk': 'my json\n', ...taken })
-    const { guarded, result } = await update(folder, TICK_JSON)
-    expect(result).toEqual({
-      ok: false,
-      failedAt: 'ahk/lib/json.ahk',
-      message: expect.stringContaining('are all in the way'),
-      ...NOTHING_DONE,
-    })
+    const folder = await folderOf({ [JSON_FILE]: 'my json\n', ...taken })
+    const { guarded, result } = await update(folder, { picks: TICK_JSON })
+    expect(result).toEqual({ ok: false, failedAt: JSON_FILE, message: expect.stringContaining('are all in the way'), ...NOTHING_DONE })
     expect(changesIn(guarded.calls)).toEqual([])
   })
 })
@@ -500,131 +594,99 @@ describe("applyUpdate: the include file is the person's text", () => {
 
   it('leaves one that is not UTF-8 byte for byte when its list needs no change', async () => {
     const bytes = notUtf8(includeText('; my config', WINDOWS, CHROME, NEW))
-    const folder = await folderOf({ ...APP, [GONE_FILE]: null, 'powershell/commands/old.ps1': null, 'config.json': 'config 1.0.5\n' })
+    const folder = await folderOf({ ...UP_TO_DATE, 'config.json': 'config 1.0.5\n' })
     await folder.writeBytes(INCLUDE_FILE, bytes)
     const { result } = await update(folder)
     expect(result).toEqual({ ok: true, ...NOTHING_DONE, replaced: ['config.json'], kept: [INCLUDE_FILE] })
     expect(await folder.readBytes(INCLUDE_FILE)).toEqual(bytes)
   })
 
-  it('writes nothing when one that is not UTF-8 needs a line, and says why', async () => {
-    const folder = await folderOf()
-    await folder.writeBytes(INCLUDE_FILE, notUtf8(includeText('; my config', WINDOWS, CHROME, GONE)))
+  it('writes nothing when one that is not UTF-8 needs a line, and names it as the folder spells it', async () => {
+    const folder = await folderOf({ [INCLUDE_FILE]: null })
+    await folder.writeBytes('ahk/Config.ahk', notUtf8(includeText('; my config', WINDOWS, CHROME, GONE)))
     const { guarded, result } = await update(folder)
     expect(result).toEqual({
       ok: false,
-      failedAt: INCLUDE_FILE,
-      message: 'ahk/config.ahk is not UTF-8 text, so its list of command files cannot be brought up to date.',
+      failedAt: 'ahk/Config.ahk',
+      message: 'ahk/Config.ahk is not UTF-8 text, so its list of command files cannot be brought up to date.',
       ...NOTHING_DONE,
     })
     expect(changesIn(guarded.calls)).toEqual([])
   })
 })
 
-/** A MemoryFolder whose calls that `fails` picks reject, as a full disk's would; with null, none does. */
-class Failing extends MemoryFolder {
-  readonly calls: FolderCall[] = []
-  fails: ((call: FolderCall, writes: number) => boolean) | null = null
-  /** What a failing call rejects with. */
-  reason: unknown = new Error('disk full')
-
-  override readBytes(path: string): Promise<Uint8Array | null> {
-    return this.run({ op: 'readBytes', path }, () => super.readBytes(path))
-  }
-
-  override writeBytes(path: string, data: Uint8Array): Promise<void> {
-    return this.run({ op: 'writeBytes', path }, () => super.writeBytes(path, data))
-  }
-
-  override remove(path: string): Promise<void> {
-    return this.run({ op: 'remove', path }, () => super.remove(path))
-  }
-
-  private run<T>(call: FolderCall, then: () => Promise<T>): Promise<T> {
-    this.calls.push(call)
-    const writes = this.calls.filter((c) => c.op === 'writeBytes').length
-    return this.fails?.(call, writes) ? Promise.reject(this.reason) : then()
-  }
-}
-
-type Fails = Failing['fails']
-
-/** Plans the update of a folder 1.0.5 set up, with `changes`, and carries it out with `fails` failing. */
-async function failingRun(fails: Fails, changes: Changes = {}, files = FILES, reason: unknown = new Error('disk full')) {
-  const { index, known } = await FIXTURE
-  const folder = new Failing('scripts', await textsOf(changes, null))
-  const plan = await planUpdate(folder, index, known)
-  folder.calls.length = 0
-  folder.fails = fails
-  folder.reason = reason
-  return { folder, result: await applyUpdate(folder, plan, NO_PICKS, files) }
-}
-
-const thirdWrite: Fails = (call, writes) => call.op === 'writeBytes' && writes === 3
+/** The nth write. */
+const nthWrite =
+  (n: number): NonNullable<GuardedFolder['fails']> =>
+  (call, calls) =>
+    call.op === 'writeBytes' && calls.filter((c) => c.op === 'writeBytes').length === n
 
 describe('applyUpdate: a failure', () => {
-  it.each<[string, Fails, string]>([
-    ['the third write', thirdWrite, 'ahk/commands/windows.ahk'],
-    ['a removal', (call) => call.op === 'remove', GONE_FILE],
-    ['the manifest', (call) => call.op === 'writeBytes' && call.path === MANIFEST_PATH, MANIFEST_PATH],
-  ])('at %s stops there with no manifest, and a new plan and update finish the job', async (_step, fails, failedAt) => {
-    const { folder, result } = await failingRun(fails)
+  it.each<{ step: string; fails: NonNullable<GuardedFolder['fails']>; failedAt: string }>([
+    { step: 'the third write', fails: nthWrite(3), failedAt: WINDOWS_FILE },
+    { step: 'a removal', fails: (call) => call.op === 'remove', failedAt: GONE_FILE },
+    { step: 'the manifest', fails: (call) => call.op === 'writeBytes' && call.path === MANIFEST_PATH, failedAt: MANIFEST_PATH },
+  ])('at $step stops there with no manifest, and a new plan and update finish the job', async ({ fails, failedAt }) => {
+    const folder = await folderOf()
+    const { guarded, result } = await update(folder, { fails })
     expect(result).toMatchObject({ ok: false, failedAt, message: 'disk full' })
+    expect(guarded.refused).toEqual([])
     expect(folder.text(MANIFEST_PATH)).toBeNull()
-    folder.fails = null
-    const { index, known } = await FIXTURE
-    const again = await applyUpdate(folder, await planUpdate(folder, index, known), NO_PICKS, FILES)
-    expect(again.ok).toBe(true)
+    const again = await update(folder)
+    expect(again.result.ok).toBe(true)
     expect(Object.fromEntries(Object.keys(APP).map((path) => [path, folder.text(path)]))).toEqual(APP)
     expect(folder.text(GONE_FILE)).toBeNull()
     expect((await readManifest(folder))?.version).toBe('1.0.6')
   })
 
   it('keeps what was done before the failure, says what that was, and goes no further', async () => {
-    const { folder, result } = await failingRun(thirdWrite)
+    const folder = await folderOf()
+    const { guarded, result } = await update(folder, { fails: nthWrite(3) })
     expect(result).toEqual({
       ok: false,
-      failedAt: 'ahk/commands/windows.ahk',
+      failedAt: WINDOWS_FILE,
       message: 'disk full',
       ...NOTHING_DONE,
       replaced: [CHROME_FILE],
       added: [NEW_FILE],
     })
-    expect(changesIn(folder.calls)).toHaveLength(3)
+    expect(changesIn(guarded.calls)).toHaveLength(3)
     expect(folder.text(NEW_FILE)).toBe(APP[NEW_FILE])
-    expect(folder.text('ahk/commands/windows.ahk')).toBe(OLD['ahk/commands/windows.ahk'])
+    expect(folder.text(WINDOWS_FILE)).toBe(OLD[WINDOWS_FILE])
   })
 
-  it.each<[string, Fails, Changes, StarterFile[], string, unknown]>([
-    ['a read before the writes fails', (call) => call.op === 'readBytes' && call.path === 'config.json', {}, FILES, 'config.json', 'disk full'],
-    [
-      "the app's copy lacks a file the plan would write",
-      null,
-      {},
-      FILES.filter((file) => file.path !== 'config.json'),
-      'config.json',
-      "The app's copy has no config.json.",
-    ],
-    [
-      'the include file has no section to list a new command file in',
-      null,
-      { [INCLUDE_FILE]: lines('; my config', WINDOWS, CHROME, GONE) },
-      FILES,
-      INCLUDE_FILE,
-      expect.stringContaining('no Custom Commands section'),
-    ],
-  ])('writes nothing when %s, and says where', async (_case, fails, changes, files, failedAt, message) => {
-    const { folder, result } = await failingRun(fails, changes, files)
+  it.each<{ row: string; changes?: Changes; files?: StarterFile[]; fails?: GuardedFolder['fails']; failedAt: string; message: unknown }>([
+    {
+      row: 'a read before the writes fails',
+      fails: (call) => call.op === 'readBytes' && call.path === 'config.json',
+      failedAt: 'config.json',
+      message: 'disk full',
+    },
+    {
+      row: "the app's copy lacks a file the plan would write",
+      files: FILES.filter((file) => file.path !== 'config.json'),
+      failedAt: 'config.json',
+      message: "The app's copy has no config.json.",
+    },
+    {
+      row: 'the include file has no section to list a new command file in',
+      changes: { [INCLUDE_FILE]: lines('; my config', WINDOWS, CHROME, GONE) },
+      failedAt: INCLUDE_FILE,
+      message: expect.stringContaining('no Custom Commands section'),
+    },
+  ])('writes nothing when $row, and says where', async ({ changes = {}, files = FILES, fails = null, failedAt, message }) => {
+    const { guarded, result } = await update(await folderOf(changes), { files, fails })
     expect(result).toEqual({ ok: false, failedAt, message, ...NOTHING_DONE })
-    expect(changesIn(folder.calls)).toEqual([])
+    expect(changesIn(guarded.calls)).toEqual([])
+    expect(guarded.refused).toEqual([])
   })
 
   it.each<[string, unknown, string]>([
     ['a text: that text', 'no space left', 'no space left'],
     ['anything else: that it is unknown', 42, 'An unknown error.'],
-  ])('gives as the message of a rejection that is %s', async (_kind, reason, message) => {
-    const { result } = await failingRun(thirdWrite, {}, FILES, reason)
-    expect(result).toMatchObject({ ok: false, failedAt: 'ahk/commands/windows.ahk', message })
+  ])('gives as the message of a rejection that is %s', async (_kind, failure, message) => {
+    const { result } = await update(await folderOf(), { fails: nthWrite(3), failure })
+    expect(result).toMatchObject({ ok: false, failedAt: WINDOWS_FILE, message })
   })
 })
 
@@ -633,7 +695,7 @@ describe('applyUpdate: a plan that is skipped', () => {
     ['a .git entry in its root', { '.git/HEAD': 'ref: refs/heads/main\n' }, null],
     ['a manifest newer than the app', {}, { version: '1.0.9' }],
   ])('touches nothing in a folder with %s, and says it did nothing', async (_why, changes, manifest) => {
-    const { plan, guarded, result } = await update(await folderOf(changes, manifest), EVERY_PICKS)
+    const { plan, guarded, result } = await update(await folderOf(changes, manifest), { picks: EVERY_PICKS })
     expect(plan.skip).not.toBeNull()
     expect(result).toEqual({ ok: true, ...NOTHING_DONE })
     expect(guarded.calls).toEqual([])
@@ -642,13 +704,13 @@ describe('applyUpdate: a plan that is skipped', () => {
 
 describe('applyUpdate: how the folder spells a path', () => {
   it("writes a file the folder has at the folder's spelling, and records it so", async () => {
-    const folder = await folderOf({ 'ahk/commands/windows.ahk': null, 'ahk/commands/Windows.ahk': OLD['ahk/commands/windows.ahk'] })
+    const folder = await folderOf({ [WINDOWS_FILE]: null, 'ahk/commands/Windows.ahk': OLD[WINDOWS_FILE] })
     const { result } = await update(folder)
     expect(result.replaced).toContain('ahk/commands/Windows.ahk')
-    expect(folder.text('ahk/commands/Windows.ahk')).toBe(APP['ahk/commands/windows.ahk'])
-    expect(folder.text('ahk/commands/windows.ahk')).toBeNull()
+    expect(folder.text('ahk/commands/Windows.ahk')).toBe(APP[WINDOWS_FILE])
+    expect(folder.text(WINDOWS_FILE)).toBeNull()
     const files = Object.keys((await readManifest(folder))?.files ?? {})
     expect(files).toContain('ahk/commands/Windows.ahk')
-    expect(files).not.toContain('ahk/commands/windows.ahk')
+    expect(files).not.toContain(WINDOWS_FILE)
   })
 })

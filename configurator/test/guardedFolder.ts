@@ -17,10 +17,15 @@ function underLocal(path: string): boolean {
  * under local/ (any case), and a readBytes of a path `mayRead` refuses (say, a path no version ever
  * had). Such a call rejects, as a real folder's failure does, and is kept in `refused`, so code that
  * swallowed the rejection is still caught. Every call, allowed or not, is kept in `calls` in order.
+ * A test can also make an allowed call fail, as a full disk would, with `fails`.
  */
 export class GuardedFolder implements FolderAccess {
   readonly calls: FolderCall[] = []
   readonly refused: FolderCall[] = []
+  /** When set, an allowed call it picks (given every call so far, this one last) rejects with `failure`. */
+  fails: ((call: FolderCall, calls: readonly FolderCall[]) => boolean) | null = null
+  /** What a call that `fails` picks rejects with. */
+  failure: unknown = new Error('The folder failed.')
 
   constructor(
     private readonly inner: FolderAccess,
@@ -49,8 +54,10 @@ export class GuardedFolder implements FolderAccess {
 
   private guard<T>(call: FolderCall, allowed: boolean, run: () => Promise<T>): Promise<T> {
     this.calls.push(call)
-    if (allowed && !underLocal(call.path)) return run()
-    this.refused.push(call)
-    return Promise.reject(new Error(`${call.op} of "${call.path}" is not allowed here`))
+    if (!allowed || underLocal(call.path)) {
+      this.refused.push(call)
+      return Promise.reject(new Error(`${call.op} of "${call.path}" is not allowed here`))
+    }
+    return this.fails?.(call, this.calls) ? Promise.reject(this.failure) : run()
   }
 }

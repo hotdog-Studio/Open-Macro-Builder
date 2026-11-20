@@ -195,7 +195,7 @@ async function appCopyOf(files: StarterFile[]): Promise<Map<string, AppFile>> {
 
 function nowOf(ctx: Context, path: string): Now {
   const now = ctx.now.get(keyOf(path))
-  if (now === undefined) throw new Error(`${path} was not read again before the update.`)
+  if (now === undefined) throw new StepFailure(path, new Error(`${path} was not read again before the update.`))
   return now
 }
 
@@ -268,6 +268,14 @@ function sortTicked(ctx: Context, work: Work, path: string): void {
   queueWrite(work, path, app, 'replaced')
 }
 
+/** The include file the plan had as up to date that changed since: it is the person's now, kept. */
+function sortInclude(ctx: Context, work: Work): void {
+  const now = ctx.now.get(INCLUDE_FILE)
+  if (!now?.print) return
+  const seen = seenOf(ctx.plan, now.path)
+  if (seen === ctx.app.get(INCLUDE_FILE)?.print && now.print !== seen) work.kept.push(now.path)
+}
+
 /** Every path of the plan sorted into what is written, removed, kept or gone. */
 function sortAll(ctx: Context): Work {
   const { plan } = ctx
@@ -279,6 +287,7 @@ function sortAll(ctx: Context): Work {
   for (const path of ctx.tickedChanged) sortTicked(ctx, work, path)
   for (const path of ctx.tickedDeleted) sortMissing(ctx, work, path)
   for (const path of plan.remove) sortRemoval(ctx, work, path)
+  sortInclude(ctx, work)
   work.kept.push(...ctx.untickedChanged, ...plan.keptRemoved)
   work.kept.sort(byLowerCase)
   return work
@@ -384,7 +393,8 @@ async function prepare(folder: FolderAccess, plan: UpdatePlan, picks: UpdatePick
     untickedDeleted: plan.deleted.filter((path) => !tickedDeleted.includes(path)),
   }
   const work = sortAll(ctx)
-  work.include = await at(INCLUDE_FILE, () => includeWrite(ctx, work))
+  // A failure is named as the folder spells the file, as a failure at its write would be.
+  work.include = await at(ctx.now.get(INCLUDE_FILE)?.path ?? INCLUDE_FILE, () => includeWrite(ctx, work))
   return { work, manifest: manifestOf(ctx, work) }
 }
 

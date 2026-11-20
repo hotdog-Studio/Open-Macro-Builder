@@ -110,6 +110,8 @@ The tests that the header fits on one row (`the header, drawn with the fonts of 
 cd configurator && node scripts/make-icon.mjs
 ```
 
+`img/icon.png` is the hotdog at 400 by 400 pixels: the picture of the hotdog Studio organisation on GitHub. Nothing in the project reads it, and `make-icon.mjs` does not remake it.
+
 ## Keeping private details out of git
 
 `local/denylist.txt` lists strings that must never be committed, one per line. `scripts/check-private.mjs` fails when one would reach git. Run it from git hooks so nothing slips through:

@@ -53,7 +53,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**'],
-      exclude: ['**/*.test.*', '**/*.css'],
+      exclude: ['**/*.test.*', '**/*.css', '**/*.d.mts'],
       reporter: ['text-summary', ['lcov', { projectRoot: '..' }]],
       reportsDirectory: '../coverage/configurator-browser',
     },

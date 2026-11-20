@@ -60,8 +60,9 @@ interface Target {
 interface Present {
   /** As the folder spells it. */
   path: string
-  data: Uint8Array
   print: string
+  /** The bytes, kept for the include file only. */
+  data?: Uint8Array
 }
 
 interface Entry {
@@ -166,7 +167,9 @@ async function readPresent(folder: FolderAccess, files: string[], targets: Map<s
       const data = await folder.readBytes(path)
       // A file that went between the listing and the read is missing.
       if (data === null) return []
-      return [[path.toLowerCase(), { path, data, print: await fingerprint(path, data) }] as const]
+      const key = path.toLowerCase()
+      const file: Present = { path, print: await fingerprint(path, data), ...(key === INCLUDE_FILE ? { data } : {}) }
+      return [[key, file] as const]
     }),
   )
   return new Map(read.flat())
@@ -222,7 +225,7 @@ const pathsIn = (entries: Entry[], state: State) => entries.filter((entry) => en
 function fromOf(manifest: Manifest | null, present: Map<string, Present>, known: KnownReleases): string | null {
   if (manifest !== null) return isVersion(manifest.version) ? manifest.version : null
   const oldest = [...present].flatMap(([key, file]) => releasesOf(known, key, file.print).slice(0, 1))
-  return oldest.sort(compareVersions).at(-1) ?? null
+  return oldest.toSorted(compareVersions).at(-1) ?? null
 }
 
 /** What happens to the include file, by its state (see decision 7 of the plan). */
@@ -243,8 +246,8 @@ function listAction(state: State | undefined, listsWhatItWillHold: boolean, ahkC
 /** The include file's action, from the AutoHotkey command files the folder will hold after an update. */
 function includeListOf(entries: Entry[], present: Map<string, Present>, own: string[]): UpdatePlan['list'] {
   const willHold = [...entries.filter((e) => HELD.has(e.state) && isAhkCommandFile(e.key)).map((e) => e.path), ...own]
-  const file = present.get(INCLUDE_FILE)
-  const exact = file !== undefined && listsExactly(new TextDecoder().decode(file.data), willHold)
+  const data = present.get(INCLUDE_FILE)?.data
+  const exact = data !== undefined && listsExactly(new TextDecoder().decode(data), willHold)
   const change = entries.some((e) => (e.state === 'add' || e.state === 'remove') && isAhkCommandFile(e.key))
   return listAction(entries.find((e) => e.key === INCLUDE_FILE)?.state, exact, change)
 }

@@ -32,6 +32,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**', 'electron/**'],
+      // A declaration file beside plain JavaScript (src/core/update/canonical.d.mts) holds no code, and the
+      // provider would try to parse it as JavaScript.
+      exclude: ['**/*.d.mts'],
       // projectRoot makes the SF: lines repo-root-relative (configurator/src/...), which is how
       // SonarQube, whose project root is the repo root, finds the files.
       reporter: ['text', ['lcov', { projectRoot: '..' }]],

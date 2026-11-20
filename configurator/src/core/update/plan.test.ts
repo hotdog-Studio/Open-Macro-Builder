@@ -60,14 +60,15 @@ async function indexOf(texts: Record<string, string>): Promise<StarterIndex> {
 }
 
 async function knownOf(old: Record<string, Record<string, string[]>>): Promise<KnownReleases> {
-  const files: KnownReleases['files'] = {}
-  for (const [path, byText] of Object.entries(old)) {
-    const pairs = await Promise.all(
-      Object.entries(byText).map(async ([text, releases]) => [await print(path, text), releases] as const),
-    )
-    files[path] = Object.fromEntries(pairs)
-  }
-  return { last: '1.0.5', files }
+  const entries = await Promise.all(
+    Object.entries(old).map(async ([path, byText]) => {
+      const pairs = await Promise.all(
+        Object.entries(byText).map(async ([text, releases]) => [await print(path, text), releases] as const),
+      )
+      return [path, Object.fromEntries(pairs)] as const
+    }),
+  )
+  return { last: '1.0.5', files: Object.fromEntries(entries) }
 }
 
 interface Fixture {
@@ -82,6 +83,8 @@ async function fixtureOf(app: Record<string, string>, old: Record<string, Record
 
 const BASE = fixtureOf(APP, OLD)
 const LISTED = fixtureOf(LISTED_APP, LISTED_OLD)
+/** The base, where 1.0.5 already shipped config.json as the app's copy has it. */
+const APP_TEXT_KNOWN = fixtureOf(APP, { ...OLD, 'config.json': { ...OLD['config.json'], [APP['config.json']]: ['1.0.5'] } })
 
 /** A manifest, with texts where it holds fingerprints. */
 interface ManifestTexts {
@@ -188,9 +191,42 @@ describe('planUpdate: the check', () => {
     expect(plan.seen['ahk/commands/gone.ahk']).toBeNull()
   })
 
-  it("compares with the app's copy first: its fingerprint is up to date whatever the manifest says", async () => {
-    const plan = await planOf({}, { version: '1.0.5', files: { 'config.json': 'config 1.0.5\n' } })
+  it.each<[string, ManifestTexts | null, Promise<Fixture>]>([
+    ['the manifest records another', { version: '1.0.5', files: { 'config.json': 'config 1.0.5\n' } }, BASE],
+    ['the manifest records it too', { version: '1.0.6', files: { 'config.json': APP['config.json'] } }, BASE],
+    ['a known release shipped it too', null, APP_TEXT_KNOWN],
+  ])("compares with the app's copy first: its fingerprint is up to date when %s", async (_rule, manifest, fixture) => {
+    const plan = await planOf({}, manifest, fixture)
     expect(listsOf(plan)).toEqual(NO_LISTS)
+    expect(plan.news).toBe(false)
+  })
+
+  it.each<[string, Changes, ManifestTexts, Partial<Lists>, boolean]>([
+    [
+      'files',
+      { 'config.json': 'config by 1.0.6-rc\n' },
+      { version: '1.0.5', files: { 'Config.JSON': 'config by 1.0.6-rc\n' } },
+      { replace: ['config.json'] },
+      true,
+    ],
+    [
+      'deleted',
+      { 'ahk/commands/windows.ahk': null },
+      { version: '1.0.5', deleted: ['AHK/Commands/Windows.ahk'] },
+      { deleted: ['ahk/commands/windows.ahk'] },
+      false,
+    ],
+    [
+      'offered',
+      { 'config.json': 'my config\n' },
+      { version: '1.0.6', offered: { 'CONFIG.json': APP['config.json'] } },
+      { changed: ['config.json'] },
+      false,
+    ],
+  ])("reads the manifest's %s ignoring the case of the path", async (_key, changes, manifest, lists, news) => {
+    const plan = await planOf(changes, manifest)
+    expect(listsOf(plan)).toEqual({ ...NO_LISTS, ...lists })
+    expect(plan.news).toBe(news)
   })
 
   it('counts a file that differs only in its line ends as up to date', async () => {
@@ -474,7 +510,7 @@ describe('planUpdate: how the folder spells a path', () => {
   it("spells a path the folder does not have as the app's copy has it", async () => {
     const { app, index, known } = await BASE
     const files = Object.fromEntries(
-      Object.entries(index.files).map(([path, print]) => [path === 'ahk/lib/json.ahk' ? 'AHK/Lib/JSON.ahk' : path, print]),
+      Object.entries(index.files).map(([path, sum]) => [path === 'ahk/lib/json.ahk' ? 'AHK/Lib/JSON.ahk' : path, sum]),
     )
     const plan = await planUpdate(await folderOf(app, { 'ahk/lib/json.ahk': null }, null), { ...index, files }, known)
     expect(plan.add).toEqual(['AHK/Lib/JSON.ahk'])

@@ -99,6 +99,13 @@ function KeyDetails({ k }: Readonly<{ k: PadKey }>) {
   const [confirming, setConfirming] = useState(false)
   const isFn = k.id === 'fn'
   const index = ws.keys.findIndex((x) => x.id === k.id)
+  // The update's dialog opening ends a capture: its keys (Tab, Escape) must not name a key behind it.
+  const dialogOpen = state.update?.dialog === true
+  const [dialogWasOpen, setDialogWasOpen] = useState(dialogOpen)
+  if (dialogOpen !== dialogWasOpen) {
+    setDialogWasOpen(dialogOpen)
+    if (dialogOpen) setCapturing(false)
+  }
 
   // While capturing, the next key press anywhere names the key.
   useEffect(() => {

@@ -759,6 +759,22 @@ describe('the update dialog', () => {
     expect(folder.changes).toEqual([])
   })
 
+  it('ends the capture of a key in the Pad shape tab when it opens: the next key works in the dialog, not on the layout', async () => {
+    const folder = await scriptsFolder(WORKED)
+    const user = await open(folder, await updateSourceOf())
+    await user.click(screen.getByRole('button', { name: /^F14 \d×\d$/ }))
+    await user.click(screen.getByRole('button', { name: 'Capture by pressing it' }))
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    // Escape, pressed where the focus is: on the dialog.
+    fireEvent.keyDown(dialogOf(), { key: 'Escape', code: 'Escape' })
+    expect(screen.queryByRole('dialog', DIALOG)).toBeNull()
+    expect(editor().ws.keys.map((k) => k.key)).toContain('F14')
+    expect(editor().dirty).toBe(false)
+    // The capture is over: a key pressed later names nothing either.
+    fireEvent.keyDown(document.body, { key: 'q', code: 'KeyQ' })
+    expect(editor().dirty).toBe(false)
+  })
+
   it('a press inside the dialog does not close it', async () => {
     const { dialog } = await reviewed(WORKED)
     fireEvent.pointerDown(within(dialog).getByText(CHANGED))

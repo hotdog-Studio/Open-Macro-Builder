@@ -245,7 +245,7 @@ interface Config {
 const readConfig = async (path: string) => JSON.parse(await readFile(path, 'utf8')) as Config
 
 /** The app's version as it gives it: three numbers, with `-dev` in a build that was given no APP_VERSION. */
-const APP_VERSION = /^\d+\.\d+\.\d+(?:-dev)?$/
+const VERSION_SHAPE = /^\d+\.\d+\.\d+(?:-dev)?$/
 /** The update bar for a folder whose manifest says 0.9.0, with the app's version caught. */
 const BAR_FROM_0_9_0 = /^The scripts in this folder are from version 0\.9\.0\. This app has (\d+\.\d+\.\d+(?:-dev)?)\.$/
 /** A shared script that is neither a command file nor ahk/config.ahk, so the update simply replaces it. */
@@ -350,8 +350,8 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
 
     // The manifest has the app's version, and each file the setup wrote with the fingerprint of what is on disk.
     const manifest = await manifestIn(made)
-    expect(manifest.version).toMatch(APP_VERSION)
-    expect(manifest).toMatchObject({ deleted: [], offered: {} })
+    expect(manifest.version).toMatch(VERSION_SHAPE)
+    expect({ deleted: manifest.deleted, offered: manifest.offered }).toEqual({ deleted: [], offered: {} })
     const written = ['config.json', 'ahk/main.ahk']
     const onDisk = await Promise.all(written.map(async (rel) => fingerprint(rel, await readFile(join(made, rel)))))
     expect(written.map((rel) => manifest.files[rel])).toEqual(onDisk)
@@ -376,7 +376,7 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
     const { page } = await launch(userData, folder)
     await firstRun(page)
     const version = BAR_FROM_0_9_0.exec((await page.getByText(BAR_FROM_0_9_0).textContent()) ?? '')?.[1]
-    expect(version).toMatch(APP_VERSION)
+    expect(version).toMatch(VERSION_SHAPE)
 
     await page.getByRole('button', { name: 'Review the update', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Update the scripts in this folder', exact: true })

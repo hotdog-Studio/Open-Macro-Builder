@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { cp, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { cp, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { _electron, type ElectronApplication, type Locator, type Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { LINKS } from '../src/core/links'
+import { fingerprint } from '../src/core/update/fingerprint'
+import { MANIFEST_PATH, type Manifest } from '../src/core/update/manifest'
 
 // Starts the real built desktop app (dist/ + dist-electron/) and drives its window. Slow, so it
 // has its own config (vitest.electron.config.ts) and is not part of `npm test`.
@@ -242,6 +244,15 @@ interface Config {
 }
 const readConfig = async (path: string) => JSON.parse(await readFile(path, 'utf8')) as Config
 
+/** The app's version as it gives it: three numbers, with `-dev` in a build that was given no APP_VERSION. */
+const APP_VERSION = /^\d+\.\d+\.\d+(?:-dev)?$/
+/** The update bar for a folder whose manifest says 0.9.0, with the app's version caught. */
+const BAR_FROM_0_9_0 = /^The scripts in this folder are from version 0\.9\.0\. This app has (\d+\.\d+\.\d+(?:-dev)?)\.$/
+/** A shared script that is neither a command file nor ahk/config.ahk, so the update simply replaces it. */
+const OLDER_FILE = 'ahk/lib/json.ahk'
+
+const manifestIn = async (folder: string) => JSON.parse(await readFile(join(folder, MANIFEST_PATH), 'utf8')) as Manifest
+
 describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
   beforeAll(buildIfNeeded)
 
@@ -325,7 +336,7 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
     expect(await save.isEnabled()).toBe(true)
   })
 
-  it('creates a new folder and sets up a fresh copy in it', async () => {
+  it('creates a new folder and sets up a fresh copy in it, with a manifest of what it wrote', async () => {
     const parent = await tempDir('omb-e2e-new-')
     const { page } = await launch(await tempDir('omb-e2e-user-'), parent)
     await page.getByRole('button', { name: 'Create new folder…' }).click()
@@ -335,7 +346,55 @@ describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
     for (const rel of ['config.json', 'ahk/main.ahk', 'powershell/main.ps1', 'img/icon.ico'])
       expect((await readFile(join(made, rel))).equals(await readFile(join(repoRoot, rel)))).toBe(true)
     expect(existsSync(join(made, 'powershell', 'tests'))).toBe(false)
-    expect((await readdir(made)).sort()).toEqual(['ahk', 'config.json', 'img', 'powershell'])
+    expect((await readdir(made)).sort()).toEqual(['ahk', 'config.json', 'img', MANIFEST_PATH, 'powershell'])
+
+    // The manifest has the app's version, and each file the setup wrote with the fingerprint of what is on disk.
+    const manifest = await manifestIn(made)
+    expect(manifest.version).toMatch(APP_VERSION)
+    expect(manifest).toMatchObject({ deleted: [], offered: {} })
+    const written = ['config.json', 'ahk/main.ahk']
+    const onDisk = await Promise.all(written.map(async (rel) => fingerprint(rel, await readFile(join(made, rel)))))
+    expect(written.map((rel) => manifest.files[rel])).toEqual(onDisk)
+    expect(Object.keys(manifest.files).filter((rel) => !existsSync(join(made, rel)))).toEqual([])
+  })
+
+  it("updates a folder with older scripts: the bar, the dialog, and the app's copy on disk", async () => {
+    const folder = await tempDir('omb-e2e-older-')
+    const userData = await tempDir('omb-e2e-user-')
+    await copyExample(folder)
+    // A folder an earlier version (0.9.0) set up, with one file still as that version wrote it.
+    const older = Buffer.from(`; ${OLDER_FILE} as version 0.9.0 had it.\r\n`)
+    await writeFile(join(folder, OLDER_FILE), older)
+    const before: Manifest = {
+      version: '0.9.0',
+      files: { [OLDER_FILE]: await fingerprint(OLDER_FILE, older) },
+      deleted: [],
+      offered: {},
+    }
+    await writeFile(join(folder, MANIFEST_PATH), `${JSON.stringify(before, null, 2)}\n`)
+
+    const { page } = await launch(userData, folder)
+    await firstRun(page)
+    const version = BAR_FROM_0_9_0.exec((await page.getByText(BAR_FROM_0_9_0).textContent()) ?? '')?.[1]
+    expect(version).toMatch(APP_VERSION)
+
+    await page.getByRole('button', { name: 'Review the update', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Update the scripts in this folder', exact: true })
+    const replaced = 'Replaced 1 file you have not changed'
+    await dialog.getByRole('button', { name: replaced, exact: true }).click()
+    const paths = dialog.getByRole('list', { name: replaced, exact: true }).getByRole('listitem')
+    await expect.poll(() => paths.allTextContents(), { timeout: 5000 }).toEqual([OLDER_FILE])
+    // Nothing the person changed or deleted to tick.
+    expect(await dialog.getByRole('checkbox').count()).toBe(0)
+    await dialog.getByRole('button', { name: 'Update', exact: true }).click()
+    await dialog.getByText(`Updated to ${version}: 1 replaced, 0 added, 0 removed.`, { exact: true }).waitFor()
+
+    // The repository's file again, byte for byte; nothing was ticked, so no backup.
+    expect((await readFile(join(folder, OLDER_FILE))).equals(await readFile(join(repoRoot, OLDER_FILE)))).toBe(true)
+    expect(existsSync(join(folder, `${OLDER_FILE}.before-update.bak`))).toBe(false)
+    const after = await manifestIn(folder)
+    expect(after.version).toBe(version)
+    expect(after.files[OLDER_FILE]).toBe(await fingerprint(OLDER_FILE, await readFile(join(repoRoot, OLDER_FILE))))
   })
 
   it('offers to set up an empty folder picked with Open folder', async () => {

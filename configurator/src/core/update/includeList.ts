@@ -5,9 +5,13 @@ export const INCLUDE_FILE = 'ahk/config.ahk'
 
 const COMMANDS_DIR = 'ahk/commands/'
 
-/** `path` with the folder it starts in in lower case, so the language finds it whatever case the folder has; null for a path the file does not list. */
+/**
+ * `path` with the folder it starts in in lower case, so the language finds it whatever case the folder has;
+ * null for a path the file does not list: one outside ahk/commands or without the .ahk extension (any case).
+ */
 function listable(path: string): string | null {
-  if (!path.toLowerCase().startsWith(COMMANDS_DIR)) return null
+  const lower = path.toLowerCase()
+  if (!lower.startsWith(COMMANDS_DIR) || !lower.endsWith('.ahk')) return null
   return COMMANDS_DIR + path.slice(COMMANDS_DIR.length)
 }
 
@@ -43,7 +47,10 @@ export function listedCommandFiles(text: string): string[] {
   return [...files]
 }
 
-/** `text` with a line added for each of `added` and removed for each of `removed`; nothing else changes. */
+/**
+ * `text` with a line added for each of `added` and removed for each of `removed`; nothing else changes.
+ * A path that is not an .ahk file under ahk/commands is ignored on both sides.
+ */
 export function adjustList(text: string, added: string[], removed: string[]): string {
   let out = text
   for (const path of listablePaths(removed)) out = ahk.removeListing(out, path)

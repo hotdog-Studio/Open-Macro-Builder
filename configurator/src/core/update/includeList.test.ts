@@ -119,6 +119,15 @@ describe('listFor', () => {
     expect(text.indexOf(B)).toBeLessThan(text.indexOf(C))
   })
 
+  it('adds the lines in the order of the code units of the lower-case paths, not of any locale', () => {
+    // Code units: '-' is 45, digits 48 to 57, '_' is 95, letters 97 to 122. A locale puts '_' before '-'.
+    const dir = 'ahk/commands/custom/'
+    const expected = ['-x', '1', '_x', 'x'].map((name) => `${dir}${name}.ahk`)
+    for (const given of [expected, [...expected].reverse(), [expected[2], expected[0], expected[3], expected[1]]]) {
+      expect(listedCommandFiles(listFor(SMALL, [], given)).slice(-4)).toEqual(expected)
+    }
+  })
+
   it('changes nothing when there is nothing to delete or add', () => {
     expect(listFor(real, [], [])).toBe(real)
   })
@@ -133,7 +142,13 @@ describe('listFor', () => {
   })
 
   it('adds no line for a path that is not a command file', () => {
-    expect(listFor(SMALL, [], ['local/ahk/mine.ahk', 'ahk/main.ahk'])).toBe(SMALL)
+    expect(listFor(SMALL, [], ['local/ahk/mine.ahk', 'ahk/main.ahk', 'ahk/commands/readme.txt', 'ahk/commands/custom'])).toBe(SMALL)
+  })
+
+  it('takes out no line for a file under ahk/commands that is not an .ahk file', () => {
+    const text = SMALL + '\n' + String.raw`#Include commands\readme.txt`
+    expect(ahk.removeListing(text, 'ahk/commands/readme.txt')).not.toBe(text)
+    expect(listFor(text, ['ahk/commands/readme.txt', 'AHK/Commands/README.TXT'], [])).toBe(text)
   })
 
   it('takes out no line for a path that is not a command file, even one the personal hub would list', () => {

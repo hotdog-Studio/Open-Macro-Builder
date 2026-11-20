@@ -142,6 +142,11 @@ export type Action =
   | { type: 'select'; key?: string | null; layer?: string | null }
   | { type: 'tab'; tab: Tab }
   | { type: 'banner'; banner: Banner | null }
+  /**
+   * A passing notice. With a message already showing (a load notice that stays), it is added to it on a
+   * new line, and the message keeps its kind and whether it stays; neither replaces the other.
+   */
+  | { type: 'notice'; text: string }
   | { type: 'settings'; settings: Settings }
   /** A save wrote `configFile`; `saved` is the workspace it holds. */
   | { type: 'saved'; configFile: TextFile; saved: Workspace }
@@ -199,6 +204,13 @@ function editReducer(state: EditCore, action: Action): EditCore {
       return { ...state, tab: action.tab }
     case 'banner':
       return { ...state, banner: action.banner }
+    case 'notice': {
+      const { banner } = state
+      return {
+        ...state,
+        banner: banner ? { ...banner, text: `${banner.text}\n${action.text}` } : { text: action.text, kind: 'info' },
+      }
+    }
     case 'settings':
       return { ...state, settings: action.settings }
     case 'saved':
@@ -272,13 +284,14 @@ function useConfigText(ws: Workspace | null): string | null {
 
 /**
  * `updateSource` is what the check after opening compares a folder with: the app's own copy of the
- * scripts unless given (the tests give a small one).
+ * scripts unless given, and null checks no folder (the tests whose subject is not the update). Give a
+ * stable object: a new one makes new actions, which lets go of the open folder.
  */
 export function AppProvider({
   platform,
   updateSource = APP_SCRIPTS,
   children,
-}: Readonly<{ platform: Platform; updateSource?: UpdateSource; children: ReactNode }>) {
+}: Readonly<{ platform: Platform; updateSource?: UpdateSource | null; children: ReactNode }>) {
   const [stored, dispatch] = useReducer(reducer, initialState)
   const editing = stored.screen === 'edit' ? stored : null
   const wsText = useConfigText(editing?.ws ?? null)

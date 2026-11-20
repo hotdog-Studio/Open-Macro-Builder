@@ -76,7 +76,7 @@ async function start({ languages = ['ahk', 'ps'], config = EXAMPLE, files = {}, 
     ...platform,
   }
   render(
-    <AppProvider platform={fake}>
+    <AppProvider platform={fake} updateSource={null}>
       <App />
       <Probe />
     </AppProvider>,

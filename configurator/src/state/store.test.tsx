@@ -33,7 +33,7 @@ it('works out dirty from ws and saved after every edit', async () => {
   })
   const platform: Platform = { kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
       <Probe />
     </AppProvider>,
@@ -150,7 +150,7 @@ describe('useApp and useEditor', () => {
   it('useEditor refuses to run before a folder is open', () => {
     const platform: Platform = { kind: 'browser', openFolder: async () => null, createFolder: async () => null, restoreFolder: async () => null }
     render(
-      <AppProvider platform={platform}>
+      <AppProvider platform={platform} updateSource={null}>
         <Catch>
           <Use hook={useEditor} />
         </Catch>

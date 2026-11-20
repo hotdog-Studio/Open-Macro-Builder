@@ -69,7 +69,7 @@ async function start({ languages = ['ahk', 'ps'], files = {}, platform: extra = 
   }
   const platform: Platform = { kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null, ...extra }
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
       <Probe />
     </AppProvider>,
@@ -165,8 +165,7 @@ describe('Commands tab', () => {
     await save(user, 'chrome.ahk')
     expect(folder.text(CHROME_AHK)).toBe(`; x${eol}${before}`)
     expect(await folder.readBytes(`${CHROME_AHK}.bak`)).toBeNull()
-    // Not the only status: the repository's copy lacks shared files, so the update bar shows too.
-    expect(screen.getAllByRole('status').map((status) => status.textContent)).toContain('Saved chrome.ahk.')
+    expect(screen.getByRole('status').textContent).toBe('Saved chrome.ahk.')
 
     // The next edit of the file hides the note.
     typeAt(0, ';')

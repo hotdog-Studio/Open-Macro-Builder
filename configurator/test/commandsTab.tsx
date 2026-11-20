@@ -68,7 +68,7 @@ export async function startCommands({ next, ...options }: StartOptions = {}) {
     restoreFolder: async () => null,
   }
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
       <Probe />
     </AppProvider>,

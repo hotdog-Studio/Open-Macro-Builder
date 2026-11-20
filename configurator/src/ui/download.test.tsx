@@ -20,7 +20,7 @@ async function start(kind: Platform['kind']) {
   await folder.writeBytes(SETTINGS_PATH, enc.encode('{ "languages": ["ahk"] }\n'))
   const platform: Platform = { kind, openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
     </AppProvider>,
   )

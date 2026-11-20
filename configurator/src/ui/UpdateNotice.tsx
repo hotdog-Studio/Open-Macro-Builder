@@ -8,7 +8,8 @@ import { updateSentence } from '../state/updateActions'
 export function UpdateNotice() {
   const { state, actions } = useEditor()
   if (!state.update) return null
-  // An <output> is a status: a screen reader reads the sentence when the bar comes, without interrupting.
+  // An <output> is a status (a polite live region). It is inserted already filled, which some screen
+  // readers do not announce; the bar is then found as the first thing under the header.
   return (
     <output className="flex items-center gap-3 border-b border-sky-500/40 bg-sky-500/10 px-4 py-2 text-sky-200">
       <span className="flex-1">{updateSentence(state.update.plan)}</span>

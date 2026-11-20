@@ -53,7 +53,7 @@ async function start({ languages = ['ahk', 'ps'], config, files = {} }: Setup = 
   for (const [path, text] of Object.entries(files)) await folder.writeBytes(path, enc.encode(text))
   const platform: Platform = { kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
       <Probe />
     </AppProvider>,

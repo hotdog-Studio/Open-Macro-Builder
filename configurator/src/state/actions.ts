@@ -206,12 +206,12 @@ async function readSession(folder: FolderAccess, configPath: string, library: Li
  * The side effects of the app (folder IO), dispatching their results. `sync` is
  * called by AppProvider after every commit, so actions read the latest state.
  * `updateSource` is what the check after opening compares a folder with (AppProvider gives the app's
- * own copy); without one, no folder is checked.
+ * own copy); null checks no folder.
  */
 export function createActions(
   platform: Platform,
   dispatch: (a: Action) => void,
-  updateSource: UpdateSource | null = null,
+  updateSource: UpdateSource | null,
 ): { actions: AppActions; sync: (state: AppState) => void; dispose: () => void } {
   let current: AppState = { screen: 'open', message: null, reopen: null }
   const getState = () => current

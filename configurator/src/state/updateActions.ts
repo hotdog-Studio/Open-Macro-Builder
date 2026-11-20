@@ -68,7 +68,8 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
       if (!deps.current(token)) return
       if (plan.skip?.reason === 'newer') {
         const text = `This folder was last updated by version ${plan.skip.folderVersion}, which is newer than this app (${plan.to}).`
-        dispatch({ type: 'banner', banner: { text, kind: 'info' } })
+        // The reducer joins it to a load notice showing: this may land before React has committed the load.
+        dispatch({ type: 'notice', text })
       } else if (plan.skip === null && plan.news) {
         dispatch({ type: 'update', update: { plan, dialog: false, busy: false, result: null } })
       }

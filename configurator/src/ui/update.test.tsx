@@ -3,13 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MemoryFolder } from '../core/folder/memory'
+import { MemoryFolder } from '../core/folder/memory'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
 import { SETTINGS_PATH } from '../core/settings'
 import { fingerprint, type StarterIndex } from '../core/update/fingerprint'
-import type { KnownReleases } from '../core/update/history'
+import { KNOWN_RELEASES, type KnownReleases } from '../core/update/history'
 import { MANIFEST_PATH } from '../core/update/manifest'
 import { planUpdate } from '../core/update/plan'
+import { compareVersions } from '../core/update/version'
 import type { Platform } from '../platform/types'
 import { loadStarterIndex } from '../state/starter'
 import { AppProvider, useApp } from '../state/store'
@@ -60,6 +61,8 @@ const OLD: Record<string, Record<string, string[]>> = {
 const FROM_104: Record<string, string> = { [MAIN_AHK]: 'main 1.0.4\n', [MAIN_PS]: 'main 1.0.4\n' }
 
 const BAR_104 = 'The scripts in this folder are from version 1.0.4. This app has 1.0.6.'
+const NEWER_109 = 'This folder was last updated by version 1.0.9, which is newer than this app (1.0.6).'
+const NOT_UTF8 = 'ahk/commands/broken.ahk is not UTF-8 text; its commands are listed, but the configurator will not edit it.'
 
 const print = (path: string, text: string) => fingerprint(path, enc.encode(text))
 
@@ -81,13 +84,16 @@ async function knownOf(old: Record<string, Record<string, string[]>>): Promise<K
 const INDEX: Promise<StarterIndex> = printsOf(APP).then((files) => ({ version: '1.0.6', files }))
 const KNOWN = knownOf(OLD)
 
-/** The small copy of the scripts these tests check folders against; `onCheck` runs as each check starts. */
-async function sourceOf(onCheck: () => void = () => {}): Promise<UpdateSource> {
+/**
+ * The small copy of the scripts these tests check folders against, as the app of `version` carries it;
+ * `onCheck` runs as each check starts.
+ */
+async function sourceOf(onCheck: () => void = () => {}, version = '1.0.6'): Promise<UpdateSource> {
   const [index, known] = await Promise.all([INDEX, KNOWN])
   return {
     loadIndex: async () => {
       onCheck()
-      return index
+      return { ...index, version }
     },
     known,
   }
@@ -160,6 +166,24 @@ async function scriptsFolder(
   return new TestFolder(inner)
 }
 
+/**
+ * Holds back every read of `folder` from the moment a check starts until `release` is called. Give
+ * `onCheck` to sourceOf; `checking()` says whether a check has started.
+ */
+function holdReadsOnceChecking(folder: TestFolder) {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => (release = resolve))
+  let started = false
+  folder.beforeRead = () => (started ? held : undefined)
+  return {
+    onCheck: () => {
+      started = true
+    },
+    checking: () => started,
+    release: () => release(),
+  }
+}
+
 let seen: ReturnType<typeof useApp>
 function Probe() {
   const app = useApp()
@@ -174,8 +198,8 @@ function editor() {
   return seen.state
 }
 
-/** Opens `folders` one after another with Open folder: the app checks against `source` (the real copy when null). */
-function renderApp(folders: FolderAccess[], source: UpdateSource | null) {
+/** Opens `folders` one after another with Open folder: the app checks against `source` (its own copy when none is given). */
+function renderApp(folders: FolderAccess[], source?: UpdateSource) {
   const platform: Platform = {
     kind: 'browser',
     openFolder: async () => folders.shift() ?? null,
@@ -183,7 +207,7 @@ function renderApp(folders: FolderAccess[], source: UpdateSource | null) {
     restoreFolder: async () => null,
   }
   render(
-    <AppProvider platform={platform} updateSource={source ?? undefined}>
+    <AppProvider platform={platform} updateSource={source}>
       <App />
       <Probe />
     </AppProvider>,
@@ -192,7 +216,7 @@ function renderApp(folders: FolderAccess[], source: UpdateSource | null) {
 }
 
 /** Opens the folder onto the tabs. */
-async function open(folder: FolderAccess, source: UpdateSource | null) {
+async function open(folder: FolderAccess, source?: UpdateSource) {
   const user = renderApp([folder], source)
   await user.click(screen.getByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
@@ -283,13 +307,53 @@ describe('the check after a folder opens', () => {
     noBar()
   })
 
-  it('a folder last updated by a newer app says so in a passing message, and shows no bar', async () => {
-    await open(await scriptsFolder(FROM_104, { version: '1.0.9' }), await sourceOf())
-    expect(
-      await screen.findByText('This folder was last updated by version 1.0.9, which is newer than this app (1.0.6).'),
-    ).toBeTruthy()
-    expect(editor().banner?.kind).toBe('info')
+  it.each([
+    ['a manifest of a newer app', { version: '1.0.9' }, '1.0.6', NEWER_109],
+    [
+      'no manifest and files of a release newer than a development build',
+      null,
+      '1.0.0-dev',
+      'This folder was last updated by version 1.0.4, which is newer than this app (1.0.0-dev).',
+    ],
+  ])('a folder with %s says so in a passing message, and shows no bar', async (_name, manifest, appVersion, text) => {
+    await open(await scriptsFolder(FROM_104, manifest), await sourceOf(undefined, appVersion))
+    expect(await screen.findByText(text)).toBeTruthy()
+    expect(editor().banner).toEqual({ text, kind: 'info' })
     noBar()
+  })
+
+  it('adds the newer-folder sentence to a load notice that stays, on a new line', async () => {
+    const folder = await scriptsFolder(FROM_104, { version: '1.0.9' })
+    // A command file that is not UTF-8 makes the folder open with a notice.
+    await folder.writeBytes('ahk/commands/broken.ahk', new Uint8Array([0x4f, 0x6b, 0xe9, 0x0a]))
+    await open(folder, await sourceOf())
+    await checkEnded()
+    expect(editor().banner).toEqual({ text: `${NOT_UTF8}\n${NEWER_109}`, kind: 'info', stays: true })
+    noBar()
+  })
+
+  it('shows no bar for a folder it has just set up', async () => {
+    const user = renderApp([new MemoryFolder('fresh', {})])
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    await user.click(await screen.findByRole('button', { name: 'Set up' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit a copy in local/' }))
+    const language = await screen.findByRole('dialog', { name: 'Which version do you run?' })
+    await user.click(within(language).getByRole('button', { name: 'AutoHotkey' }))
+    await screen.findByRole('tab', { name: 'Get started', selected: true })
+    await checkEnded()
+    await expect(planned.mock.results[0].value).resolves.toMatchObject({ skip: null, news: false })
+    noBar()
+    expect(editor().banner).toBeNull()
+  })
+
+  it('a rescan and a reload from disk start no check, and the bar stays', async () => {
+    await open(await scriptsFolder(FROM_104), await sourceOf())
+    await findBar()
+    fireEvent.focus(window)
+    await act(() => seen.actions.recheckCommands())
+    await act(() => seen.actions.reloadFromDisk())
+    expect(within(await findBar()).getByText(BAR_104)).toBeTruthy()
+    expect(planned).toHaveBeenCalledTimes(1)
   })
 
   it('Not now removes the bar until the folder is opened again; a tab change or a save does not bring it back', async () => {
@@ -327,15 +391,12 @@ describe('the check after a folder opens', () => {
 
   it('runs after the tabs are shown: the pad is on screen while the check still waits for its first read', async () => {
     const folder = await scriptsFolder(FROM_104)
-    let release!: () => void
-    const held = new Promise<void>((resolve) => (release = resolve))
-    let checking = false
-    folder.beforeRead = () => (checking ? held : undefined)
-    await open(folder, await sourceOf(() => (checking = true)))
-    await waitFor(() => expect(checking).toBe(true))
+    const hold = holdReadsOnceChecking(folder)
+    await open(folder, await sourceOf(hold.onCheck))
+    await waitFor(() => expect(hold.checking()).toBe(true))
     expect(screen.getByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
     noBar()
-    release()
+    hold.release()
     expect(within(await findBar()).getByText(BAR_104)).toBeTruthy()
   })
 
@@ -362,17 +423,14 @@ describe('the check after a folder opens', () => {
 
   it('a check whose folder is no longer the open one leaves no trace', async () => {
     const older = await scriptsFolder(FROM_104)
-    let release!: () => void
-    const held = new Promise<void>((resolve) => (release = resolve))
-    let checking = false
-    older.beforeRead = () => (checking ? held : undefined)
-    const user = renderApp([older, await scriptsFolder(APP)], await sourceOf(() => (checking = true)))
+    const hold = holdReadsOnceChecking(older)
+    const user = renderApp([older, await scriptsFolder(APP)], await sourceOf(hold.onCheck))
     await user.click(screen.getByRole('button', { name: 'Open folder' }))
-    await waitFor(() => expect(checking).toBe(true))
+    await waitFor(() => expect(hold.checking()).toBe(true))
     // The second folder is opened while the first one's check waits.
     await user.click(screen.getByRole('button', { name: 'Open folder' }))
     await checkEnded(2)
-    release()
+    hold.release()
     await checkEnded(1)
     await expect(planned.mock.results[0].value).resolves.toMatchObject({ news: true })
     noBar()
@@ -394,12 +452,22 @@ describe('the check after a folder opens', () => {
 
   it("checks against the app's own copy of the scripts and what the releases shipped", async () => {
     // The repository's scripts are the app's copy; without ahk/main.ahk the folder has something to add.
+    // Many of its files are as a known release shipped them, so the check tells which release it is from.
     const folder = await scriptsFolder({ [MAIN_AHK]: null }, null, ['config.json', 'ahk', 'powershell', 'img'])
-    await open(folder, null)
+    await open(folder)
     const { version } = await loadStarterIndex()
-    const bar = await findBar()
-    expect(bar.textContent).toContain(version)
-    // The folder's files are ones the releases shipped, so it can tell which version they are from.
-    expect(bar.textContent).not.toContain('from an older version')
+    const releases = new Set(Object.values(KNOWN_RELEASES.files).flatMap((byPrint) => Object.values(byPrint).flat()))
+    if ([...releases].every((release) => compareVersions(version, release) < 0)) {
+      // A build older than every known release (a development build, no APP_VERSION): the folder is newer.
+      const toast = await screen.findByText(/^This folder was last updated by version \d+\.\d+\.\d+, which is newer than this app/)
+      expect(toast.textContent).toContain(`(${version}).`)
+      noBar()
+    } else {
+      // A release build (APP_VERSION set) is never older than the releases before the record.
+      expect(compareVersions(version, KNOWN_RELEASES.last)).toBeGreaterThanOrEqual(0)
+      const bar = await findBar()
+      expect(bar.textContent).toContain(version)
+      expect(bar.textContent).not.toContain('from an older version')
+    }
   })
 })

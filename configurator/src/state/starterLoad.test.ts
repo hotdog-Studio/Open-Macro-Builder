@@ -27,6 +27,7 @@ describe('a starter that cannot be loaded', () => {
         state = reducer(state, a)
         made.sync(state.screen === 'edit' ? { ...state, dirty: false } : state)
       },
+      null,
     )
     const folder = new MemoryFolder('fresh')
     await made.actions.load(folder)

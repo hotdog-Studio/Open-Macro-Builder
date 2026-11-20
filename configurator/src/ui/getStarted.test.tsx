@@ -39,7 +39,7 @@ function fakePlatform(folder: MemoryFolder | null, more: Partial<Platform> = {})
 async function startGuide(languages: LangId[] = ['ahk'], more: Partial<Platform> = {}) {
   const platform = fakePlatform(await readyFolder(languages), more)
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
     </AppProvider>,
   )
@@ -75,7 +75,7 @@ describe('the Get started tab', () => {
   it('is the first tab, and a folder still opens on Pad shape', async () => {
     const platform = fakePlatform(await readyFolder())
     render(
-      <AppProvider platform={platform}>
+      <AppProvider platform={platform} updateSource={null}>
         <App />
       </AppProvider>,
     )
@@ -307,7 +307,7 @@ describe('the Get started tab', () => {
     const platform = fakePlatform(await readyFolder())
     const folder = (await platform.openFolder()) as MemoryFolder
     render(
-      <AppProvider platform={platform}>
+      <AppProvider platform={platform} updateSource={null}>
         <App />
       </AppProvider>,
     )
@@ -328,7 +328,7 @@ describe('the Get started tab', () => {
 describe('the guide with no folder open', () => {
   function renderGuide(languages: readonly LangId[], more: Partial<Platform> = {}) {
     render(
-      <AppProvider platform={fakePlatform(null, more)}>
+      <AppProvider platform={fakePlatform(null, more)} updateSource={null}>
         <GetStarted folderName={null} languages={languages} />
       </AppProvider>,
     )

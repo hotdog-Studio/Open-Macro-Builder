@@ -53,7 +53,7 @@ async function snapshot(folder: FolderAccess, dir = ''): Promise<Record<string, 
 
 function renderApp(platform: Platform) {
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
     </AppProvider>,
   )

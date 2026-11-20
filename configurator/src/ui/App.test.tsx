@@ -11,7 +11,7 @@ afterEach(cleanup)
 it('renders the app name', () => {
   const platform = { kind: 'browser' as const, openFolder: async () => null, createFolder: async () => null, restoreFolder: async () => null }
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
     </AppProvider>,
   )

@@ -45,7 +45,7 @@ async function openPad(options: { failWrites?: boolean; brokenCommand?: boolean 
   }
   const platform: Platform = { kind: 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
       <Probe />
     </AppProvider>,

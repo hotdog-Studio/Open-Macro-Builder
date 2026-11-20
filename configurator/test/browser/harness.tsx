@@ -85,13 +85,16 @@ export const ws = (): Workspace => editor().ws
 /** Whether config.json has unsaved edits. */
 export const dirty = (): boolean => editor().dirty
 
-/** Renders the app full-window, as index.html does, with a Probe beside it. */
+/**
+ * Renders the app full-window, as index.html does, with a Probe beside it. No update check: the
+ * folder lacks shared files, and the bar would push the editor down part-way through a test.
+ */
 export function mount(platform: Platform): void {
   const root = document.createElement('div')
   root.id = 'root'
   document.body.append(root)
   render(
-    <AppProvider platform={platform}>
+    <AppProvider platform={platform} updateSource={null}>
       <App />
       <Probe />
     </AppProvider>,

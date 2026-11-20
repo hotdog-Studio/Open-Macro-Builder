@@ -10,6 +10,7 @@ import {
   type TextFile,
 } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
+import { messageOf, withoutFullStop } from '../core/message'
 import { MANIFEST_PATH, readManifest, withDeleted, withoutDeleted, writeManifest, type Manifest } from '../core/update/manifest'
 import {
   commandFileAt,
@@ -74,8 +75,6 @@ export type CommandActions = Pick<
   /** Whether read number `n` may replace the library: no read that started after it has done so. */
   takeLibraryRead(n: number): boolean
 }
-
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
  * Overwrite anyway: the outside edit being replaced is kept beside the file as .bak, and only that
@@ -186,7 +185,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
         if (next) await writeManifest(folder, next)
         return null
       } catch (e) {
-        return messageOf(e).replace(/\.$/, '')
+        return withoutFullStop(messageOf(e))
       }
     }
     const done = manifestWork.then(run)
@@ -442,6 +441,29 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     return error
   }
 
+  /** New file, in each chosen language (see AppActions.createCommandFiles). */
+  async function createFiles({ group, name, langs }: Parameters<AppActions['createCommandFiles']>[0]): Promise<string | null> {
+    const why = checkNewFile(files.get(), name, group, langs)
+    if (why) return why
+    let error: string | null = null
+    const made: LangId[] = []
+    const create = async (lang: LangId): Promise<void> => {
+      const path = newFilePath(lang, group, name)
+      const failed = await createFile(path)
+      error ??= failed
+      if (entry(path)) made.push(lang)
+    }
+    // One language at a time; a failed one does not stop the next.
+    await langs.reduce((before, lang) => before.then(() => create(lang)), Promise.resolve())
+    if (made.length > 0) {
+      const at = commandFileAt(newFilePath(made[0], group, name))!
+      const state = deps.getState()
+      const lang = state.screen === 'edit' && made.includes(state.commands.lang) ? state.commands.lang : made[0]
+      dispatch({ type: 'commands-show', pair: `${at.group}:${at.pair}`, lang })
+    }
+    return error
+  }
+
   /** Delete this file (see AppActions.deleteCommandFile). */
   async function deleteFile(path: string): Promise<string | null> {
     await saves.get(path)?.catch(() => undefined)
@@ -528,27 +550,8 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
 
     recheckCommands,
 
-    async createCommandFiles({ group, name, langs }) {
-      const why = checkNewFile(files.get(), name, group, langs)
-      if (why) return why
-      let error: string | null = null
-      const made: LangId[] = []
-      const create = async (lang: LangId): Promise<void> => {
-        const path = newFilePath(lang, group, name)
-        const failed = await tracked(createFile(path))
-        error ??= failed
-        if (entry(path)) made.push(lang)
-      }
-      // One language at a time; a failed one does not stop the next.
-      await langs.reduce((before, lang) => before.then(() => create(lang)), Promise.resolve())
-      if (made.length > 0) {
-        const at = commandFileAt(newFilePath(made[0], group, name))!
-        const state = deps.getState()
-        const lang = state.screen === 'edit' && made.includes(state.commands.lang) ? state.commands.lang : made[0]
-        dispatch({ type: 'commands-show', pair: `${at.group}:${at.pair}`, lang })
-      }
-      return error
-    },
+    // Tracked as a whole: idle() never resolves between the files of one New file.
+    createCommandFiles: (req) => tracked(createFiles(req)),
 
     async createMissingFile(pairKey, lang) {
       const colon = pairKey.indexOf(':')

@@ -173,7 +173,6 @@ async function update(folder: FolderAccess, options: UpdateOptions = {}): Promis
   return { plan, guarded, result: await applyUpdate(guarded, plan, picks, files) }
 }
 
-/** The calls that change the folder. */
 /** A folder whose read of a path in `gone` finds nothing, while its listing still names it. */
 class Vanishing extends MemoryFolder {
   readonly gone = new Set<string>()
@@ -182,6 +181,7 @@ class Vanishing extends MemoryFolder {
   }
 }
 
+/** The calls that change the folder. */
 const changesIn = (calls: FolderCall[]) => calls.filter((call) => call.op === 'writeBytes' || call.op === 'remove')
 
 /** Every file below `dir`. */

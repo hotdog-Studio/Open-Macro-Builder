@@ -1,4 +1,5 @@
 import { LANGUAGES, type LangId } from '../core/languages'
+import { messageOf } from '../core/message'
 import type { Platform } from '../platform/types'
 
 /**
@@ -14,8 +15,6 @@ export interface MacropadActions {
    */
   reload(): Promise<string | null>
 }
-
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export function createMacropadActions(platform: Platform): MacropadActions {
   let reloading = false

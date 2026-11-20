@@ -1,6 +1,7 @@
 import { compareText } from '../folder/path'
 import { decodeLenient, encodeTextFile } from '../folder/textFile'
 import type { FolderAccess } from '../folder/types'
+import { messageOf } from '../message'
 import type { StarterFile } from '../starter'
 import { fingerprint } from './fingerprint'
 import { INCLUDE_FILE, adjustList, listFor } from './includeList'
@@ -34,12 +35,6 @@ export type UpdateResult =
       failedAt: string
       message: string
     } & UpdateDone)
-
-/** The message of what a step threw or rejected with. */
-function messageOf(cause: unknown): string {
-  if (cause instanceof Error) return cause.message
-  return typeof cause === 'string' ? cause : 'An unknown error.'
-}
 
 /** A step that failed: the path it was at, with the message of the error it met. */
 class StepFailure extends Error {

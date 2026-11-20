@@ -31,4 +31,26 @@ describe('ConfirmDialog', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onCancel).not.toHaveBeenCalled()
   })
+
+  it('without onDismiss, a press on the backdrop does nothing', () => {
+    const onCancel = vi.fn()
+    render(<ConfirmDialog title="Sure?" onCancel={onCancel} choices={[]} />)
+    fireEvent.pointerDown(screen.getByRole('dialog', { name: 'Sure?' }).parentElement!)
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('with onDismiss, Escape and a press on the backdrop dismiss, a press inside does not, and no Cancel button is added', () => {
+    const onDismiss = vi.fn()
+    const { unmount } = render(<ConfirmDialog title="Sure?" onDismiss={onDismiss} choices={[{ label: 'Yes', onChoose: () => {} }]} />)
+    const dialog = screen.getByRole('dialog', { name: 'Sure?' })
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+    fireEvent.pointerDown(screen.getByRole('heading', { name: 'Sure?' }))
+    expect(onDismiss).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.pointerDown(dialog.parentElement!)
+    expect(onDismiss).toHaveBeenCalledTimes(2)
+    unmount()
+    fireEvent.pointerDown(document.body)
+    expect(onDismiss).toHaveBeenCalledTimes(2)
+  })
 })

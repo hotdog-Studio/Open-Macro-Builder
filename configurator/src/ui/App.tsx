@@ -9,6 +9,7 @@ import { OpenScreen } from './OpenScreen'
 import { SaveFlow } from './SaveFlow'
 import { ShapeTab } from './ShapeTab'
 import { Toast } from './Toast'
+import { UpdateDialog } from './UpdateDialog'
 import { UpdateNotice } from './UpdateNotice'
 import { useUnsavedGuard } from './useUnsavedGuard'
 
@@ -33,13 +34,18 @@ function Editor() {
         {state.tab === 'macros' && <MacrosTab />}
         {state.tab === 'commands' && <CommandsTab />}
       </div>
+      {/* Mounted only while open, so a new offer starts with nothing ticked. */}
+      {state.update?.dialog && <UpdateDialog />}
     </div>
   )
 }
 
 export function App() {
   const { state, actions } = useApp()
-  useUnsavedGuard(state.screen === 'edit' && (state.dirty || Object.keys(state.commands.drafts).length > 0))
+  // An update under way asks too: it stops part-way when the window goes.
+  useUnsavedGuard(
+    state.screen === 'edit' && (state.dirty || Object.keys(state.commands.drafts).length > 0 || state.update?.busy === true),
+  )
   // On start: reopen the folder remembered from last time, if any.
   useEffect(() => {
     void actions.restore()

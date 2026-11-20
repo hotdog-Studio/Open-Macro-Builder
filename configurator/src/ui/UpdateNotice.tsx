@@ -3,11 +3,12 @@ import { updateSentence } from '../state/updateActions'
 
 /**
  * The update bar: the folder's scripts are older than the app's, or some are missing. It stays until it
- * is answered, and no other message replaces it; Review the update opens the dialog behind it.
+ * is answered, and no other message replaces it; Review the update opens the dialog behind it. Once the
+ * update has run, the dialog says what came of it and the bar is gone.
  */
 export function UpdateNotice() {
   const { state, actions } = useEditor()
-  if (!state.update) return null
+  if (!state.update || state.update.result !== null) return null
   // An <output> is a status (a polite live region). It is inserted already filled, which some screen
   // readers do not announce.
   return (

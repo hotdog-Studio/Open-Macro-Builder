@@ -3,18 +3,20 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { renameKey } from '../core/config/ops'
 import { MemoryFolder } from '../core/folder/memory'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
 import { SETTINGS_PATH } from '../core/settings'
 import { fingerprint, type StarterIndex } from '../core/update/fingerprint'
 import { KNOWN_RELEASES, type KnownReleases } from '../core/update/history'
 import { MANIFEST_PATH } from '../core/update/manifest'
-import { planUpdate } from '../core/update/plan'
+import { planUpdate, type UpdatePlan } from '../core/update/plan'
 import { compareVersions } from '../core/update/version'
+import type { StarterFile } from '../core/starter'
 import type { Platform } from '../platform/types'
-import { loadStarterIndex } from '../state/starter'
-import { AppProvider, useApp } from '../state/store'
-import { updateSentence, type UpdateSource } from '../state/updateActions'
+import { loadStarter, loadStarterIndex } from '../state/starter'
+import { AppProvider, useApp, type AppState, type UpdateOffer } from '../state/store'
+import { createUpdateActions, updateSentence, type UpdateDeps, type UpdateSource } from '../state/updateActions'
 import { memoryFolderFromRepo, readRepoText } from '../../test/repo'
 import { App } from './App'
 
@@ -95,18 +97,30 @@ async function sourceOf(onCheck: () => void = () => {}, version = '1.0.6'): Prom
       onCheck()
       return { ...index, version }
     },
+    loadFiles: async () => starterFilesOf(APP),
     known,
   }
 }
 
-/** A folder around a MemoryFolder that records its reads, and whose reads and listings a test can hold back or fail. */
+/** Texts as the files of the app's copy. */
+const starterFilesOf = (texts: Record<string, string>): StarterFile[] =>
+  Object.entries(texts).map(([path, text]) => ({ path, data: enc.encode(text) }))
+
+/**
+ * A folder around a MemoryFolder that records its reads, writes and removals, and whose calls a test can
+ * hold back or fail.
+ */
 class TestFolder implements FolderAccess {
   /** Every path read, in order. */
   readonly reads: string[] = []
+  /** Every path written or removed, in order. */
+  readonly changes: string[] = []
   /** Runs before each read; may wait. */
   beforeRead: (path: string) => Promise<void> | void = () => {}
   /** Runs before each listing; may wait or throw. */
   beforeList: (dir: string) => Promise<void> | void = () => {}
+  /** Runs before each write and removal; may wait or throw, and a throw is that call's failure. */
+  beforeChange: (path: string) => Promise<void> | void = () => {}
 
   constructor(readonly inner: MemoryFolder) {}
 
@@ -118,15 +132,22 @@ class TestFolder implements FolderAccess {
     await this.beforeRead(path)
     return this.inner.readBytes(path)
   }
-  writeBytes(path: string, data: Uint8Array) {
+  async writeBytes(path: string, data: Uint8Array) {
+    await this.beforeChange(path)
+    this.changes.push(path)
     return this.inner.writeBytes(path, data)
   }
   async list(dir: string): Promise<DirEntry[]> {
     await this.beforeList(dir)
     return this.inner.list(dir)
   }
-  remove(path: string) {
+  async remove(path: string) {
+    await this.beforeChange(path)
+    this.changes.push(path)
     return this.inner.remove(path)
+  }
+  text(path: string) {
+    return this.inner.text(path)
   }
 }
 
@@ -198,13 +219,17 @@ function editor() {
   return seen.state
 }
 
-/** Opens `folders` one after another with Open folder: the app checks against `source` (its own copy when none is given). */
-function renderApp(folders: FolderAccess[], source?: UpdateSource) {
+/**
+ * Opens `folders` one after another with Open folder: the app checks against `source` (its own copy when
+ * none is given). `more` changes the platform (the desktop app's, with a macropad).
+ */
+function renderApp(folders: FolderAccess[], source?: UpdateSource, more: Partial<Platform> = {}) {
   const platform: Platform = {
     kind: 'browser',
     openFolder: async () => folders.shift() ?? null,
     createFolder: async () => null,
     restoreFolder: async () => null,
+    ...more,
   }
   render(
     <AppProvider platform={platform} updateSource={source}>
@@ -216,8 +241,8 @@ function renderApp(folders: FolderAccess[], source?: UpdateSource) {
 }
 
 /** Opens the folder onto the tabs. */
-async function open(folder: FolderAccess, source?: UpdateSource) {
-  const user = renderApp([folder], source)
+async function open(folder: FolderAccess, source?: UpdateSource, more: Partial<Platform> = {}) {
+  const user = renderApp([folder], source, more)
   await user.click(screen.getByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
   return user
@@ -469,5 +494,538 @@ describe('the check after a folder opens', () => {
       expect(bar.textContent).toContain(version)
       expect(bar.textContent).not.toContain('from an older version')
     }
+  })
+})
+
+// ---------------------------------------------------------------- the dialog and the update
+
+const INCLUDE = 'ahk/config.ahk'
+const NEW_AHK = 'ahk/commands/custom/new.ahk'
+const BACK_AHK = 'ahk/commands/custom/back.ahk'
+const GONE_AHK = 'ahk/commands/custom/gone.ahk'
+const GONE_PS1 = 'powershell/commands/custom/gone.ps1'
+const TOOLS_PS1 = 'powershell/lib/tools.ps1'
+const ICON = 'img/update/icon.png'
+const HELPER_AHK = 'ahk/commands/helper.ahk'
+const NEW_LINE = String.raw`#Include commands\custom\new.ahk`
+const BACK_LINE = String.raw`#Include commands\custom\back.ahk`
+const GONE_LINE = String.raw`#Include commands\custom\gone.ahk`
+
+/** An include file: a title line, then a Custom Commands section listing `listed`, then the next section. */
+const includeOf = (title: string, ...listed: string[]) =>
+  [title, '; ****** Custom Commands ******', ...listed, '; ****** Macro Definitions ******', ''].join('\n')
+
+/** The app's copy of the scripts in the tests of the update (1.0.6): new.ahk is new in it, gone.ahk and gone.ps1 are gone from it. */
+const APP_6: Record<string, string> = {
+  'config.json': EXAMPLE,
+  [MAIN_AHK]: 'main 1.0.6\n',
+  [MAIN_PS]: 'main 1.0.6\n',
+  [TOOLS_PS1]: 'tools 1.0.6\n',
+  [ICON]: 'icon 1.0.6',
+  [INCLUDE]: includeOf('; config 1.0.6', BACK_LINE, NEW_LINE),
+  [BACK_AHK]: 'BackCommand(Macro) {\n}\n',
+  [NEW_AHK]: 'NewCommand(Macro) {\n}\n',
+}
+
+/** The scripts of 1.0.4, a release before the record (config.json is the same in every version). */
+const FILES_4: Record<string, string> = {
+  [MAIN_AHK]: 'main 1.0.4\n',
+  [MAIN_PS]: 'main 1.0.4\n',
+  [TOOLS_PS1]: 'tools 1.0.4\n',
+  [ICON]: 'icon 1.0.4',
+  [INCLUDE]: includeOf('; config 1.0.4', BACK_LINE, GONE_LINE),
+  [BACK_AHK]: 'BackCommand(Macro) { ; 1.0.4\n}\n',
+  [GONE_AHK]: 'GoneCommand(Macro) {\n}\n',
+  [GONE_PS1]: 'function GoneCommand { param($Macro) }\n',
+}
+
+/** A folder 1.0.4 set up that the person worked in: main.ahk and the include file changed, back.ahk deleted. */
+const WORKED: Record<string, string | null> = {
+  ...FILES_4,
+  [MAIN_AHK]: 'my main\n',
+  [INCLUDE]: includeOf('; my config', BACK_LINE, GONE_LINE),
+  [BACK_AHK]: null,
+}
+
+/** The app's copy (APP_6) and what 1.0.4 shipped (FILES_4, and `old` on top); `files` loads the app's files. */
+async function updateSourceOf({
+  files = async () => starterFilesOf(APP_6),
+  old = {},
+}: { files?: () => Promise<StarterFile[]>; old?: Record<string, string> } = {}): Promise<UpdateSource> {
+  const shipped = Object.entries({ ...FILES_4, ...old }).map(([path, text]) => [path, { [text]: ['1.0.4'] }])
+  const [prints, known] = await Promise.all([printsOf(APP_6), knownOf(Object.fromEntries(shipped))])
+  return { loadIndex: async () => ({ version: '1.0.6', files: prints }), loadFiles: files, known }
+}
+
+const DIALOG = { name: 'Update the scripts in this folder' }
+const UPDATE = { name: 'Update' }
+const CHANGED = 'You changed these. They are kept as they are unless you tick them.'
+const DELETED = 'You deleted these. They stay deleted unless you tick them.'
+const BACKUP = 'A ticked file is replaced, and yours is kept beside it as <name>.before-update.bak.'
+const ADJUST = 'ahk/config.ahk: yours is kept, and its list of command files was brought up to date.'
+const START_AGAIN = 'Start the macropad again to use the new scripts.'
+const NO_PICKS = { replaceChanged: [], restoreDeleted: [] }
+
+const dialogOf = () => screen.getByRole('dialog', DIALOG)
+const itemsOf = (list: HTMLElement) => within(list).getAllByRole('listitem').map((item) => item.textContent)
+const ticksOf = (dialog: HTMLElement) =>
+  within(dialog)
+    .queryAllByRole('checkbox')
+    .map((box) => [box.closest('label')?.textContent, (box as HTMLInputElement).checked])
+const disabled = (button: HTMLElement) => (button as HTMLButtonElement).disabled
+
+/** Opens a folder of `files` with the update's source, and opens the dialog from the bar. */
+async function reviewed(files: Record<string, string | null>, more: Partial<Platform> = {}, source?: UpdateSource) {
+  const folder = await scriptsFolder(files)
+  const user = await open(folder, source ?? (await updateSourceOf()), more)
+  await user.click(within(await findBar()).getByRole('button', REVIEW))
+  return { folder, user, dialog: dialogOf() }
+}
+
+/** Ticks `ticks`, presses Update and waits until the dialog says what came of it. */
+async function press(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement, ticks: string[] = []) {
+  for (const path of ticks) await user.click(within(dialog).getByRole('checkbox', { name: path }))
+  await user.click(within(dialog).getByRole('button', UPDATE))
+  await waitFor(() => expect(editor().update?.result).toBeTruthy())
+}
+
+/** A promise that waits until `release` is called. */
+function gate() {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => (release = resolve))
+  return { held, release: () => release() }
+}
+
+describe('the update dialog', () => {
+  it('shows the counts and paths of the plan, with nothing ticked', async () => {
+    const { user, dialog } = await reviewed(WORKED)
+    expect(within(dialog).getByText('From 1.0.4 to 1.0.6. Nothing under local/ is read or changed.')).toBeTruthy()
+    const rows: [string, string[]][] = [
+      ['Replaced 3 files you have not changed', [ICON, TOOLS_PS1, MAIN_PS]],
+      ['Added 1 file', [NEW_AHK]],
+      ['Removed 2 files', [GONE_AHK, GONE_PS1]],
+    ]
+    for (const [name, paths] of rows) {
+      const row = within(dialog).getByRole('button', { name, expanded: false })
+      expect(within(dialog).queryByRole('list', { name })).toBeNull()
+      await user.click(row)
+      expect(row.getAttribute('aria-expanded')).toBe('true')
+      expect(itemsOf(within(dialog).getByRole('list', { name }))).toEqual(paths)
+      await user.click(row)
+      expect(within(dialog).queryByRole('list', { name })).toBeNull()
+    }
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([CHANGED, DELETED])
+    expect(within(dialog).getByText(BACKUP)).toBeTruthy()
+    expect(ticksOf(dialog)).toEqual([
+      [INCLUDE, false],
+      [MAIN_AHK, false],
+      [BACK_AHK, false],
+    ])
+    expect(within(dialog).getByText(ADJUST)).toBeTruthy()
+    expect(disabled(within(dialog).getByRole('button', NOT_NOW))).toBe(false)
+    expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(false)
+  })
+
+  it.each<{ name: string; files: Record<string, string | null>; rows: string[]; sections: string[] }>([
+    {
+      name: 'nothing changed or deleted',
+      files: FILES_4,
+      rows: ['Replaced 6 files you have not changed', 'Added 1 file', 'Removed 2 files'],
+      sections: [],
+    },
+    {
+      name: 'nothing to add',
+      files: { ...FILES_4, [NEW_AHK]: APP_6[NEW_AHK] },
+      rows: ['Replaced 6 files you have not changed', 'Removed 2 files'],
+      sections: [],
+    },
+    { name: 'only a changed file', files: { ...APP_6, [MAIN_AHK]: 'my main\n' }, rows: [], sections: [CHANGED] },
+  ])('leaves out what is empty: $name', async ({ files, rows, sections }) => {
+    const { dialog } = await reviewed(files)
+    expect(within(dialog).queryAllByRole('button', { expanded: false })).toHaveLength(rows.length)
+    for (const name of rows) expect(within(dialog).getByRole('button', { name, expanded: false })).toBeTruthy()
+    expect(within(dialog).queryAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(sections)
+    expect(within(dialog).queryByText(ADJUST)).toBeNull()
+  })
+
+  it('does not say the include file is kept once it is ticked', async () => {
+    const { user, dialog } = await reviewed(WORKED)
+    await user.click(within(dialog).getByRole('checkbox', { name: INCLUDE }))
+    expect(within(dialog).queryByText(ADJUST)).toBeNull()
+  })
+
+  it.each([
+    ['no version, when its files tell none', null, 'From an older version to 1.0.6. Nothing under local/ is read or changed.'],
+    [
+      'the version both have, when its manifest names it',
+      { version: '1.0.6', files: APP_6 },
+      'Brings the scripts back to version 1.0.6. Nothing under local/ is read or changed.',
+    ],
+  ])('names %s', async (_name, manifest, line) => {
+    const folder = await scriptsFolder({ ...APP_6, [MAIN_PS]: null }, manifest)
+    const user = await open(folder, await updateSourceOf())
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    expect(within(dialogOf()).getByText(line)).toBeTruthy()
+  })
+
+  it.each<{ ticks: string[]; main: string; backup: string | null; back: string | null }>([
+    { ticks: [], main: 'my main\n', backup: null, back: null },
+    { ticks: [MAIN_AHK], main: APP_6[MAIN_AHK], backup: 'my main\n', back: null },
+    { ticks: [BACK_AHK], main: 'my main\n', backup: null, back: APP_6[BACK_AHK] },
+  ])('writes exactly what was ticked: $ticks', async ({ ticks, main, backup, back }) => {
+    const { folder, user, dialog } = await reviewed(WORKED)
+    await press(user, dialog, ticks)
+    expect(folder.text(MAIN_AHK)).toBe(main)
+    expect(folder.text(`${MAIN_AHK}.before-update.bak`)).toBe(backup)
+    expect(folder.text(BACK_AHK)).toBe(back)
+    // What the person did not change is brought up to date whatever was ticked.
+    expect(folder.text(MAIN_PS)).toBe(APP_6[MAIN_PS])
+    expect(folder.text(NEW_AHK)).toBe(APP_6[NEW_AHK])
+    expect(folder.text(GONE_AHK)).toBeNull()
+    // The include file is theirs, with its list brought up to date.
+    const include = folder.text(INCLUDE) ?? ''
+    expect(include.startsWith('; my config\n')).toBe(true)
+    expect(include).toContain(NEW_LINE)
+    expect(include).not.toContain(GONE_LINE)
+  })
+
+  it('applies the ticks to the folder as it is at the press, not as the bar found it', async () => {
+    const { folder, user, dialog } = await reviewed(WORKED)
+    await user.click(within(dialog).getByRole('checkbox', { name: MAIN_AHK }))
+    await user.click(within(dialog).getByRole('checkbox', { name: BACK_AHK }))
+    // Since the bar: main.ahk is back to what 1.0.4 shipped, main.ps1 was edited, back.ahk was made again by hand.
+    await folder.inner.writeBytes(MAIN_AHK, enc.encode(FILES_4[MAIN_AHK]))
+    await folder.inner.writeBytes(MAIN_PS, enc.encode('my own ps\n'))
+    await folder.inner.writeBytes(BACK_AHK, enc.encode('my back\n'))
+    await press(user, dialog)
+    expect(planned).toHaveBeenCalledTimes(2)
+    expect(folder.text(MAIN_AHK)).toBe(APP_6[MAIN_AHK])
+    expect(folder.text(`${MAIN_AHK}.before-update.bak`)).toBeNull()
+    expect(folder.text(MAIN_PS)).toBe('my own ps\n')
+    expect(folder.text(BACK_AHK)).toBe('my back\n')
+    expect(editor().update?.result).toMatchObject({ ok: true, backups: [] })
+  })
+
+  /** Starts a draft of the command file at `path`, as typing in the Commands tab does. */
+  const draft = (path: string) => () => {
+    const file = editor().commandFiles.find((f) => f.file.path === path)
+    seen.actions.editCommand(path, 'changed\n', file?.file.version ?? null)
+  }
+
+  it.each<{ name: string; files: Record<string, string>; edit: () => void; reasons: string[] }>([
+    {
+      name: 'a shared command file',
+      files: {},
+      edit: draft(HELPER_AHK),
+      reasons: ['Save or discard your changes in the Commands tab first.'],
+    },
+    {
+      name: 'the layout',
+      files: {},
+      edit: () => seen.dispatch({ type: 'edit', ws: renameKey(editor().ws, 'k1', 'F1') }),
+      reasons: ['Save or discard your changes to the layout first.'],
+    },
+    { name: 'a command file of your own', files: { 'local/ahk/mine.ahk': 'Mine(Macro) {\n}\n' }, edit: draft('local/ahk/mine.ahk'), reasons: [] },
+  ])('with unsaved changes in $name, Update is off only while they could be overwritten', async ({ files, edit, reasons }) => {
+    const { dialog } = await reviewed({ ...WORKED, ...files })
+    act(edit)
+    expect(within(dialog).queryAllByText(/^Save or discard/).map((p) => p.textContent)).toEqual(reasons)
+    expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(reasons.length > 0)
+    expect(disabled(within(dialog).getByRole('button', NOT_NOW))).toBe(false)
+  })
+
+  it.each<[string, () => void]>([
+    ['Not now', () => fireEvent.click(within(dialogOf()).getByRole('button', NOT_NOW))],
+    ['Escape', () => fireEvent.keyDown(window, { key: 'Escape' })],
+    ['a press on the backdrop', () => fireEvent.pointerDown(dialogOf().parentElement!)],
+  ])('%s closes the dialog and the bar, and writes nothing', async (_name, close) => {
+    const { folder } = await reviewed(WORKED)
+    act(close)
+    expect(screen.queryByRole('dialog', DIALOG)).toBeNull()
+    noBar()
+    expect(editor().update).toBeNull()
+    expect(folder.changes).toEqual([])
+  })
+
+  it('a press inside the dialog does not close it', async () => {
+    const { dialog } = await reviewed(WORKED)
+    fireEvent.pointerDown(within(dialog).getByText(CHANGED))
+    expect(dialogOf()).toBeTruthy()
+  })
+})
+
+describe('updating', () => {
+  it('says what was done, names the kept files and the backups, and in the browser says to start the macropad again', async () => {
+    const { user, dialog } = await reviewed(WORKED)
+    await press(user, dialog, [MAIN_AHK])
+    const done = dialogOf()
+    expect(within(done).getByText('Updated to 1.0.6: 4 replaced, 1 added, 2 removed.')).toBeTruthy()
+    expect(itemsOf(within(done).getByRole('list', { name: 'Kept as they are:' }))).toEqual([INCLUDE])
+    expect(itemsOf(within(done).getByRole('list', { name: 'Your versions, kept beside the new ones:' }))).toEqual([
+      `${MAIN_AHK}.before-update.bak`,
+    ])
+    expect(within(done).getByText(START_AGAIN)).toBeTruthy()
+    expect(within(done).queryByRole('button', { name: 'Reload the macropad' })).toBeNull()
+    noBar()
+    await user.click(within(done).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', DIALOG)).toBeNull()
+    expect(editor().update).toBeNull()
+  })
+
+  it('in the desktop app with no macropad running, says to start it again', async () => {
+    const { user, dialog } = await reviewed(WORKED, { kind: 'electron', findMacropad: async () => null, reloadMacropad: async () => null })
+    await press(user, dialog)
+    expect(within(dialogOf()).getByText(START_AGAIN)).toBeTruthy()
+    expect(within(dialogOf()).queryByRole('button', { name: 'Reload the macropad' })).toBeNull()
+  })
+
+  it('in the desktop app with a macropad running, offers to reload it, then says what the reload said', async () => {
+    const reloadMacropad = vi.fn(async () => 'ahk' as const)
+    const { user, dialog } = await reviewed(WORKED, { kind: 'electron', findMacropad: async () => 'ahk', reloadMacropad })
+    await press(user, dialog)
+    expect(within(dialogOf()).queryByText(START_AGAIN)).toBeNull()
+    await user.click(within(dialogOf()).getByRole('button', { name: 'Reload the macropad' }))
+    expect(await within(dialogOf()).findByText('Reloaded the AutoHotkey macropad.')).toBeTruthy()
+    expect(reloadMacropad).toHaveBeenCalledTimes(1)
+    expect(within(dialogOf()).queryByRole('button', { name: 'Reload the macropad' })).toBeNull()
+    expect(within(dialogOf()).queryByText(START_AGAIN)).toBeNull()
+  })
+
+  it('stops at a write that fails, says the folder holds two versions, and Try again finishes the update', async () => {
+    const { folder, user, dialog } = await reviewed(WORKED)
+    folder.beforeChange = (path) => {
+      if (path === TOOLS_PS1) throw new Error('The disk is full.')
+    }
+    await press(user, dialog)
+    const failed = dialogOf()
+    const stopped = `The update stopped at ${TOOLS_PS1}: The disk is full. This folder now has scripts of two versions. Run the update again to finish it.`
+    expect(within(failed).getByText(stopped)).toBeTruthy()
+    expect(folder.text(NEW_AHK)).toBe(APP_6[NEW_AHK])
+    expect(folder.text(MANIFEST_PATH)).toBeNull()
+    // Some files changed, so the command lists are scanned again.
+    await waitFor(() => expect(editor().commandFiles.map((f) => f.file.path)).toContain(NEW_AHK))
+
+    folder.beforeChange = () => {}
+    await user.click(within(failed).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(editor().update?.result?.ok).toBe(true))
+    expect(within(dialogOf()).getByText('Updated to 1.0.6: 2 replaced, 0 added, 2 removed.')).toBeTruthy()
+    expect(folder.text(TOOLS_PS1)).toBe(APP_6[TOOLS_PS1])
+    expect(folder.text(MANIFEST_PATH)).not.toBeNull()
+  })
+
+  const backupNames = Array.from({ length: 10 }, (_, i) =>
+    i === 0 ? `${MAIN_AHK}.before-update.bak` : `${MAIN_AHK}.before-update.${i}.bak`,
+  )
+
+  it.each<{ name: string; ticks: string[]; put: Record<string, string>; files?: () => Promise<StarterFile[]>; sentence: string }>([
+    {
+      name: 'the backups of a ticked file are in the way',
+      ticks: [MAIN_AHK],
+      put: Object.fromEntries(backupNames.map((name) => [name, 'older\n'])),
+      sentence:
+        'The update could not start at ahk/main.ahk: ahk/main.ahk.before-update.bak and ahk/main.ahk.before-update.1.bak to .9.bak are all in the way, so ahk/main.ahk cannot be backed up. Move some of them away, then update again. Nothing was changed.',
+    },
+    {
+      name: 'the folder is newer than the app now',
+      ticks: [],
+      put: { [MANIFEST_PATH]: JSON.stringify({ version: '1.0.9', files: {}, deleted: [], offered: {} }) },
+      sentence:
+        'The update could not start at repo: This folder was last updated by version 1.0.9, which is newer than this app (1.0.6). Nothing was changed.',
+    },
+    {
+      name: 'the folder is kept with Git now',
+      ticks: [],
+      put: { '.git/HEAD': 'ref: refs/heads/main\n' },
+      sentence:
+        'The update could not start at repo: This folder has a .git entry now, and a folder kept with Git is not updated by this app. Nothing was changed.',
+    },
+    {
+      name: "the app's copy cannot be loaded",
+      ticks: [],
+      put: {},
+      files: () => Promise.reject(new Error('Failed to fetch.')),
+      sentence:
+        "The update could not start at repo: The app's copy of the scripts could not be loaded (Failed to fetch). Nothing was changed.",
+    },
+  ])('says nothing was changed when $name', async ({ ticks, put, files, sentence }) => {
+    const { folder, user, dialog } = await reviewed(WORKED, {}, await updateSourceOf({ files }))
+    // Changed since the bar showed.
+    await Promise.all(Object.entries(put).map(([path, text]) => folder.inner.writeBytes(path, enc.encode(text))))
+    await press(user, dialog, ticks)
+    const failed = dialogOf()
+    expect(within(failed).getByText(sentence)).toBeTruthy()
+    expect(within(failed).getByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(within(failed).getByRole('button', { name: 'Close' })).toBeTruthy()
+    expect(folder.changes).toEqual([])
+  })
+
+  it('afterwards, the Commands tab lists the command file it added, and a key whose command the newer scripts lack is marked', async () => {
+    const layout = EXAMPLE.replace('"action": "PreviousTrack"', '"action": "GoneCommand"')
+    const folder = await scriptsFolder({ ...WORKED, [CONFIG]: layout })
+    const user = await open(folder, await updateSourceOf())
+    const files = () => within(screen.getByRole('navigation', { name: 'Command files' }))
+    const f13 = () => within(within(screen.getByRole('main')).getByRole('button', { name: /^F13( |$)/ }))
+    await user.click(screen.getByRole('tab', { name: 'Commands' }))
+    expect(files().getByText('custom/gone')).toBeTruthy()
+    expect(files().queryByText('custom/new')).toBeNull()
+    await user.click(screen.getByRole('tab', { name: 'Macros' }))
+    expect(f13().queryByText(/^not in/)).toBeNull()
+
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    await press(user, dialogOf())
+    await user.click(within(dialogOf()).getByRole('button', { name: 'Close' }))
+    noBar()
+    expect(await f13().findByText('not in AHK, PS')).toBeTruthy()
+    await user.click(screen.getByRole('tab', { name: 'Commands' }))
+    expect(files().getByText('custom/new')).toBeTruthy()
+    expect(files().queryByText('custom/gone')).toBeNull()
+  })
+
+  it('while it runs: both buttons are off, Escape and the backdrop do nothing, and no folder is opened, closed or reloaded', async () => {
+    const folder = await scriptsFolder(WORKED)
+    const user = renderApp([folder, await scriptsFolder(APP_6)], await updateSourceOf())
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    const { held, release } = gate()
+    let writing = false
+    folder.beforeChange = () => {
+      writing = true
+      return held
+    }
+    await user.click(within(dialogOf()).getByRole('button', UPDATE))
+    await waitFor(() => expect(writing).toBe(true))
+
+    expect(disabled(within(dialogOf()).getByRole('button', NOT_NOW))).toBe(true)
+    expect(disabled(within(dialogOf()).getByRole('button', UPDATE))).toBe(true)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.pointerDown(dialogOf().parentElement!)
+    expect(editor().update?.busy).toBe(true)
+    const configReads = folder.reads.filter((path) => path === CONFIG).length
+    await act(() => seen.actions.openFolder())
+    await act(() => seen.actions.reloadFromDisk())
+    act(() => seen.actions.closeFolder())
+    expect(editor().folder).toBe(folder)
+    expect(folder.reads.filter((path) => path === CONFIG)).toHaveLength(configReads)
+
+    release()
+    await waitFor(() => expect(editor().update?.result?.ok).toBe(true))
+    // Once it has ended, Escape closes what the dialog says, as Close does.
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(editor().update).toBeNull()
+  })
+
+  it('waits for a delete in the Commands tab to end before it makes the plan again', async () => {
+    const { folder, user, dialog } = await reviewed(WORKED)
+    const { held, release } = gate()
+    folder.beforeChange = (path) => (path === HELPER_AHK ? held : undefined)
+    let deleted!: Promise<string | null>
+    act(() => {
+      deleted = seen.actions.deleteCommandFile(HELPER_AHK)
+    })
+    await user.click(within(dialog).getByRole('button', UPDATE))
+    await act(() => new Promise((done) => setTimeout(done, 50)))
+    expect(planned).toHaveBeenCalledTimes(1)
+    release()
+    await act(async () => {
+      await deleted
+    })
+    await waitFor(() => expect(editor().update?.result?.ok).toBe(true))
+    expect(planned).toHaveBeenCalledTimes(2)
+    expect(folder.text(HELPER_AHK)).toBeNull()
+  })
+
+  it("writes the app's own copy of the scripts, as the page carries it", async () => {
+    const folder = await scriptsFolder({ [MAIN_AHK]: null }, null, ['config.json', 'ahk', 'powershell', 'img'])
+    const source: UpdateSource = { loadIndex: loadStarterIndex, loadFiles: loadStarter, known: { last: '0.0.0', files: {} } }
+    const user = await open(folder, source)
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    await press(user, dialogOf())
+    const { version } = await loadStarterIndex()
+    expect(within(dialogOf()).getByText(`Updated to ${version}: 0 replaced, 1 added, 0 removed.`)).toBeTruthy()
+    expect(folder.text(MAIN_AHK)?.replaceAll('\r\n', '\n')).toBe(readRepoText(MAIN_AHK))
+  })
+})
+
+describe('the update action on its own', () => {
+  /** The update actions alone, with the editor's dialog open on `plan`, and `deps` changed. */
+  function actionsFor(source: UpdateSource, plan: UpdatePlan, deps: Partial<UpdateDeps>) {
+    let update: UpdateOffer | null = { plan, dialog: true, busy: false, result: null, macropad: null, note: null }
+    const shown: (UpdateOffer | null)[] = []
+    const actions = createUpdateActions({
+      source,
+      dispatch: (action) => {
+        if (action.type !== 'update') return
+        update = action.update
+        shown.push(update)
+      },
+      getState: () => ({ screen: 'edit', dirty: false, update }) as unknown as AppState,
+      current: () => true,
+      folder: () => null,
+      idle: async () => {},
+      draftPaths: () => [],
+      recheckCommands: async () => {},
+      configPath: () => CONFIG,
+      reloadConfig: async () => {},
+      macropad: { find: async () => null, reload: async () => null },
+      ...deps,
+    })
+    return { actions, shown }
+  }
+
+  it('does nothing once the plan is made again when the open folder changed meanwhile', async () => {
+    const folder = await scriptsFolder(WORKED)
+    const other = await scriptsFolder(APP_6)
+    const source = await updateSourceOf()
+    const index = await source.loadIndex()
+    const plan = await planUpdate(folder, index, source.known)
+    let opened: FolderAccess = folder
+    const switching: UpdateSource = {
+      ...source,
+      loadIndex: async () => {
+        opened = other
+        return index
+      },
+    }
+    const { actions, shown } = actionsFor(switching, plan, { folder: () => opened })
+    await actions.applyUpdate({ replaceChanged: [MAIN_AHK], restoreDeleted: [BACK_AHK] })
+    expect(shown).toEqual([expect.objectContaining({ busy: true, result: null })])
+    expect(folder.changes).toEqual([])
+    expect(other.changes).toEqual([])
+    expect(actions.updating()).toBe(false)
+  })
+
+  it.each<[string, boolean, string[]]>([
+    ['a shared command file', false, [HELPER_AHK]],
+    ['the layout', true, []],
+  ])('refuses to start while %s has unsaved changes, whatever the dialog shows', async (_name, dirty, drafts) => {
+    const folder = await scriptsFolder(WORKED)
+    const source = await updateSourceOf()
+    const plan = await planUpdate(folder, await source.loadIndex(), source.known)
+    const update: UpdateOffer = { plan, dialog: true, busy: false, result: null, macropad: null, note: null }
+    const { actions, shown } = actionsFor(source, plan, {
+      folder: () => folder,
+      draftPaths: () => drafts,
+      getState: () => ({ screen: 'edit', dirty, update }) as unknown as AppState,
+    })
+    await actions.applyUpdate(NO_PICKS)
+    expect(shown).toEqual([])
+    expect(folder.changes).toEqual([])
+  })
+
+  it.each([
+    ['the layout file it holds is the one the update wrote', 'config.json', 1],
+    ['the layout file is under local/', CONFIG, 0],
+  ])('reads the layout again when %s', async (_name, configPath, reloads) => {
+    const oldConfig = '{ "keys": [] }\n'
+    const folder = await scriptsFolder({ ...FILES_4, 'config.json': oldConfig })
+    const source = await updateSourceOf({ old: { 'config.json': oldConfig } })
+    const plan = await planUpdate(folder, await source.loadIndex(), source.known)
+    const recheckCommands = vi.fn(async () => {})
+    const reloadConfig = vi.fn(async () => {})
+    const { actions } = actionsFor(source, plan, { folder: () => folder, configPath: () => configPath, recheckCommands, reloadConfig })
+    await actions.applyUpdate(NO_PICKS)
+    expect(folder.text('config.json')).toBe(EXAMPLE)
+    expect(recheckCommands).toHaveBeenCalledTimes(1)
+    expect(reloadConfig).toHaveBeenCalledTimes(reloads)
   })
 })

@@ -25,6 +25,7 @@ import {
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import { NOT_EMPTY, StarterError, writeStarter, type StarterFile } from '../core/starter'
+import type { UpdatePicks } from '../core/update/apply'
 import type { Platform } from '../platform/types'
 import { createCommandActions } from './commandActions'
 import { mergeAfterRead } from './commandsSlice'
@@ -125,8 +126,20 @@ export interface AppActions {
   deleteCommandFile(path: string): Promise<string | null>
   /** Review the update, on the update bar: opens the dialog of the update on offer. */
   reviewUpdate(): void
-  /** Not now, on the update bar: drops the offer until the folder is opened again. Nothing is stored about it. */
+  /**
+   * Not now, on the update bar and in its dialog, and Close once the dialog says what came of the update:
+   * drops the offer until the folder is opened again. Nothing is stored about it. Ignored while the update runs.
+   */
   dismissUpdate(): void
+  /**
+   * Update, in the update's dialog, and Try again: waits for the Commands tab's work in flight, makes the plan
+   * again, carries out the picks that are still in it, and shows what came of it in the dialog. Refused while
+   * a shared command file or the layout has unsaved changes. Nothing may open, close or reload a folder
+   * meanwhile. Afterwards the command files are scanned again, and the layout read again when it was written.
+   */
+  applyUpdate(picks: UpdatePicks): Promise<void>
+  /** Electron: Reload the macropad, once the update's dialog says what was done; the dialog then shows what happened. */
+  reloadMacropadAfterUpdate(): Promise<void>
 }
 
 /** The config file as the app last read or wrote it, with its folder. */
@@ -248,12 +261,23 @@ export function createActions(
       },
     },
   })
-  /** The check after a folder opens, and the answers to its bar. */
+  /** The check after a folder opens, the answers to its bar, and the update its dialog carries out. */
   const update = createUpdateActions({
     source: updateSource,
     dispatch,
     getState,
     current: (token) => token === loads,
+    folder: () => held?.folder ?? null,
+    idle: commands.idle,
+    draftPaths: commands.draftPaths,
+    recheckCommands: () => actions.recheckCommands(),
+    configPath: () => held?.configFile.path ?? null,
+    // Unsaved edits are never dropped: then the changed-on-disk banner offers the reload.
+    reloadConfig: () => {
+      const state = getState()
+      return state.screen === 'edit' && state.dirty ? actions.recheck() : actions.reloadFromDisk()
+    },
+    macropad,
   })
   /** Stops the platform's watch of the held config file and command files. */
   let stopWatch: (() => void) | null = null
@@ -503,6 +527,12 @@ export function createActions(
     }
   }
 
+  /**
+   * True while a folder access may not change folders: the starter is being copied (see `copying`) or the
+   * scripts are being updated, which writes through the open folder's access in the same way.
+   */
+  const writingThrough = () => copying || update.updating()
+
   /** The prompt state last answered, so a double click answers it once. */
   let answered: AppState | null = null
   const firstAnswer = (state: AppState) => {
@@ -530,8 +560,8 @@ export function createActions(
     },
 
     async openFolder() {
-      // No picker while the starter is being copied (see `copying`).
-      if (copying) return
+      // No picker while the starter is being copied or the scripts updated (see `writingThrough`).
+      if (writingThrough()) return
       let folder: FolderAccess | null
       try {
         folder = await platform.openFolder()
@@ -551,7 +581,7 @@ export function createActions(
     },
 
     async reopen() {
-      if (!platform.grantPermission || copying) return
+      if (!platform.grantPermission || writingThrough()) return
       const token = loads
       let result
       try {
@@ -572,7 +602,7 @@ export function createActions(
     },
 
     async createFolder(name) {
-      if (copying) return
+      if (writingThrough()) return
       let folder: FolderAccess | null
       try {
         folder = await platform.createFolder(name)
@@ -628,6 +658,7 @@ export function createActions(
     },
 
     closeFolder() {
+      if (update.updating()) return
       loads++
       showOpen(null)
     },
@@ -644,7 +675,8 @@ export function createActions(
       await saveDone()
       await commands.settled()
       const file = held
-      if (getState().screen !== 'edit' || !file) return
+      // Not while the scripts are being updated: the dialog reads the folder again once the update has ended.
+      if (getState().screen !== 'edit' || !file || update.updating()) return
       const token = ++loads
       // Command files the app saves or reloads during the read keep the app's entry (mergeAfterRead).
       const before = commandFiles
@@ -696,6 +728,8 @@ export function createActions(
 
     reviewUpdate: update.reviewUpdate,
     dismissUpdate: update.dismissUpdate,
+    applyUpdate: update.applyUpdate,
+    reloadMacropadAfterUpdate: update.reloadMacropadAfterUpdate,
 
     async recheck() {
       await saveDone()

@@ -7,6 +7,7 @@ import { MemoryFolder } from '../../src/core/folder/memory'
 import { SETTINGS_PATH } from '../../src/core/settings'
 import type { Platform } from '../../src/platform/types'
 import { AppProvider, useApp } from '../../src/state/store'
+import type { UpdateSource } from '../../src/state/updateActions'
 import { App } from '../../src/ui/App'
 import type { PointerPath, TouchPath } from './commands'
 
@@ -86,15 +87,16 @@ export const ws = (): Workspace => editor().ws
 export const dirty = (): boolean => editor().dirty
 
 /**
- * Renders the app full-window, as index.html does, with a Probe beside it. No update check: the
- * folder lacks shared files, and the bar would push the editor down part-way through a test.
+ * Renders the app full-window, as index.html does, with a Probe beside it. No update check unless an
+ * `updateSource` is given: the folder lacks shared files, and the bar would push the editor down
+ * part-way through a test.
  */
-export function mount(platform: Platform): void {
+export function mount(platform: Platform, updateSource: UpdateSource | null = null): void {
   const root = document.createElement('div')
   root.id = 'root'
   document.body.append(root)
   render(
-    <AppProvider platform={platform} updateSource={null}>
+    <AppProvider platform={platform} updateSource={updateSource}>
       <App />
       <Probe />
     </AppProvider>,
@@ -114,18 +116,28 @@ export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Comma
 /** A real click, through the browser. */
 export const click = (el: Element) => userEvent.click(el)
 
+/** How startApp opens the app, beyond the tab and the layout. */
+export interface StartHow {
+  /** The look the app has: `electron` is the desktop app, with no Download link. */
+  kind?: Platform['kind']
+  folderName?: string
+  /** What the check after opening compares the folder with; none checks no folder. */
+  updateSource?: UpdateSource
+  /** Files put into the folder over the repository's (null leaves one out). */
+  files?: Record<string, Uint8Array | null>
+}
+
 /**
  * The example repository in memory, opened in the editor on a tab. `layout` is the text of the
  * personal config.json to open instead of the example's, for a pad of another shape. `how` says
- * which look the app has (`electron` is the desktop app, with no Download link) and the folder's name.
+ * which look the app has, the folder's name, and for the tests of the update, its source and files.
  */
-export async function startApp(
-  tab: TabName = 'Pad shape',
-  layout?: string,
-  how: { kind?: Platform['kind']; folderName?: string } = {},
-): Promise<{ folder: MemoryFolder }> {
-  const folder = new MemoryFolder(how.folderName ?? 'repo', await editableFiles(layout))
-  mount({ kind: how.kind ?? 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null })
+export async function startApp(tab: TabName = 'Pad shape', layout?: string, how: StartHow = {}): Promise<{ folder: MemoryFolder }> {
+  const files: Record<string, Uint8Array | null> = { ...(await editableFiles(layout)), ...how.files }
+  const kept = Object.entries(files).filter((entry): entry is [string, Uint8Array] => entry[1] !== null)
+  const folder = new MemoryFolder(how.folderName ?? 'repo', Object.fromEntries(kept))
+  const platform: Platform = { kind: how.kind ?? 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
+  mount(platform, how.updateSource ?? null)
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
   if (tab !== 'Pad shape') await openTab(tab)

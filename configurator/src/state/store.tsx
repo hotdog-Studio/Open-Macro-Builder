@@ -100,6 +100,10 @@ export interface UpdateOffer {
   dialog: boolean
   busy: boolean
   result: UpdateResult | null
+  /** After an update, in the desktop app: the running macropad that Reload the macropad restarts. */
+  macropad: LangId | null
+  /** What came of pressing Reload the macropad. */
+  note: string | null
 }
 
 /** The editor as the reducer keeps it: no derived fields. */
@@ -113,7 +117,7 @@ export interface EditCore extends Session {
   saveDialog: SaveDialog | null
   outsideChange: OutsideChange | null
   commands: CommandsView
-  /** The update the bar offers; null when there is nothing new, or after Not now until the folder opens again. */
+  /** The update the bar offers; null when there is nothing new, or after Not now or Close until the folder opens again. */
   update: UpdateOffer | null
 }
 

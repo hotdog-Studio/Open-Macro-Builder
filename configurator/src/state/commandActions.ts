@@ -60,6 +60,11 @@ export type CommandActions = Pick<
 > & {
   /** Resolves once no command file is being saved, however the saves ended. */
   settled(): Promise<void>
+  /**
+   * Resolves once no command file is being saved, created or deleted and no change of the manifest is under
+   * way, however they ended: an update of the scripts waits for this before it reads the folder.
+   */
+  idle(): Promise<void>
   /** The paths with unsaved edits, as of the last edit (React may not have committed it yet). */
   draftPaths(): string[]
   /** Forgets every draft: the folder was closed, replaced or loaded again. */
@@ -191,6 +196,25 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
 
   async function settled(): Promise<void> {
     await Promise.all([...saves.values()].map((s) => s.catch(() => undefined)))
+  }
+
+  /** The creates and deletes under way: each may still change the manifest. */
+  const changing = new Set<Promise<unknown>>()
+
+  /** Runs `work` as one of the creates or deletes idle() waits for. */
+  function tracked<T>(work: Promise<T>): Promise<T> {
+    changing.add(work)
+    const done = () => {
+      changing.delete(work)
+    }
+    work.then(done, done)
+    return work
+  }
+
+  async function idle(): Promise<void> {
+    await Promise.all([settled(), ...[...changing].map((work) => work.catch(() => undefined))])
+    // Never rejects: updateManifest catches what it meets.
+    await manifestWork
   }
 
   async function recheckCommands(): Promise<void> {
@@ -418,6 +442,46 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     return error
   }
 
+  /** Delete this file (see AppActions.deleteCommandFile). */
+  async function deleteFile(path: string): Promise<string | null> {
+    await saves.get(path)?.catch(() => undefined)
+    const folder = deps.folder()
+    const held = entry(path)
+    if (!folder || !held) return null
+    const lang = LANGUAGES[held.lang]
+    const listPath = lang.listedIn(path)
+    let removed: Removed | null = null
+    try {
+      if ((await currentVersion(folder, path)) !== held.file.version) return `${path} changed on disk; reload it first.`
+      // The include line goes first: AutoHotkey does not start when it includes a missing file.
+      if (listPath) removed = await removeInclude(folder, lang, listPath, path)
+      await folder.remove(path)
+    } catch (e) {
+      const why = `${path} was not deleted: ${messageOf(e)}`
+      // The file stays (it is still listed and held), so its include line goes back, or the user is told it is gone.
+      if (!listPath || !removed) return why
+      return restoreInclude(folder, lang, listPath, path, removed).then(
+        () => why,
+        () => `${path} was not deleted, and ${listPath} no longer includes it: ${messageOf(e)}`,
+      )
+    }
+    // The file is gone. A manifest that cannot be updated does not undo that or fail the delete
+    // (the tab reads a returned text as "not deleted"), so the person is told by a warning.
+    const manifestError = await updateManifest(folder, (m) => withDeleted(m, path))
+    if (deps.folder() !== folder) return null
+    files.set(withCommandFile(files.get(), path, null))
+    drafts.delete(path)
+    written.delete(path)
+    dispatch({ type: 'command-file', path, file: null })
+    if (manifestError !== null) {
+      banner(
+        `${path} was deleted, but ${MANIFEST_PATH} was not updated: ${manifestError}. The next update of the scripts will offer it again.`,
+        'warning',
+      )
+    }
+    return null
+  }
+
   return {
     editCommand(path, text, base) {
       const held = entry(path)
@@ -471,7 +535,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       const made: LangId[] = []
       const create = async (lang: LangId): Promise<void> => {
         const path = newFilePath(lang, group, name)
-        const failed = await createFile(path)
+        const failed = await tracked(createFile(path))
         error ??= failed
         if (entry(path)) made.push(lang)
       }
@@ -491,49 +555,12 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
       const group = pairKey.slice(0, colon)
       if (group !== 'yours' && group !== 'shared') return null
       const path = commandFilePath(lang, group, pairKey.slice(colon + 1))
-      const error = await createFile(path)
+      const error = await tracked(createFile(path))
       if (entry(path)) dispatch({ type: 'commands-show', pair: pairKey, lang })
       return error
     },
 
-    async deleteCommandFile(path) {
-      await saves.get(path)?.catch(() => undefined)
-      const folder = deps.folder()
-      const held = entry(path)
-      if (!folder || !held) return null
-      const lang = LANGUAGES[held.lang]
-      const listPath = lang.listedIn(path)
-      let removed: Removed | null = null
-      try {
-        if ((await currentVersion(folder, path)) !== held.file.version) return `${path} changed on disk; reload it first.`
-        // The include line goes first: AutoHotkey does not start when it includes a missing file.
-        if (listPath) removed = await removeInclude(folder, lang, listPath, path)
-        await folder.remove(path)
-      } catch (e) {
-        const why = `${path} was not deleted: ${messageOf(e)}`
-        // The file stays (it is still listed and held), so its include line goes back, or the user is told it is gone.
-        if (!listPath || !removed) return why
-        return restoreInclude(folder, lang, listPath, path, removed).then(
-          () => why,
-          () => `${path} was not deleted, and ${listPath} no longer includes it: ${messageOf(e)}`,
-        )
-      }
-      // The file is gone. A manifest that cannot be updated does not undo that or fail the delete
-      // (the tab reads a returned text as "not deleted"), so the person is told by a warning.
-      const manifestError = await updateManifest(folder, (m) => withDeleted(m, path))
-      if (deps.folder() !== folder) return null
-      files.set(withCommandFile(files.get(), path, null))
-      drafts.delete(path)
-      written.delete(path)
-      dispatch({ type: 'command-file', path, file: null })
-      if (manifestError !== null) {
-        banner(
-          `${path} was deleted, but ${MANIFEST_PATH} was not updated: ${manifestError}. The next update of the scripts will offer it again.`,
-          'warning',
-        )
-      }
-      return null
-    },
+    deleteCommandFile: (path) => tracked(deleteFile(path)),
 
     async reloadMacropadFor(path) {
       const state = deps.getState()
@@ -545,6 +572,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     },
 
     settled,
+    idle,
 
     draftPaths: () => [...drafts.keys()],
 

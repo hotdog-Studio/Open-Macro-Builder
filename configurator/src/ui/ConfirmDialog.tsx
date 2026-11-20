@@ -1,4 +1,4 @@
-import { useEffect, useId, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 
 export interface Choice {
   label: string
@@ -17,6 +17,11 @@ export interface ConfirmDialogProps {
   choices: Choice[]
   /** Adds a Cancel button; Escape cancels too. */
   onCancel?: () => void
+  /**
+   * For a dialog whose own buttons say how to leave it: Escape and a press on the backdrop call it, and it
+   * adds no button. Left out, as while work is under way, they do nothing.
+   */
+  onDismiss?: () => void
 }
 
 const BUTTON = 'rounded-md px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-50'
@@ -33,20 +38,33 @@ function styleOf(c: Choice): string {
 }
 
 /** A modal question with a few answers. */
-export function ConfirmDialog({ title, children, choices, onCancel }: Readonly<ConfirmDialogProps>) {
+export function ConfirmDialog({ title, children, choices, onCancel, onDismiss }: Readonly<ConfirmDialogProps>) {
   const titleId = useId()
+  const backdrop = useRef<HTMLDivElement>(null)
+  const onEscape = onCancel ?? onDismiss
 
   useEffect(() => {
-    if (!onCancel) return
+    if (!onEscape) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Escape') onEscape()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
+  }, [onEscape])
+
+  // On the press, not the click: a click that starts in the dialog and ends on the backdrop (a text
+  // selection dragged out of it) is the backdrop's too.
+  useEffect(() => {
+    if (!onDismiss) return
+    const onPress = (e: PointerEvent) => {
+      if (e.target === backdrop.current) onDismiss()
+    }
+    window.addEventListener('pointerdown', onPress)
+    return () => window.removeEventListener('pointerdown', onPress)
+  }, [onDismiss])
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-8">
+    <div ref={backdrop} className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-8">
       {/* Open and laid out by the page, not shown with showModal(): the classes undo the browser's own dialog box. */}
       <dialog
         open

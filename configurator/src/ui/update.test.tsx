@@ -827,6 +827,39 @@ describe('updating', () => {
     },
   )
 
+  it.each<{ name: string; files: Record<string, string | null>; mineAtPress: string | null; adjust: boolean }>([
+    {
+      name: 'its list repaired under the body the app has',
+      files: { ...APP_6, [MAIN_PS]: FILES_4[MAIN_PS], [INCLUDE]: includeOf('; config 1.0.6', BACK_LINE) },
+      mineAtPress: null,
+      adjust: true,
+    },
+    {
+      name: 'its list brought up to date after it changed since the plan',
+      files: { ...APP_6, [NEW_AHK]: null },
+      mineAtPress: includeOf('; my config', BACK_LINE),
+      adjust: true,
+    },
+    {
+      name: 'replaced, as 1.0.4 shipped it',
+      files: { ...APP_6, [MAIN_PS]: FILES_4[MAIN_PS], [INCLUDE]: FILES_4[INCLUDE] },
+      mineAtPress: null,
+      adjust: false,
+    },
+  ])('says the include file was brought up to date exactly when the update did that alone, and never lists it as kept: $name', async ({ files, mineAtPress, adjust }) => {
+    const { folder, user, dialog } = await reviewed(files)
+    // The include file is read once by the plan made at the press, then once more just before the first write.
+    let reads = 0
+    folder.beforeRead = async (path) => {
+      if (path === INCLUDE && mineAtPress !== null && ++reads === 2) await folder.inner.writeBytes(INCLUDE, enc.encode(mineAtPress))
+    }
+    await press(user, dialog)
+    const done = dialogOf()
+    expect(editor().update?.result).toMatchObject({ ok: true, adjusted: adjust ? [INCLUDE] : [] })
+    expect(within(done).queryAllByText(ADJUST)).toHaveLength(adjust ? 1 : 0)
+    expect(within(done).queryByRole('list', { name: 'Kept as they are:' })).toBeNull()
+  })
+
   it('in the desktop app with no macropad running, says to start it again', async () => {
     const { user, dialog } = await reviewed(WORKED, { kind: 'electron', findMacropad: async () => null, reloadMacropad: async () => null })
     await press(user, dialog)

@@ -232,9 +232,11 @@ function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: Up
   const close = { label: 'Close', autoFocus: true, onChoose: actions.dismissUpdate }
   const reload = { label: 'Reload the macropad', primary: true, autoFocus: false, onChoose: () => void actions.reloadMacropadAfterUpdate() }
   const line = macropadLine(offer)
-  // An include file whose list alone was brought up to date is said so, not listed as kept as it is.
-  const adjusted = offer.plan.list === 'adjust' && result.kept.some((path) => path.toLowerCase() === INCLUDE_FILE)
-  const kept = adjusted ? result.kept.filter((path) => path.toLowerCase() !== INCLUDE_FILE) : result.kept
+  // An include file whose list alone this update rewrote is said so, never listed as kept as it is: under the
+  // person's body, under one that changed since the plan, or as a repair of its list under the app's body.
+  const isInclude = (path: string) => path.toLowerCase() === INCLUDE_FILE
+  const adjusted = result.adjusted.some(isInclude)
+  const kept = adjusted ? result.kept.filter((path) => !isInclude(path)) : result.kept
   return (
     <ConfirmDialog title={TITLE} onDismiss={actions.dismissUpdate} choices={offer.macropad ? [reload, close] : [{ ...close, primary: true }]}>
       <p>

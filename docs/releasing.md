@@ -60,6 +60,12 @@ Build it again once the cause is gone.
 - A **Username with password** credential with the id `omb-github`: a GitHub user name, and as the password a token of that user that may write this repository's contents (for the release) and write packages (for ghcr.io). A classic token with the `repo` and `write:packages` scopes does both.
 - Optional: the global `OMB_REGISTRY`, the `host:port` of a private registry that takes a push without a login. Each release then also pushes the `linux/amd64` image there, as `<version>` and then `latest`, after the GitHub release. If that push fails the build ends unstable and the release stands. `OMB_REGISTRY_REPO` renames the repository (default `hotdogstudio/open-macro-builder`).
 
+## The scripts in folders the configurator set up
+
+A release needs nothing new for the configurator to offer its scripts to older folders. The app's copy of the scripts carries the release's version, because every build that ends in a release is given `APP_VERSION` (the image build as the build argument above), and every folder a release sets up or updates gets an `omb-manifest.json` that says what was written there ([architecture.md](architecture.md#the-manifest-and-the-known-releases)).
+
+Only folders from before the manifest, set up by 1.0.2 to 1.0.5, are recognised by their files, from `configurator/src/core/update/knownReleases.json`. `node configurator/scripts/starter-history.mjs` makes that table from the release tags (run `git fetch --tags origin` first), and `starter-history.test.mjs` checks it against the tags this clone has. It is not run for a release that writes the manifest, since such a release's folders say what they hold. It is run again only if a release without the manifest was cut after the one the table names as `last` (1.0.5), so that the table covers that release too.
+
 ## Trying it by hand
 
 The commands Jenkins runs also work on your own machine.

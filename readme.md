@@ -77,6 +77,15 @@ To start either one with Windows, point a shortcut in `shell:startup` at `ahk\ma
 
 A visual editor for the layout (the pad shape, the layers and the macros) and for the command files in both languages. Press **Open folder** and pick your copy of this repository. Without a copy, pick an empty folder instead: the configurator offers to set up a fresh one there, with the scripts, the icons and the example layout; a folder that holds other files but is not a copy is refused, and nothing is written to it. **Create new folder…** makes that folder for you. It edits `local/config.json`, your own layout, and offers to make it as a copy of the example `config.json` the first time; the example itself is never edited. It ignores `OMB_CONFIG`.
 
+When the configurator carries newer scripts than the folder you open, a bar says so, for example *The scripts in this folder are from version 1.0.4. This app has 1.0.6.* **Review the update** shows what would change, and nothing is written until you press **Update**:
+
+- Scripts you have not changed are replaced with the new ones. Missing ones are added, and ones the new version no longer has are removed.
+- A script you changed is kept unless you tick it. A ticked one is replaced, and yours is kept beside it as `<name>.before-update.bak`. If you keep your `ahk/config.ahk`, its list of command files is still brought up to date.
+- A command file you deleted in the **Commands** tab stays deleted unless you tick it.
+- Nothing under `local/` is read or changed.
+
+Afterwards, start the macropad again to use the new scripts; while it is running, the desktop app offers **Reload the macropad**. **Not now** hides the bar until the folder is opened again. A folder made with `git clone` never gets the bar: git updates it.
+
 New to AutoHotkey and PowerShell? The **Get started** tab explains the setup from scratch: what to install, how to set up the keypad and how to start the macropad. The start screen shows the same guide before a folder is open, and a folder the configurator has just set up opens on it.
 
 | Pad shape | Layers |

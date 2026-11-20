@@ -24,11 +24,20 @@ Plain TypeScript with no React, no browser and no Node in it. ESLint enforces th
 - `commands/dictionary.ts`: what a command file can call. `buildDictionary` lists the functions of the file shown, then your other command files, then the shared ones, then the library, and a name resolves to the first of them (unsaved text stands in for its file). `listSections` groups the same entries for the right panel. An entry's source is a file today (`DictSource`) and will be a bundled reference later.
 - `overlay.ts`: where each key sits on the overlay, shared by the grid and the preview.
 - `links.ts`: the addresses the desktop app may hand to the default browser, and `isAllowedLink`, which the desktop shell asks before it opens one.
-- `starter.ts`: `writeStarter` copies the starter files into an empty folder through `FolderAccess`, `config.json` last, so a copy that stopped part-way is not mistaken for a finished one. `repo.ts` (`inspectFolder`) tells an empty folder apart from a setup and from anything else.
+- `starter.ts`: `writeStarter` copies the starter files into an empty folder through `FolderAccess`, then the manifest (below), and `config.json` last, so a copy that stopped part-way is not mistaken for a finished one. `repo.ts` (`inspectFolder`) tells an empty folder apart from a setup and from anything else.
+- `update/`: bringing the scripts of a folder up to date from the app's copy. `fingerprint.ts` gives a file's fingerprint: the SHA-256 of its bytes with each CRLF read as LF (`.png` and `.ico` files as they are), and for `ahk/config.ahk` without the lines that include a shared command file. `canonical.mjs` holds those bytes' rule in plain JavaScript, because the build script uses it too. `manifest.ts` reads and writes the manifest, `history.ts` reads the known releases, and `version.ts` compares versions. `plan.ts` (`planUpdate`) compares a folder with the app's copy and says what an update would replace, add and remove, and which files the person changed or deleted; it writes nothing. `apply.ts` (`applyUpdate`) carries a plan out, and `includeList.ts` keeps the `#Include` lines of `ahk/config.ahk` in step with the command files the folder will hold.
 
-The starter is `config.json`, `ahk/`, `powershell/` and `img/` of the repository, without any `tests` or `local` folder and without `.xcf`, `.bak` and `.omb-tmp` files. `configurator/scripts/starter.mjs` is a Vite plugin that reads them at build time and serves them as the virtual module `virtual:omb-starter`; `state/starter.ts` (`loadStarter`) imports it on demand, so the page fetches that separate chunk (about 1.2 MB) only when a folder is set up.
+The starter is `config.json`, `ahk/`, `powershell/` and `img/` of the repository, without any `tests` or `local` folder and without `.xcf`, `.bak` and `.omb-tmp` files. `configurator/scripts/starter.mjs` is a Vite plugin that reads them at build time and serves them as the virtual module `virtual:omb-starter`; `state/starter.ts` (`loadStarter`) imports it on demand, so the page fetches that separate chunk (about 1.3 MB) only when a folder is set up or updated. A second module, `virtual:omb-starter-index` (`loadStarterIndex`), holds only the version of the app's copy and the fingerprint of each file, which is all a check needs. The version is `APP_VERSION` when the build is given one, else `<MAJOR>.<MINOR>.0-dev` from `configurator/package.json`.
 
 The checks in `validate.ts` are the repository's own validator, `scripts/validate-config-core.mjs`, imported from outside `configurator/`. The configurator and `node scripts/validate-config.mjs` therefore cannot disagree about what a valid layout is.
+
+#### The manifest and the known releases
+
+A folder the configurator set up or updated holds `omb-manifest.json` in its root: the version of the app that last wrote its shared files, the fingerprint of each file it wrote, the command files deleted in the Commands tab, and, for each changed file the person kept at an update, the fingerprint of the app's copy they were offered then. A file that still has the manifest's fingerprint is untouched. The Commands tab records a delete there (`state/commandActions.ts`), and takes the entry out when the file is created again. The starter never carries a manifest, and `.gitignore` names it.
+
+Folders set up by 1.0.2 to 1.0.5 have no manifest. For them, `update/knownReleases.json` holds the fingerprints of every file those releases shipped, made from the release tags by `node configurator/scripts/starter-history.mjs`. A file with one of them is an untouched file of that release, and a missing command file that a release shipped counts as deleted by the person.
+
+Versions compare as three numbers, and `-dev` adds nothing, so a development build counts as older than every release of its line and never offers its scripts to a folder one of them wrote: a folder whose manifest names a version newer than the app's, or, without a manifest, whose files are of a newer release and differ from the app's copy, gets a notice saying so and no update.
 
 ### `src/platform`: opening a folder
 
@@ -45,6 +54,8 @@ The checks in `validate.ts` are the repository's own validator, `scripts/validat
 
 An edit is always `dispatch({ type: 'edit', ws: someOp(ws, ...) })`: an operation from `core/config/ops.ts` makes the next workspace, and the reducer keeps it.
 
+`updateActions.ts` holds the update. Once a folder has opened, `opened` in `actions.ts` starts its check in the background, so opening never waits for it: `planUpdate` against the app's copy, and the state's `update` when there is something new to offer. A folder with a `.git` entry in its root is never checked. Pressing **Update** waits for the Commands tab's work in flight, makes the plan again, loads the app's files and runs `applyUpdate`; nothing may open, close or reload a folder until the outcome is shown. Afterwards the shared files are scanned again, as after a change from outside.
+
 ### `src/ui`: what you see
 
 One file per tab (`GetStarted`, `ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsTab`), plus the pieces they share.
@@ -52,6 +63,8 @@ One file per tab (`GetStarted`, `ShapeTab`, `LayersTab`, `MacrosTab`, `CommandsT
 `GetStarted.tsx` is the guide for newcomers. `OpenScreen.tsx` shows it too, before any folder is open, so it reads only what `useApp()` gives and takes the folder's name and the versions to describe as props.
 
 `Toast.tsx` shows the one message the store holds (`banner`) as a floating toast. A notice or a refused action leaves by itself. A failure stays until dismissed, and so does a notice raised while a folder loads.
+
+`UpdateNotice.tsx` is the bar under the header that says a folder's scripts are older than the app's, with **Review the update** and **Not now**. `UpdateDialog.tsx` is the dialog behind it: what the update would replace, add and remove, a tick box for each file the person changed or deleted, then what came of it. While the dialog is open, everything behind it is `inert` (`App.tsx`).
 
 `DocCard` (`code/DocCard.tsx`) is the one card of a function's docs. `hoverDocs` shows it over a name in the code editor. In the right panel, `DocHover.tsx` owns the one card for both of its lists, the outline of the file's commands and `OtherCommands` (what a command can call): `CommandsTab` wraps both in its `DocHoverProvider`, each row asks for the card through `useDocHover`, and the card is shown beside the panel, so a row of one list never leaves a card of the other up.
 

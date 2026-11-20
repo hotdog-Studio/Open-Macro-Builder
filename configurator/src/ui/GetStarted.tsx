@@ -65,7 +65,9 @@ function WhatYouNeed({ folderName }: Readonly<{ folderName: string | null }>) {
             </>
           ) : (
             <>You have one open: {folderName}.</>
-          )}
+          )}{' '}
+          When a newer version of this app has newer scripts than a folder it set up, it offers to update them, and it
+          replaces a script you changed only if you tick it.
         </li>
       </Bullets>
     </Step>

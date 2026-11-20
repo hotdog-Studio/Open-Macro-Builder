@@ -68,6 +68,8 @@ const HIDE_PS = 'Windows may hide the ending and show the file as launch.'
 const HIDE_BOTH = 'Windows may hide the endings and show the files as main and launch.'
 const NOTEPAD =
   'Double-clicking main.ahk opens Notepad, or Windows asks which app to use. That means Windows does not know the file, usually because AutoHotkey is not installed.'
+const UPDATES =
+  'When a newer version of this app has newer scripts than a folder it set up, it offers to update them, and it replaces a script you changed only if you tick it.'
 const step8 = (file: string) =>
   `Press Windows + R, type shell:startup and press Enter. A folder opens, and whatever is in it starts when you sign in. Drag ${file} into that folder with the right mouse button and choose Create shortcuts here.`
 
@@ -104,9 +106,9 @@ describe('the Get started tab', () => {
       'Share a command',
     ])
     expect(headings(guide, 'h4')).toEqual(['AutoHotkey', 'PowerShell'])
-    expect(blocks(guide)).toContain('A folder for Open Macro Builder to live in. You have one open: repo.')
+    expect(blocks(guide)).toContain(`A folder for Open Macro Builder to live in. You have one open: repo. ${UPDATES}`)
     expect(blocks(guide)).not.toContain(
-      'A folder for Open Macro Builder to live in. Press Create new folder… and the app makes one, with the scripts, the icons and an example layout in it.',
+      `A folder for Open Macro Builder to live in. Press Create new folder… and the app makes one, with the scripts, the icons and an example layout in it. ${UPDATES}`,
     )
   })
 
@@ -338,7 +340,7 @@ describe('the guide with no folder open', () => {
   it('says to press Create new folder…, and has no folder to name or tick under I run', () => {
     const guide = renderGuide(['ahk', 'ps'])
     expect(blocks(guide)).toContain(
-      'A folder for Open Macro Builder to live in. Press Create new folder… and the app makes one, with the scripts, the icons and an example layout in it.',
+      `A folder for Open Macro Builder to live in. Press Create new folder… and the app makes one, with the scripts, the icons and an example layout in it. ${UPDATES}`,
     )
     expect(guide.textContent).not.toContain('You have one open')
     expect(guide.textContent).not.toContain('Tick the one you chose')

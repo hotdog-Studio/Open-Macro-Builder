@@ -28,7 +28,12 @@ export interface UpdateDone {
 
 export type UpdateResult =
   | ({ ok: true } & UpdateDone)
-  | ({ ok: false; failedAt: string; message: string } & UpdateDone)
+  | ({
+      ok: false
+      /** The path the update stopped at, as the folder spells it; the folder's name when its root could not be listed. */
+      failedAt: string
+      message: string
+    } & UpdateDone)
 
 /** The message of what a step threw or rejected with. */
 function messageOf(cause: unknown): string {

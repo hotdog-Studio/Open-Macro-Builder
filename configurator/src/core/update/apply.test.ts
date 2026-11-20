@@ -174,6 +174,14 @@ async function update(folder: FolderAccess, options: UpdateOptions = {}): Promis
 }
 
 /** The calls that change the folder. */
+/** A folder whose read of a path in `gone` finds nothing, while its listing still names it. */
+class Vanishing extends MemoryFolder {
+  readonly gone = new Set<string>()
+  override readBytes(path: string): Promise<Uint8Array | null> {
+    return this.gone.has(path) ? Promise.resolve(null) : super.readBytes(path)
+  }
+}
+
 const changesIn = (calls: FolderCall[]) => calls.filter((call) => call.op === 'writeBytes' || call.op === 'remove')
 
 /** Every file below `dir`. */
@@ -426,13 +434,6 @@ describe('applyUpdate: looking again before writing', () => {
   )
 
   it('unlists a command file the listing still named but its read found gone', async () => {
-    /** A folder whose read of a path in `gone` finds nothing, while its listing still names it. */
-    class Vanishing extends MemoryFolder {
-      readonly gone = new Set<string>()
-      override readBytes(path: string): Promise<Uint8Array | null> {
-        return this.gone.has(path) ? Promise.resolve(null) : super.readBytes(path)
-      }
-    }
     const folder = new Vanishing('scripts', await textsOf({}, null))
     const plan = await nextPlan(folder)
     folder.gone.add(WINDOWS_FILE)

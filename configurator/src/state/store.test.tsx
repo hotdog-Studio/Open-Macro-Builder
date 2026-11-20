@@ -113,6 +113,16 @@ describe('the reducer', () => {
     expect(reducer(state, { type: 'dismiss-disk' })).toBe(state)
   })
 
+  it('adds a notice to an error showing on a new line, and the error stays an error', () => {
+    const failed = reducer(editing(), { type: 'banner', banner: { text: 'config.json was not saved.', kind: 'error' } })
+    const joined = reducer(failed, { type: 'notice', text: 'A notice.' })
+    expect(joined.screen === 'edit' && joined.banner).toEqual({ text: 'config.json was not saved.\nA notice.', kind: 'error' })
+  })
+
+  it('ignores a notice while no folder is open', () => {
+    expect(reducer(initialState, { type: 'notice', text: 'A notice.' })).toBe(initialState)
+  })
+
   it('leaves the editor when told to show the start screen', () => {
     expect(reducer(editing(), { type: 'show-open', message: 'Gone', reopen: 'repo' })).toEqual({
       screen: 'open',

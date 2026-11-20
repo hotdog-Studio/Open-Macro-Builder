@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from 'react'
 import { withoutFullStop } from '../core/message'
 import type { UpdateDone, UpdatePicks } from '../core/update/apply'
 import { INCLUDE_FILE } from '../core/update/includeList'
+import { MANIFEST_PATH } from '../core/update/manifest'
 import type { UpdatePlan } from '../core/update/plan'
 import { compareVersions } from '../core/update/version'
 import { useEditor, type UpdateOffer, type UpdateOutcome } from '../state/store'
@@ -31,9 +32,9 @@ function firstLine({ from, to }: Pick<UpdatePlan, 'from' | 'to'>): string {
 type Failure = Extract<UpdateOutcome, { ok: false }>
 
 /**
- * What a failed update says: where it stopped with scripts of two versions left; or that it could not start,
- * at a file or for a reason that names none, and that nothing was changed or which backups stay; or, when it
- * threw, that some scripts may be new already.
+ * What a failed update says: where it stopped with scripts of two versions left; that the scripts were updated
+ * but the manifest, written last, was not; or that it could not start, at a file or for a reason that names
+ * none, and that nothing was changed or which backups stay; or, when it threw, that some scripts may be new already.
  */
 function failureSentence(failure: Failure): string {
   if ('threw' in failure) {
@@ -41,6 +42,10 @@ function failureSentence(failure: Failure): string {
   }
   if ('notStarted' in failure) return `The update could not start: ${failure.notStarted}. Nothing was changed.`
   const message = withoutFullStop(failure.message)
+  // The manifest is written once every script is: the only step left undone is its record.
+  if (failure.failedAt === MANIFEST_PATH) {
+    return `The scripts were updated, but ${MANIFEST_PATH} could not be written: ${message}. Run the update again to finish it.`
+  }
   if (scriptsWritten(failure)) {
     return `The update stopped at ${failure.failedAt}: ${message}. This folder now has scripts of two versions. Run the update again to finish it.`
   }

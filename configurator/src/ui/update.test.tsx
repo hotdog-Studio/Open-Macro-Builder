@@ -903,6 +903,21 @@ describe('updating', () => {
     expect(folder.text(MANIFEST_PATH)).not.toBeNull()
   })
 
+  it('says the scripts were updated when only the manifest could not be written, offers Try again, and scans the shared files again', async () => {
+    const { folder, user, dialog } = await reviewed(WORKED)
+    folder.beforeChange = (path) => {
+      if (path === MANIFEST_PATH) throw new Error('The disk is full.')
+    }
+    await press(user, dialog)
+    const failed = dialogOf()
+    const sentence = `The scripts were updated, but ${MANIFEST_PATH} could not be written: The disk is full. Run the update again to finish it.`
+    expect(within(failed).getByText(sentence)).toBeTruthy()
+    expect(within(failed).getByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(document.activeElement).toBe(within(failed).getByRole('button', { name: 'Close' }))
+    expect(folder.text(MANIFEST_PATH)).toBeNull()
+    await waitFor(() => expect(editor().commandFiles.map((f) => f.file.path)).toContain(NEW_AHK))
+  })
+
   it.each<{
     name: string
     ticks: string[]

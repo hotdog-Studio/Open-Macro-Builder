@@ -152,8 +152,7 @@ export function buildKnownReleases(repoRoot, upTo) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
   const table = buildKnownReleases(repoRoot)
-  writeFileSync(OUTPUT, `${JSON.stringify(table, null, 2)}
-`)
+  writeFileSync(OUTPUT, `${JSON.stringify(table, null, 2)}\n`)
   const prints = new Set(Object.values(table.files).flatMap((byPrint) => Object.keys(byPrint)))
   console.log(`last ${table.last}: ${Object.keys(table.files).length} paths, ${prints.size} distinct fingerprints -> ${OUTPUT}`)
 }

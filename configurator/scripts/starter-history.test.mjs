@@ -118,13 +118,17 @@ describe('the known releases against the release tags', () => {
 
   for (const version of wanted) {
     const there = present.includes(version)
-    const title = `gives v${version} the fingerprints its tag has${there ? '' : ` (skipped: v${version} is not in this clone)`}`
+    const note = there ? '' : ` (skipped: v${version} is not in this clone)`
+    const title = `gives v${version} the fingerprints its tag has${note}`
     it.skipIf(!there)(title, () => {
       expect(heldFor(version)).toEqual(fromGit.get(version))
     })
   }
 
-  it.skipIf(absent.length > 0)(`rebuilds the committed table from the tags${absent.length > 0 ? ` (skipped: ${absent.map((v) => `v${v}`).join(', ')} not in this clone)` : ''}`, () => {
+  const absentNames = absent.map((version) => `v${version}`).join(', ')
+  const rebuildNote = absent.length > 0 ? ` (skipped: ${absentNames} not in this clone)` : ''
+  const rebuildTitle = `rebuilds the committed table from the tags${rebuildNote}`
+  it.skipIf(absent.length > 0)(rebuildTitle, () => {
     expect(buildKnownReleases(repoRoot, known.last)).toEqual(known)
   })
 
@@ -132,5 +136,4 @@ describe('the known releases against the release tags', () => {
     const mentioned = new Set(Object.values(known.files).flatMap((byPrint) => Object.values(byPrint).flat()))
     expect(tagged.filter((v) => compareVersions(v, known.last) <= 0).filter((v) => !mentioned.has(v))).toEqual([])
   })
-
 })

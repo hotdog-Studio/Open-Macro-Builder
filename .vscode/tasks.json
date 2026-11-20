@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Stop the AutoHotkey macropad",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\.vscode\\stop-macropad.ps1", "AutoHotkey"],
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Stop the PowerShell macropad",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\.vscode\\stop-macropad.ps1", "PowerShell"],
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      // Runs through cmd so the "--" reaches vite (Windows PowerShell drops it when npm is npm.ps1).
+      // strictPort makes a busy port an error instead of vite quietly moving to the next one,
+      // which would leave the browser on the wrong page.
+      "label": "Configurator dev server",
+      "type": "shell",
+      "command": "npm run dev -- --strictPort",
+      "options": {
+        "cwd": "${workspaceFolder}/configurator",
+        "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^never-matches$" },
+        "background": {
+          "activeBegins": true,
+          "beginsPattern": "VITE v\\d",
+          "endsPattern": "Local:\\s+http"
+        }
+      }
+    }
+  ]
+}

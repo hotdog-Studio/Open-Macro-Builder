@@ -1,0 +1,4 @@
+{
+  // The macropad entries in launch.json use these extensions' debuggers.
+  "recommendations": ["mark-wiemer.vscode-autohotkey-plus-plus", "ms-vscode.powershell"]
+}

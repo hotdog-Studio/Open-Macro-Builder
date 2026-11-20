@@ -1,0 +1,47 @@
+{
+  // Run and Debug (F5) entries. Each macropad entry stops the other version first, because both
+  // cannot use the macro keys at once. Stopping a debug session stops that macropad, so start
+  // ahk\main.ahk or powershell\launch.vbs again afterwards to get your everyday one back.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Needs the AutoHotkey Plus Plus extension and AutoHotkey v2.
+      "name": "Macropad: AutoHotkey",
+      "type": "ahk2",
+      "request": "launch",
+      // Backslashes, so the PowerShell version's "is AutoHotkey running" check recognises it.
+      "program": "${workspaceFolder}\\ahk\\main.ahk",
+      "stopOnEntry": false,
+      "preLaunchTask": "Stop the PowerShell macropad"
+    },
+    {
+      // Needs the PowerShell extension running Windows PowerShell 5.1.
+      "name": "Macropad: PowerShell",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}\\powershell\\main.ps1",
+      "cwd": "${workspaceFolder}\\powershell",
+      // A fresh session each run: the macropad compiles its C# helpers with Add-Type, which a
+      // reused session would already hold.
+      "createTemporaryIntegratedConsole": true,
+      "preLaunchTask": "Stop the AutoHotkey macropad"
+    },
+    {
+      // Opens the configurator in a separate Chrome profile; choose Open folder and pick this repo.
+      "name": "Configurator: browser",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/configurator",
+      "preLaunchTask": "Configurator dev server"
+    },
+    {
+      // Builds and starts the desktop (Electron) app.
+      "name": "Configurator: desktop app",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run electron",
+      "cwd": "${workspaceFolder}/configurator"
+    }
+  ]
+}

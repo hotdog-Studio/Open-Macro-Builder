@@ -19,7 +19,8 @@ const FIRST_RELEASE = '1.0.2'
 const TAG = /^v(\d+\.\d+\.\d+)$/
 const OUTPUT = resolve(dirname(fileURLToPath(import.meta.url)), '../src/core/update/knownReleases.json')
 
-function compareVersions(a, b) {
+/** Negative when version `a` (three numbers, no `v`) is older than `b`, zero when equal, positive when newer. */
+export function compareVersions(a, b) {
   const left = a.split('.').map(Number)
   const right = b.split('.').map(Number)
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2]
@@ -41,6 +42,22 @@ export function releaseVersions(repoRoot) {
     .map((tag) => TAG.exec(tag.trim())?.[1])
     .filter((version) => version && compareVersions(version, FIRST_RELEASE) >= 0)
   return versions.sort(compareVersions)
+}
+
+/**
+ * What a comparison of the table with the tags covers: the releases to compare (every tag from 1.0.2 to
+ * `known.last` that `tagged` shows, and every release the table mentions) split into those whose tag is
+ * in this clone and those whose tag is not. A clone with some tags is compared as far as it goes.
+ */
+export function releasesToCompare(tagged, known) {
+  const mentioned = Object.values(known.files).flatMap((byPrint) => Object.values(byPrint).flat())
+  const wanted = [...new Set([...tagged.filter((version) => compareVersions(version, known.last) <= 0), ...mentioned])]
+  wanted.sort(compareVersions)
+  return {
+    wanted,
+    present: wanted.filter((version) => tagged.includes(version)),
+    absent: wanted.filter((version) => !tagged.includes(version)),
+  }
 }
 
 /** { path: blob id } of the starter files in a tag's tree. */

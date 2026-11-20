@@ -404,10 +404,16 @@ describe('setting up an empty folder', () => {
     const spies = pickers()
     const { h, folder } = await prompted(spies)
     const hold = gate()
-    folder.onWrite = () => hold.wait
+    const reached = gate()
+    folder.onWrite = () => {
+      reached.open()
+      return hold.wait
+    }
     const setting = h.actions.chooseSetup()
     await tryEveryPicker(h)
     expect(timesCalled(spies)).toEqual([0, 0, 0])
+    // The copy has to be waiting at a write before it can fail there (it now hashes the files first).
+    await reached.wait
     hold.fail(new Error('disk full'))
     await setting
     expect(h.state()).toMatchObject({ screen: 'open', message: expect.stringMatching(/^Setting up stopped part-way: disk full\./) })

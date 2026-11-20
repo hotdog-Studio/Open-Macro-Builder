@@ -15,16 +15,20 @@ const INDEX_VIRTUAL_ID = 'virtual:omb-starter-index'
 const INDEX_RESOLVED_ID = '\0' + INDEX_VIRTUAL_ID
 
 const SOURCE_FOLDERS = ['ahk', 'powershell', 'img']
-// Tests and personal files stay behind; so do image sources and editor or atomic-write leftovers.
+// Tests and personal files stay behind; so do image sources, editor or atomic-write leftovers and manifests.
 const SKIPPED_FOLDERS = new Set(['tests', 'local'])
 const SKIPPED_FILES = /\.(xcf|bak|omb-tmp)$/
+// The manifest says what a setup wrote into one folder; no copy carries one, wherever it lies in the tree
+// (the root is never walked, so there it is already left out).
+const MANIFEST_FILE = 'omb-manifest.json'
+const skipped = (name) => SKIPPED_FILES.test(name) || name.toLowerCase() === MANIFEST_FILE
 
 function collect(root, rel, into) {
   for (const entry of readdirSync(join(root, rel), { withFileTypes: true })) {
     const path = `${rel}/${entry.name}`
     if (entry.isDirectory()) {
       if (!SKIPPED_FOLDERS.has(entry.name)) collect(root, path, into)
-    } else if (!SKIPPED_FILES.test(entry.name)) {
+    } else if (!skipped(entry.name)) {
       into.push(path)
     }
   }

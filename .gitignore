@@ -12,6 +12,9 @@ coverage/
 # SonarQube credentials for local scans (see sonar-project.properties)
 .env.sonar
 
+# The record of what the configurator installed into a folder it set up: belongs to that folder, never committed
+omb-manifest.json
+
 # Backups left by local config edits
 *.bak
 

@@ -29,7 +29,7 @@ import type { Platform } from '../platform/types'
 import { createCommandActions } from './commandActions'
 import { mergeAfterRead } from './commandsSlice'
 import { createMacropadActions } from './macropad'
-import { loadStarter } from './starter'
+import { loadStarter, loadStarterIndex } from './starter'
 import type { Action, AppState, EditState, SaveDialog, Session } from './store'
 
 export type SaveResult = 'saved' | 'blocked' | 'conflict'
@@ -465,15 +465,19 @@ export function createActions(
   /** Loads the starter, then writes it; false when either failed, and the start screen says why. */
   async function copyStarter(folder: FolderAccess, token: number): Promise<boolean> {
     let files: StarterFile[]
+    let version: string
     try {
-      files = await loadStarter()
+      // Both before anything is written: a folder is not touched when either fails to load.
+      const [loaded, index] = await Promise.all([loadStarter(), loadStarterIndex()])
+      files = loaded
+      version = index.version
     } catch (e) {
       // Nothing written yet, so no partial copy to warn about.
       if (token === loads) showOpen(starterLoadError(e))
       return false
     }
     try {
-      await writeStarter(folder, files)
+      await writeStarter(folder, files, version)
       return true
     } catch (e) {
       if (token === loads) showOpen(setupError(e))

@@ -71,6 +71,21 @@ describe('listStarterFiles on a made-up tree', () => {
   })
 })
 
+describe('listStarterFiles and the manifest', () => {
+  it('never carries omb-manifest.json, in the root or in a folder, in any case', () => {
+    const root = treeOf({
+      'config.json': '{}',
+      'omb-manifest.json': '{}',
+      'ahk/a.ahk': aText,
+      'ahk/omb-manifest.json': '{}',
+      'img/sub/OMB-Manifest.json': '{}',
+      'img/a.png': Buffer.from([1]),
+      'powershell/omb-manifest.json.txt': 'kept: another file',
+    })
+    expect(listStarterFiles(root)).toEqual(['ahk/a.ahk', 'config.json', 'img/a.png', 'powershell/omb-manifest.json.txt'])
+  })
+})
+
 describe('starterPlugin', () => {
   it('serves virtual:omb-starter as the files in base64', async () => {
     const plugin = starterPlugin(madeUpTree())

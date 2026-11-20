@@ -901,6 +901,22 @@ describe('updating', () => {
     expect(folder.changes).toEqual(changes)
   })
 
+  it('says the folder holds two versions when only a removal is left and it fails after the include file was adjusted', async () => {
+    const { folder, user, dialog } = await reviewed({
+      ...APP_6,
+      [GONE_AHK]: FILES_4[GONE_AHK],
+      [INCLUDE]: includeOf('; my config', BACK_LINE, NEW_LINE, GONE_LINE),
+    })
+    folder.beforeChange = (path) => {
+      if (path === GONE_AHK) throw new Error('The disk is full.')
+    }
+    await press(user, dialog)
+    const stopped = `The update stopped at ${GONE_AHK}: The disk is full. This folder now has scripts of two versions. Run the update again to finish it.`
+    expect(within(dialogOf()).getByText(stopped)).toBeTruthy()
+    expect(folder.text(INCLUDE)).not.toContain(GONE_LINE)
+    expect(folder.text(GONE_AHK)).toBe(FILES_4[GONE_AHK])
+  })
+
   it('ends an update that throws in a failure of its own, not in a dialog that stays busy', async () => {
     const { user, dialog } = await reviewed(WORKED, {}, await updateSourceOf({ files: BROKEN }))
     await press(user, dialog)

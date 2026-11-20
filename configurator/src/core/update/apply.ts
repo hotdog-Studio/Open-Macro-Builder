@@ -25,6 +25,11 @@ export interface UpdateDone {
   kept: string[]
   /** The backups written, under the names they got. */
   backups: string[]
+  /**
+   * The files this update rewrote without replacing, adding or removing them: ahk/config.ahk, when only its
+   * list was brought up to date (under the person's body, or under the app's as a repair of its list).
+   */
+  adjusted: string[]
 }
 
 export type UpdateResult =
@@ -72,7 +77,7 @@ interface Now {
 interface Write {
   path: string
   data: Uint8Array
-  into: 'replaced' | 'added' | null
+  into: 'replaced' | 'added' | 'adjusted'
 }
 
 /** What the look-again found. */
@@ -336,7 +341,8 @@ function wholeInclude(ctx: Context, work: Work, app: AppFile): string {
 function includeInto(plan: UpdatePlan, ticked: boolean): Write['into'] {
   const names = (list: string[]) => list.some((path) => keyOf(path) === INCLUDE_FILE)
   if (ticked || names(plan.replace)) return 'replaced'
-  return names(plan.add) ? 'added' : null
+  // Neither replaced nor added: a repair of its list under the app's body.
+  return names(plan.add) ? 'added' : 'adjusted'
 }
 
 /** Records the fingerprint of the include file's bytes as written. */
@@ -363,7 +369,7 @@ async function adjustedWrite(ctx: Context, work: Work, path: string, data: Uint8
   const text = adjustList(file.text, [...ctx.plan.add, ...ctx.tickedDeleted, ...revived], [...work.removals, ...work.gone])
   if (text === file.text) return null
   if (!utf8) throw new Error(`${path} is not UTF-8 text, so its list of command files cannot be brought up to date.`)
-  return recorded(work, { path, data: encodeTextFile({ ...file, text }), into: null })
+  return recorded(work, { path, data: encodeTextFile({ ...file, text }), into: 'adjusted' })
 }
 
 /**
@@ -430,7 +436,7 @@ async function carryOut(folder: FolderAccess, work: Work, done: UpdateDone): Pro
   }
   for (const { path, data, into } of work.include === null ? work.writes : [...work.writes, work.include]) {
     await at(path, () => folder.writeBytes(path, data)) // NOSONAR S9382
-    if (into !== null) done[into].push(path)
+    done[into].push(path)
   }
   for (const path of work.removals) {
     await at(path, () => folder.remove(path)) // NOSONAR S9382
@@ -452,7 +458,7 @@ export async function applyUpdate(
   picks: UpdatePicks,
   files: StarterFile[],
 ): Promise<UpdateResult> {
-  const done: UpdateDone = { replaced: [], added: [], removed: [], kept: [], backups: [] }
+  const done: UpdateDone = { replaced: [], added: [], removed: [], kept: [], backups: [], adjusted: [] }
   if (plan.skip !== null) return { ok: true, ...done }
   try {
     const { work, manifest } = await prepare(folder, plan, picks, files)

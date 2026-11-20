@@ -84,9 +84,9 @@ export function updateSentence(plan: Pick<UpdatePlan, 'from' | 'to'>): string {
 const newerSentence = (folderVersion: string, to: string) =>
   `This folder was last updated by version ${folderVersion}, which is newer than this app (${to}).`
 
-/** Whether an update wrote or removed any of the scripts (backups are not scripts). */
+/** Whether an update wrote or removed any of the scripts, an include file whose list alone it rewrote among them (backups are not scripts). */
 export const scriptsWritten = (result: UpdateResult) =>
-  [result.replaced, result.added, result.removed].some((list) => list.length > 0)
+  [result.replaced, result.added, result.removed, result.adjusted].some((list) => list.length > 0)
 
 /** Whether the shared files may have changed, so they are scanned again. */
 function mayHaveChanged(outcome: UpdateOutcome): boolean {

@@ -141,7 +141,7 @@ async function nextPlan(folder: FolderAccess): Promise<UpdatePlan> {
 }
 
 const NO_PICKS: UpdatePicks = { replaceChanged: [], restoreDeleted: [] }
-const NOTHING_DONE: UpdateDone = { replaced: [], added: [], removed: [], kept: [], backups: [] }
+const NOTHING_DONE: UpdateDone = { replaced: [], added: [], removed: [], kept: [], backups: [], adjusted: [] }
 
 interface UpdateOptions {
   picks?: UpdatePicks
@@ -201,7 +201,7 @@ const ahkCommandFilesIn = async (folder: FolderAccess) =>
 const listsWhatItHolds = async (folder: MemoryFolder) =>
   listsExactly(folder.text(INCLUDE_FILE) ?? '', await ahkCommandFilesIn(folder))
 
-const LISTS = ['replaced', 'added', 'removed', 'kept', 'backups'] as const
+const LISTS = ['replaced', 'added', 'removed', 'kept', 'backups', 'adjusted'] as const
 /** The lists of the result that name `path`. */
 const listsHolding = (result: UpdateResult, path: string) => LISTS.filter((list) => result[list].includes(path))
 
@@ -228,6 +228,7 @@ const EVERY_DONE: UpdateDone = {
   removed: [GONE_FILE],
   kept: [JSON_FILE, OLD_PS1],
   backups: [backupOf(WINDOWS_FILE)],
+  adjusted: [],
 }
 
 describe('applyUpdate: a plan with every kind of entry', () => {
@@ -507,24 +508,26 @@ describe('applyUpdate: the include file', () => {
       text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
       lists: ['replaced'],
     },
-    { row: 'changed: its list adjusted, kept', changes: MY_INCLUDE, text: includeText('; my config', WINDOWS, CHROME, NEW), lists: ['kept'] },
+    { row: 'changed: its list adjusted, kept', changes: MY_INCLUDE, text: includeText('; my config', WINDOWS, CHROME, NEW), lists: ['kept', 'adjusted'] },
     { row: 'changed and ticked: written whole, replaced', changes: MY_INCLUDE, picks: TICK_INCLUDE, text: APP[INCLUDE_FILE], lists: ['replaced'] },
     {
       row: 'of an earlier body changed after the plan: its list adjusted, kept',
       later: { [INCLUDE_FILE]: includeText('; edited', WINDOWS, CHROME, GONE) },
       text: includeText('; edited', WINDOWS, CHROME, NEW),
-      lists: ['kept'],
+      lists: ['kept', 'adjusted'],
     },
     {
-      row: "up to date, its list missing the person's own file: its list rebuilt, in no list",
+      row: "up to date, its list missing the person's own file: its list rebuilt, adjusted",
       changes: { ...APP, [MINE_FILE]: 'mine\n' },
       text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
+      lists: ['adjusted'],
     },
     {
-      row: 'up to date, a deleted file ticked back: its line added, in no list',
+      row: 'up to date, a deleted file ticked back: its line added, adjusted',
       changes: NO_CHROME,
       picks: TICK_CHROME,
       text: includeText('; config 1.0.6', WINDOWS, NEW, CHROME),
+      lists: ['adjusted'],
     },
     {
       row: 'up to date and changed after the plan, a deleted file ticked back: its line added, kept',
@@ -532,7 +535,7 @@ describe('applyUpdate: the include file', () => {
       picks: TICK_CHROME,
       later: { [INCLUDE_FILE]: includeText('; edited', WINDOWS, NEW) },
       text: includeText('; edited', WINDOWS, NEW, CHROME),
-      lists: ['kept'],
+      lists: ['kept', 'adjusted'],
     },
     {
       row: 'changed, a ticked changed command file gone after the plan written back: its line added, kept',
@@ -540,7 +543,7 @@ describe('applyUpdate: the include file', () => {
       picks: { replaceChanged: [WINDOWS_FILE], restoreDeleted: [] },
       later: { [WINDOWS_FILE]: null },
       text: includeText('; my config', CHROME, NEW, WINDOWS),
-      lists: ['kept'],
+      lists: ['kept', 'adjusted'],
     },
     {
       row: 'up to date, its list put right by the person after the plan: not written, in no list',
@@ -674,6 +677,13 @@ describe('applyUpdate: a failure', () => {
     expect(Object.fromEntries(Object.keys(APP).map((path) => [path, folder.text(path)]))).toEqual(APP)
     expect(folder.text(GONE_FILE)).toBeNull()
     expect((await readManifest(folder))?.version).toBe('1.0.6')
+  })
+
+  it('says the include file was adjusted when a removal after it fails', async () => {
+    const folder = await folderOf(MY_INCLUDE)
+    const { result } = await update(folder, { fails: (call) => call.op === 'remove' })
+    expect(result).toMatchObject({ ok: false, failedAt: GONE_FILE, removed: [], adjusted: [INCLUDE_FILE] })
+    expect(folder.text(INCLUDE_FILE)).toBe(includeText('; my config', WINDOWS, CHROME, NEW))
   })
 
   it('keeps what was done before the failure, says what that was, and goes no further', async () => {

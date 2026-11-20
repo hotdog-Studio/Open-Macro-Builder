@@ -22,7 +22,7 @@ function entryOf(known: KnownReleases, path: string): Record<string, string[]> |
 }
 
 /** The releases that shipped `fingerprint` at `path` (compared ignoring case); [] when none did. */
-export function releasesOf(known: KnownReleases, path: string, fingerprint: string): string[] {
+export function releasesOf(known: KnownReleases, path: string, fingerprint: string): readonly string[] {
   const byPrint = entryOf(known, path)
   return byPrint !== undefined && Object.hasOwn(byPrint, fingerprint) ? byPrint[fingerprint] : []
 }

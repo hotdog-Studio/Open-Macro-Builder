@@ -118,11 +118,19 @@ export function fingerprintsAtTags(repoRoot, versions) {
 /**
  * The table from the releases' files, given as [version, { path: fingerprint }] oldest first:
  * { last, files: { path: { fingerprint: [versions that shipped it, oldest first] } } }, paths sorted.
+ * Two paths that differ only in case are refused: the lookup compares paths ignoring case, and a path
+ * with its history split between two spellings would be found with one half.
  */
 export function mergeReleases(perRelease) {
   const files = {}
+  const spelled = new Map()
   for (const [version, fingerprints] of perRelease) {
     for (const [path, print] of Object.entries(fingerprints)) {
+      const other = spelled.get(path.toLowerCase())
+      if (other !== undefined && other !== path) {
+        throw new Error(`two paths differ only by case: ${other} and ${path} (v${version})`)
+      }
+      spelled.set(path.toLowerCase(), path)
       const byPrint = (files[path] ??= {})
       ;(byPrint[print] ??= []).push(version)
     }
@@ -131,18 +139,21 @@ export function mergeReleases(perRelease) {
   return { last: perRelease.at(-1)[0], files: sorted }
 }
 
-/** The table for every release tag this clone has from 1.0.2 on. */
-export function buildKnownReleases(repoRoot) {
-  const versions = releaseVersions(repoRoot)
+/** The table for every release tag this clone has from 1.0.2 on, up to `upTo` (default: the newest) when given. */
+export function buildKnownReleases(repoRoot, upTo) {
+  const versions = releaseVersions(repoRoot).filter((version) => upTo === undefined || compareVersions(version, upTo) <= 0)
   if (versions.length === 0) throw new Error(`no release tag from v${FIRST_RELEASE} on: run git fetch --tags origin`)
   const fingerprints = fingerprintsAtTags(repoRoot, versions)
   return mergeReleases(versions.map((version) => [version, fingerprints.get(version)]))
 }
 
+// The command line: writes buildKnownReleases's result to knownReleases.json. Only that is not run by the
+// tests, which call buildKnownReleases for real and compare its result with the committed file.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
   const table = buildKnownReleases(repoRoot)
-  writeFileSync(OUTPUT, `${JSON.stringify(table, null, 2)}\n`)
+  writeFileSync(OUTPUT, `${JSON.stringify(table, null, 2)}
+`)
   const prints = new Set(Object.values(table.files).flatMap((byPrint) => Object.keys(byPrint)))
   console.log(`last ${table.last}: ${Object.keys(table.files).length} paths, ${prints.size} distinct fingerprints -> ${OUTPUT}`)
 }

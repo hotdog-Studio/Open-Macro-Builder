@@ -9,6 +9,8 @@ const known: KnownReleases = {
       bbb: ['1.0.4', '1.0.5'],
     },
     'img/blank.png': { ccc: ['1.0.2', '1.0.3', '1.0.4', '1.0.5'] },
+    // A content that came back after another one: its releases are not next to one another.
+    'ahk/gap.ahk': { ddd: ['1.0.2', '1.0.5'], eee: ['1.0.3', '1.0.4'] },
   },
 }
 
@@ -16,6 +18,11 @@ describe('releasesOf', () => {
   it('gives the releases that shipped a fingerprint, oldest first', () => {
     expect(releasesOf(known, 'ahk/Main.ahk', 'aaa')).toEqual(['1.0.2', '1.0.3'])
     expect(releasesOf(known, 'ahk/Main.ahk', 'bbb')).toEqual(['1.0.4', '1.0.5'])
+  })
+
+  it('gives all the releases of a content that returned, with the other content between them', () => {
+    expect(releasesOf(known, 'ahk/gap.ahk', 'ddd')).toEqual(['1.0.2', '1.0.5'])
+    expect(releasesOf(known, 'ahk/gap.ahk', 'eee')).toEqual(['1.0.3', '1.0.4'])
   })
 
   it('gives none for a fingerprint no release shipped at that path', () => {
@@ -46,6 +53,11 @@ describe('everShipped', () => {
 })
 
 describe('KNOWN_RELEASES', () => {
+  it('has no two paths that differ only by case', () => {
+    const paths = Object.keys(KNOWN_RELEASES.files)
+    expect(new Set(paths.map((path) => path.toLowerCase())).size).toBe(paths.length)
+  })
+
   it('names a last release that its files mention', () => {
     const mentioned = new Set(Object.values(KNOWN_RELEASES.files).flatMap((byPrint) => Object.values(byPrint).flat()))
     expect(mentioned.has(KNOWN_RELEASES.last)).toBe(true)

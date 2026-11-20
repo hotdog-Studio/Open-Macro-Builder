@@ -5,9 +5,12 @@ import type { TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
 import type { CatalogEntry, CommandFile, LangId, LibraryFile } from '../core/languages'
 import type { Settings } from '../core/settings'
+import type { UpdateResult } from '../core/update/apply'
+import type { UpdatePlan } from '../core/update/plan'
 import type { Platform } from '../platform/types'
 import { createActions, type AppActions } from './actions'
 import { commandsReducer, initialCommands, type CommandAction, type CommandsView } from './commandsSlice'
+import { APP_SCRIPTS, type UpdateSource } from './updateActions'
 
 export type Tab = 'start' | 'shape' | 'layers' | 'macros' | 'commands'
 
@@ -88,6 +91,17 @@ export interface OutsideChange {
   dismissed: boolean
 }
 
+/**
+ * An update of the folder's scripts on offer, from the check after the folder opened: the plan, whether
+ * its dialog is open, whether it is being carried out, and what came of it.
+ */
+export interface UpdateOffer {
+  plan: UpdatePlan
+  dialog: boolean
+  busy: boolean
+  result: UpdateResult | null
+}
+
 /** The editor as the reducer keeps it: no derived fields. */
 export interface EditCore extends Session {
   screen: 'edit'
@@ -99,6 +113,8 @@ export interface EditCore extends Session {
   saveDialog: SaveDialog | null
   outsideChange: OutsideChange | null
   commands: CommandsView
+  /** The update the bar offers; null when there is nothing new, or after Not now until the folder opens again. */
+  update: UpdateOffer | null
 }
 
 /** The editor as components see it. */
@@ -138,6 +154,8 @@ export type Action =
   /** A recheck of the config file: `changed` when the disk holds another version than the app. */
   | { type: 'disk'; changed: boolean; version: string | null }
   | { type: 'dismiss-disk' }
+  /** The check after opening found something new, the bar was answered, or the dialog moved on. */
+  | { type: 'update'; update: UpdateOffer | null }
   | CommandAction
 
 export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
@@ -155,6 +173,7 @@ function loadedState(session: Session, settings: Settings, tab: Tab = 'shape'): 
     saveDialog: null,
     outsideChange: null,
     commands: initialCommands(settings),
+    update: null,
   }
 }
 
@@ -186,14 +205,22 @@ function editReducer(state: EditCore, action: Action): EditCore {
       // The disk now holds what the app wrote, so an outside-change banner is out of date.
       return { ...state, configFile: action.configFile, saved: action.saved, outsideChange: null }
     case 'reloaded':
-      // The session carries the command files as the actions merged them, so both hold the same list.
-      return { ...loadedState(action.session, state.settings), tab: state.tab, commands: state.commands }
+      // The session carries the command files as the actions merged them, so both hold the same list. A
+      // reload is not an opening: the update on offer stays, as no check runs again.
+      return {
+        ...loadedState(action.session, state.settings),
+        tab: state.tab,
+        commands: state.commands,
+        update: state.update,
+      }
     case 'save-dialog':
       return { ...state, saveDialog: action.dialog }
     case 'disk':
       return diskReducer(state, action.changed, action.version)
     case 'dismiss-disk':
       return state.outsideChange ? { ...state, outsideChange: { ...state.outsideChange, dismissed: true } } : state
+    case 'update':
+      return { ...state, update: action.update }
     case 'commands-show':
     case 'draft':
     case 'command-saved':
@@ -243,7 +270,15 @@ function useConfigText(ws: Workspace | null): string | null {
   return useMemo(() => (ws ? writeConfig(ws) : null), [ws])
 }
 
-export function AppProvider({ platform, children }: Readonly<{ platform: Platform; children: ReactNode }>) {
+/**
+ * `updateSource` is what the check after opening compares a folder with: the app's own copy of the
+ * scripts unless given (the tests give a small one).
+ */
+export function AppProvider({
+  platform,
+  updateSource = APP_SCRIPTS,
+  children,
+}: Readonly<{ platform: Platform; updateSource?: UpdateSource; children: ReactNode }>) {
   const [stored, dispatch] = useReducer(reducer, initialState)
   const editing = stored.screen === 'edit' ? stored : null
   const wsText = useConfigText(editing?.ws ?? null)
@@ -252,7 +287,10 @@ export function AppProvider({ platform, children }: Readonly<{ platform: Platfor
     () => (stored.screen === 'edit' ? { ...stored, dirty: wsText !== savedText } : stored),
     [stored, wsText, savedText],
   )
-  const { actions, sync, dispose } = useMemo(() => createActions(platform, dispatch), [platform])
+  const { actions, sync, dispose } = useMemo(
+    () => createActions(platform, dispatch, updateSource),
+    [platform, updateSource],
+  )
   // Actions run from clicks and after awaits; they read the last committed state.
   useEffect(() => sync(state), [sync, state])
   // Stops watching config.json when the app goes away.

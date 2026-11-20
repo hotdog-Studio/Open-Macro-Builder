@@ -9,6 +9,7 @@ import { OpenScreen } from './OpenScreen'
 import { SaveFlow } from './SaveFlow'
 import { ShapeTab } from './ShapeTab'
 import { Toast } from './Toast'
+import { UpdateNotice } from './UpdateNotice'
 import { useUnsavedGuard } from './useUnsavedGuard'
 
 function Editor() {
@@ -17,6 +18,8 @@ function Editor() {
     <div className="flex h-full flex-col">
       <Header />
       <SaveFlow />
+      {/* Under the changed-on-disk bar when both show; neither replaces the other. */}
+      <UpdateNotice />
       {/* The relative wrapper is where messages float: over the tabs, taking no room. */}
       <div className="relative flex min-h-0 flex-1">
         <Toast />

@@ -31,6 +31,7 @@ import { mergeAfterRead } from './commandsSlice'
 import { createMacropadActions } from './macropad'
 import { loadStarter, loadStarterIndex } from './starter'
 import type { Action, AppState, EditState, SaveDialog, Session } from './store'
+import { createUpdateActions, type UpdateSource } from './updateActions'
 
 export type SaveResult = 'saved' | 'blocked' | 'conflict'
 
@@ -122,6 +123,10 @@ export interface AppActions {
    * missing file; its unsaved edits go too. Refused when the file changed on disk.
    */
   deleteCommandFile(path: string): Promise<string | null>
+  /** Review the update, on the update bar: opens the dialog of the update on offer. */
+  reviewUpdate(): void
+  /** Not now, on the update bar: drops the offer until the folder is opened again. Nothing is stored about it. */
+  dismissUpdate(): void
 }
 
 /** The config file as the app last read or wrote it, with its folder. */
@@ -200,10 +205,13 @@ async function readSession(folder: FolderAccess, configPath: string, library: Li
 /**
  * The side effects of the app (folder IO), dispatching their results. `sync` is
  * called by AppProvider after every commit, so actions read the latest state.
+ * `updateSource` is what the check after opening compares a folder with (AppProvider gives the app's
+ * own copy); without one, no folder is checked.
  */
 export function createActions(
   platform: Platform,
   dispatch: (a: Action) => void,
+  updateSource: UpdateSource | null = null,
 ): { actions: AppActions; sync: (state: AppState) => void; dispose: () => void } {
   let current: AppState = { screen: 'open', message: null, reopen: null }
   const getState = () => current
@@ -239,6 +247,13 @@ export function createActions(
         if (!samePaths(before, next)) watchFiles()
       },
     },
+  })
+  /** The check after a folder opens, and the answers to its bar. */
+  const update = createUpdateActions({
+    source: updateSource,
+    dispatch,
+    getState,
+    current: (token) => token === loads,
   })
   /** Stops the platform's watch of the held config file and command files. */
   let stopWatch: (() => void) | null = null
@@ -295,13 +310,16 @@ export function createActions(
     dispatch({ type: 'show-open', message, reopen })
   }
 
-  /** The editor opens on a loaded session. */
-  function opened(session: Session, settings: Settings): void {
+  /** The editor opens on a session loaded by load number `token`; then the folder's scripts are checked. */
+  function opened(session: Session, settings: Settings, token: number): void {
     // Read before forget() clears it.
     const tab = session.folder === freshSetup ? 'start' : undefined
     dispatch({ type: 'loaded', session, settings, tab })
     forget()
     hold(session.folder, session.configFile, session.commandFiles)
+    // In the background, once the tabs are shown: opening never waits for the check, and a check
+    // that a newer load overtook drops its outcome.
+    void update.check(session.folder, token)
   }
 
   /** Counts the dialogs the save flow shows, so a slow macropad lookup can tell it was overtaken. */
@@ -401,7 +419,7 @@ export function createActions(
       if (settings) await saveSettings(folder, settings)
     }
     if (token !== loads) return
-    if (settings) opened(session, settings)
+    if (settings) opened(session, settings, token)
     else dispatch({ type: 'pick-language', session })
   }
 
@@ -592,7 +610,7 @@ export function createActions(
       const settings: Settings = { languages: [lang] }
       await guarded(token, async () => {
         await saveSettings(state.session.folder, settings)
-        if (token === loads) opened(state.session, settings)
+        if (token === loads) opened(state.session, settings, token)
       })
     },
 
@@ -675,6 +693,9 @@ export function createActions(
     createCommandFiles: commands.createCommandFiles,
     createMissingFile: commands.createMissingFile,
     deleteCommandFile: commands.deleteCommandFile,
+
+    reviewUpdate: update.reviewUpdate,
+    dismissUpdate: update.dismissUpdate,
 
     async recheck() {
       await saveDone()

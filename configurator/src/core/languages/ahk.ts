@@ -322,7 +322,7 @@ function resolve(dir: string, target: string): string {
 }
 
 /** The file an `#Include` line loads, resolved against `dir` and lower-cased; null for any other line. */
-function includeTarget(line: string, dir: string): string | null {
+export function includeTarget(line: string, dir: string): string | null {
   const match = INCLUDE.exec(line.slice(0, line.length - endOf(line).length))
   if (!match) return null
   let target = match[1]

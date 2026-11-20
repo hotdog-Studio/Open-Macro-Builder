@@ -31,8 +31,9 @@ function parseManifest(text: string): Manifest | null {
     return null
   }
   if (!isRecord(parsed) || typeof parsed.version !== 'string' || !isTextRecord(parsed.files)) return null
-  const deleted = parsed.deleted ?? []
-  const offered = parsed.offered ?? {}
+  // Absent keys default to empty; a key that is there must hold the right type (null does not).
+  const deleted = 'deleted' in parsed ? parsed.deleted : []
+  const offered = 'offered' in parsed ? parsed.offered : {}
   if (!isTextList(deleted) || !isTextRecord(offered)) return null
   return { version: parsed.version, files: parsed.files, deleted, offered }
 }

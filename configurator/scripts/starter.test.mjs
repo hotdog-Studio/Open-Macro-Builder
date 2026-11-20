@@ -147,8 +147,8 @@ describe('starterIndex', () => {
       'config.json': '{}',
       'ahk/crlf.ahk': 'a\r\nb\r\n',
       'powershell/lf.ps1': 'a\nb\n',
-      'img/ends-crlf.png': Buffer.from([1, 13, 10]),
-      'img/ends-lf.ico': Buffer.from([10, 13]),
+      'img/ends-crlf.png': Buffer.from([1, 255, 128, 13, 10]),
+      'img/lf-then-cr.ico': Buffer.from([10, 13, 128, 255]),
     })
 
   it.each([
@@ -159,8 +159,8 @@ describe('starterIndex', () => {
   })
 
   it.each([
-    ['a picture holding a CRLF', 'img/ends-crlf.png', [1, 13, 10]],
-    ['a picture holding a CR and an LF', 'img/ends-lf.ico', [10, 13]],
+    ['a picture with high bytes, ending in a CRLF', 'img/ends-crlf.png', [1, 255, 128, 13, 10]],
+    ['a picture with high bytes, holding an LF then a CR', 'img/lf-then-cr.ico', [10, 13, 128, 255]],
   ])('gives %s the fingerprint of its bytes', async (_name, path, picture) => {
     expect(starterIndex(hashedTree(), '1.0.6').files[path]).toBe(await fingerprint(path, Uint8Array.from(picture)))
   })

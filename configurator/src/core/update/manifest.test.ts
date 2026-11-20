@@ -30,6 +30,8 @@ describe('readManifest', () => {
     ['a files value that is not text', '{ "version": "1.0.6", "files": { "a": 1 } }'],
     ['deleted that is not a list of text', '{ "version": "1.0.6", "files": {}, "deleted": [1] }'],
     ['deleted that is not a list', '{ "version": "1.0.6", "files": {}, "deleted": "a" }'],
+    ['deleted that is null', '{ "version": "1.0.6", "files": {}, "deleted": null }'],
+    ['offered that is null', '{ "version": "1.0.6", "files": {}, "offered": null }'],
     ['an offered value that is not text', '{ "version": "1.0.6", "files": {}, "offered": { "a": false } }'],
     ['offered that is an array', '{ "version": "1.0.6", "files": {}, "offered": [] }'],
   ])('gives null for %s', async (_name, text) => {

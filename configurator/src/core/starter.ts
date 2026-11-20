@@ -19,9 +19,11 @@ export class StarterError extends Error {
 /** Why writeStarter refused before copying anything: the folder holds something now. */
 export const NOT_EMPTY = 'This folder is no longer empty, so nothing was copied into it.'
 
+const alreadyThere = (path: string) => new StarterError(`${path} already exists, so the copy stopped.`)
+
 /** Writes a file that must not be there yet: one that appeared since the folder was found empty is not replaced. */
 async function writeNew(folder: FolderAccess, path: string, data: Uint8Array): Promise<void> {
-  if ((await folder.readBytes(path)) !== null) throw new StarterError(`${path} already exists, so the copy stopped.`)
+  if ((await folder.readBytes(path)) !== null) throw alreadyThere(path)
   await folder.writeBytes(path, data)
 }
 
@@ -44,7 +46,7 @@ export async function writeStarter(folder: FolderAccess, files: StarterFile[], v
   // One file at a time, in order: the copy stops at the first failure, and config.json has to be
   // the last one written (hence NOSONAR on the awaits in the loops).
   for (const { path, data } of rest) await writeNew(folder, path, data) // NOSONAR S9382
-  if ((await folder.readBytes(MANIFEST_PATH)) !== null) throw new StarterError(`${MANIFEST_PATH} already exists, so the copy stopped.`)
+  if ((await folder.readBytes(MANIFEST_PATH)) !== null) throw alreadyThere(MANIFEST_PATH)
   await writeManifest(folder, manifest)
   for (const { path, data } of config) await writeNew(folder, path, data) // NOSONAR S9382
 }

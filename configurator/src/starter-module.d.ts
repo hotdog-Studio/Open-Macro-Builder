@@ -4,8 +4,8 @@ declare module 'virtual:omb-starter' {
   export default files
 }
 
-// Made by starterPlugin too: the starter's version and the fingerprint of each of its files, a few
-// kilobytes. loadStarterIndex imports it dynamically, so the build puts it in a small chunk of its own.
+// Made by starterPlugin too: the starter's version and the fingerprint of each of its files, about
+// 15 KB. loadStarterIndex imports it dynamically, so the build puts it in a small chunk of its own.
 declare module 'virtual:omb-starter-index' {
   // The shape of StarterIndex (core/update/fingerprint.ts); an ambient module may not import a relative path.
   const index: { version: string; files: Record<string, string> }

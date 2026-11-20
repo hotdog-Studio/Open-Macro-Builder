@@ -13,6 +13,15 @@ const FILES = [
 
 const VERSION = '1.0.6'
 
+/** A folder that notes the path of every write, in order. */
+class Recording extends MemoryFolder {
+  readonly written: string[] = []
+  override writeBytes(path: string, data: Uint8Array): Promise<void> {
+    this.written.push(path)
+    return super.writeBytes(path, data)
+  }
+}
+
 describe('writeStarter', () => {
   it('writes every file, byte for byte', async () => {
     const folder = new MemoryFolder('new')
@@ -21,28 +30,16 @@ describe('writeStarter', () => {
   })
 
   it('writes config.json last', async () => {
-    const written: string[] = []
-    class Recording extends MemoryFolder {
-      override writeBytes(path: string, data: Uint8Array): Promise<void> {
-        written.push(path)
-        return super.writeBytes(path, data)
-      }
-    }
-    await writeStarter(new Recording('new'), FILES, VERSION)
-    expect(written).toHaveLength(FILES.length + 1)
-    expect(written.at(-1)).toBe('config.json')
+    const folder = new Recording('new')
+    await writeStarter(folder, FILES, VERSION)
+    expect(folder.written).toHaveLength(FILES.length + 1)
+    expect(folder.written.at(-1)).toBe('config.json')
   })
 
   it('writes the manifest just before config.json', async () => {
-    const written: string[] = []
-    class Recording extends MemoryFolder {
-      override writeBytes(path: string, data: Uint8Array): Promise<void> {
-        written.push(path)
-        return super.writeBytes(path, data)
-      }
-    }
-    await writeStarter(new Recording('new'), FILES, VERSION)
-    expect(written.slice(-2)).toEqual([MANIFEST_PATH, 'config.json'])
+    const folder = new Recording('new')
+    await writeStarter(folder, FILES, VERSION)
+    expect(folder.written.slice(-2)).toEqual([MANIFEST_PATH, 'config.json'])
   })
 
   it('records the version and the fingerprint of each file as it was written', async () => {

@@ -63,8 +63,10 @@ From the repository root.
 Both architectures:
 
 ```
-docker buildx build --platform linux/amd64,linux/arm64 -t open-macro-builder .
+docker buildx build --platform linux/amd64,linux/arm64 --build-arg "APP_VERSION=$(node scripts/ci-version.mjs)" -t open-macro-builder .
 ```
+
+The build argument gives the page its version, as Jenkins gives it: without it the image is a development version, `<MAJOR>.<MINOR>.0-dev`, which counts as older than every later release of its line, so it never offers its scripts to a folder such a release set up or updated.
 
 The page is built once, on the machine doing the build, and copied into each architecture's image, so no emulation is needed.
 

@@ -83,9 +83,11 @@ The two `.exe` files appear in `configurator/release/`.
 One image, and the check that it serves the page:
 
 ```
-docker buildx build --platform linux/amd64 -t open-macro-builder --load .
+docker buildx build --platform linux/amd64 --build-arg "APP_VERSION=$(node scripts/ci-version.mjs)" -t open-macro-builder --load .
 sh docker/smoke.sh open-macro-builder x86_64
 ```
+
+The build argument is the version Jenkins gives the image: without it the page is `<MAJOR>.<MINOR>.0-dev`, which counts as older than every later release of its line, so it never offers its scripts to a folder such a release set up or updated.
 
 ## After the first release
 

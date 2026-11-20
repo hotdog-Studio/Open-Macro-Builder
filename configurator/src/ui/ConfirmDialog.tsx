@@ -9,6 +9,8 @@ export interface Choice {
   danger?: boolean
   /** Not available yet, such as while a field in the dialog holds something invalid. */
   disabled?: boolean
+  /** Takes the focus when the dialog opens; the primary choice does unless told otherwise. */
+  autoFocus?: boolean
 }
 
 export interface ConfirmDialogProps {
@@ -22,6 +24,11 @@ export interface ConfirmDialogProps {
    * adds no button. Left out, as while work is under way, they do nothing.
    */
   onDismiss?: () => void
+  /**
+   * The dialog itself takes the focus when it opens, and no button does: Enter then does nothing by accident,
+   * and the first Tab goes to the first control.
+   */
+  focusDialog?: boolean
 }
 
 const BUTTON = 'rounded-md px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-50'
@@ -38,10 +45,15 @@ function styleOf(c: Choice): string {
 }
 
 /** A modal question with a few answers. */
-export function ConfirmDialog({ title, children, choices, onCancel, onDismiss }: Readonly<ConfirmDialogProps>) {
+export function ConfirmDialog({ title, children, choices, onCancel, onDismiss, focusDialog = false }: Readonly<ConfirmDialogProps>) {
   const titleId = useId()
   const backdrop = useRef<HTMLDivElement>(null)
+  const dialog = useRef<HTMLDialogElement>(null)
   const onEscape = onCancel ?? onDismiss
+
+  useEffect(() => {
+    if (focusDialog) dialog.current?.focus()
+  }, [focusDialog])
 
   useEffect(() => {
     if (!onEscape) return
@@ -67,10 +79,12 @@ export function ConfirmDialog({ title, children, choices, onCancel, onDismiss }:
     <div ref={backdrop} className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-8">
       {/* Open and laid out by the page, not shown with showModal(): the classes undo the browser's own dialog box. */}
       <dialog
+        ref={dialog}
         open
         aria-modal="true"
         aria-labelledby={titleId}
-        className="static m-0 flex max-h-full w-full max-w-lg flex-col rounded-xl border border-zinc-700 bg-zinc-900 p-0 text-inherit"
+        tabIndex={focusDialog ? -1 : undefined}
+        className="static m-0 flex max-h-full w-full max-w-lg flex-col rounded-xl border border-zinc-700 bg-zinc-900 p-0 text-inherit outline-none"
       >
         <h2 id={titleId} className="border-b border-zinc-800 px-4 py-2.5 font-semibold">
           {title}
@@ -88,7 +102,7 @@ export function ConfirmDialog({ title, children, choices, onCancel, onDismiss }:
               <button
                 key={c.label}
                 type="button"
-                autoFocus={c.primary}
+                autoFocus={!focusDialog && (c.autoFocus ?? c.primary)}
                 disabled={c.disabled}
                 className={styleOf(c)}
                 onClick={c.onChoose}

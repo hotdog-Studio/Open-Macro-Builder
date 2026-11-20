@@ -15,28 +15,32 @@ import { useUnsavedGuard } from './useUnsavedGuard'
 
 function Editor() {
   const { state } = useEditor()
+  const updating = state.update?.dialog === true
   return (
-    <div className="flex h-full flex-col">
-      <Header />
-      <SaveFlow />
-      {/* Under the changed-on-disk bar when both show; neither replaces the other. */}
-      <UpdateNotice />
-      {/* The relative wrapper is where messages float: over the tabs, taking no room. */}
-      <div className="relative flex min-h-0 flex-1">
-        <Toast />
-        {state.tab === 'start' && (
-          <main className="min-w-0 flex-1 overflow-y-auto p-5">
-            <GetStarted folderName={state.folder.name} languages={state.settings.languages} />
-          </main>
-        )}
-        {state.tab === 'shape' && <ShapeTab />}
-        {state.tab === 'layers' && <LayersTab />}
-        {state.tab === 'macros' && <MacrosTab />}
-        {state.tab === 'commands' && <CommandsTab />}
+    <>
+      {/* Everything behind the update's dialog is inert while it is open: no key or click reaches it. */}
+      <div className="flex h-full flex-col" inert={updating}>
+        <Header />
+        <SaveFlow />
+        {/* Under the changed-on-disk bar when both show; neither replaces the other. */}
+        <UpdateNotice />
+        {/* The relative wrapper is where messages float: over the tabs, taking no room. */}
+        <div className="relative flex min-h-0 flex-1">
+          <Toast />
+          {state.tab === 'start' && (
+            <main className="min-w-0 flex-1 overflow-y-auto p-5">
+              <GetStarted folderName={state.folder.name} languages={state.settings.languages} />
+            </main>
+          )}
+          {state.tab === 'shape' && <ShapeTab />}
+          {state.tab === 'layers' && <LayersTab />}
+          {state.tab === 'macros' && <MacrosTab />}
+          {state.tab === 'commands' && <CommandsTab />}
+        </div>
       </div>
       {/* Mounted only while open, so a new offer starts with nothing ticked. */}
-      {state.update?.dialog && <UpdateDialog />}
-    </div>
+      {updating && <UpdateDialog />}
+    </>
   )
 }
 

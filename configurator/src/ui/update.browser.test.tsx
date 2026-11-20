@@ -20,6 +20,8 @@ const REVIEW = { name: 'Review the update' }
 const REPLACED = { name: 'Replaced 30 files you have not changed' }
 const CHANGED = ['ahk/commands/media.ahk', 'powershell/commands/media.ps1']
 const DELETED = 'ahk/commands/power.ahk'
+const MINE = 'local/ahk/mine.ahk'
+const MINE_TEXT = 'Mine(Macro) {\n}\n'
 
 /** 1.0.4's copy of a file: one byte longer than the app's. */
 function older(data: Uint8Array): Uint8Array {
@@ -35,9 +37,10 @@ async function printsOf(files: [string, Uint8Array][]): Promise<Record<string, s
 
 /**
  * The repository's scripts as the app's copy (1.0.6), and a folder of 1.0.4 to open: thirty icons as 1.0.4
- * shipped them, two command files the person changed, one they deleted.
+ * shipped them, two command files the person changed, one they deleted, and a command file of their own.
+ * The app's files load once `hold` has resolved.
  */
-async function olderRelease(): Promise<{ updateSource: UpdateSource; files: Record<string, Uint8Array | null> }> {
+async function olderRelease(hold: Promise<void> = Promise.resolve()): Promise<{ updateSource: UpdateSource; files: Record<string, Uint8Array | null> }> {
   const repo = await repoFiles()
   const icons = Object.keys(repo)
     .filter((path) => path.endsWith('.png'))
@@ -51,13 +54,17 @@ async function olderRelease(): Promise<{ updateSource: UpdateSource; files: Reco
   }
   const updateSource: UpdateSource = {
     loadIndex: async () => ({ version: '1.0.6', files: index }),
-    loadFiles: async () => Object.entries(repo).map(([path, data]) => ({ path, data })),
+    loadFiles: async () => {
+      await hold
+      return Object.entries(repo).map(([path, data]) => ({ path, data }))
+    },
     known,
   }
   const files: Record<string, Uint8Array | null> = {
     ...Object.fromEntries(shipped.slice(0, 30)),
     ...Object.fromEntries(CHANGED.map((path) => [path, new TextEncoder().encode('; mine\n')])),
     [DELETED]: null,
+    [MINE]: new TextEncoder().encode(MINE_TEXT),
   }
   return { updateSource, files }
 }
@@ -65,10 +72,34 @@ async function olderRelease(): Promise<{ updateSource: UpdateSource; files: Reco
 /** Opens the older release's folder, and the dialog when asked. */
 async function opened(dialog: boolean): Promise<HTMLElement | null> {
   await startApp('Pad shape', undefined, await olderRelease())
+  return review(dialog)
+}
+
+/** Waits for the bar, and opens the dialog when asked. */
+async function review(dialog: boolean): Promise<HTMLElement | null> {
   const review = await screen.findByRole('button', REVIEW)
   if (!dialog) return null
   await click(review)
   return screen.getByRole('dialog', DIALOG)
+}
+
+const editorEl = () => {
+  const el = document.querySelector<HTMLElement>('.cm-content')
+  if (!el) throw new Error('no code editor')
+  return el
+}
+
+/** Records every element that gets the focus from now on, until `stop()`. */
+function focusesOf() {
+  const reached: Element[] = []
+  const record = (e: FocusEvent) => reached.push(e.target as Element)
+  document.addEventListener('focusin', record)
+  return {
+    stop: () => {
+      document.removeEventListener('focusin', record)
+      return reached
+    },
+  }
 }
 
 const overlap = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
@@ -121,22 +152,43 @@ describe('the update, at 1280 × 900', () => {
     expect(screen.queryByRole('button', REVIEW)).toBeNull()
   })
 
-  it('reaches every tick box and both buttons with Tab, in order', async () => {
+  it('starts on the dialog, and Tab goes through every tick box and both buttons, never behind the dialog', async () => {
     const dialog = await opened(true)
     if (!dialog) throw new Error('no dialog')
-    // A click on the title puts the start of the Tab order there.
-    await click(within(dialog).getByRole('heading', DIALOG))
-    const reached: Element[] = []
-    const record = (e: FocusEvent) => reached.push(e.target as Element)
-    document.addEventListener('focusin', record)
-    await userEvent.keyboard('{Tab}{Tab}{Tab}{Tab}{Tab}{Tab}')
-    document.removeEventListener('focusin', record)
-    expect(reached).toEqual([
+    expect(document.activeElement).toBe(dialog)
+    const reached = focusesOf()
+    // More presses than the dialog has controls (six): the seventh and later would leave it if anything let them.
+    await userEvent.keyboard('{Tab}'.repeat(9))
+    const controls = [
       within(dialog).getByRole('button', REPLACED),
       ...CHANGED.map((path) => within(dialog).getByRole('checkbox', { name: path })),
       within(dialog).getByRole('checkbox', { name: DELETED }),
       within(dialog).getByRole('button', { name: 'Not now' }),
       within(dialog).getByRole('button', { name: 'Update' }),
-    ])
+    ]
+    expect(reached.stop().slice(0, 6)).toEqual(controls)
+    expect(reached.stop().filter((el) => !dialog.contains(el))).toEqual([])
+  })
+
+  it('while it runs, keeps the focus on the dialog: Tab and Ctrl+S reach nothing behind it', async () => {
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => (release = resolve))
+    const { folder } = await startApp('Commands', undefined, await olderRelease(hold))
+    // An unsaved edit of a command file of your own, which does not keep Update off.
+    await click(within(screen.getByRole('navigation', { name: 'Command files' })).getByRole('button', { name: /^mine\b/ }))
+    await click(editorEl())
+    await userEvent.keyboard('x')
+    const dialog = await review(true)
+    if (!dialog) throw new Error('no dialog')
+    await click(within(dialog).getByRole('button', { name: 'Update' }))
+    const busy = screen.getByRole('dialog', DIALOG)
+    expect(within(busy).getByText('Updating the scripts…')).toBeTruthy()
+    expect(document.activeElement).toBe(busy)
+    const reached = focusesOf()
+    await userEvent.keyboard('{Tab}{Tab}{Tab}{Control>}s{/Control}')
+    expect(reached.stop().filter((el) => !busy.contains(el))).toEqual([])
+    expect(folder.text(MINE)).toBe(MINE_TEXT)
+    release()
+    expect(await screen.findByText(/^Updated to 1\.0\.6: 30 replaced/)).toBeTruthy()
   })
 })

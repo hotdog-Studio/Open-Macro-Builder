@@ -92,6 +92,13 @@ export interface OutsideChange {
 }
 
 /**
+ * What came of pressing Update: the update's own result; or a reason it could not start that names no file
+ * (a clause starting in lower case, without a final full stop), with nothing written; or what it threw, with
+ * what was written unknown.
+ */
+export type UpdateOutcome = UpdateResult | { ok: false; notStarted: string } | { ok: false; threw: string }
+
+/**
  * An update of the folder's scripts on offer, from the check after the folder opened: the plan, whether
  * its dialog is open, whether it is being carried out, and what came of it.
  */
@@ -99,7 +106,7 @@ export interface UpdateOffer {
   plan: UpdatePlan
   dialog: boolean
   busy: boolean
-  result: UpdateResult | null
+  result: UpdateOutcome | null
   /** After an update, in the desktop app: the running macropad that Reload the macropad restarts. */
   macropad: LangId | null
   /** What came of pressing Reload the macropad. */
@@ -165,6 +172,8 @@ export type Action =
   | { type: 'dismiss-disk' }
   /** The check after opening found something new, the bar was answered, or the dialog moved on. */
   | { type: 'update'; update: UpdateOffer | null }
+  /** The icon sets listed again (after an update of the scripts). */
+  | { type: 'icon-sets'; iconSets: string[] }
   | CommandAction
 
 export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
@@ -237,6 +246,8 @@ function editReducer(state: EditCore, action: Action): EditCore {
       return state.outsideChange ? { ...state, outsideChange: { ...state.outsideChange, dismissed: true } } : state
     case 'update':
       return { ...state, update: action.update }
+    case 'icon-sets':
+      return { ...state, iconSets: action.iconSets }
     case 'commands-show':
     case 'draft':
     case 'command-saved':

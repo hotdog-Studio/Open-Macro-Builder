@@ -22,6 +22,7 @@ import {
   type LangId,
   type LibraryFile,
 } from '../core/languages'
+import { messageOf, withoutFullStop } from '../core/message'
 import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import { NOT_EMPTY, StarterError, writeStarter, type StarterFile } from '../core/starter'
@@ -129,13 +130,15 @@ export interface AppActions {
   /**
    * Not now, on the update bar and in its dialog, and Close once the dialog says what came of the update:
    * drops the offer until the folder is opened again. Nothing is stored about it. Ignored while the update runs.
+   * After a failure the folder is checked again, so the bar comes back when there is still something to offer.
    */
   dismissUpdate(): void
   /**
    * Update, in the update's dialog, and Try again: waits for the Commands tab's work in flight, makes the plan
    * again, carries out the picks that are still in it, and shows what came of it in the dialog. Refused while
-   * a shared command file or the layout has unsaved changes. Nothing may open, close or reload a folder
-   * meanwhile. Afterwards the command files are scanned again, and the layout read again when it was written.
+   * a shared command file has unsaved changes. Nothing may open, close or reload a folder until the outcome
+   * is shown. Afterwards what the load reads from the shared files is read again: the command lists, the
+   * library and the icon sets.
    */
   applyUpdate(picks: UpdatePicks): Promise<void>
   /** Electron: Reload the macropad, once the update's dialog says what was done; the dialog then shows what happened. */
@@ -164,14 +167,12 @@ function checkContext(state: EditState): CheckContext {
   return { iconSets: new Set(state.iconSets), defined, languages: state.settings.languages }
 }
 
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
-
 /** What the start screen shows when setting up a fresh copy failed. */
 function setupError(e: unknown): string {
   // Refused before the first write: there is no partial copy to warn about.
   if (e instanceof StarterError && e.message === NOT_EMPTY) return e.message
   // The sentence goes on after the reason, so the reason's own full stop goes.
-  const reason = messageOf(e).replace(/\.$/, '')
+  const reason = withoutFullStop(messageOf(e))
   return `Setting up stopped part-way: ${reason}. The folder may hold a partial copy: delete it, or pick another empty folder.`
 }
 
@@ -267,18 +268,33 @@ export function createActions(
     dispatch,
     getState,
     current: (token) => token === loads,
+    loadNumber: () => loads,
     folder: () => held?.folder ?? null,
     idle: commands.idle,
     draftPaths: commands.draftPaths,
-    recheckCommands: () => actions.recheckCommands(),
-    configPath: () => held?.configFile.path ?? null,
-    // Unsaved edits are never dropped: then the changed-on-disk banner offers the reload.
-    reloadConfig: () => {
-      const state = getState()
-      return state.screen === 'edit' && state.dirty ? actions.recheck() : actions.reloadFromDisk()
-    },
+    rescan: () => rescanShared(),
     macropad,
   })
+
+  /**
+   * After an update: what the load reads from the shared files, read again (readSession without the layout,
+   * which is the person's under local/): the command lists and the library, then the icon sets.
+   */
+  async function rescanShared(): Promise<void> {
+    await actions.recheckCommands()
+    const folder = held?.folder
+    if (!folder) return
+    let iconSets: string[]
+    try {
+      iconSets = await listIconSets(folder)
+    } catch {
+      // Unreadable for now; the next opening lists them.
+      return
+    }
+    const state = getState()
+    if (held?.folder !== folder || state.screen !== 'edit') return
+    if (iconSets.join('\n') !== state.iconSets.join('\n')) dispatch({ type: 'icon-sets', iconSets })
+  }
   /** Stops the platform's watch of the held config file and command files. */
   let stopWatch: (() => void) | null = null
   /** The save in progress; rechecks and reloads wait for it. */

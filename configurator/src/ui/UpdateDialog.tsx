@@ -1,10 +1,11 @@
 import { useId, useState, type ReactNode } from 'react'
-import type { UpdateDone, UpdatePicks, UpdateResult } from '../core/update/apply'
+import { withoutFullStop } from '../core/message'
+import type { UpdateDone, UpdatePicks } from '../core/update/apply'
 import { INCLUDE_FILE } from '../core/update/includeList'
 import type { UpdatePlan } from '../core/update/plan'
 import { compareVersions } from '../core/update/version'
-import { useEditor, type UpdateOffer } from '../state/store'
-import { updateBlockers, wroteSomething } from '../state/updateActions'
+import { useEditor, type UpdateOffer, type UpdateOutcome } from '../state/store'
+import { scriptsWritten, updateBlockers } from '../state/updateActions'
 import { ConfirmDialog } from './ConfirmDialog'
 
 const TITLE = 'Update the scripts in this folder'
@@ -19,7 +20,6 @@ const PATHS = 'break-all font-mono text-[12px] text-zinc-400'
 const NOTHING = () => undefined
 
 const files = (n: number) => (n === 1 ? '1 file' : `${n} files`)
-const withoutFullStop = (message: string) => message.replace(/\.$/, '')
 
 /** The dialog's first line: from which version to which. */
 function firstLine({ from, to }: Pick<UpdatePlan, 'from' | 'to'>): string {
@@ -28,11 +28,24 @@ function firstLine({ from, to }: Pick<UpdatePlan, 'from' | 'to'>): string {
   return `From ${from} to ${to}. ${LOCAL}`
 }
 
-/** What a failed update says: that nothing was changed, or where it stopped with scripts of two versions left. */
-function failureSentence(result: Extract<UpdateResult, { ok: false }>): string {
-  const reason = withoutFullStop(result.message)
-  if (!wroteSomething(result)) return `The update could not start at ${result.failedAt}: ${reason}. Nothing was changed.`
-  return `The update stopped at ${result.failedAt}: ${reason}. This folder now has scripts of two versions. Run the update again to finish it.`
+type Failure = Extract<UpdateOutcome, { ok: false }>
+
+/**
+ * What a failed update says: where it stopped with scripts of two versions left; or that it could not start,
+ * at a file or for a reason that names none, and that nothing was changed or which backups stay; or, when it
+ * threw, that some scripts may be new already.
+ */
+function failureSentence(failure: Failure): string {
+  if ('threw' in failure) {
+    return `The update stopped: ${withoutFullStop(failure.threw)}. Some scripts may already be the new ones. Run the update again to finish it.`
+  }
+  if ('notStarted' in failure) return `The update could not start: ${failure.notStarted}. Nothing was changed.`
+  const message = withoutFullStop(failure.message)
+  if (scriptsWritten(failure)) {
+    return `The update stopped at ${failure.failedAt}: ${message}. This folder now has scripts of two versions. Run the update again to finish it.`
+  }
+  const after = failure.backups.length > 0 ? `The backups it had made stay: ${failure.backups.join(', ')}.` : 'Nothing was changed.'
+  return `The update could not start at ${failure.failedAt}: ${message}. ${after}`
 }
 
 /** Paths from the folder or the plan, as text. */
@@ -143,11 +156,12 @@ interface PlanViewProps {
 /** What the update would do, the tick boxes, and Not now and Update. */
 function PlanView({ plan, picks, onTick, onUpdate }: Readonly<PlanViewProps>) {
   const { state, actions } = useEditor()
-  const blockers = updateBlockers(state.dirty, Object.keys(state.commands.drafts))
+  const blockers = updateBlockers(Object.keys(state.commands.drafts))
   const includeTicked = picks.replaceChanged.some((path) => path.toLowerCase() === INCLUDE_FILE)
   return (
     <ConfirmDialog
       title={TITLE}
+      focusDialog
       onDismiss={actions.dismissUpdate}
       choices={[
         { label: 'Not now', onChoose: actions.dismissUpdate },
@@ -184,17 +198,22 @@ function PlanView({ plan, picks, onTick, onUpdate }: Readonly<PlanViewProps>) {
   )
 }
 
-/** While the update runs: both buttons are off, and Escape and the backdrop do nothing. */
+/**
+ * While the update runs: both buttons are off, and Escape and the backdrop do nothing. The focus is on the
+ * dialog, so a screen reader reads its title and this line as the view opens; the line is not a live region,
+ * so nothing more is announced until the next view takes the focus.
+ */
 function BusyView() {
   return (
     <ConfirmDialog
       title={TITLE}
+      focusDialog
       choices={[
         { label: 'Not now', disabled: true, onChoose: NOTHING },
         { label: 'Update', primary: true, disabled: true, onChoose: NOTHING },
       ]}
     >
-      <output>Updating the scripts…</output>
+      <p>Updating the scripts…</p>
     </ConfirmDialog>
   )
 }
@@ -208,15 +227,19 @@ function macropadLine(offer: UpdateOffer): string | null {
 /** What the update did, in numbers and by name, and how to use the new scripts. */
 function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: UpdateDone }>) {
   const { actions } = useEditor()
-  const close = { label: 'Close', onChoose: actions.dismissUpdate }
-  const reload = { label: 'Reload the macropad', primary: true, onChoose: () => void actions.reloadMacropadAfterUpdate() }
+  const close = { label: 'Close', autoFocus: true, onChoose: actions.dismissUpdate }
+  const reload = { label: 'Reload the macropad', primary: true, autoFocus: false, onChoose: () => void actions.reloadMacropadAfterUpdate() }
   const line = macropadLine(offer)
+  // An include file whose list alone was brought up to date is said so, not listed as kept as it is.
+  const adjusted = offer.plan.list === 'adjust' && result.kept.some((path) => path.toLowerCase() === INCLUDE_FILE)
+  const kept = adjusted ? result.kept.filter((path) => path.toLowerCase() !== INCLUDE_FILE) : result.kept
   return (
     <ConfirmDialog title={TITLE} onDismiss={actions.dismissUpdate} choices={offer.macropad ? [reload, close] : [{ ...close, primary: true }]}>
       <p>
         {`Updated to ${offer.plan.to}: ${result.replaced.length} replaced, ${result.added.length} added, ${result.removed.length} removed.`}
       </p>
-      {result.kept.length > 0 && <NamedPaths heading="Kept as they are:" paths={result.kept} />}
+      {kept.length > 0 && <NamedPaths heading="Kept as they are:" paths={kept} />}
+      {adjusted && <p className="mt-3">{ADJUST}</p>}
       {result.backups.length > 0 && <NamedPaths heading="Your versions, kept beside the new ones:" paths={result.backups} />}
       {line && <p className="mt-3">{line}</p>}
     </ConfirmDialog>
@@ -224,15 +247,15 @@ function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: Up
 }
 
 /** An update that failed: where, why, and Try again. */
-function FailureView({ result, onRetry }: Readonly<{ result: Extract<UpdateResult, { ok: false }>; onRetry: () => void }>) {
+function FailureView({ result, onRetry }: Readonly<{ result: Failure; onRetry: () => void }>) {
   const { actions } = useEditor()
   return (
     <ConfirmDialog
       title={TITLE}
       onDismiss={actions.dismissUpdate}
       choices={[
-        { label: 'Close', onChoose: actions.dismissUpdate },
-        { label: 'Try again', primary: true, onChoose: onRetry },
+        { label: 'Close', autoFocus: true, onChoose: actions.dismissUpdate },
+        { label: 'Try again', primary: true, autoFocus: false, onChoose: onRetry },
       ]}
     >
       <p>{failureSentence(result)}</p>

@@ -33,11 +33,11 @@ The checks in `validate.ts` are the repository's own validator, `scripts/validat
 
 #### The manifest and the known releases
 
-A folder the configurator set up or updated holds `omb-manifest.json` in its root: the version of the app that last wrote its shared files, the fingerprint of each file it wrote, the command files deleted in the Commands tab, and, for each changed file the person kept at an update, the fingerprint of the app's copy they were offered then. A file that still has the manifest's fingerprint is untouched. The Commands tab records a delete there (`state/commandActions.ts`), and takes the entry out when the file is created again. The starter never carries a manifest, and `.gitignore` names it.
+A folder the configurator set up or updated holds `omb-manifest.json` in its root: the version of the app that last wrote its shared files; for each shared file, the fingerprint of the app's copy it last wrote or found there (a changed file the person kept keeps its earlier entry); the command files the person deleted (through the Commands tab, or, in a folder from before the manifest, missing at its first update and not ticked); and, for each changed file the person kept at an update, the fingerprint of the app's copy they were offered then. A file that still has the manifest's fingerprint is untouched. The Commands tab records a delete there (`state/commandActions.ts`), and takes the entry out when the file is created again. The starter never carries a manifest, and `.gitignore` names it.
 
 Folders set up by 1.0.2 to 1.0.5 have no manifest. For them, `update/knownReleases.json` holds the fingerprints of every file those releases shipped, made from the release tags by `node configurator/scripts/starter-history.mjs`. A file with one of them is an untouched file of that release, and a missing command file that a release shipped counts as deleted by the person.
 
-Versions compare as three numbers, and `-dev` adds nothing, so a development build counts as older than every release of its line and never offers its scripts to a folder one of them wrote: a folder whose manifest names a version newer than the app's, or, without a manifest, whose files are of a newer release and differ from the app's copy, gets a notice saying so and no update.
+Versions compare as three numbers, and `-dev` adds nothing, so a development build counts as the first release of its line (`<MAJOR>.<MINOR>.0`) and older than every later one. It never offers its scripts to a folder a later release of its line wrote: a folder whose manifest names a version newer than the app's, or, without a manifest, whose files are of a newer release and differ from the app's copy, gets a notice saying so and no update. A folder the `.0` release wrote counts as the same version, so where its files differ from the build's they are offered.
 
 ### `src/platform`: opening a folder
 
@@ -54,7 +54,7 @@ Versions compare as three numbers, and `-dev` adds nothing, so a development bui
 
 An edit is always `dispatch({ type: 'edit', ws: someOp(ws, ...) })`: an operation from `core/config/ops.ts` makes the next workspace, and the reducer keeps it.
 
-`updateActions.ts` holds the update. Once a folder has opened, `opened` in `actions.ts` starts its check in the background, so opening never waits for it: `planUpdate` against the app's copy, and the state's `update` when there is something new to offer. A folder with a `.git` entry in its root is never checked. Pressing **Update** waits for the Commands tab's work in flight, makes the plan again, loads the app's files and runs `applyUpdate`; nothing may open, close or reload a folder until the outcome is shown. Afterwards the shared files are scanned again, as after a change from outside.
+`updateActions.ts` holds the update. Once a folder has opened, `opened` in `actions.ts` starts its check in the background, so opening never waits for it: it runs `planUpdate` against the app's copy and sets the state's `update` when there is something new to offer, or shows a notice when the folder is newer than the app. A folder with a `.git` entry in its root is never checked. Pressing **Update** waits for the Commands tab's work in flight, makes the plan again, loads the app's files and runs `applyUpdate`; nothing may open, close or reload a folder until the outcome is shown. Afterwards the shared files are scanned again, as after a change from outside.
 
 ### `src/ui`: what you see
 

@@ -69,7 +69,7 @@ const HIDE_BOTH = 'Windows may hide the endings and show the files as main and l
 const NOTEPAD =
   'Double-clicking main.ahk opens Notepad, or Windows asks which app to use. That means Windows does not know the file, usually because AutoHotkey is not installed.'
 const UPDATES =
-  'When a newer version of this app has newer scripts than a folder it set up, it offers to update them, and it replaces a script you changed only if you tick it.'
+  'When a later version of this app carries newer scripts than your folder, it offers to update them, and it replaces a script you changed only if you tick it.'
 const step8 = (file: string) =>
   `Press Windows + R, type shell:startup and press Enter. A folder opens, and whatever is in it starts when you sign in. Drag ${file} into that folder with the right mouse button and choose Create shortcuts here.`
 

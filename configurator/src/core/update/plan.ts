@@ -1,10 +1,10 @@
 import { compareText } from '../folder/path'
 import type { DirEntry, FolderAccess } from '../folder/types'
 import { fingerprint, type StarterIndex } from './fingerprint'
-import { releasesOf, type KnownReleases } from './history'
+import { everShipped, releasesOf, type KnownReleases } from './history'
 import { INCLUDE_FILE, listsExactly } from './includeList'
 import { readManifest, type Manifest } from './manifest'
-import { compareVersions } from './version'
+import { compareVersions, isVersion } from './version'
 
 export interface UpdatePlan {
   /** Why nothing is checked, or null. */
@@ -27,7 +27,10 @@ export interface UpdatePlan {
   news: boolean
   /** The fingerprint each path had when the plan was made; what Task 6 checks before it writes. */
   seen: Record<string, string | null>
-  /** The person's own AutoHotkey command files in the folder (paths no version ever had): their names only, for the include file. */
+  /**
+   * The AutoHotkey command files in the folder that the app's copy does not have and that an update leaves
+   * there, as folder paths: those no version ever had, and those in keptRemoved. The include file lists them.
+   */
   ownAhkCommandFiles: string[]
   manifest: Manifest | null
 }
@@ -38,8 +41,8 @@ const COMMAND_DIRS = [AHK_COMMANDS, 'powershell/commands/']
 /** What the check makes of one path (see "The check" in the spec); 'none' is missing and not the app's. */
 type State = 'upToDate' | 'replace' | 'changed' | 'deleted' | 'add' | 'remove' | 'keptRemoved' | 'none'
 
-/** The states whose file the folder holds after an update in which nothing was ticked. */
-const HELD: ReadonlySet<State> = new Set<State>(['upToDate', 'replace', 'changed', 'keptRemoved', 'add'])
+/** The states of a path the app's copy has whose file the folder holds after an update in which nothing was ticked. */
+const HELD: ReadonlySet<State> = new Set<State>(['upToDate', 'replace', 'changed', 'add'])
 /** The states that are news by themselves. */
 const NEWS: ReadonlySet<State> = new Set<State>(['replace', 'add', 'remove'])
 
@@ -68,6 +71,7 @@ interface Entry {
   state: State
   print: string | null
   app: string | undefined
+  recorded: string | undefined
 }
 
 const byLowerCase = (a: string, b: string) => compareText(a.toLowerCase(), b.toLowerCase())
@@ -169,16 +173,18 @@ async function readPresent(folder: FolderAccess, files: string[], targets: Map<s
 }
 
 /** A missing file: deleted by the person, to add, or nothing when the app's copy does not have it. */
-function missingState(key: string, target: Target, manifest: Manifest | null): State {
+function missingState(key: string, target: Target, manifest: Manifest | null, known: KnownReleases): State {
   if (target.app === undefined) return 'none'
-  // Without a manifest, a missing command file counts as deleted by the person.
-  const deleted = manifest === null || manifest.deleted.some((path) => path.toLowerCase() === key)
+  // Without a manifest, a missing command file a release shipped counts as deleted by the person; one that is
+  // new in the app's copy cannot have been.
+  const deleted =
+    manifest === null ? everShipped(known, key) : manifest.deleted.some((path) => path.toLowerCase() === key)
   return isCommandFile(key) && deleted ? 'deleted' : 'add'
 }
 
 /** What the check makes of a path, the app's copy compared first. */
 function stateOf(key: string, target: Target, file: Present | undefined, manifest: Manifest | null, known: KnownReleases): State {
-  if (file === undefined) return missingState(key, target, manifest)
+  if (file === undefined) return missingState(key, target, manifest, known)
   if (file.print === target.app) return 'upToDate'
   const untouched = file.print === target.recorded || releasesOf(known, key, file.print).length > 0
   if (target.app === undefined) return untouched ? 'remove' : 'keptRemoved'
@@ -201,6 +207,7 @@ function entriesOf(
         state: stateOf(key, target, file, manifest, known),
         print: file?.print ?? null,
         app: target.app,
+        recorded: target.recorded,
       }
     })
     .sort((a, b) => compareText(a.key, b.key))
@@ -213,7 +220,7 @@ const pathsIn = (entries: Entry[], state: State) => entries.filter((entry) => en
  * content, and the newest of those; null when no file is one a known release shipped.
  */
 function fromOf(manifest: Manifest | null, present: Map<string, Present>, known: KnownReleases): string | null {
-  if (manifest !== null) return manifest.version
+  if (manifest !== null) return isVersion(manifest.version) ? manifest.version : null
   const oldest = [...present].flatMap(([key, file]) => releasesOf(known, key, file.print).slice(0, 1))
   return oldest.sort(compareVersions).at(-1) ?? null
 }
@@ -242,10 +249,20 @@ function includeListOf(entries: Entry[], present: Map<string, Present>, own: str
   return listAction(entries.find((e) => e.key === INCLUDE_FILE)?.state, exact, change)
 }
 
-/** Something to replace, add or remove, or a changed file whose app's copy is not the one last offered. */
+/**
+ * Something to replace, add or remove, or a changed file for which the app's copy is not what the person last
+ * had from the app: the manifest's offered fingerprint, else the one it recorded as written (none: news).
+ */
 function hasNews(entries: Entry[], manifest: Manifest | null): boolean {
   const offered = byLowerPath(manifest?.offered ?? {})
-  return entries.some((e) => NEWS.has(e.state) || (e.state === 'changed' && offered.get(e.key) !== e.app))
+  return entries.some((e) => NEWS.has(e.state) || (e.state === 'changed' && (offered.get(e.key) ?? e.recorded) !== e.app))
+}
+
+/** The AutoHotkey command files the app's copy does not have that an update leaves in the folder. */
+function ownAhkCommandFilesOf(files: string[], targets: Map<string, Target>, entries: Entry[]): string[] {
+  const listed = files.filter((path) => isAhkCommandFile(path.toLowerCase()) && !targets.has(path.toLowerCase()))
+  const kept = entries.filter((e) => e.state === 'keptRemoved' && isAhkCommandFile(e.key)).map((e) => e.path)
+  return [...listed, ...kept].sort(byLowerCase)
 }
 
 /**
@@ -264,7 +281,7 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
   const files = await walk(folder, '', root, leadingFolders(targets.keys()))
   const present = await readPresent(folder, files, targets)
   const entries = entriesOf(targets, present, manifest, known)
-  const own = files.filter((path) => isAhkCommandFile(path.toLowerCase()) && !targets.has(path.toLowerCase())).sort(byLowerCase)
+  const own = ownAhkCommandFilesOf(files, targets, entries)
   return {
     skip: null,
     from: fromOf(manifest, present, known),

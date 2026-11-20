@@ -1,5 +1,10 @@
 const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:-dev)?$/
 
+/** Whether the text is a version: three numbers, with or without a `-dev` suffix. */
+export function isVersion(text: string): boolean {
+  return VERSION.test(text)
+}
+
 function parts(version: string): number[] | null {
   const match = VERSION.exec(version)
   return match ? match.slice(1).map(Number) : null

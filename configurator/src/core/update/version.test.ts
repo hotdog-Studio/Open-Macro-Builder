@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { compareVersions } from './version'
+import { compareVersions, isVersion } from './version'
 
 it.each([
   ['1.0.4', '1.0.6', -1],
@@ -13,4 +13,16 @@ it.each([
   ['2.0.0', '1.99.99', 1],
 ])('compares %s with %s', (a, b, sign) => {
   expect(Math.sign(compareVersions(a, b))).toBe(sign)
+})
+
+it.each([
+  ['1.0.6', true],
+  ['1.0.0-dev', true],
+  ['10.20.30', true],
+  ['1.0', false],
+  ['1.0.6-rc1', false],
+  ['v1.0.6', false],
+  ['', false],
+])('tells whether %s is a version', (text, expected) => {
+  expect(isVersion(text)).toBe(expected)
 })

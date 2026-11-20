@@ -24,6 +24,8 @@ const APP: Record<string, string> = {
   'ahk/lib/json.ahk': 'json 1.0.6\n',
   'ahk/commands/windows.ahk': 'windows 1.0.6\n',
   'powershell/commands/custom/ssh.ps1': 'ssh 1.0.6\n',
+  /** New in 1.0.6: no known release shipped it. */
+  'powershell/commands/custom/new.ps1': 'new 1.0.6\n',
 }
 
 /** What the releases before the record shipped: path -> text -> releases, oldest first. */
@@ -203,6 +205,7 @@ describe('planUpdate: the check', () => {
       'ahk/commands/windows.ahk': await print('ahk/commands/windows.ahk', APP['ahk/commands/windows.ahk']),
       'ahk/lib/json.ahk': await print('ahk/lib/json.ahk', APP['ahk/lib/json.ahk']),
       'config.json': await print('config.json', 'config 1.0.5\n'),
+      'powershell/commands/custom/new.ps1': await print('powershell/commands/custom/new.ps1', APP['powershell/commands/custom/new.ps1']),
       'powershell/commands/custom/ssh.ps1': await print('powershell/commands/custom/ssh.ps1', APP['powershell/commands/custom/ssh.ps1']),
     })
   })
@@ -247,9 +250,14 @@ describe('planUpdate: a folder without a manifest', () => {
   it.each<[string, Changes, Partial<Lists>]>([
     ['replaces a file of a known release', { 'ahk/lib/json.ahk': 'json 1.0.4\n' }, { replace: ['ahk/lib/json.ahk'] }],
     [
-      'counts a missing command file as deleted',
+      'counts a missing command file that a known release shipped as deleted',
       { 'powershell/commands/custom/ssh.ps1': null },
       { deleted: ['powershell/commands/custom/ssh.ps1'] },
+    ],
+    [
+      'adds a missing command file that no known release shipped, new in the app',
+      { 'powershell/commands/custom/new.ps1': null },
+      { add: ['powershell/commands/custom/new.ps1'] },
     ],
     ['adds a missing ahk/lib file', { 'ahk/lib/json.ahk': null }, { add: ['ahk/lib/json.ahk'] }],
     ['counts a file of no known release as changed', { 'ahk/lib/json.ahk': 'my json\n' }, { changed: ['ahk/lib/json.ahk'] }],
@@ -288,6 +296,13 @@ describe('planUpdate: a folder with a manifest', () => {
     const plan = await planOf({ 'config.json': 'config 1.0.5\n' }, { version: '1.0.3' })
     expect(plan.from).toBe('1.0.3')
     expect(plan.manifest?.version).toBe('1.0.3')
+  })
+
+  it.each([['next'], ['2.0']])('says nothing of where the scripts are from, nor skips, for a manifest version %s', async (version) => {
+    const plan = await planOf({}, { version })
+    expect(plan.skip).toBeNull()
+    expect(plan.from).toBeNull()
+    expect(plan.manifest?.version).toBe(version)
   })
 
   it('adds a missing command file the manifest does not name as deleted', async () => {
@@ -346,12 +361,20 @@ describe('planUpdate: news', () => {
     expect(plan.news).toBe(true)
   })
 
-  it.each<[string, string | null, boolean]>([
-    ["equals the app's copy's", APP['config.json'], false],
-    ["differs from the app's copy's", 'config 1.0.5\n', true],
-    ['is absent', null, true],
-  ])('for a changed file whose offered fingerprint %s', async (_rule, offered, news) => {
-    const manifest: ManifestTexts = { version: '1.0.6', offered: offered === null ? {} : { 'config.json': offered } }
+  const RC = 'config by 1.0.6-rc\n'
+  it.each<[string, ManifestTexts | null, boolean]>([
+    ['no manifest', null, true],
+    ['a manifest that names it in neither offered nor files', { version: '1.0.6' }, true],
+    ["an offered entry equal to the app's copy's", { version: '1.0.6', offered: { 'config.json': APP['config.json'] } }, false],
+    ["an offered entry that differs from the app's copy's", { version: '1.0.6', offered: { 'config.json': 'config 1.0.5\n' } }, true],
+    ["no offered entry and a files entry equal to the app's copy's", { version: '1.0.6', files: { 'config.json': APP['config.json'] } }, false],
+    ["no offered entry and a files entry that differs from the app's copy's", { version: '1.0.6', files: { 'config.json': RC } }, true],
+    [
+      "an offered entry equal to the app's copy's over a files entry that differs",
+      { version: '1.0.6', files: { 'config.json': RC }, offered: { 'config.json': APP['config.json'] } },
+      false,
+    ],
+  ])('for a changed file, with %s', async (_rule, manifest, news) => {
     const plan = await planOf({ 'config.json': 'my config\n' }, manifest)
     expect(listsOf(plan)).toEqual({ ...NO_LISTS, changed: ['config.json'] })
     expect(plan.news).toBe(news)
@@ -415,6 +438,18 @@ describe('planUpdate: the include file', () => {
     const plan = await planOf(changes, manifest, LISTED)
     expect(listsOf(plan)).toEqual({ ...NO_LISTS, ...lists })
     expect(plan.list).toBe(list)
+  })
+
+  it("names a kept removed command file among the folder's own, so a list that names it is left", async () => {
+    const GONE_LINE = String.raw`#Include commands\gone.ahk`
+    const plan = await planOf(
+      { 'ahk/commands/gone.ahk': 'my gone\n', 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, GONE_LINE, CHROME_LINE) },
+      null,
+      LISTED,
+    )
+    expect(listsOf(plan)).toEqual({ ...NO_LISTS, keptRemoved: ['ahk/commands/gone.ahk'] })
+    expect(plan.ownAhkCommandFiles).toEqual(['ahk/commands/gone.ahk'])
+    expect(plan.list).toBe('none')
   })
 
   it('is left alone when no version has one', async () => {

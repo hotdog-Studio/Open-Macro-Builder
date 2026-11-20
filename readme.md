@@ -29,6 +29,7 @@ Turn a spare keypad into layers of macros. Bind its keys to F13 to F24 and pick 
 - [The layout file](#the-layout-file)
 - [Commands](#commands)
 - [Your own layout and commands](#your-own-layout-and-commands)
+- [Roadmap](#roadmap)
 - [For developers](#for-developers)
 - [AI assistance](#ai-assistance)
 - [License](#license)
@@ -165,6 +166,14 @@ Everything specific to you lives in `local/`, which git ignores, so your hosts, 
 - `local/powershell/commands/*.ps1`: your PowerShell commands, loaded automatically.
 - `local/powershell/tests/*.Tests.ps1`: tests for them, which `powershell/tests/run.ps1` runs too.
 - `local/denylist.txt`: strings that must never be committed, one per line. [docs/development.md](docs/development.md#keeping-private-details-out-of-git) has the git hooks that enforce it.
+
+## Roadmap
+
+**A macOS version.** A third version beside `ahk/` and `powershell/`, written in Lua for [Hammerspoon](https://www.hammerspoon.org/), reading the same layout file and icons. It is not started: it waits on a Mac to build and test it on. What is known so far:
+
+- macOS key codes stop at F20, and a PC keyboard's ScrollLock arrives as F14, so a Mac needs its own choice of macro keys and Fn key.
+- Most of the commands are Windows shortcuts, so the Mac version needs its own command files, not translations.
+- The configurator needs a third language beside AutoHotkey and PowerShell, and a Mac build of the desktop app.
 
 ## For developers
 

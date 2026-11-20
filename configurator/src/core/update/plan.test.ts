@@ -388,6 +388,38 @@ describe('planUpdate: a folder that is not checked', () => {
       manifest: { version: folderVersion, files: {}, deleted: [], offered: {} },
     })
   })
+
+  /** No manifest, and config.json as 1.0.5 shipped it: the scripts are from 1.0.5. */
+  const FROM_105: Changes = { 'config.json': 'config 1.0.5\n' }
+
+  it('skips a 1.0.0-dev app for a folder without a manifest whose files are of 1.0.5, which is newer', async () => {
+    const { app, index, known } = await BASE
+    const plan = await planUpdate(await folderOf(app, FROM_105, null), { ...index, version: '1.0.0-dev' }, known)
+    expect(plan).toEqual({
+      skip: { reason: 'newer', folderVersion: '1.0.5' },
+      from: '1.0.5',
+      to: '1.0.0-dev',
+      ...NO_LISTS,
+      list: 'none',
+      news: false,
+      seen: {},
+      ownAhkCommandFiles: [],
+      manifest: null,
+    })
+  })
+
+  it.each([
+    ['1.0.5', 'of the same version'],
+    ['1.0.6', 'newer'],
+  ])('checks a folder without a manifest whose files are of 1.0.5 for a %s app, which is %s', async (appVersion) => {
+    const { app, index, known } = await BASE
+    const plan = await planUpdate(await folderOf(app, FROM_105, null), { ...index, version: appVersion }, known)
+    expect(plan.skip).toBeNull()
+    expect(plan.from).toBe('1.0.5')
+    expect(plan.to).toBe(appVersion)
+    expect(listsOf(plan)).toEqual({ ...NO_LISTS, replace: ['config.json'] })
+    expect(plan.news).toBe(true)
+  })
 })
 
 describe('planUpdate: news', () => {

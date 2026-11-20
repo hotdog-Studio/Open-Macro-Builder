@@ -87,11 +87,11 @@ const isUnderLocal = (key: string) => key.startsWith('local/')
 const byLowerPath = <T>(record: Record<string, T>) =>
   new Map(Object.entries(record).map(([path, value]) => [path.toLowerCase(), value]))
 
-/** The plan of a folder that is not checked. */
+/** The plan of a folder that is not checked: a newer one is from the version it was found to be. */
 function skipped(index: StarterIndex, skip: NonNullable<UpdatePlan['skip']>, manifest: Manifest | null): UpdatePlan {
   return {
     skip,
-    from: manifest?.version ?? null,
+    from: skip.reason === 'newer' ? skip.folderVersion : null,
     to: index.version,
     replace: [],
     add: [],
@@ -271,7 +271,8 @@ function ownAhkCommandFilesOf(files: string[], targets: Map<string, Target>, ent
 /**
  * What an update of the folder's shared files would do; nothing is written. Only the paths of the
  * app's copy, the manifest and the known releases are read; the person's own files are only listed,
- * and nothing under local/ is listed or read. A failure to list or read rejects.
+ * and nothing under local/ is listed or read. A failure to list or read rejects. A folder newer than the
+ * app, by its manifest or (without one) by its files, is skipped as `newer`.
  */
 export async function planUpdate(folder: FolderAccess, index: StarterIndex, known: KnownReleases): Promise<UpdatePlan> {
   const root = await folder.list('')
@@ -283,11 +284,17 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
   const targets = targetsOf(index, manifest, known)
   const files = await walk(folder, '', root, leadingFolders(targets.keys()))
   const present = await readPresent(folder, files, targets)
+  const from = fromOf(manifest, present, known)
+  // Without a manifest, files of a release newer than the app (a development build meeting a folder a
+  // release set up) are never offered the app's older copy.
+  if (manifest === null && from !== null && compareVersions(from, index.version) > 0) {
+    return skipped(index, { reason: 'newer', folderVersion: from }, null)
+  }
   const entries = entriesOf(targets, present, manifest, known)
   const own = ownAhkCommandFilesOf(files, targets, entries)
   return {
     skip: null,
-    from: fromOf(manifest, present, known),
+    from,
     to: index.version,
     replace: pathsIn(entries, 'replace'),
     add: pathsIn(entries, 'add'),

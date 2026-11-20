@@ -29,6 +29,8 @@ export interface ConfirmDialogProps {
    * and the first Tab goes to the first control.
    */
   focusDialog?: boolean
+  /** The id of an element in the dialog that describes it, announced with its title. */
+  describedBy?: string
 }
 
 const BUTTON = 'rounded-md px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-50'
@@ -45,7 +47,15 @@ function styleOf(c: Choice): string {
 }
 
 /** A modal question with a few answers. */
-export function ConfirmDialog({ title, children, choices, onCancel, onDismiss, focusDialog = false }: Readonly<ConfirmDialogProps>) {
+export function ConfirmDialog({
+  title,
+  children,
+  choices,
+  onCancel,
+  onDismiss,
+  focusDialog = false,
+  describedBy,
+}: Readonly<ConfirmDialogProps>) {
   const titleId = useId()
   const backdrop = useRef<HTMLDivElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
@@ -83,6 +93,7 @@ export function ConfirmDialog({ title, children, choices, onCancel, onDismiss, f
         open
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={describedBy}
         tabIndex={focusDialog ? -1 : undefined}
         className="static m-0 flex max-h-full w-full max-w-lg flex-col rounded-xl border border-zinc-700 bg-zinc-900 p-0 text-inherit outline-none"
       >

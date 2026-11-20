@@ -157,7 +157,7 @@ const EXAMPLE_CONFIG = 'config.json'
 /** What the start screen shows for an error while opening a folder. */
 export function openError(e: unknown): string {
   if (e instanceof ConfigError || e instanceof EncodingError) return e.message
-  return `The folder could not be opened: ${e instanceof Error ? e.message : String(e)}`
+  return `The folder could not be opened: ${messageOf(e)}`
 }
 
 /** What checkWorkspace needs to know about the folder and the languages the user runs. */
@@ -281,9 +281,11 @@ export function createActions(
    * which is the person's under local/): the command lists and the library, then the icon sets.
    */
   async function rescanShared(): Promise<void> {
-    await actions.recheckCommands()
+    // Taken before the recheck: a folder opened meanwhile is not this update's, and gets nothing of it.
     const folder = held?.folder
     if (!folder) return
+    await actions.recheckCommands()
+    if (held?.folder !== folder) return
     let iconSets: string[]
     try {
       iconSets = await listIconSets(folder)
@@ -668,7 +670,7 @@ export function createActions(
       try {
         await saveSettings(state.folder, settings)
       } catch (e) {
-        const why = e instanceof Error ? e.message : String(e)
+        const why = messageOf(e)
         dispatch({ type: 'banner', banner: { text: `Your languages were not saved: ${why}`, kind: 'error' } })
       }
     },

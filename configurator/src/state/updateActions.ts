@@ -182,8 +182,8 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
     try {
       prepared = await Promise.all([planAgain(src, folder), filesOf(src)])
     } catch (e) {
-      if (!(e instanceof NotStarted)) throw e
-      return deps.folder() === folder ? { plan: offer.plan, result: { ok: false, notStarted: e.message } } : null
+      // Always a NotStarted: planAgain and filesOf turn every failure into one.
+      return deps.folder() === folder ? { plan: offer.plan, result: { ok: false, notStarted: messageOf(e) } } : null
     }
     if (deps.folder() !== folder) return null
     const [plan, files] = prepared

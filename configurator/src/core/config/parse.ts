@@ -1,3 +1,4 @@
+import { messageOf } from '../message'
 import type { Extra, Layer, Macro, Options, PadKey, Workspace } from './model'
 
 export class ConfigError extends Error {}
@@ -79,7 +80,7 @@ function readObject(text: string, fileName: string): Obj {
   try {
     data = JSON.parse(text)
   } catch (e) {
-    throw new ConfigError(`${fileName} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`)
+    throw new ConfigError(`${fileName} is not valid JSON: ${messageOf(e)}`)
   }
   if (!isObj(data)) throw new ConfigError(`${fileName} must hold a JSON object.`)
   return data

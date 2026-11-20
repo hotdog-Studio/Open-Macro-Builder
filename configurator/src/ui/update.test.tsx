@@ -115,6 +115,8 @@ class TestFolder implements FolderAccess {
   readonly reads: string[] = []
   /** Every path written or removed, in order. */
   readonly changes: string[] = []
+  /** Every folder listed, in order. */
+  readonly listed: string[] = []
   /** Runs before each read; may wait. */
   beforeRead: (path: string) => Promise<void> | void = () => {}
   /** Runs before each listing; may wait or throw. */
@@ -138,6 +140,7 @@ class TestFolder implements FolderAccess {
     return this.inner.writeBytes(path, data)
   }
   async list(dir: string): Promise<DirEntry[]> {
+    this.listed.push(dir)
     await this.beforeList(dir)
     return this.inner.list(dir)
   }
@@ -783,12 +786,25 @@ describe('the update dialog', () => {
 })
 
 describe('updating', () => {
-  it.each<{ ticks: string[]; counts: string; kept: string[] | null; backups: string[] | null }>([
-    { ticks: [MAIN_AHK], counts: 'Updated to 1.0.6: 4 replaced, 1 added, 2 removed.', kept: null, backups: [`${MAIN_AHK}.before-update.bak`] },
-    { ticks: [], counts: 'Updated to 1.0.6: 3 replaced, 1 added, 2 removed.', kept: [MAIN_AHK], backups: null },
+  it.each<{ ticks: string[]; counts: string; kept: string[] | null; backups: string[] | null; adjust: boolean }>([
+    {
+      ticks: [MAIN_AHK],
+      counts: 'Updated to 1.0.6: 4 replaced, 1 added, 2 removed.',
+      kept: null,
+      backups: [`${MAIN_AHK}.before-update.bak`],
+      adjust: true,
+    },
+    { ticks: [], counts: 'Updated to 1.0.6: 3 replaced, 1 added, 2 removed.', kept: [MAIN_AHK], backups: null, adjust: true },
+    {
+      ticks: [INCLUDE],
+      counts: 'Updated to 1.0.6: 4 replaced, 1 added, 2 removed.',
+      kept: [MAIN_AHK],
+      backups: [`${INCLUDE}.before-update.bak`],
+      adjust: false,
+    },
   ])(
-    'says what was done with $ticks ticked, names the kept files and the backups, and says the include file was brought up to date',
-    async ({ ticks, counts, kept, backups }) => {
+    'says what was done with $ticks ticked, names the kept files and the backups, and whether the include file was brought up to date',
+    async ({ ticks, counts, kept, backups, adjust }) => {
       const { user, dialog } = await reviewed(WORKED)
       await press(user, dialog, ticks)
       const done = dialogOf()
@@ -797,8 +813,9 @@ describe('updating', () => {
       expect(keptList && itemsOf(keptList)).toEqual(kept)
       const backupList = within(done).queryByRole('list', { name: 'Your versions, kept beside the new ones:' })
       expect(backupList && itemsOf(backupList)).toEqual(backups)
-      // The include file kept with its list brought up to date is said so, not listed as kept as it is.
-      expect(within(done).getByText(ADJUST)).toBeTruthy()
+      // The include file kept with its list brought up to date is said so, not listed as kept as it is; a
+      // ticked one was replaced, and neither is said.
+      expect(within(done).queryAllByText(ADJUST)).toHaveLength(adjust ? 1 : 0)
       expect(within(done).getByText(START_AGAIN)).toBeTruthy()
       expect(within(done).queryByRole('button', { name: 'Reload the macropad' })).toBeNull()
       noBar()
@@ -989,6 +1006,26 @@ describe('updating', () => {
     await waitFor(() => expect(editor().iconSets).toContain('fresh'))
   })
 
+  it('drops the scan after the update when another folder was opened during it', async () => {
+    const folder = await scriptsFolder(WORKED)
+    const other = await scriptsFolder(APP_6)
+    const user = renderApp([folder, other], await updateSourceOf())
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    // Once the outcome is shown, the scan of the command lists waits.
+    const { held, release } = gate()
+    folder.beforeList = () => (editor().update?.result ? held : undefined)
+    await user.click(within(dialogOf()).getByRole('button', UPDATE))
+    await waitFor(() => expect(editor().update?.result?.ok).toBe(true))
+    await user.click(within(dialogOf()).getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+    await waitFor(() => expect(editor().folder).toBe(other))
+    const listings = other.listed.length
+    release()
+    await act(() => new Promise((done) => setTimeout(done, 50)))
+    expect(other.listed.slice(listings)).toEqual([])
+  })
+
   it('keeps an unsaved draft of your own command file through the update and the scan after it', async () => {
     const { folder, user, dialog } = await reviewed({ ...WORKED, ...MINE })
     act(draft(MINE_AHK))
@@ -1014,6 +1051,8 @@ describe('updating', () => {
     await waitFor(() => expect(writing).toBe(true))
 
     expect(document.activeElement).toBe(dialogOf())
+    const describedBy = dialogOf().getAttribute('aria-describedby')
+    expect(describedBy && document.getElementById(describedBy)?.textContent).toBe('Updating the scripts…')
     expect(disabled(within(dialogOf()).getByRole('button', NOT_NOW))).toBe(true)
     expect(disabled(within(dialogOf()).getByRole('button', UPDATE))).toBe(true)
     fireEvent.keyDown(window, { key: 'Escape' })

@@ -200,20 +200,22 @@ function PlanView({ plan, picks, onTick, onUpdate }: Readonly<PlanViewProps>) {
 
 /**
  * While the update runs: both buttons are off, and Escape and the backdrop do nothing. The focus is on the
- * dialog, so a screen reader reads its title and this line as the view opens; the line is not a live region,
- * so nothing more is announced until the next view takes the focus.
+ * dialog, which the busy line describes, so a screen reader announces its title and that line as the view
+ * opens. The line is not a live region: nothing more is announced until the next view takes the focus.
  */
 function BusyView() {
+  const lineId = useId()
   return (
     <ConfirmDialog
       title={TITLE}
       focusDialog
+      describedBy={lineId}
       choices={[
         { label: 'Not now', disabled: true, onChoose: NOTHING },
         { label: 'Update', primary: true, disabled: true, onChoose: NOTHING },
       ]}
     >
-      <p>Updating the scripts…</p>
+      <p id={lineId}>Updating the scripts…</p>
     </ConfirmDialog>
   )
 }

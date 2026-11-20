@@ -218,10 +218,13 @@ describe('opening a folder from the header', () => {
     expect(h.edit().dirty).toBe(true)
   })
 
-  it('shows the message on the start screen when no folder is open', async () => {
-    const h = harness({ openFolder: () => Promise.reject(new Error('The picker is busy.')) })
+  it.each<[string, unknown, string]>([
+    ['an error: its message', new Error('The picker is busy.'), 'The picker is busy.'],
+    ['anything else: that it is unknown', { code: 5 }, 'An unknown error.'],
+  ])('shows on the start screen, when no folder is open, the message of %s', async (_kind, failure, why) => {
+    const h = harness({ openFolder: () => Promise.reject(failure) })
     await h.actions.openFolder()
-    expect(h.state()).toMatchObject({ screen: 'open', message: 'The folder could not be opened: The picker is busy.' })
+    expect(h.state()).toMatchObject({ screen: 'open', message: `The folder could not be opened: ${why}` })
   })
 })
 
@@ -549,13 +552,16 @@ describe('the languages you run', () => {
     expect(h.edit().banner).toEqual({ text: 'Your languages were not saved: The disk is full.', kind: 'error' })
   })
 
-  it('says why when the failure is not an Error', async () => {
+  it.each<[string, unknown, string]>([
+    ['a text: that text', 'denied', 'denied'],
+    ['anything else: that it is unknown', { code: 5 }, 'An unknown error.'],
+  ])('says why when the failure is not an Error but %s', async (_kind, failure, why) => {
     const h = await opened()
     h.folder.onWrite = (path) => {
-      if (path === SETTINGS_PATH) throw 'denied'
+      if (path === SETTINGS_PATH) throw failure
     }
     await h.actions.setLanguages(['ps'])
-    expect(h.edit().banner?.text).toBe('Your languages were not saved: denied')
+    expect(h.edit().banner?.text).toBe(`Your languages were not saved: ${why}`)
   })
 
   it('saves the choice to the settings file', async () => {

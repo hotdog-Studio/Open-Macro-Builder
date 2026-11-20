@@ -369,12 +369,14 @@ describe('planUpdate: a folder that is not checked', () => {
     expect(folder.calls).toEqual([{ op: 'list', path: '' }])
   })
 
-  it.each([
-    ['1.0.6', '1.0.9'],
-    ['1.0.0-dev', '1.0.4'],
-  ])('skips a %s app for a folder whose manifest is %s, which is newer', async (appVersion, folderVersion) => {
+  it.each<[string, string, string, Changes]>([
+    ['1.0.6', '1.0.9', 'a file to replace', { 'config.json': 'config 1.0.5\n' }],
+    ['1.0.0-dev', '1.0.4', 'a file to replace', { 'config.json': 'config 1.0.5\n' }],
+    // The manifest's skip does not depend on news.
+    ['1.0.6', '1.0.9', 'nothing to offer', {}],
+  ])('skips a %s app for a folder whose manifest is %s, which is newer, with %s', async (appVersion, folderVersion, _what, changes) => {
     const { app, index, known } = await BASE
-    const folder = await folderOf(app, { 'config.json': 'config 1.0.5\n' }, { version: folderVersion })
+    const folder = await folderOf(app, changes, { version: folderVersion })
     const plan = await planUpdate(folder, { ...index, version: appVersion }, known)
     expect(plan).toEqual({
       skip: { reason: 'newer', folderVersion },
@@ -392,9 +394,16 @@ describe('planUpdate: a folder that is not checked', () => {
   /** No manifest, and config.json as 1.0.5 shipped it: the scripts are from 1.0.5. */
   const FROM_105: Changes = { 'config.json': 'config 1.0.5\n' }
 
-  it('skips a 1.0.0-dev app for a folder without a manifest whose files are of 1.0.5, which is newer', async () => {
-    const { app, index, known } = await BASE
-    const plan = await planUpdate(await folderOf(app, FROM_105, null), { ...index, version: '1.0.0-dev' }, known)
+  /** The base, where 1.0.5 already shipped ahk/lib/json.ahk as the app's copy has it. */
+  const JSON_KNOWN = fixtureOf(APP, { ...OLD, 'ahk/lib/json.ahk': { ...OLD['ahk/lib/json.ahk'], [APP['ahk/lib/json.ahk']]: ['1.0.5'] } })
+
+  it.each<[string, Promise<Fixture>, Changes]>([
+    ['config.json of an older known content, to replace', BASE, FROM_105],
+    // The only difference is a file the person changed: with no manifest, nothing says it was offered before.
+    ['ahk/lib/json.ahk as 1.0.5 shipped it and config.json changed by the person', JSON_KNOWN, { 'config.json': 'my config\n' }],
+  ])('skips a 1.0.0-dev app for a folder without a manifest whose files are of 1.0.5, which is newer: %s', async (_what, fixture, changes) => {
+    const { app, index, known } = await fixture
+    const plan = await planUpdate(await folderOf(app, changes, null), { ...index, version: '1.0.0-dev' }, known)
     expect(plan).toEqual({
       skip: { reason: 'newer', folderVersion: '1.0.5' },
       from: '1.0.5',

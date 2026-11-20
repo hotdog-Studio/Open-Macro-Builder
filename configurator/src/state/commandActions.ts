@@ -10,7 +10,7 @@ import {
   type TextFile,
 } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
-import { MANIFEST_PATH, readManifest, writeManifest, type Manifest } from '../core/update/manifest'
+import { MANIFEST_PATH, readManifest, withDeleted, withoutDeleted, writeManifest, type Manifest } from '../core/update/manifest'
 import {
   commandFileAt,
   commandFilePath,
@@ -136,21 +136,6 @@ async function restoreInclude(
   }
 }
 
-const sameInCase = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
-
-/** The manifest with `path` among its deleted files; null when it holds no such file or has it already. */
-function withDeleted(manifest: Manifest, path: string): Manifest | null {
-  if (!Object.keys(manifest.files).some((p) => sameInCase(p, path))) return null
-  if (manifest.deleted.some((p) => sameInCase(p, path))) return null
-  return { ...manifest, deleted: [...manifest.deleted, path] }
-}
-
-/** The manifest without `path` among its deleted files; null when it was not among them. */
-function withoutDeleted(manifest: Manifest, path: string): Manifest | null {
-  const kept = manifest.deleted.filter((p) => !sameInCase(p, path))
-  return kept.length === manifest.deleted.length ? null : { ...manifest, deleted: kept }
-}
-
 /** Saving and reloading one command file at a time. */
 export function createCommandActions(deps: CommandDeps): CommandActions {
   const { dispatch, files } = deps
@@ -177,7 +162,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
   let libraryTaken = 0
 
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
-  const banner = (text: string) => dispatch({ type: 'banner', banner: { text, kind: 'error' } })
+  const banner = (text: string, kind: 'error' | 'warning' = 'error') => dispatch({ type: 'banner', banner: { text, kind } })
 
   /** The last change of the manifest: the next one starts when it ends, so two never interleave. */
   let manifestWork: Promise<unknown> = Promise.resolve()
@@ -185,7 +170,8 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
   /**
    * Changes the folder's manifest, when it has one that can be read, and writes it only when `change`
    * gives a new one. A folder without a manifest, or with one that is not one, is left as it is.
-   * Never rejects: resolves to why the manifest was not updated, or null.
+   * Never rejects: resolves to why the manifest was not updated (its message without a final full
+   * stop), or null.
    */
   function updateManifest(folder: FolderAccess, change: (m: Manifest) => Manifest | null): Promise<string | null> {
     const run = async (): Promise<string | null> => {
@@ -195,8 +181,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
         if (next) await writeManifest(folder, next)
         return null
       } catch (e) {
-        // The message's own full stop is dropped, so the sentence does not end in two.
-        return `${MANIFEST_PATH} was not updated: ${messageOf(e).replace(/\.$/, '')}.`
+        return messageOf(e).replace(/\.$/, '')
       }
     }
     const done = manifestWork.then(run)
@@ -420,16 +405,17 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
             () => null,
             (e: unknown) => `${path} was created, but ${listPath} was not updated: ${messageOf(e)}`,
           )
-    // A file made again is no longer one the person deleted.
-    const manifestError = await updateManifest(folder, (m) => withoutDeleted(m, path))
-    const problem = [error, manifestError].filter((why) => why !== null).join(' ') || null
-    if (deps.folder() !== folder) return problem
+    // A file made again is no longer one the person deleted. When the manifest cannot be updated
+    // nothing is reported: a `deleted` entry for a file that is in the folder has no effect (the
+    // check treats only missing files as deleted), and the next update writes `deleted` anew.
+    await updateManifest(folder, (m) => withoutDeleted(m, path))
+    if (deps.folder() !== folder) return error
     const file: CommandFile = { ...at, file: made, functions: lang.findFunctions(made.text), editable: true }
     files.set(withCommandFile(files.get(), path, file))
     drafts.delete(path)
     written.delete(path)
     dispatch({ type: 'command-file', path, file })
-    return problem
+    return error
   }
 
   return {
@@ -532,14 +518,21 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
           () => `${path} was not deleted, and ${listPath} no longer includes it: ${messageOf(e)}`,
         )
       }
-      // The file is gone: a manifest that cannot be updated does not undo that, but the person is told.
+      // The file is gone. A manifest that cannot be updated does not undo that or fail the delete
+      // (the tab reads a returned text as "not deleted"), so the person is told by a warning.
       const manifestError = await updateManifest(folder, (m) => withDeleted(m, path))
       if (deps.folder() !== folder) return null
       files.set(withCommandFile(files.get(), path, null))
       drafts.delete(path)
       written.delete(path)
       dispatch({ type: 'command-file', path, file: null })
-      return manifestError && `${manifestError} The next update of the scripts will offer ${path} again.`
+      if (manifestError !== null) {
+        banner(
+          `${path} was deleted, but ${MANIFEST_PATH} was not updated: ${manifestError}. The next update of the scripts will offer it again.`,
+          'warning',
+        )
+      }
+      return null
     },
 
     async reloadMacropadFor(path) {

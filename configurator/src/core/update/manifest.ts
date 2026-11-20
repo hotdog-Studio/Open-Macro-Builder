@@ -72,3 +72,21 @@ export async function writeManifest(folder: FolderAccess, manifest: Manifest): P
   }
   await folder.writeBytes(MANIFEST_PATH, new TextEncoder().encode(`${JSON.stringify(ordered, null, 2)}\n`))
 }
+
+const sameInCase = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+/**
+ * The manifest with `path` among its deleted files, as it was deleted. Null (nothing to change) when
+ * `files` does not name the path or `deleted` has it already, both ignoring case.
+ */
+export function withDeleted(manifest: Manifest, path: string): Manifest | null {
+  if (!Object.keys(manifest.files).some((p) => sameInCase(p, path))) return null
+  if (manifest.deleted.some((p) => sameInCase(p, path))) return null
+  return { ...manifest, deleted: [...manifest.deleted, path] }
+}
+
+/** The manifest without `path` among its deleted files, ignoring case; null when it was not among them. */
+export function withoutDeleted(manifest: Manifest, path: string): Manifest | null {
+  const kept = manifest.deleted.filter((p) => !sameInCase(p, path))
+  return kept.length === manifest.deleted.length ? null : { ...manifest, deleted: kept }
+}

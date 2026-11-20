@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MemoryFolder } from '../folder/memory'
-import { MANIFEST_PATH, readManifest, writeManifest, type Manifest } from './manifest'
+import { MANIFEST_PATH, readManifest, withDeleted, withoutDeleted, writeManifest, type Manifest } from './manifest'
 
 const good: Manifest = {
   version: '1.0.6',
@@ -100,5 +100,49 @@ describe('writeManifest', () => {
     const folder = folderHolding('{}')
     await writeManifest(folder, good)
     expect(await readManifest(folder)).toEqual(good)
+  })
+})
+
+describe('withDeleted', () => {
+  const manifest: Manifest = {
+    ...good,
+    files: { 'ahk/commands/Lock.ahk': 'a', 'ahk/commands/gone.ahk': 'b' },
+    deleted: ['ahk/commands/gone.ahk'],
+  }
+
+  it('adds the path as it was deleted, keeping the file among the files', () => {
+    const next = withDeleted(manifest, 'ahk/commands/lock.ahk')
+    expect(next?.deleted).toEqual(['ahk/commands/gone.ahk', 'ahk/commands/lock.ahk'])
+    expect(next?.files).toBe(manifest.files)
+  })
+
+  it.each([
+    ['the files do not name the path', 'ahk/commands/other.ahk'],
+    ['the deleted files have it already', 'ahk/commands/gone.ahk'],
+    ['the deleted files have it already in another case', 'AHK/commands/GONE.ahk'],
+  ])('gives null when %s', (_why, path) => {
+    expect(withDeleted(manifest, path)).toBeNull()
+  })
+
+  it('does not change the manifest it was given', () => {
+    withDeleted(manifest, 'ahk/commands/lock.ahk')
+    expect(manifest.deleted).toEqual(['ahk/commands/gone.ahk'])
+  })
+})
+
+describe('withoutDeleted', () => {
+  const manifest: Manifest = { ...good, deleted: ['ahk/commands/a.ahk', 'ahk/commands/B.ahk', 'ahk/commands/b.ahk'] }
+
+  it('takes out every entry for the path, ignoring case, and keeps the others', () => {
+    expect(withoutDeleted(manifest, 'AHK/commands/b.ahk')?.deleted).toEqual(['ahk/commands/a.ahk'])
+  })
+
+  it('gives null when the path is not among the deleted files', () => {
+    expect(withoutDeleted(manifest, 'ahk/commands/c.ahk')).toBeNull()
+  })
+
+  it('does not change the manifest it was given', () => {
+    withoutDeleted(manifest, 'ahk/commands/a.ahk')
+    expect(manifest.deleted).toHaveLength(3)
   })
 })

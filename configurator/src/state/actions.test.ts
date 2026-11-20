@@ -1072,22 +1072,32 @@ describe('command files', () => {
       expect(h.folder.text(MANIFEST_PATH)).toBe(text)
     })
 
-    it('notes both deletes when two are started together', async () => {
-      const h = await opened(withManifest(manifestOf([SSH_PS, OTHER_PS])))
+    /**
+     * Holds the first read of the manifest after it has been taken (as a read that overlaps another
+     * change is): the bytes are delivered when the returned function is called.
+     */
+    function holdFirstManifestRead(h: { folder: Flaky }) {
       const hold = gate()
       let first = true
       h.folder.onRead = async (path) => {
         if (path !== MANIFEST_PATH || !first) return
         first = false
-        // The manifest as it is now, delivered late: what a read that overlaps another change holds.
         const bytes = await h.folder.inner.readBytes(path)
         await hold.wait
         return bytes
       }
+      return async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        hold.open()
+      }
+    }
+
+    it('notes both deletes when two are started together', async () => {
+      const h = await opened(withManifest(manifestOf([SSH_PS, OTHER_PS])))
+      const release = holdFirstManifestRead(h)
       const both = Promise.all([h.actions.deleteCommandFile(SSH_PS), h.actions.deleteCommandFile(OTHER_PS)])
       await vi.waitFor(() => expect(h.folder.text(OTHER_PS)).toBeNull())
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      hold.open()
+      await release()
       expect(await both).toEqual([null, null])
       expect(await deletedIn(h.folder.inner)).toEqual([OTHER_PS, SSH_PS])
     })
@@ -1095,18 +1105,36 @@ describe('command files', () => {
     it.each([
       ['read', 'onRead'],
       ['written', 'onWrite'],
-    ] as const)('still deletes the file, and says the next update will offer it again, when the manifest cannot be %s', async (_how, hook) => {
+    ] as const)('still deletes the file, returns nothing and warns that the next update will offer it again, when the manifest cannot be %s', async (_how, hook) => {
       const text = manifestOf([SSH_PS])
       const h = await opened(withManifest(text))
       h.folder[hook] = (path) => {
         if (path === MANIFEST_PATH) throw new Error('The disk is full.')
       }
-      expect(await h.actions.deleteCommandFile(SSH_PS)).toBe(
-        `${MANIFEST_PATH} was not updated: The disk is full. The next update of the scripts will offer ${SSH_PS} again.`,
-      )
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBeNull()
       expect(h.folder.text(SSH_PS)).toBeNull()
       expect(h.edit().commandFiles.some((f) => f.file.path === SSH_PS)).toBe(false)
       expect(h.folder.text(MANIFEST_PATH)).toBe(text)
+      expect(h.edit().banner).toEqual({
+        text: `${SSH_PS} was deleted, but ${MANIFEST_PATH} was not updated: The disk is full. The next update of the scripts will offer it again.`,
+        kind: 'warning',
+      })
+    })
+
+    it('raises no warning for a manifest that failed once another folder is open', async () => {
+      const h = await opened(withManifest(manifestOf([SSH_PS])))
+      const hold = gate()
+      h.folder.onWrite = async (path) => {
+        if (path !== MANIFEST_PATH) return
+        await hold.wait
+        throw new Error('The disk is full.')
+      }
+      const deleting = h.actions.deleteCommandFile(SSH_PS)
+      await vi.waitFor(() => expect(h.folder.text(SSH_PS)).toBeNull())
+      await h.actions.load(repoFolder())
+      hold.open()
+      expect(await deleting).toBeNull()
+      expect(h.edit().banner).toBeNull()
     })
 
     describe('creating the file again', () => {
@@ -1154,18 +1182,49 @@ describe('command files', () => {
         expect(await deletedIn(h.folder.inner)).toEqual([])
       })
 
-      it('still creates the files, and says the manifest was not updated, when it cannot be written', async () => {
+      it.each([
+        ['read', 'onRead'],
+        ['written', 'onWrite'],
+      ] as const)('still creates the files, and says nothing, when the manifest cannot be %s', async (_how, hook) => {
         const text = manifestOf([FRESH_PS], [FRESH_PS])
         const h = await opened({ files: { [MANIFEST_PATH]: text } })
-        h.folder.onWrite = (path) => {
+        h.folder[hook] = (path) => {
           if (path === MANIFEST_PATH) throw new Error('The disk is full.')
         }
-        expect(await h.actions.createCommandFiles({ ...request, langs: ['ps'] })).toBe(
-          `${MANIFEST_PATH} was not updated: The disk is full.`,
-        )
+        expect(await h.actions.createCommandFiles({ ...request, langs: ['ps'] })).toBeNull()
         expect(h.folder.text(FRESH_PS)).not.toBeNull()
         expect(h.edit().commandFiles.some((f) => f.file.path === FRESH_PS)).toBe(true)
         expect(h.folder.text(MANIFEST_PATH)).toBe(text)
+        expect(h.edit().banner).toBeNull()
+      })
+
+      it('says nothing when createMissingFile cannot write the manifest', async () => {
+        const h = await opened({ files: { [MANIFEST_PATH]: manifestOf([FRESH_AHK], [FRESH_AHK]) } })
+        h.folder.onWrite = (path) => {
+          if (path === MANIFEST_PATH) throw new Error('The disk is full.')
+        }
+        expect(await h.actions.createMissingFile('shared:custom/fresh', 'ahk')).toBeNull()
+        expect(h.edit().commandFiles.some((f) => f.file.path === FRESH_AHK)).toBe(true)
+        expect(h.edit().banner).toBeNull()
+      })
+
+      it('does not rewrite a manifest it cannot read', async () => {
+        const h = await opened({ files: { [MANIFEST_PATH]: '{"version": 3' } })
+        expect(await h.actions.createCommandFiles(request)).toBeNull()
+        expect(h.folder.text(FRESH_PS)).not.toBeNull()
+        expect(h.folder.text(MANIFEST_PATH)).toBe('{"version": 3')
+      })
+
+      it('keeps a delete and a create started together in step', async () => {
+        const h = await opened({ files: { ...shared, [MANIFEST_PATH]: manifestOf([SSH_PS, FRESH_PS], [FRESH_PS]) } })
+        const release = holdFirstManifestRead(h)
+        const deleting = h.actions.deleteCommandFile(SSH_PS)
+        await vi.waitFor(() => expect(h.folder.text(SSH_PS)).toBeNull())
+        const creating = h.actions.createCommandFiles({ ...request, langs: ['ps'] })
+        await vi.waitFor(() => expect(h.folder.text(FRESH_PS)).not.toBeNull())
+        await release()
+        expect([await deleting, await creating]).toEqual([null, null])
+        expect(await deletedIn(h.folder.inner)).toEqual([SSH_PS])
       })
     })
   })

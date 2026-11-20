@@ -408,6 +408,18 @@ describe('planUpdate: a folder that is not checked', () => {
     })
   })
 
+  it('plans as usual, with no news, a folder without a manifest whose files are the app copy and of 1.0.5, for a 1.0.0-dev app', async () => {
+    // The app's own files, as a developer opens them: config.json as 1.0.5 shipped it, which is also the app's copy.
+    const { app, index, known } = await APP_TEXT_KNOWN
+    const plan = await planUpdate(await folderOf(app, {}, null), { ...index, version: '1.0.0-dev' }, known)
+    expect(plan.skip).toBeNull()
+    expect(plan.news).toBe(false)
+    expect(plan.from).toBe('1.0.5')
+    expect(plan.to).toBe('1.0.0-dev')
+    expect(listsOf(plan)).toEqual(NO_LISTS)
+    expect(plan.seen['config.json']).toBe(index.files['config.json'])
+  })
+
   it.each([
     ['1.0.5', 'of the same version'],
     ['1.0.6', 'newer'],

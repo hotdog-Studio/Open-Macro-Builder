@@ -272,7 +272,7 @@ function ownAhkCommandFilesOf(files: string[], targets: Map<string, Target>, ent
  * What an update of the folder's shared files would do; nothing is written. Only the paths of the
  * app's copy, the manifest and the known releases are read; the person's own files are only listed,
  * and nothing under local/ is listed or read. A failure to list or read rejects. A folder newer than the
- * app, by its manifest or (without one) by its files, is skipped as `newer`.
+ * app is skipped as `newer`: by its manifest, or (without one) by its files when an update would offer something.
  */
 export async function planUpdate(folder: FolderAccess, index: StarterIndex, known: KnownReleases): Promise<UpdatePlan> {
   const root = await folder.list('')
@@ -285,12 +285,14 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
   const files = await walk(folder, '', root, leadingFolders(targets.keys()))
   const present = await readPresent(folder, files, targets)
   const from = fromOf(manifest, present, known)
+  const entries = entriesOf(targets, present, manifest, known)
+  const news = hasNews(entries, manifest)
   // Without a manifest, files of a release newer than the app (a development build meeting a folder a
-  // release set up) are never offered the app's older copy.
-  if (manifest === null && from !== null && compareVersions(from, index.version) > 0) {
+  // release set up) are never offered the app's older copy. With nothing to offer (a copy of the app's
+  // own files, as a developer opens it), the plan is the ordinary one and nothing is said.
+  if (manifest === null && news && from !== null && compareVersions(from, index.version) > 0) {
     return skipped(index, { reason: 'newer', folderVersion: from }, null)
   }
-  const entries = entriesOf(targets, present, manifest, known)
   const own = ownAhkCommandFilesOf(files, targets, entries)
   return {
     skip: null,
@@ -303,7 +305,7 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
     deleted: pathsIn(entries, 'deleted'),
     keptRemoved: pathsIn(entries, 'keptRemoved'),
     list: includeListOf(entries, present, own),
-    news: hasNews(entries, manifest),
+    news,
     seen: Object.fromEntries(entries.map((e) => [e.path, e.print])),
     ownAhkCommandFiles: own,
     manifest,

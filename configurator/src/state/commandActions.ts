@@ -497,7 +497,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     dispatch({ type: 'command-file', path, file: null })
     if (manifestError !== null) {
       banner(
-        `${path} was deleted, but ${MANIFEST_PATH} was not updated: ${manifestError}. The next update of the scripts will offer it again.`,
+        `${path} was deleted, but ${MANIFEST_PATH} was not updated: ${manifestError}. The next update of the scripts may offer it again.`,
         'warning',
       )
     }

@@ -78,8 +78,17 @@ export async function writeManifest(folder: FolderAccess, manifest: Manifest): P
 
 const sameInCase = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
-/** The shared command folders, whose files a delete in the Commands tab is recorded for. */
+/** The shared command folders. */
 const SHARED_COMMAND_DIRS = ['ahk/commands/', 'powershell/commands/']
+
+/**
+ * Whether `path` is in a shared command folder, through every folder below it, ignoring case: the files a
+ * delete in the Commands tab is recorded for, and the only ones the check and the update count as deleted.
+ */
+export function isSharedCommandPath(path: string): boolean {
+  const key = path.toLowerCase()
+  return SHARED_COMMAND_DIRS.some((dir) => key.startsWith(dir))
+}
 
 /**
  * The manifest with `path` among its deleted files, as it was deleted. Null (nothing to change) when the
@@ -90,8 +99,7 @@ const SHARED_COMMAND_DIRS = ['ahk/commands/', 'powershell/commands/']
  * the next update writes `deleted` anew.
  */
 export function withDeleted(manifest: Manifest, path: string): Manifest | null {
-  const key = path.toLowerCase()
-  if (!SHARED_COMMAND_DIRS.some((dir) => key.startsWith(dir))) return null
+  if (!isSharedCommandPath(path)) return null
   if (manifest.deleted.some((p) => sameInCase(p, path))) return null
   return { ...manifest, deleted: [...manifest.deleted, path] }
 }

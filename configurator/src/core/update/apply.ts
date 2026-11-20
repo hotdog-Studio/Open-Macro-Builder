@@ -5,7 +5,7 @@ import { messageOf } from '../message'
 import type { StarterFile } from '../starter'
 import { fingerprint } from './fingerprint'
 import { INCLUDE_FILE, adjustList, listFor } from './includeList'
-import { MANIFEST_PATH, writeManifest, type Manifest } from './manifest'
+import { isSharedCommandPath, MANIFEST_PATH, writeManifest, type Manifest } from './manifest'
 import { walk, type UpdatePlan } from './plan'
 
 /** What the person ticked in the dialog. */
@@ -114,7 +114,6 @@ interface Work {
 }
 
 const AHK_COMMANDS = 'ahk/commands/'
-const COMMAND_DIRS = [AHK_COMMANDS, 'powershell/commands/']
 /** The folders that lead to ahk/commands; walk enters every folder below it by itself. */
 const TO_AHK_COMMANDS: ReadonlySet<string> = new Set(['ahk', 'ahk/commands'])
 /** How many backup names a file has: <path>.before-update.bak, then <path>.before-update.1.bak to .9.bak. */
@@ -122,7 +121,6 @@ const BACKUP_NAMES = 10
 
 const keyOf = (path: string) => path.toLowerCase()
 const byLowerCase = (a: string, b: string) => compareText(keyOf(a), keyOf(b))
-const isCommandFile = (key: string) => COMMAND_DIRS.some((dir) => key.startsWith(dir))
 const isAhkCommandFile = (key: string) => key.startsWith(AHK_COMMANDS) && key.endsWith('.ahk')
 const encode = (text: string) => new TextEncoder().encode(text)
 const decode = (data: Uint8Array) => new TextDecoder().decode(data)
@@ -401,7 +399,7 @@ function manifestOf(ctx: Context, work: Work): Manifest {
     if (entry !== undefined) files[path] = entry
   }
   const offered = Object.fromEntries(ctx.untickedChanged.map((path) => [path, appFileOf(ctx, path).print]))
-  const gone = work.gone.filter((path) => isCommandFile(keyOf(path)) && ctx.app.has(keyOf(path)))
+  const gone = work.gone.filter((path) => isSharedCommandPath(path) && ctx.app.has(keyOf(path)))
   return { version: ctx.plan.to, files, deleted: [...ctx.untickedDeleted, ...gone], offered }
 }
 

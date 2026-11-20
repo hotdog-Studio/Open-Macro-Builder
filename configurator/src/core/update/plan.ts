@@ -3,7 +3,7 @@ import type { DirEntry, FolderAccess } from '../folder/types'
 import { fingerprint, type StarterIndex } from './fingerprint'
 import { everShipped, releasesOf, type KnownReleases } from './history'
 import { INCLUDE_FILE, listsExactly } from './includeList'
-import { readManifest, type Manifest } from './manifest'
+import { isSharedCommandPath, readManifest, type Manifest } from './manifest'
 import { compareVersions, isVersion } from './version'
 
 export interface UpdatePlan {
@@ -36,7 +36,6 @@ export interface UpdatePlan {
 }
 
 const AHK_COMMANDS = 'ahk/commands/'
-const COMMAND_DIRS = [AHK_COMMANDS, 'powershell/commands/']
 
 /** What the check makes of one path (see "The check" in the spec); 'none' is missing and not the app's. */
 type State = 'upToDate' | 'replace' | 'changed' | 'deleted' | 'add' | 'remove' | 'keptRemoved' | 'none'
@@ -76,8 +75,6 @@ interface Entry {
 }
 
 const byLowerCase = (a: string, b: string) => compareText(a.toLowerCase(), b.toLowerCase())
-
-const isCommandFile = (key: string) => COMMAND_DIRS.some((dir) => key.startsWith(dir))
 
 const isAhkCommandFile = (key: string) => key.startsWith(AHK_COMMANDS) && key.endsWith('.ahk')
 
@@ -182,7 +179,7 @@ function missingState(key: string, target: Target, manifest: Manifest | null, kn
   // new in the app's copy cannot have been.
   const deleted =
     manifest === null ? everShipped(known, key) : manifest.deleted.some((path) => path.toLowerCase() === key)
-  return isCommandFile(key) && deleted ? 'deleted' : 'add'
+  return isSharedCommandPath(key) && deleted ? 'deleted' : 'add'
 }
 
 /** What the check makes of a path, the app's copy compared first. */

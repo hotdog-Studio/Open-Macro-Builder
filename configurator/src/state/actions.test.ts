@@ -1171,7 +1171,7 @@ describe('command files', () => {
     it.each([
       ['read', 'onRead'],
       ['written', 'onWrite'],
-    ] as const)('still deletes the file, returns nothing and warns that the next update will offer it again, when the manifest cannot be %s', async (_how, hook) => {
+    ] as const)('still deletes the file, returns nothing and warns that the next update may offer it again, when the manifest cannot be %s', async (_how, hook) => {
       const text = manifestOf([SSH_PS])
       const h = await opened(withManifest(text))
       h.folder[hook] = (path) => {
@@ -1182,7 +1182,7 @@ describe('command files', () => {
       expect(h.edit().commandFiles.some((f) => f.file.path === SSH_PS)).toBe(false)
       expect(h.folder.text(MANIFEST_PATH)).toBe(text)
       expect(h.edit().banner).toEqual({
-        text: `${SSH_PS} was deleted, but ${MANIFEST_PATH} was not updated: The disk is full. The next update of the scripts will offer it again.`,
+        text: `${SSH_PS} was deleted, but ${MANIFEST_PATH} was not updated: The disk is full. The next update of the scripts may offer it again.`,
         kind: 'warning',
       })
     })

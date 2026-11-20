@@ -89,6 +89,16 @@ export class ConflictError extends Error {
   }
 }
 
+/** The bytes of the file: its text with its original line endings and byte-order mark. */
+export function encodeTextFile(file: TextFile): Uint8Array {
+  const lf = file.text.replaceAll('\r\n', '\n')
+  const body = new TextEncoder().encode(file.eol === '\r\n' ? lf.replaceAll('\n', '\r\n') : lf)
+  const data = new Uint8Array((file.bom ? BOM.length : 0) + body.length)
+  if (file.bom) data.set(BOM)
+  data.set(body, file.bom ? BOM.length : 0)
+  return data
+}
+
 /**
  * Writes the file with its original line endings and byte-order mark. Throws
  * ConflictError when the bytes on disk are not the ones that were loaded
@@ -102,11 +112,7 @@ export async function writeTextFile(
   if (!opts.force && (await currentVersion(folder, file.path)) !== file.version) {
     throw new ConflictError(file.path)
   }
-  const lf = file.text.replaceAll('\r\n', '\n')
-  const body = new TextEncoder().encode(file.eol === '\r\n' ? lf.replaceAll('\n', '\r\n') : lf)
-  const data = new Uint8Array((file.bom ? BOM.length : 0) + body.length)
-  if (file.bom) data.set(BOM)
-  data.set(body, file.bom ? BOM.length : 0)
+  const data = encodeTextFile(file)
   await folder.writeBytes(file.path, data)
   return { ...file, version: await hashBytes(data) }
 }

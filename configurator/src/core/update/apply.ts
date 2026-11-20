@@ -1,14 +1,15 @@
 import { compareText } from '../folder/path'
+import { decodeLenient, encodeTextFile } from '../folder/textFile'
 import type { FolderAccess } from '../folder/types'
 import type { StarterFile } from '../starter'
 import { fingerprint } from './fingerprint'
 import { INCLUDE_FILE, adjustList, listFor } from './includeList'
 import { MANIFEST_PATH, writeManifest, type Manifest } from './manifest'
-import type { UpdatePlan } from './plan'
+import { walk, type UpdatePlan } from './plan'
 
 /** What the person ticked in the dialog. */
 export interface UpdatePicks {
-  /** Changed files to replace; theirs is kept beside each as <path>.bak. */
+  /** Changed files to replace; theirs is kept beside each as a backup (<path>.bak, or <path>.1.bak and on). */
   replaceChanged: string[]
   /** Deleted command files to bring back. */
   restoreDeleted: string[]
@@ -21,6 +22,7 @@ export interface UpdateDone {
   removed: string[]
   /** Left as the person has them: changed ones not ticked, changed ones the app no longer has, and those that changed since the plan. */
   kept: string[]
+  /** The backups written, under the names they got. */
   backups: string[]
 }
 
@@ -73,11 +75,20 @@ interface Write {
   into: 'replaced' | 'added' | null
 }
 
-/** The plan, the app's copy and what the second look found, by lower-case path. */
-interface Context {
+/** What the look-again found. */
+interface Found {
+  /** Each path read again, by lower-case path. */
+  now: Map<string, Now>
+  /** The .ahk files under ahk/commands, as the folder spells them. */
+  ahkFiles: string[]
+  /** For each ticked changed file, by lower-case path: the first backup name the folder does not have, or null. */
+  backupNames: Map<string, string | null>
+}
+
+/** The plan, the picks, the app's copy and what the look-again found. */
+interface Context extends Found {
   plan: UpdatePlan
   app: Map<string, AppFile>
-  now: Map<string, Now>
   tickedChanged: string[]
   untickedChanged: string[]
   tickedDeleted: string[]
@@ -91,16 +102,28 @@ interface Work {
   include: Write | null
   removals: string[]
   kept: string[]
-  /** The removals left as they are because they changed since the plan. */
-  keptRemovals: string[]
+  /** Paths to replace or remove that the folder no longer had at the look-again. */
+  gone: string[]
   /** Each path's fingerprint once the update is done, null when the folder will not have it, by lower-case path. */
   after: Map<string, { path: string; print: string | null }>
 }
 
+const AHK_COMMANDS = 'ahk/commands/'
+const COMMAND_DIRS = [AHK_COMMANDS, 'powershell/commands/']
+/** The folders that lead to ahk/commands; walk enters every folder below it by itself. */
+const TO_AHK_COMMANDS: ReadonlySet<string> = new Set(['ahk', 'ahk/commands'])
+/** How many backup names a file has: <path>.bak, then <path>.1.bak to <path>.9.bak. */
+const BACKUP_NAMES = 10
+
 const keyOf = (path: string) => path.toLowerCase()
 const byLowerCase = (a: string, b: string) => compareText(keyOf(a), keyOf(b))
+const isCommandFile = (key: string) => COMMAND_DIRS.some((dir) => key.startsWith(dir))
+const isAhkCommandFile = (key: string) => key.startsWith(AHK_COMMANDS) && key.endsWith('.ahk')
 const encode = (text: string) => new TextEncoder().encode(text)
 const decode = (data: Uint8Array) => new TextDecoder().decode(data)
+const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, i) => byte === b[i])
+const backupNamesOf = (path: string) =>
+  Array.from({ length: BACKUP_NAMES }, (_, i) => (i === 0 ? `${path}.bak` : `${path}.${i}.bak`))
 
 /** The paths of `list` that `picks` names, ignoring case; a pick of any other path is ignored. */
 function tickedOf(list: string[], picks: string[]): string[] {
@@ -116,7 +139,7 @@ function pathsToLookAt(plan: UpdatePlan, tickedChanged: string[], tickedDeleted:
 }
 
 /** Reads each path once more, in parallel, with its fingerprint. A failed read is a failure at that path. */
-async function lookAgain(folder: FolderAccess, paths: string[]): Promise<Map<string, Now>> {
+async function readAgain(folder: FolderAccess, paths: string[]): Promise<Map<string, Now>> {
   const read = await Promise.all(
     paths.map((path) =>
       at(path, async () => {
@@ -127,6 +150,39 @@ async function lookAgain(folder: FolderAccess, paths: string[]): Promise<Map<str
     ),
   )
   return new Map(read)
+}
+
+/** The .ahk files under ahk/commands, through every folder below it, as the folder spells them. */
+async function ahkFilesIn(folder: FolderAccess): Promise<string[]> {
+  const files = await at(AHK_COMMANDS.slice(0, -1), async () => walk(folder, '', await folder.list(''), new Set(TO_AHK_COMMANDS)))
+  return files.filter((path) => isAhkCommandFile(keyOf(path)))
+}
+
+/** For each path, the first of its backup names that the folder does not have (read in parallel), or null. */
+async function freeBackupNames(folder: FolderAccess, paths: string[]): Promise<Map<string, string | null>> {
+  const free = await Promise.all(
+    paths.map(async (path) => {
+      const names = backupNamesOf(path)
+      const taken = await Promise.all(names.map((name) => at(name, async () => (await folder.readBytes(name)) !== null)))
+      return [keyOf(path), names.find((_, i) => !taken[i]) ?? null] as const
+    }),
+  )
+  return new Map(free)
+}
+
+/**
+ * The look-again, just before the first write: the paths to write or remove and the include file read once
+ * more, ahk/commands listed again, and the backup names probed, all in parallel. It is one read for the whole
+ * update, not a second read before each single write: everything, the include file's text included, is worked
+ * out from what it finds, and a file skipped at the last moment would make that text wrong for the folder.
+ */
+async function lookAgain(folder: FolderAccess, plan: UpdatePlan, tickedChanged: string[], tickedDeleted: string[]): Promise<Found> {
+  const [now, ahkFiles, backupNames] = await Promise.all([
+    readAgain(folder, pathsToLookAt(plan, tickedChanged, tickedDeleted)),
+    ahkFilesIn(folder),
+    freeBackupNames(folder, tickedChanged),
+  ])
+  return { now, ahkFiles, backupNames }
 }
 
 /** The app's copy by lower-case path, each file with its fingerprint (computed in parallel). */
@@ -151,6 +207,13 @@ function appFileOf(ctx: Context, path: string): AppFile {
 
 const seenOf = (plan: UpdatePlan, path: string) => plan.seen[path] ?? null
 
+/** What the look-again found of a path to replace or remove: as the plan saw it, changed since, or gone. */
+function foundOf(ctx: Context, path: string): 'asSeen' | 'changed' | 'gone' {
+  const now = nowOf(ctx, path)
+  if (now.data === null) return 'gone'
+  return now.print === seenOf(ctx.plan, path) ? 'asSeen' : 'changed'
+}
+
 /** Queues the app's copy to be written at `path` in step 2; the include file waits for step 3. */
 function queueWrite(work: Work, path: string, app: AppFile, into: Write['into']): void {
   if (keyOf(path) === INCLUDE_FILE) return
@@ -166,40 +229,77 @@ function sortMissing(ctx: Context, work: Work, path: string): void {
   else if (now.print !== app.print) work.kept.push(path)
 }
 
-/** A file to replace: replaced only when it is still what the plan saw. */
+/** A file to replace: replaced only when it is still what the plan saw; kept when changed since, left out when gone. */
 function sortReplace(ctx: Context, work: Work, path: string): void {
-  if (nowOf(ctx, path).print === seenOf(ctx.plan, path)) queueWrite(work, path, appFileOf(ctx, path), 'replaced')
-  else work.kept.push(path)
+  const found = foundOf(ctx, path)
+  if (found === 'asSeen') queueWrite(work, path, appFileOf(ctx, path), 'replaced')
+  else if (found === 'changed') work.kept.push(path)
+  else work.gone.push(path)
 }
 
-/** A changed file ticked: replaced whatever it holds now, which is what goes into its .bak. */
-function sortTicked(ctx: Context, work: Work, path: string): void {
-  const now = nowOf(ctx, path)
-  const app = appFileOf(ctx, path)
-  if (now.data !== null) work.backups.push({ path: `${path}.bak`, data: now.data })
-  queueWrite(work, path, app, 'replaced')
-}
-
-/** A file to remove: removed only when it is still what the plan saw. */
+/** A file to remove: removed only when it is still what the plan saw; kept when changed since, left out when gone. */
 function sortRemoval(ctx: Context, work: Work, path: string): void {
-  if (nowOf(ctx, path).print === seenOf(ctx.plan, path)) {
+  const found = foundOf(ctx, path)
+  if (found === 'asSeen') {
     work.removals.push(path)
     work.after.set(keyOf(path), { path, print: null })
-  } else {
+  } else if (found === 'changed') {
     work.kept.push(path)
-    work.keptRemovals.push(path)
+  } else {
+    work.gone.push(path)
   }
 }
 
-/** The app's include file, listing what the folder holds after the update besides the app's own command files. */
-function wholeInclude(ctx: Context, work: Work, app: AppFile): string {
-  return listFor(decode(app.file.data), ctx.untickedDeleted, [...ctx.plan.ownAhkCommandFiles, ...work.keptRemovals])
+/** The name the backup of `path` gets; none free ends the update before anything is written. */
+function backupNameOf(ctx: Context, path: string): string {
+  const name = ctx.backupNames.get(keyOf(path))
+  if (!name) {
+    const message = `${path}.bak and ${path}.1.bak to ${path}.9.bak are all in the way, so ${path} cannot be backed up. Move some of them away, then update again.`
+    throw new StepFailure(path, new Error(message))
+  }
+  return name
 }
 
-/** The folder's include file with a line for each command file this update brings in and none for those it removes. */
-function adjustedInclude(ctx: Context, work: Work, current: string | null): string | null {
-  if (current === null) return null
-  return adjustList(current, [...ctx.plan.add, ...ctx.tickedDeleted], work.removals)
+/** A changed file ticked: replaced whatever it holds now, which is what goes into its backup (none when it is gone). */
+function sortTicked(ctx: Context, work: Work, path: string): void {
+  const now = nowOf(ctx, path)
+  const app = appFileOf(ctx, path)
+  if (now.data !== null) work.backups.push({ path: backupNameOf(ctx, path), data: now.data })
+  queueWrite(work, path, app, 'replaced')
+}
+
+/** Every path of the plan sorted into what is written, removed, kept or gone. */
+function sortAll(ctx: Context): Work {
+  const { plan } = ctx
+  const after = new Map(Object.entries(plan.seen).map(([path, print]) => [keyOf(path), { path, print }]))
+  for (const [key, { path, print }] of ctx.now) after.set(key, { path, print })
+  const work: Work = { backups: [], writes: [], include: null, removals: [], kept: [], gone: [], after }
+  for (const path of plan.add) sortMissing(ctx, work, path)
+  for (const path of plan.replace) sortReplace(ctx, work, path)
+  for (const path of ctx.tickedChanged) sortTicked(ctx, work, path)
+  for (const path of ctx.tickedDeleted) sortMissing(ctx, work, path)
+  for (const path of plan.remove) sortRemoval(ctx, work, path)
+  work.kept.push(...ctx.untickedChanged, ...plan.keptRemoved)
+  work.kept.sort(byLowerCase)
+  return work
+}
+
+/** The AutoHotkey command files the folder holds after the update, by lower-case path: listed now, plus written, minus removed. */
+function heldOf(ctx: Context, work: Work): Map<string, string> {
+  const held = new Map(ctx.ahkFiles.map((path) => [keyOf(path), path]))
+  for (const { path } of work.writes) {
+    if (isAhkCommandFile(keyOf(path))) held.set(keyOf(path), path)
+  }
+  for (const path of work.removals) held.delete(keyOf(path))
+  return held
+}
+
+/** The app's include file, listing exactly the AutoHotkey command files the folder holds after the update. */
+function wholeInclude(ctx: Context, work: Work, app: AppFile): string {
+  const held = heldOf(ctx, work)
+  const appFiles = [...ctx.app.values()].map(({ file }) => file.path).filter((path) => isAhkCommandFile(keyOf(path)))
+  const own = [...held].filter(([key]) => !ctx.app.has(key)).map(([, path]) => path)
+  return listFor(decode(app.file.data), appFiles.filter((path) => !held.has(keyOf(path))), own)
 }
 
 /** The list of the result the include file goes into when it is written whole. */
@@ -209,28 +309,52 @@ function includeInto(plan: UpdatePlan, ticked: boolean): Write['into'] {
   return names(plan.add) ? 'added' : null
 }
 
+/** Records the fingerprint of the include file's bytes as written. */
+async function recorded(work: Work, write: Write): Promise<Write> {
+  work.after.set(INCLUDE_FILE, { path: write.path, print: await fingerprint(write.path, write.data) })
+  return write
+}
+
+/** The include file written whole, or null when the folder already has exactly these bytes. */
+async function wholeWrite(ctx: Context, work: Work, app: AppFile, now: Now, ticked: boolean): Promise<Write | null> {
+  const data = encode(wholeInclude(ctx, work, app))
+  if (now.data !== null && sameBytes(data, now.data)) return null
+  return recorded(work, { path: now.data === null ? app.file.path : now.path, data, into: includeInto(ctx.plan, ticked) })
+}
+
+/**
+ * The folder's include file with a line for each command file this update brings in, and none for each it
+ * removes or found gone; null when that changes nothing. The text is the person's: decoded strictly with its
+ * byte-order mark kept, as textFile does for a file it edits, and one that is not UTF-8 is never edited.
+ */
+async function adjustedWrite(ctx: Context, work: Work, path: string, data: Uint8Array): Promise<Write | null> {
+  const { file, utf8 } = await decodeLenient(path, data)
+  const revived = ctx.tickedChanged.filter((ticked) => nowOf(ctx, ticked).data === null)
+  const text = adjustList(file.text, [...ctx.plan.add, ...ctx.tickedDeleted, ...revived], [...work.removals, ...work.gone])
+  if (text === file.text) return null
+  if (!utf8) throw new Error(`${path} is not UTF-8 text, so its list of command files cannot be brought up to date.`)
+  return recorded(work, { path, data: encodeTextFile({ ...file, text }), into: null })
+}
+
 /**
  * Step 3: ahk/config.ahk written whole when the plan replaces it and it is as the plan saw it, or when it is
- * ticked; otherwise with its list alone adjusted. Null when the app has none or its text would not change.
+ * ticked; otherwise with its list alone adjusted. Null when the app has none or nothing would change.
  */
-function includeWrite(ctx: Context, work: Work): Write | null {
+async function includeWrite(ctx: Context, work: Work): Promise<Write | null> {
   const app = ctx.app.get(INCLUDE_FILE)
   if (app === undefined) return null
   const now = nowOf(ctx, INCLUDE_FILE)
   const ticked = ctx.tickedChanged.some((path) => keyOf(path) === INCLUDE_FILE)
-  const whole = ticked || (ctx.plan.list === 'replace' && now.print === seenOf(ctx.plan, now.path))
-  const current = now.data === null ? null : decode(now.data)
-  const text = whole ? wholeInclude(ctx, work, app) : adjustedInclude(ctx, work, current)
-  if (text === null || text === current) return null
-  const path = now.data === null ? app.file.path : now.path
-  if (whole) work.after.set(INCLUDE_FILE, { path, print: app.print })
-  return { path, data: encode(text), into: whole ? includeInto(ctx.plan, ticked) : null }
+  if (ticked || (ctx.plan.list === 'replace' && now.print === seenOf(ctx.plan, now.path))) {
+    return wholeWrite(ctx, work, app, now, ticked)
+  }
+  return now.data === null ? null : adjustedWrite(ctx, work, now.path, now.data)
 }
 
 /**
  * The manifest of the folder after the update: the app's fingerprint for each path it holds as the app has it,
  * the old entry for one it holds otherwise, nothing for one it does not hold; an offer for each changed file
- * not ticked; the deleted command files not ticked.
+ * not ticked; the deleted command files not ticked, and those found gone at the look-again.
  */
 function manifestOf(ctx: Context, work: Work): Manifest {
   const old = new Map(Object.entries(ctx.plan.manifest?.files ?? {}).map(([path, print]) => [keyOf(path), print]))
@@ -241,40 +365,31 @@ function manifestOf(ctx: Context, work: Work): Manifest {
     if (entry !== undefined) files[path] = entry
   }
   const offered = Object.fromEntries(ctx.untickedChanged.map((path) => [path, appFileOf(ctx, path).print]))
-  return { version: ctx.plan.to, files, deleted: ctx.untickedDeleted, offered }
+  const gone = work.gone.filter((path) => isCommandFile(keyOf(path)) && ctx.app.has(keyOf(path)))
+  return { version: ctx.plan.to, files, deleted: [...ctx.untickedDeleted, ...gone], offered }
 }
 
 /** Looks at the folder again and works out every write, removal and the manifest, before anything is written. */
 async function prepare(folder: FolderAccess, plan: UpdatePlan, picks: UpdatePicks, files: StarterFile[]) {
   const tickedChanged = tickedOf(plan.changed, picks.replaceChanged)
   const tickedDeleted = tickedOf(plan.deleted, picks.restoreDeleted)
-  const toLookAt = pathsToLookAt(plan, tickedChanged, tickedDeleted)
-  const [app, now] = await Promise.all([appCopyOf(files), lookAgain(folder, toLookAt)])
+  const [app, found] = await Promise.all([appCopyOf(files), lookAgain(folder, plan, tickedChanged, tickedDeleted)])
   const ctx: Context = {
     plan,
     app,
-    now,
+    ...found,
     tickedChanged,
     untickedChanged: plan.changed.filter((path) => !tickedChanged.includes(path)),
     tickedDeleted,
     untickedDeleted: plan.deleted.filter((path) => !tickedDeleted.includes(path)),
   }
-  const after = new Map(Object.entries(plan.seen).map(([path, print]) => [keyOf(path), { path, print }]))
-  for (const [key, { path, print }] of now) after.set(key, { path, print })
-  const work: Work = { backups: [], writes: [], include: null, removals: [], kept: [], keptRemovals: [], after }
-  for (const path of plan.add) sortMissing(ctx, work, path)
-  for (const path of plan.replace) sortReplace(ctx, work, path)
-  for (const path of ctx.tickedChanged) sortTicked(ctx, work, path)
-  for (const path of ctx.tickedDeleted) sortMissing(ctx, work, path)
-  for (const path of plan.remove) sortRemoval(ctx, work, path)
-  work.kept.push(...ctx.untickedChanged, ...plan.keptRemoved)
-  work.kept.sort(byLowerCase)
+  const work = sortAll(ctx)
   work.include = await at(INCLUDE_FILE, () => includeWrite(ctx, work))
   return { work, manifest: manifestOf(ctx, work) }
 }
 
 /**
- * Steps 1 to 4: the .bak copies, the files, ahk/config.ahk, the removals. One at a time and in order, on
+ * Steps 1 to 4: the backups, the files, ahk/config.ahk, the removals. One at a time and in order, on
  * purpose: a failure must leave what was done before it and stop there (hence NOSONAR on the awaits in the loops).
  */
 async function carryOut(folder: FolderAccess, work: Work, done: UpdateDone): Promise<void> {
@@ -295,9 +410,10 @@ async function carryOut(folder: FolderAccess, work: Work, done: UpdateDone): Pro
 /**
  * Carries out `plan` with the person's `picks`, writing the app's copy (`files`): replaces what is untouched,
  * adds what is missing, removes what the app no longer has, keeps what the person changed unless ticked, and
- * writes the manifest last. Every path is read once more before the first write, and one that changed since
- * the plan is kept. The first write or removal that fails ends the update with what was done until then;
- * nothing is rolled back, and the manifest is not written. Nothing under local/ is touched.
+ * writes the manifest last. Every path is read once more before the first write: one that changed since the
+ * plan is kept, one that went is left out. A backup never replaces a file. The first write or removal that
+ * fails ends the update with what was done until then; nothing is rolled back, and the manifest is not
+ * written. Nothing under local/ is touched.
  */
 export async function applyUpdate(
   folder: FolderAccess,

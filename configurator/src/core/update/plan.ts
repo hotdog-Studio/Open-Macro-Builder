@@ -146,7 +146,7 @@ function firstOfEachName(entries: DirEntry[]): DirEntry[] {
  * that lead to a path looked at and every folder under ahk/commands. The root's local is never entered:
  * no path looked at is under it.
  */
-async function walk(folder: FolderAccess, dir: string, entries: DirEntry[], leading: Set<string>): Promise<string[]> {
+export async function walk(folder: FolderAccess, dir: string, entries: DirEntry[], leading: Set<string>): Promise<string[]> {
   const found = await Promise.all(
     firstOfEachName(entries).map(async (entry) => {
       const path = dir === '' ? entry.name : `${dir}/${entry.name}`

@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { fingerprint } from '../src/core/update/fingerprint'
-import { listStarterFiles, starterIndex, starterPlugin, starterVersion } from './starter.mjs'
+import { isStarterFile, listStarterFiles, starterIndex, starterPlugin, starterVersion } from './starter.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -33,6 +33,36 @@ describe('listStarterFiles', () => {
     expect(files.every((p) => p === 'config.json' || /^(ahk|powershell|img)\//.test(p))).toBe(true)
     expect(files.some((p) => p.includes('\\'))).toBe(false)
     expect(files).toEqual([...files].sort())
+  })
+})
+
+describe('isStarterFile', () => {
+  it.each([
+    ['config.json', true],
+    ['ahk/main.ahk', true],
+    ['ahk/commands/Open.ahk', true],
+    ['powershell/commands/open.ps1', true],
+    ['img/icon.ico', true],
+    ['ahk/tests/run.ahk', false],
+    ['powershell/tests/x/y.ps1', false],
+    ['ahk/local/mine.ahk', false],
+    ['img/logo.xcf', false],
+    ['ahk/config.ahk.bak', false],
+    ['config.json.omb-tmp', false],
+    ['omb-manifest.json', false],
+    ['ahk/omb-manifest.json', false],
+    ['ahk/OMB-Manifest.json', false],
+    ['local/configurator.json', false],
+    ['tests/config.json', false],
+    ['configurator/src/main.tsx', false],
+    ['README.md', false],
+    ['ahk', false],
+  ])('%s: %s', (path, expected) => {
+    expect(isStarterFile(path)).toBe(expected)
+  })
+
+  it('agrees with the listing of this repository', () => {
+    for (const path of listStarterFiles(repoRoot)) expect(isStarterFile(path)).toBe(true)
   })
 })
 

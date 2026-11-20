@@ -1,5 +1,8 @@
 import type { Plugin } from 'vite'
 
+/** Whether a repo-relative path (forward slashes) is a file of the starter: the rule `listStarterFiles` goes by, for a path read from somewhere else (a release tag's tree). */
+export function isStarterFile(path: string): boolean
+
 /** Repo-relative paths (forward slashes, sorted) of the files a fresh setup gets: config.json, ahk/, powershell/ and img/, minus tests, local and leftovers. */
 export function listStarterFiles(repoRoot: string): string[]
 

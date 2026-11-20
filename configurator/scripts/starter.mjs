@@ -23,12 +23,26 @@ const SKIPPED_FILES = /\.(xcf|bak|omb-tmp)$/
 const MANIFEST_FILE = 'omb-manifest.json'
 const skipped = (name) => SKIPPED_FILES.test(name) || name.toLowerCase() === MANIFEST_FILE
 
+/**
+ * Whether a repo-relative path (forward slashes) is a file of the starter: `config.json`, or a file under
+ * `ahk/`, `powershell/` or `img/` that is not inside a folder named `tests` or `local`, not a leftover
+ * (`.xcf`, `.bak`, `.omb-tmp`) and not a manifest. The listing of a working tree and the reading of a
+ * release tag both go by this one rule.
+ */
+export function isStarterFile(path) {
+  if (path === 'config.json') return true
+  const parts = path.split('/')
+  const name = parts.pop()
+  if (parts.length === 0 || !SOURCE_FOLDERS.includes(parts[0])) return false
+  return !parts.slice(1).some((folder) => SKIPPED_FOLDERS.has(folder)) && !skipped(name)
+}
+
 function collect(root, rel, into) {
   for (const entry of readdirSync(join(root, rel), { withFileTypes: true })) {
     const path = `${rel}/${entry.name}`
     if (entry.isDirectory()) {
       if (!SKIPPED_FOLDERS.has(entry.name)) collect(root, path, into)
-    } else if (!skipped(entry.name)) {
+    } else if (isStarterFile(path)) {
       into.push(path)
     }
   }

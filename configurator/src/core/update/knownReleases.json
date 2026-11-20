@@ -1,0 +1,1414 @@
+{
+  "last": "1.0.5",
+  "files": {
+    "ahk/commands/custom/automation.ahk": {
+      "014cfeacffd9342da39369c3d1a971f69f30ed7217267c78aca96aa4b7ea89a2": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "82886cff60a6e5a084408290f1a5088f76deb3ee5ccfeaf4bf91b11fb9b2e555": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/custom/chrome.ahk": {
+      "386e013284109b5993197769f8e3c6bd6fd4a9e50a66d9970fce6795b710dad3": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "071a6f6288cc423c95c44dc89c516039c3a095d2a623621c7accd1cfbe0f7396": [
+        "1.0.4"
+      ],
+      "80dea8d22d5b0f8cdc1928661af690d433fb46fe6cc31b667da8e65153e16b69": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/custom/examples.ahk": {
+      "c1feb7edc54546d5b1dd8a1157366005967acbe0398d5209182c3ba6dbd02fcc": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "0ec7fe666f1ddf56e7bce5dbab70c551456b00b38380bb4f5322391df6810bb9": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/custom/ssh.ahk": {
+      "fdbf8e2584959e6be91cd6a27621a9eaa8149c45a17ea9e95e3c11cbaf0f75c9": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "b4cec058745db5be2fe4ea9eac0c5bd30d433625694cf3680c2788e816c51211": [
+        "1.0.4"
+      ],
+      "4af544648f5b715d2c6c4f2eb738c3c8dd5305c42cd983f0ead825745f4ed32c": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/custom/vscode.ahk": {
+      "e48a011db2c8d06b9ebe1a7d9883db6da300eb168520de926a24420c1ad77c60": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "15b6f65527959f2ec578615f88fb9d0ba88cb423a99aa123e73c11ffa5920ef7": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/custom/vsstudio.ahk": {
+      "90943ea41ad798e2f653dcbd16d516470d9b1f2f6848cd54c942d82eb26e970c": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "1f3e8b7d4f75b554fc5a8a2f7b9593c32a8591a0fd81fa2692c28d60127a7d11": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/helper.ahk": {
+      "5f0c5253bde727238acc70b2fc9e1095c5497de3a6b7a2936b436c20dc1efc2f": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "a05ee5376623130cf36901f048bbafb38b93bdb358f7e96a4499aa6eb56a2c67": [
+        "1.0.4"
+      ],
+      "1aaa1f54947086bec49b2db255fa964916406a74b5bc0fd416ba927b3d65fc19": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/media.ahk": {
+      "701f22f334ae5107162a3a72649040b8f6fd87507274900123a3fa8c91062dee": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/power.ahk": {
+      "e35e9d13efe06acb9bd3c5b20c937e0a947b4cefc8cca94335df83e4c55dc553": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "0ed8f12cc0bc30dfb873a95a4ed7cc45281e3dd2531c7e21a077bd7b8420f7a4": [
+        "1.0.5"
+      ]
+    },
+    "ahk/commands/windows.ahk": {
+      "f87ef1848c40f18a797c4c616df85d902dbc29eed2a6cf60da3964d99de9660b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "a2defc52e75b82ff2435274b2b692c14edbaca6eefbca43a44cbfb248b030321": [
+        "1.0.5"
+      ]
+    },
+    "ahk/config.ahk": {
+      "eeaafcd5836aab51c242555856051e4db4adaaf23f8a2320afb0c06ab1f1eadc": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/dump_config.ahk": {
+      "80443081eaca6044e07735b7886c5fddb12075fcab5f2cc6b20780995b92d40a": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/assets.ahk": {
+      "cb54057828759174642d825198e7fcfa8b562bf9106f5ec2bc5ce251197278fd": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/create_image_button.ahk": {
+      "f69ecb1725b1ffbedcff0d699aaee08837edff6f2820c6dda01e8e06b3cf824e": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/icon.ahk": {
+      "0aa1d003bbd530349f59918ee38c0a2867ce549e8f36f5dbf72a6cfc66aaae89": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/io.ahk": {
+      "274e1b47fa0d61a9f9aef4a0c570ec5440ffafbe4859253a13b01500f5eb98de": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "9a6339389e682f1b6c425066d6860493b1052db7560668d5f6d5f2a8db46394f": [
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/json.ahk": {
+      "79b7f230c3b8365242133b9249ca54840624729fb4fae881e3503be9ac21cd59": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/key.ahk": {
+      "103165da10b2f3a3d90dc8796aa8dfae1c225b5d6d61570f84357ca45b08e927": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/label.ahk": {
+      "ad6c3be95820571e59040b4e63bdc62020c278c6aae5a1a0d4d89fcaf5664359": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/layer.ahk": {
+      "261470087383462f5ec1b94981d68b9e443cb9a1ef760937cf79850a0207e491": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/layout.ahk": {
+      "2f4c03b0e7c3a61d2646dc08ca5f31c1a02ad7893ebdcf696f6c77d7d4d55daa": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/macro.ahk": {
+      "815fa7ed2f3c778e2e05e8160894ee0f81d30ee8d6ddc08b65a83f1517cfd5f0": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/lib/ui.ahk": {
+      "5a183ba53d2b84dc60857aba134f2b352210b205a6b5ec73672d10447f74b810": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "ahk/main.ahk": {
+      "c16d284047a05174d948b5ccfe73289bb8eda6faaaaca0881c0f926d4a7f770e": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "5bfcc2a33cacde46f2bb91b8e9c602303b049b18b3a7ade43d3cd1b53e2031d1": [
+        "1.0.5"
+      ]
+    },
+    "config.json": {
+      "ff534a9e3081bf08d6280c9b27105b5f7024763287a7478bb3b42c644e87e505": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/blank.png": {
+      "167fa8ead47141f6bc0e3464dc3c3305c0602fecea0ac05483fd7cccdd919c70": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/chrome/layer.png": {
+      "a2a10e1c59f8f47c40244eaadb3deffb29d0fffb14de2359cfef282c4a838d8b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/chrome/macro.png": {
+      "13bd2f5f3efdcde1b86f901e5ca26c6bd947c62aff0bc7552a56e8332aa9580b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/chrome/selected.png": {
+      "dc8e8b00efa33a39dd8bcc4984a10783e45f92260fb02f55dc27a09745905f33": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/chrome/selected_macro.png": {
+      "cdfbd06f23eb009bfe310fe22d2f9641839723dac4eb126e22ee75e7754bc41d": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/cli/layer.png": {
+      "3ebead92e5a67fc8737e8f42a54a9767000e13cbe81f0af547fe38bff85c8126": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/cli/macro.png": {
+      "ad42741ec243a09d4c899d216544469a9f61a451fe9984a31fcfd6b54add54aa": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/cli/selected.png": {
+      "2657b731a3168da7064f0ce1aa35a98dd0cecb20e32b9c1f7bd37d1fce69a1b9": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/cli/selected_macro.png": {
+      "4764d5a0397cc1dcb46f8947370cbc38af85dae54161f43516d1e843a498093d": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/debugger/layer.png": {
+      "227928a0d21c01b21996361fb88408b3437509a6d2691c0d3019f7e80864f476": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/debugger/macro.png": {
+      "dac87170d9964dc271f2f421d5b79b3a0f15148f7859bef7a1738dbed4701a31": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/debugger/selected.png": {
+      "79aad61ae1fc010a8be6d8e54b98a18e287c354a516336cabb9444936a55c09d": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/debugger/selected_macro.png": {
+      "d2efce03eabde2756975def1154e52a570c8c4658385798482fe1d4891f21616": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/default_commands/layer.png": {
+      "2c1774a04192cc2795681337d7c05408ce3add85ee3aa8547f8e08c226d694e0": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/default_commands/macro.png": {
+      "3b91c624f1ba4296b51563f2f8f38d714f33341ae4a9baca3e7a60c7321cad0c": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/default_commands/selected.png": {
+      "26b3ebfff7cd99010f0b76e7cbacb1fefd756db0474b46a98f6031f9ae13ea7e": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/default_commands/selected_macro.png": {
+      "08571c974e1662553d8bd1a676df55ca70ac258a7ef6587d822cdebaa4d50375": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/empty.png": {
+      "31b4d39fd13e78705b9b4ccd5b0b20fb7556e5d1d0d966940fd08eb955b167de": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/empty_1x1.png": {
+      "adc7953d5e90594f45f32f5bd53819c7a62bb7aeb2c744a80d5731b1b1330df9": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/empty_1x2.png": {
+      "436b11c3353a2bac2e2898b6e648a3464105c505acd2ac8211afd2008e0350fe": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/empty_2x1.png": {
+      "d8feb9cbc2490f41d2e619c2b1016bf28668d45782ef262183293bb54c3541b1": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/empty_2x2.png": {
+      "31b4d39fd13e78705b9b4ccd5b0b20fb7556e5d1d0d966940fd08eb955b167de": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/godot/layer.png": {
+      "91f54e8bb5ad092d08b44cd230ce6e2a6c319ba3dafee9d6ad386863be7251e2": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/godot/macro.png": {
+      "e32ed3bd26e0538d0178a869cffee41a40ead80c8d8773ff858f1d7fac5f8c35": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/godot/selected.png": {
+      "4074adc320b34837918224395e44d7498baa309958ec169de16efcf01ca42e34": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/godot/selected_macro.png": {
+      "305b637ca80a3611496feb1a96b67acec52e6ebacd8d4f023402cc30110dbb25": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/icon.ico": {
+      "70ca598b10e94cc2b5cf8649acc2a0de7bcbbc5bb26765bc54fc892f8f0b69e2": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/icon.png": {
+      "f52e742802f519983a98bfec35ae517873e271922810a5f315b53b5df3fffda0": [
+        "1.0.5"
+      ]
+    },
+    "img/icon.svg": {
+      "7b53a16a67538815dd6c7955f83d610e3b4ad4ebc87725d23dbe058401b48716": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/icon/layer.png": {
+      "dac9de46616da856f8ddd3efa363ce5c9af496ccfcbdd16c0b24d20fdc7989d6": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/icon/macro.png": {
+      "7cf80d7b6692d9d8de3254a7d57c22fb595fb7c974409916abcb809eac1cc7a5": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/icon/selected.png": {
+      "dc8d00206b04823bbcde2873749b0f0e4d6686c25c1c74d274741494756c4238": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/icon/selected_macro.png": {
+      "13caa1ba414f96a92cc6686bd623b7cfffa7fcabdc3f3f992ce348c32ad89abf": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea/layer.png": {
+      "37919df80a3f4c119af0d708a63ab0a8c938770727facd5492d69bd355c22695": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea/macro.png": {
+      "0af047be5c007709faa076e2ea15b6d4fb9295f0fa6eb7c064bcd374856928b6": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea/selected.png": {
+      "5398a2968ca5338483fa858e96be5382de777cf69d11f85b701ec0d46e56e1c4": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea/selected_macro.png": {
+      "e4831e6c662752570b9e62d6327d20d2523207c8ceb4e369406d7c6bb918d058": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea_debug/layer.png": {
+      "30562bb3d115bc34404e32bd053131a55c98a6af1c5541453609bc1afb55d72c": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea_debug/macro.png": {
+      "c98a88594eb752a77f3a8725a55f6111b05a3c1f52ec8cb4ee59e13932d7bb25": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea_debug/selected.png": {
+      "5c4d3c1efc658ec0a318fc2dfdef958e85236822791f75e93aefad6295b4e5f6": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/intellij_idea_debug/selected_macro.png": {
+      "79d856385e441a0f511350392684d81aedf7825398682d893065730215f2514f": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/logo.png": {
+      "df8ec2badab1db80c52db61e9f9e744310d788deffc066e4e246654e2a56530b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/logo.svg": {
+      "e58d9eea6d3d890896d71f052d98e01683f91b4c6c87e8b8c49f9180f6d44cc0": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/media/layer.png": {
+      "ed672854694c6ddeb95238b8261814d3ac710ce7eafdc7b8747ba8fb4b8f34fe": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/media/macro.png": {
+      "c922ec4fd8490478a67a1bc336c09a4f17b3d21d1724b29ee321aa28ca7c6cc1": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/media/selected.png": {
+      "edacd5076420779132b2ff3cbd27c36f57add625e139bd61555c00f73fd8a3d7": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/media/selected_macro.png": {
+      "996e1f045b56f6f9116361d071cdaf9f500a7d91589c95049bd4916d879f2132": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/mt_putty/layer.png": {
+      "67e3081901136bad75888f0836d2290158cfcd64126ac36a14468cb378653b0d": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/mt_putty/macro.png": {
+      "6f09447f614f7e1f39b5928f21859eea9d259a293e806af3a325aec5c0075cad": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/mt_putty/selected.png": {
+      "586e89dc1e229b2ba0c6084235e9109049366e27bcb4848f0291648079b5bbc2": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/mt_putty/selected_macro.png": {
+      "75c6659c1388cb3dfaf9aac9a131f30646882c254c103b025589a9664da9bbc8": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/portainer/layer.png": {
+      "51275640894a978b3c05669089139d2cbede845cc34f1c97f23e0445110a4995": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/portainer/macro.png": {
+      "ad2e922dcb70f1d54d6b34d68d8bd5e72f64993ab2d8dceb6899624cd560cdba": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/portainer/selected.png": {
+      "e76a000802641180ccbd1c89eec39249a74353e615e47422fced1320c904a6f5": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/portainer/selected_macro.png": {
+      "d150a85bb72a094636825e83d3775087e7ff262ca9443084f72bcfbe45d33d06": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/programs/layer.png": {
+      "9ac738e931d40e1eecb08579c8bb96f753cb226fdf7b723a4667f61990543e93": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/programs/macro.png": {
+      "41b04b3494ea0a2e597349a873eb4101566bce3bbac4e12fd891673a88304805": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/programs/selected.png": {
+      "c01c2f917205a03d76cc9994ec5ec40aba82620dfa7517a01b35e1f2da3a763f": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/programs/selected_macro.png": {
+      "069ee225828ece0e95f45488045e1e54f3c7153c348b19f0dfcdcdab15648f37": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/putty/layer.png": {
+      "834e4c7b7e799aaada60f406b67515b38e1419b345f78dcbdb6027dca0d3c8f9": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/putty/macro.png": {
+      "1baa222169e4d6424f6578cf183fffc28cfbc2b76415967907da62b419b4ba09": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/putty/selected.png": {
+      "71571179afe1d01f566e559439ddba43ec493f9b20c9707744822d8257bd22ba": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/putty/selected_macro.png": {
+      "6f8508d82ff24f7e5c8639bada856c1fb81837c8798665e05d7b444b408f9f24": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/showcase.png": {
+      "a4e9799a76a948959250a3b78cc7757fcc3aa21244e27764ddaead3facf7e471": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/macro.png": {
+      "adc7953d5e90594f45f32f5bd53819c7a62bb7aeb2c744a80d5731b1b1330df9": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/macro_1x2.png": {
+      "436b11c3353a2bac2e2898b6e648a3464105c505acd2ac8211afd2008e0350fe": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/macro_2x1.png": {
+      "d8feb9cbc2490f41d2e619c2b1016bf28668d45782ef262183293bb54c3541b1": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/macro_2x2.png": {
+      "31b4d39fd13e78705b9b4ccd5b0b20fb7556e5d1d0d966940fd08eb955b167de": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected.png": {
+      "cbaf8861730aa3eae5cdcee8d9d332b207a37230a49e8df691420d818d55d385": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected_1x2.png": {
+      "6d80ffc5073ae9c91d6d26ddd27e1537275e5106c4b543b53285312d937cc48f": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected_2x1.png": {
+      "d61799b1ffec466b6da1f28f01fea412fbc5c325c17ad75b1507e6e3a6dc02da": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected_2x2.png": {
+      "8a8d7aad69c41f6ca08c46b8505d1731154875f3027e9f5944653c5c21f5a88c": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected_macro.png": {
+      "1a98fc821e145fa79c808a1445cd0768f0fad3338ac5189272513eeb0f15eff7": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected_macro_1x2.png": {
+      "204ac2bbc0508a27a785d1b267ac8fa0808902fd9a1511d9852ab136414019bd": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected_macro_2x1.png": {
+      "4f32429a60122b36d1dabd39f42fc7acb0c0a8dfb92ba19b6edbb42d7ad911e2": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/template/selected_macro_2x2.png": {
+      "c667244fa03bccb99b7aac0666bd243eb50a0e2b3453c1bbc655ced06d6b6c9c": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code/layer.png": {
+      "15ceb61a435c02a00702de9d0c15a6ab6c21d321b26d354fce4566a5fd3c0648": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code/macro.png": {
+      "126595bbfd6fd2aefc7f836e08623e80bfa3eb452cc854448bb5caa40e914ea7": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code/selected.png": {
+      "d35ea7d49ed7aca9a274b9f17bf63ac4ec2d35cf864e3c6d3b4b1718d6815bb8": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code/selected_macro.png": {
+      "13d72d0a69d37773f230dddaece8ab7606dcafd663da871f113dbd5a237d12b7": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code_debug/layer.png": {
+      "3ee5caf7c01b783d4a525bf4ae2c5b7465271f4a7764eb705abcf714353e3208": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code_debug/macro.png": {
+      "f0a7251452fc43784fc415de8c0d64712fee70b7c764e19117d9d3301fd490a1": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code_debug/selected.png": {
+      "e9f89749182d69c0a1da5cf619261099dda73dd7f2bc08f8113d7ba15d1bebd2": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_code_debug/selected_macro.png": {
+      "ce92013cccedb7a9c51f4d9c7bb3522eab022d4c4bc73b3beeb1b92dc7ed84b0": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_studio/layer.png": {
+      "ee27bb4f93e85f5de1c05b25056bcabac9bdce137f83c86451efdec854ce7052": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_studio/macro.png": {
+      "4ad30bbcff80b04a7070d98a0a7c6d5241f9189dda30c8011c9765ce9dfe75ba": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_studio/selected.png": {
+      "d8aa68202c2f1856a0dab9a4841c18099884975f5fc3eb49f270d8ae5fdab577": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/vs_studio/selected_macro.png": {
+      "4b3448e25a447757376f8abc8bd7e522b8dc2fd9dfd316261b8475b827e48827": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/window_management/layer.png": {
+      "36fff515db81b27c902f71ba460f3a51ed20b7dad5f7ce856b96e8cd7a6ef858": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/window_management/macro.png": {
+      "2d41a06084f3351c3f2f1abb5c68905171cf7f9c709ad0b2ed9a7d0ef077d609": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/window_management/selected.png": {
+      "49da7d18eea004e478a0ae52b0a7348b745fffe98ad6c51fd7a63ca647093540": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/window_management/selected_macro.png": {
+      "d764f8de793a42d8c963616487225854172602c35c40ce506450f23b5e435869": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/windows/layer.png": {
+      "33c8e21064548a32c2cf447f16d0d51c8d9daef1e39fa87f0913055e04475d92": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/windows/macro.png": {
+      "9db255203913f64fd8d720d6590d7e498a1ac9b29a01921f2cad9db17e9c5336": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/windows/selected.png": {
+      "1ceb27bd6ae0259e7e992908c94208179311544ba5ecc517f7793c61f83fc06c": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "img/windows/selected_macro.png": {
+      "732a6226cf1601d669ce858acbe0dfbdca67fb24ef2347dc1df8e8c01e341f1b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/README.md": {
+      "ccc0ac77bb80c17c4f1057df9d4b783ec37b2b9fab8b6c1617e3f9eec8feb0dc": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "1b5778fc57b9c5a3238a6f87f0cc6bd31925fdc7b11e664685070842dca115c7": [
+        "1.0.4"
+      ],
+      "6bc47387127791523c3090122c72e490df44cbca5d2f909335504bc83c746a16": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/custom/automation.ps1": {
+      "5bfc66a1e83357d436998dcde96309dd43efac671f96f85c2a2980ac5aae7dc2": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "c0ceb2efc70252fd522ac2ebefaf9d57dc60f5dbf08680b8022da8fa39fd4711": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/custom/chrome.ps1": {
+      "e5ab359d6f06699ed2d0dcd32fa1d4545a99239810074bb4e3dd6291ce3d2311": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "b228835f3b3363d7c9e679fdf53d2fe44ae58c27ba3a645459f02397d863023a": [
+        "1.0.4"
+      ],
+      "24dbb2331aea9e45ef274a963edaf1c0f4b98d881b3c8c54af58060c3f065eb8": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/custom/examples.ps1": {
+      "022e607817802be5dde3db5a3841ee9ba5da54a742f2dd50c3676fa0dbb37ad8": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "7988ce343081c3d3e7911a89ff3c74198149ed1f93c86430739b496bdc91d5fd": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/custom/ssh.ps1": {
+      "ee5649911e782544771f4dc5b6e02b4c381d8cf3fe371dcddd401db539c40760": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "68af46a5a587edb24eddc311feb9f520f8a76d7c346eab6f825b29fa2aa37f7f": [
+        "1.0.4"
+      ],
+      "e017e098c281e857536c62d0f9a40caf36fb195b8bb3fbaf3cc9ad1c5812d99f": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/custom/vscode.ps1": {
+      "d7c3647abee3d46cf68e5a851ec8b8d8cec366880f0686aa34ff8ecd77f94fff": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "b60e0746fa0765859be64382dc19ff61a0c17199d7ae7837601ff0053a7c9085": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/custom/vsstudio.ps1": {
+      "ce841c447b0f74b9662c2fb3606a06d65edf2958b484b64e695b44b1c95bd448": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "578aab2710e12d73a3992e75e7ef493e5e596b8cbd9ae1017f3d20e3cedbf6a3": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/helper.ps1": {
+      "7828cd567a1b0880d3bcae4cde0b481b328b0d138eba826abb7e2d3c21c9e3d2": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "76c661eecef8b319723bfe89d01f36aea837c0e4da83420a23f89b37dd4331bb": [
+        "1.0.4"
+      ],
+      "b51180dc5bea13e1e1ffdf7051c0afdac2039da17e4212f8868fba8f3eac4e0e": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/media.ps1": {
+      "141db6c6cfaa1eb751f71a44323242e05fdc1b26b033aeb0d44d598909fe8fed": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/power.ps1": {
+      "db71e3c9ad8dbfd7c6f13f7a26ea3a7a88c1f78716a0f0048769d4e8817e69e5": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "375024b3c9862cc18eee92fa38f95c4c126c4379628da3ad51baeb65694b8f72": [
+        "1.0.5"
+      ]
+    },
+    "powershell/commands/windows.ps1": {
+      "b8366a28555c47a05abc7a314c2384802da94fabbc1a5a28f65303326280a73b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "9925eeba2322b2b69041f5df084441c9265f0055a2da0c1888c0e838e5dfb25c": [
+        "1.0.5"
+      ]
+    },
+    "powershell/config.ps1": {
+      "1cb6d3eda56e8e7e0c36d16aebc6e2ee44a8fdde6ddebac2f6911b2b6255ca02": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/docs/ahk-builtins.md": {
+      "1d625e45d7758f22a447de4823af211b3e46059829dd1c771dd91e751d69733c": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "65512874da5947f0e7dec5c0ac60c4044ef208f24f8226ff937af29ee679a3e7": [
+        "1.0.5"
+      ]
+    },
+    "powershell/launch.vbs": {
+      "cee288f467d120c2664e56b3800cdc40760c528c3089c4e7ee43ccc8f3d1d7f5": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/AhkSyntax.ps1": {
+      "4839e35b3bb3b6f4af7f52237a25f2472333b4454060e4672839af837cd3757b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Assets.ps1": {
+      "926d3d354b0dc0ab08ac9d0845b883384fb96832ab2f924388fcb1383bc6a456": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/ConfigJson.ps1": {
+      "3568c3ae17dde9e34a962763589688d4f442281654a94385b53021cb9817aa32": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Engine.ps1": {
+      "4bae370ba918fee5f05c99029aaadac4cb90fcdc0021256f1d5a28cb3a7da02b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Hotkeys.ps1": {
+      "840dfade67ee6355b63b315c4437b2f7ce57bfd23318c316ae32f648f770d734": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Input.ps1": {
+      "aa4b77c26e4cd02476b06eb4e74599a6dc13d8d974efb53373e90ecd69d532a7": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "a05452b616e2854fe8a679dec42c4ef309a31a6340b5c0a1f05c2d4e224115db": [
+        "1.0.4"
+      ],
+      "8d50da8af2f008341768f03b1fdf9f27be0daff8c32d5ff055f2223e87347c32": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Instance.ps1": {
+      "40780d83be217fc0c4289e14aba5cf9f01a389361e08eaa1e086ec2a6c25dd6b": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Interop.ps1": {
+      "1bc5e096c40f55e112b7f8a55a91c6d8e21faa93d33c1d58d89f87d5e586fc2f": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Model.ps1": {
+      "f27c4521310305550f08c80f957a2e572a96972c1cabfb58acf276d417d95b80": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Native.ps1": {
+      "e95d28fd65ec707b5260a3641731609d2b170a96b35ac91251d327ab745cc7a9": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "8ec93647138e84b720f8c705cc3820f8a3a447ac0c68a42fcdc9f3ec40269a95": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Overlay.ps1": {
+      "b2c1cde31dc40194fa15815099d91959bc0f2f99647a546c29781eac6743d86f": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Pump.ps1": {
+      "f692650bb9391e016f9ca2499b82cbb8ee00ca6c36194881060096959e695cda": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "9716cc326d4e9f7814c73ea94a79eb9d7628cc22197adb590a1e822a0886d7df": [
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Screen.ps1": {
+      "2f44b26ea131a12a96a378f8a0581e05b559e64164b56a579b15b94d0c7f03e2": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "73e752ebe690754c94b656cd7795eb6f8757d7200c5e60f0c930c20bd3161279": [
+        "1.0.4"
+      ],
+      "fe3bc4047bf0ff97a55142805636dec98c1bbb11fff589e2fe5a0350539c381b": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Send.ps1": {
+      "45d0437354fb3d9b582aea0f56563aaa97e3f56db951d64481fdef1ef3a1ff95": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "eb2b99f8891a0fdb8f4914b43618f171231446ba79a5fd2b0cb7cb70854fcf35": [
+        "1.0.4"
+      ],
+      "337ca0b292022e393953ae9fef456dfdd498aff8539c1abaf55d16647e947502": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Sound.ps1": {
+      "9d2fe40b838dbcfe124976b26459ce3e7962209da44f602b481bc647cada9716": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "55f620982a0020e33eb836d838ff70ec0f452f0b3d2edfb4123fa2532cf0e586": [
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Tray.ps1": {
+      "557727063eda882c97a9824f74c72b2be8c7f045ad7bebea2c7b3704f9be4bc3": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/WinTitle.ps1": {
+      "353d0628fe3f67a8e0548c4e19b6464d97a007f2b831e32d2d0039da3c6f09e2": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "8130c794818d70e4ea6ba6e8961fddf0aa4d881bfb6987ff7c15a01929ddebbf": [
+        "1.0.4"
+      ],
+      "c8d962db79eabd883dc9f56b156a25037960206ce6cef3ef036b7ad9d92176f9": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/Window.ps1": {
+      "4b9c34e690878ad7716223675305d335ace4e3463f8b27ebf59b23c270e4a29f": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "3d62a7c1a40f725d4a7aab6e30ccc896a9af2082e458466f7dd19dfcf237cf67": [
+        "1.0.4"
+      ],
+      "be326664d9efa8d607af1ea5aecfae7b709b9c3652445c46ee8d488909a089ce": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/WindowOps.ps1": {
+      "edebda72e429e955f4aa66d6c62abcf12b7f7d9bf16490b9818c53a76145b09f": [
+        "1.0.2",
+        "1.0.3"
+      ],
+      "b8a1386a48ab748afcc8e869e20670b7c4bbb30cc7c016953936560771030dc2": [
+        "1.0.4"
+      ],
+      "7e1e81638e35dc1d333ce2875f9f4d1207b5c6200faa21fb09b3755f40622f01": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/cs/Audio.cs": {
+      "bdc21aee4d48456afba6e6ad2b0f843a5d8897533914ef2efead36c577b78194": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/cs/ForegroundWatcher.cs": {
+      "6cca49f27f8824bf6fad92cc25bfb9ec4943eb3f9517999a2d2604977d02822e": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/cs/Inject.cs": {
+      "0bbb2a173f5fa80895be1fe7156d337c42c5ba4a5f53fcbd8756f018e228087e": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "0f1ef117d57a07be57465f29d274d2ae5e571bcf6d7e9cafcc47ad6ef3c995cb": [
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/cs/InputHook.cs": {
+      "4e0b908cd6994838f2d8b5573187c1640d7bc06829befbcccf436e906e1a3525": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/cs/Interop.cs": {
+      "60efc70ebdbc8b7d6476e027cd58be0aff7b092cba3b4f6a6826345c8f1f18b0": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/cs/ScreenApi.cs": {
+      "4a99294e6c74286975eb0d38a706d9ce6093e2b0f8f207a731c5d4e71af5731a": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/lib/cs/WindowApi.cs": {
+      "46c1014821ced35333a180adce1f74d4b24a1bd3bddb0e906c8bb695f10064bf": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4"
+      ],
+      "d85f386df8464ae6dec2a442155f1f3d5d59368455a37993f6c75832ab1380c0": [
+        "1.0.5"
+      ]
+    },
+    "powershell/main.ps1": {
+      "d2dfcefcd0f42d565d86f7c960795dd06fb87628edbaca24e7419de01bcdb6d9": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/tools/preview-overlay.ps1": {
+      "1506f92558b7988d451b5ca69c111dc60e8f3de208172b027c9a77919fba312a": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/tools/spike-hotkeys.ps1": {
+      "e9e59477830969515d067b31bcc511c6146e7a9910d275a976644faa82bae734": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    },
+    "powershell/tools/spike-inputhook.ps1": {
+      "0365e0e0bdad1a9b055924cbfffddc735ec699cd0b816ececdddab9f34a7b850": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5"
+      ]
+    }
+  }
+}

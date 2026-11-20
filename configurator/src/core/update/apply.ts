@@ -9,7 +9,7 @@ import { walk, type UpdatePlan } from './plan'
 
 /** What the person ticked in the dialog. */
 export interface UpdatePicks {
-  /** Changed files to replace; theirs is kept beside each as a backup (<path>.bak, or <path>.1.bak and on). */
+  /** Changed files to replace; theirs is kept beside each as a backup (<path>.before-update.bak, or .1 to .9 before .bak). */
   replaceChanged: string[]
   /** Deleted command files to bring back. */
   restoreDeleted: string[]
@@ -112,7 +112,7 @@ const AHK_COMMANDS = 'ahk/commands/'
 const COMMAND_DIRS = [AHK_COMMANDS, 'powershell/commands/']
 /** The folders that lead to ahk/commands; walk enters every folder below it by itself. */
 const TO_AHK_COMMANDS: ReadonlySet<string> = new Set(['ahk', 'ahk/commands'])
-/** How many backup names a file has: <path>.bak, then <path>.1.bak to <path>.9.bak. */
+/** How many backup names a file has: <path>.before-update.bak, then <path>.before-update.1.bak to .9.bak. */
 const BACKUP_NAMES = 10
 
 const keyOf = (path: string) => path.toLowerCase()
@@ -122,8 +122,13 @@ const isAhkCommandFile = (key: string) => key.startsWith(AHK_COMMANDS) && key.en
 const encode = (text: string) => new TextEncoder().encode(text)
 const decode = (data: Uint8Array) => new TextDecoder().decode(data)
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, i) => byte === b[i])
+/**
+ * The names a backup of `path` may take, in order. Never the plain <path>.bak: the app's own saves write that
+ * name over and over (config.json.bak at every save of the layout, a command file's at "Overwrite anyway"), so
+ * a backup put there would be gone at the next save. A plain <path>.bak is neither looked at nor touched.
+ */
 const backupNamesOf = (path: string) =>
-  Array.from({ length: BACKUP_NAMES }, (_, i) => (i === 0 ? `${path}.bak` : `${path}.${i}.bak`))
+  Array.from({ length: BACKUP_NAMES }, (_, i) => (i === 0 ? `${path}.before-update.bak` : `${path}.before-update.${i}.bak`))
 
 /** The paths of `list` that `picks` names, ignoring case; a pick of any other path is ignored. */
 function tickedOf(list: string[], picks: string[]): string[] {
@@ -152,9 +157,24 @@ async function readAgain(folder: FolderAccess, paths: string[]): Promise<Map<str
   return new Map(read)
 }
 
+/**
+ * The folder, whose failure to list a folder is a failure at that folder (the root goes by the folder's name).
+ * walk only lists; the other calls are the folder's own.
+ */
+function listingAt(folder: FolderAccess): FolderAccess {
+  return {
+    name: folder.name,
+    readBytes: folder.readBytes.bind(folder),
+    writeBytes: folder.writeBytes.bind(folder),
+    list: (dir) => at(dir === '' ? folder.name : dir, () => folder.list(dir)),
+    remove: folder.remove.bind(folder),
+  }
+}
+
 /** The .ahk files under ahk/commands, through every folder below it, as the folder spells them. */
 async function ahkFilesIn(folder: FolderAccess): Promise<string[]> {
-  const files = await at(AHK_COMMANDS.slice(0, -1), async () => walk(folder, '', await folder.list(''), new Set(TO_AHK_COMMANDS)))
+  const listing = listingAt(folder)
+  const files = await walk(listing, '', await listing.list(''), new Set(TO_AHK_COMMANDS))
   return files.filter((path) => isAhkCommandFile(keyOf(path)))
 }
 
@@ -254,7 +274,7 @@ function sortRemoval(ctx: Context, work: Work, path: string): void {
 function backupNameOf(ctx: Context, path: string): string {
   const name = ctx.backupNames.get(keyOf(path))
   if (!name) {
-    const message = `${path}.bak and ${path}.1.bak to ${path}.9.bak are all in the way, so ${path} cannot be backed up. Move some of them away, then update again.`
+    const message = `${path}.before-update.bak and ${path}.before-update.1.bak to .9.bak are all in the way, so ${path} cannot be backed up. Move some of them away, then update again.`
     throw new StepFailure(path, new Error(message))
   }
   return name
@@ -299,7 +319,8 @@ function heldOf(ctx: Context, work: Work): Map<string, string> {
   for (const { path } of work.writes) {
     if (isAhkCommandFile(keyOf(path))) held.set(keyOf(path), path)
   }
-  for (const path of work.removals) held.delete(keyOf(path))
+  // The listing and the reads run in parallel: a file the listing still named may have gone before its read.
+  for (const path of [...work.removals, ...work.gone]) held.delete(keyOf(path))
   return held
 }
 

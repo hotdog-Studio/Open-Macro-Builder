@@ -62,6 +62,9 @@ const OLD: Texts = {
   [OLD_PS1]: 'old 1.0.5\n',
 }
 
+/** The name of a backup the update makes: the first free one, or the nth after it. */
+const backupOf = (path: string, n = 0) => (n === 0 ? `${path}.before-update.bak` : `${path}.before-update.${n}.bak`)
+
 /** An include file the person changed, listing what 1.0.5 shipped. */
 const MY_INCLUDE: Changes = { [INCLUDE_FILE]: includeText('; my config', WINDOWS, CHROME, GONE) }
 /** On a folder 1.0.5 set up: the app's copy, and nothing the app no longer has. */
@@ -216,7 +219,7 @@ const EVERY_DONE: UpdateDone = {
   added: [NEW_FILE, SSH_FILE],
   removed: [GONE_FILE],
   kept: [JSON_FILE, OLD_PS1],
-  backups: [`${WINDOWS_FILE}.bak`],
+  backups: [backupOf(WINDOWS_FILE)],
 }
 
 describe('applyUpdate: a plan with every kind of entry', () => {
@@ -226,7 +229,7 @@ describe('applyUpdate: a plan with every kind of entry', () => {
     const changing = changesIn(guarded.calls)
     expect(guarded.calls.slice(guarded.calls.indexOf(changing[0]))).toEqual(changing)
     expect(changing).toEqual([
-      { op: 'writeBytes', path: `${WINDOWS_FILE}.bak` },
+      { op: 'writeBytes', path: backupOf(WINDOWS_FILE) },
       { op: 'writeBytes', path: NEW_FILE },
       { op: 'writeBytes', path: 'config.json' },
       { op: 'writeBytes', path: WINDOWS_FILE },
@@ -245,10 +248,10 @@ describe('applyUpdate: a plan with every kind of entry', () => {
   it("keeps the person's bytes of a ticked changed file in its backup, and writes the app's copy at its path", async () => {
     const folder = await folderOf(EVERY)
     await update(folder, { picks: EVERY_PICKS })
-    expect(folder.text(`${WINDOWS_FILE}.bak`)).toBe('my windows\n')
+    expect(folder.text(backupOf(WINDOWS_FILE))).toBe('my windows\n')
     expect(folder.text(WINDOWS_FILE)).toBe(APP[WINDOWS_FILE])
     expect(folder.text(JSON_FILE)).toBe('my json\n')
-    expect(folder.text(`${JSON_FILE}.bak`)).toBeNull()
+    expect(folder.text(backupOf(JSON_FILE))).toBeNull()
   })
 
   it('brings a ticked deleted file back and takes it out of deleted; an unticked one stays deleted and stays in it', async () => {
@@ -318,7 +321,7 @@ describe('applyUpdate: a plan with every kind of entry', () => {
     expect(result).toEqual({ ok: true, ...EVERY_DONE })
     expect(folder.text(JSON_FILE)).toBe('my json\n')
     expect(folder.text(OLD_PS1)).toBe('my old\n')
-    expect(folder.text('config.json.bak')).toBeNull()
+    expect(folder.text(backupOf('config.json'))).toBeNull()
   })
 })
 
@@ -355,6 +358,9 @@ describe('applyUpdate: the manifest', () => {
   })
 
   it('records the fingerprint of the include file as written', async () => {
+    // A whole write differs from the app's text only in its #Include commands\ lines, which the fingerprint
+    // leaves out, so this always equals the app's fingerprint: the test pins only that an entry is recorded for
+    // the bytes written. An adjusted, kept include gets no new entry (decision 6), so there is nothing else to pin.
     const folder = await folderOf({ [MINE_FILE]: 'mine\n' })
     await update(folder)
     const written = folder.text(INCLUDE_FILE) ?? ''
@@ -393,7 +399,10 @@ describe('applyUpdate: looking again before writing', () => {
     expect(listsHolding(result, path)).toEqual([])
     expect(changesIn(guarded.calls).filter((call) => call.path === path)).toEqual([])
     expect(folder.text(path)).toBeNull()
-    expect(Object.keys((await readManifest(folder))?.files ?? {})).not.toContain(path)
+    const manifest = await readManifest(folder)
+    expect(Object.keys(manifest?.files ?? {})).not.toContain(path)
+    // Neither is a command file, so neither is recorded as deleted.
+    expect(manifest?.deleted).toEqual([])
   })
 
   it.each<{ list: string; include: string; changes: Changes; path: string; deleted: string[] }>([
@@ -415,6 +424,25 @@ describe('applyUpdate: looking again before writing', () => {
       expect(next.add).toEqual([])
     },
   )
+
+  it('unlists a command file the listing still named but its read found gone', async () => {
+    /** A folder whose read of a path in `gone` finds nothing, while its listing still names it. */
+    class Vanishing extends MemoryFolder {
+      readonly gone = new Set<string>()
+      override readBytes(path: string): Promise<Uint8Array | null> {
+        return this.gone.has(path) ? Promise.resolve(null) : super.readBytes(path)
+      }
+    }
+    const folder = new Vanishing('scripts', await textsOf({}, null))
+    const plan = await nextPlan(folder)
+    folder.gone.add(WINDOWS_FILE)
+    const guarded = await guardedOf(folder)
+    const result = await applyUpdate(guarded, plan, NO_PICKS, FILES)
+    expect(result.ok).toBe(true)
+    expect(listsHolding(result, WINDOWS_FILE)).toEqual([])
+    expect(folder.text(INCLUDE_FILE)).toBe(includeText('; config 1.0.6', CHROME, NEW))
+    expect(guarded.refused).toEqual([])
+  })
 
   const TICK_CHROME: UpdatePicks = { replaceChanged: [], restoreDeleted: [CHROME_FILE] }
   it.each<{ row: string; changes: Changes; picks: UpdatePicks; path: string; text: string; kept: boolean }>([
@@ -440,8 +468,8 @@ describe('applyUpdate: looking again before writing', () => {
     const picks: UpdatePicks = { replaceChanged: [JSON_FILE], restoreDeleted: [] }
     const { result } = await update(folder, { picks, later: { [JSON_FILE]: later } })
     expect(folder.text(JSON_FILE)).toBe(APP[JSON_FILE])
-    expect(folder.text(`${JSON_FILE}.bak`)).toBe(backup)
-    expect(result.backups).toEqual(backup === null ? [] : [`${JSON_FILE}.bak`])
+    expect(folder.text(backupOf(JSON_FILE))).toBe(backup)
+    expect(result.backups).toEqual(backup === null ? [] : [backupOf(JSON_FILE)])
     expect(listsHolding(result, JSON_FILE)).toEqual(['replaced'])
   })
 })
@@ -558,23 +586,28 @@ describe('applyUpdate: the include file', () => {
 
 describe('applyUpdate: backups', () => {
   const TICK_JSON: UpdatePicks = { replaceChanged: [JSON_FILE], restoreDeleted: [] }
-  const backupName = (i: number) => (i === 0 ? `${JSON_FILE}.bak` : `${JSON_FILE}.${i}.bak`)
 
-  it('never replaces a file: with <path>.bak there, the backup is <path>.1.bak', async () => {
-    const folder = await folderOf({ [JSON_FILE]: 'my json\n', [`${JSON_FILE}.bak`]: 'an earlier backup\n' })
-    const { result } = await update(folder, { picks: TICK_JSON })
-    expect(result.backups).toEqual([`${JSON_FILE}.1.bak`])
-    expect(folder.text(`${JSON_FILE}.bak`)).toBe('an earlier backup\n')
-    expect(folder.text(`${JSON_FILE}.1.bak`)).toBe('my json\n')
+  it.each<{ row: string; there: string; backup: string }>([
+    { row: 'leaves a plain <path>.bak, which the app\'s own saves write, unread and untouched', there: `${JSON_FILE}.bak`, backup: backupOf(JSON_FILE) },
+    { row: 'with <path>.before-update.bak there, takes <path>.before-update.1.bak', there: backupOf(JSON_FILE), backup: backupOf(JSON_FILE, 1) },
+  ])('never replaces a file: $row', async ({ there, backup }) => {
+    const folder = await folderOf({ [JSON_FILE]: 'my json\n', [there]: 'an earlier backup\n' })
+    const { guarded, result } = await update(folder, { picks: TICK_JSON })
+    expect(result.backups).toEqual([backup])
+    expect(folder.text(there)).toBe('an earlier backup\n')
+    expect(folder.text(backup)).toBe('my json\n')
     expect(folder.text(JSON_FILE)).toBe(APP[JSON_FILE])
+    expect(guarded.calls.filter((call) => call.path === `${JSON_FILE}.bak`)).toEqual([])
+    expect(guarded.refused).toEqual([])
   })
 
   it('writes nothing when all ten backup names are taken, and says why', async () => {
-    const taken = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [backupName(i), `backup ${i}\n`]))
+    const taken = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [backupOf(JSON_FILE, i), `backup ${i}\n`]))
     const folder = await folderOf({ [JSON_FILE]: 'my json\n', ...taken })
     const { guarded, result } = await update(folder, { picks: TICK_JSON })
     expect(result).toEqual({ ok: false, failedAt: JSON_FILE, message: expect.stringContaining('are all in the way'), ...NOTHING_DONE })
     expect(changesIn(guarded.calls)).toEqual([])
+    expect(guarded.refused).toEqual([])
   })
 })
 
@@ -587,18 +620,20 @@ describe("applyUpdate: the include file is the person's text", () => {
   it('keeps its byte-order mark when its list is adjusted', async () => {
     const folder = await folderOf()
     await folder.writeBytes(INCLUDE_FILE, withBom(includeText('; my config', WINDOWS, CHROME, GONE)))
-    const { result } = await update(folder)
+    const { guarded, result } = await update(folder)
     expect(result.kept).toContain(INCLUDE_FILE)
     expect(await folder.readBytes(INCLUDE_FILE)).toEqual(withBom(includeText('; my config', WINDOWS, CHROME, NEW)))
+    expect(guarded.refused).toEqual([])
   })
 
   it('leaves one that is not UTF-8 byte for byte when its list needs no change', async () => {
     const bytes = notUtf8(includeText('; my config', WINDOWS, CHROME, NEW))
     const folder = await folderOf({ ...UP_TO_DATE, 'config.json': 'config 1.0.5\n' })
     await folder.writeBytes(INCLUDE_FILE, bytes)
-    const { result } = await update(folder)
+    const { guarded, result } = await update(folder)
     expect(result).toEqual({ ok: true, ...NOTHING_DONE, replaced: ['config.json'], kept: [INCLUDE_FILE] })
     expect(await folder.readBytes(INCLUDE_FILE)).toEqual(bytes)
+    expect(guarded.refused).toEqual([])
   })
 
   it('writes nothing when one that is not UTF-8 needs a line, and names it as the folder spells it', async () => {
@@ -612,6 +647,7 @@ describe("applyUpdate: the include file is the person's text", () => {
       ...NOTHING_DONE,
     })
     expect(changesIn(guarded.calls)).toEqual([])
+    expect(guarded.refused).toEqual([])
   })
 })
 
@@ -660,6 +696,18 @@ describe('applyUpdate: a failure', () => {
       row: 'a read before the writes fails',
       fails: (call) => call.op === 'readBytes' && call.path === 'config.json',
       failedAt: 'config.json',
+      message: 'disk full',
+    },
+    {
+      row: 'listing a folder under ahk/commands fails',
+      fails: (call) => call.op === 'list' && call.path === 'ahk/commands/custom',
+      failedAt: 'ahk/commands/custom',
+      message: 'disk full',
+    },
+    {
+      row: 'listing the folder itself fails',
+      fails: (call) => call.op === 'list' && call.path === '',
+      failedAt: 'scripts',
       message: 'disk full',
     },
     {

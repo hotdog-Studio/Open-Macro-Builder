@@ -1,4 +1,5 @@
 import type { StarterFile } from '../core/starter'
+import type { StarterIndex } from '../core/update/fingerprint'
 
 /**
  * The files of a fresh Open Macro Builder (config.json, ahk/, powershell/, img/), as built into the
@@ -10,4 +11,10 @@ export async function loadStarter(): Promise<StarterFile[]> {
     path,
     data: Uint8Array.from(atob(base64), (char) => char.codePointAt(0) ?? 0),
   }))
+}
+
+/** The version of the app's copy of the scripts and the fingerprint of each of its files, as built into the page. */
+export async function loadStarterIndex(): Promise<StarterIndex> {
+  const { default: index } = await import('virtual:omb-starter-index')
+  return index
 }

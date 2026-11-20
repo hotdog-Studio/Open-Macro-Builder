@@ -1,10 +1,11 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
-import { listStarterFiles, starterPlugin } from './starter.mjs'
+import { fingerprint } from '../src/core/update/fingerprint'
+import { listStarterFiles, starterIndex, starterPlugin, starterVersion } from './starter.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -82,5 +83,66 @@ describe('starterPlugin', () => {
   it('leaves other ids alone', () => {
     expect(starterPlugin(madeUpTree()).resolveId('react')).toBeUndefined()
     expect(starterPlugin(madeUpTree()).load('react')).toBeUndefined()
+  })
+})
+
+describe('starterIndex', () => {
+  it('has exactly the starter paths, each with its fingerprint', () => {
+    const index = starterIndex(madeUpTree(), '1.0.6')
+    expect(index.version).toBe('1.0.6')
+    expect(Object.keys(index.files)).toEqual(['ahk/a.ahk', 'config.json', 'img/a.png', 'powershell/b.ps1'])
+    for (const hash of Object.values(index.files)) expect(hash).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('gives a CRLF text file the fingerprint the page gives the same file with LF', async () => {
+    // The build hashes with node:crypto, the page with hashBytes (Web Crypto): they have to agree.
+    const index = starterIndex(madeUpTree(), '1.0.6')
+    expect(index.files['ahk/a.ahk']).toBe(await fingerprint('ahk/a.ahk', new TextEncoder().encode('MsgBox "a"\n')))
+  })
+
+  it('gives a picture the fingerprint of its bytes', async () => {
+    const index = starterIndex(madeUpTree(), '1.0.6')
+    expect(index.files['img/a.png']).toBe(await fingerprint('img/a.png', Uint8Array.of(0, 255, 128, 10, 13)))
+  })
+
+  it('leaves the include lines of the real ahk/config.ahk out of its fingerprint', async () => {
+    const lines = readFileSync(join(repoRoot, 'ahk/config.ahk'), 'utf8').split(/\r?\n/)
+    const kept = lines.filter((line) => !/^\s*#Include\s+commands\\/i.test(line)).join('\n')
+    expect(lines.length).toBeGreaterThan(kept.split('\n').length)
+    expect(starterIndex(repoRoot, '1.0.6').files['ahk/config.ahk']).toBe(await fingerprint('ahk/config.ahk', new TextEncoder().encode(kept)))
+  })
+})
+
+describe('starterVersion', () => {
+  it.each([
+    ['the version the build is given', { APP_VERSION: '1.0.6' }, '1.0.0', '1.0.6'],
+    ['a development build, with no version', {}, '1.0.0', '1.0.0-dev'],
+    ['an empty version, which the Dockerfile gives when the build argument is unset', { APP_VERSION: '' }, '1.0.0', '1.0.0-dev'],
+    ['a version of only spaces', { APP_VERSION: '  ' }, '1.0.0', '1.0.0-dev'],
+    ['the first two numbers of the package version', {}, '2.7.31', '2.7.0-dev'],
+    ['a package version that is not three numbers', {}, 'nonsense', '0.0.0-dev'],
+  ])('is %s', (_name, env, packageVersion, expected) => {
+    expect(starterVersion(env, packageVersion)).toBe(expected)
+  })
+})
+
+describe('starterPlugin and the index', () => {
+  const served = async (plugin, id) =>
+    (await import(`data:text/javascript,${encodeURIComponent(plugin.load(plugin.resolveId(id)))}`)).default
+
+  it('serves virtual:omb-starter-index as the version and the fingerprints, without the files', async () => {
+    const root = madeUpTree()
+    const plugin = starterPlugin(root, { env: { APP_VERSION: '1.0.6' }, packageVersion: '1.0.0' })
+    const index = await served(plugin, 'virtual:omb-starter-index')
+    expect(index).toEqual(starterIndex(root, '1.0.6'))
+    expect(JSON.stringify(index)).not.toContain('base64')
+  })
+
+  it('reads the package version from configurator/package.json when it is not given', async () => {
+    const root = madeUpTree()
+    mkdirSync(join(root, 'configurator'))
+    writeFileSync(join(root, 'configurator/package.json'), '{"version":"3.4.5"}')
+    const index = await served(starterPlugin(root, { env: {} }), 'virtual:omb-starter-index')
+    expect(index.version).toBe('3.4.0-dev')
   })
 })

@@ -23,6 +23,10 @@ COPY config.json ./
 COPY ahk ahk
 COPY powershell powershell
 COPY img img
+# The version the page carries as its own (the configurator's update check compares it with a folder's
+# copy). Without the build argument it is empty, and the page then builds as a development version.
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
 RUN cd configurator && npm run build
 
 FROM caddy:2-alpine

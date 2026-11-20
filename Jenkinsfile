@@ -366,6 +366,7 @@ node {
             runGated('''
                 for arch in amd64 arm64; do
                     docker buildx build --platform "linux/$arch" \\
+                        --build-arg "APP_VERSION=$APP_VERSION" \\
                         --label "org.opencontainers.image.version=$APP_VERSION" \\
                         --label "org.opencontainers.image.revision=$REVISION" \\
                         -t "$BUILT-$arch" --load . || exit 1

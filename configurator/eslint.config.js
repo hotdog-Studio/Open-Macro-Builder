@@ -13,8 +13,13 @@ export default tseslint.config(
     extends: [reactHooks.configs.flat.recommended],
   },
   {
+    // src/core/update/canonical.mjs: plain JavaScript the page and the build script share.
+    files: ['src/**/*.mjs'],
+    languageOptions: { globals: { ...globals.browser } },
+  },
+  {
     // core stays pure: no Node, Electron, React or browser-only globals.
-    files: ['src/core/**/*.ts'],
+    files: ['src/core/**/*.{ts,mjs}'],
     ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-imports': [

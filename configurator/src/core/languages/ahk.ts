@@ -284,7 +284,7 @@ const HUB_HEADER =
 const INCLUDE = /^\s*#include(?:again)?\s(.*)$/i
 const CUSTOM_HEADER = /^\s*;.*\bCustom Commands\b/i
 const SECTION_HEADER = /^\s*;\s*\*{4}/
-const SHARED_INCLUDE = /^\s*#Include\s+commands\\/i
+export const SHARED_INCLUDE = /^\s*#Include\s+commands\\/i
 
 function listedIn(path: string): string | null {
   if (path.startsWith(`${HUB_DIR}/`) && path.toLowerCase() !== HUB) return HUB

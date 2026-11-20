@@ -293,7 +293,7 @@ function listedIn(path: string): string | null {
 }
 
 /** The text's lines, each with its own line ending (the last may have none). */
-function linesOf(text: string): string[] {
+export function linesOf(text: string): string[] {
   const lines: string[] = []
   let start = 0
   while (start < text.length) {

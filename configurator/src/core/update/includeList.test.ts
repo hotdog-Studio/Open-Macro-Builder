@@ -11,6 +11,10 @@ const crlf = (s: string) => s.replaceAll('\n', '\r\n')
 const SSH = String.raw`#Include commands\custom\ssh.ahk`
 const MINE = String.raw`#Include commands\custom\mine.ahk`
 const CHROME = String.raw`#Include commands\custom\chrome.ahk`
+const AUTOMATION = String.raw`#Include commands\custom\automation.ahk`
+const A = String.raw`commands\custom\a.ahk`
+const B = String.raw`commands\custom\b.ahk`
+const C = String.raw`commands\custom\c.ahk`
 
 const REAL_FILES = [
   'ahk/commands/helper.ahk',
@@ -61,6 +65,11 @@ describe('listedCommandFiles', () => {
     expect(listedCommandFiles(text)).toEqual(['ahk/commands/custom/mine.ahk', 'ahk/commands/custom/chrome.ahk'])
   })
 
+  it('leaves out an include of a folder and of a file that is not an .ahk file', () => {
+    const text = [String.raw`#Include commands\custom\ ; a folder`, String.raw`#Include commands\custom`, String.raw`#Include commands\custom\notes.txt`, CHROME].join('\n')
+    expect(listedCommandFiles(text)).toEqual(['ahk/commands/custom/chrome.ahk'])
+  })
+
   it('gives nothing for a text with no include', () => {
     expect(listedCommandFiles('')).toEqual([])
   })
@@ -79,7 +88,7 @@ describe('listFor', () => {
     const lines = edited().split('\n')
     const mine = lines.indexOf(MINE)
     expect(lines.slice(0, mine).findLastIndex((l) => l.includes('Custom Commands'))).toBeGreaterThan(-1)
-    expect(lines[mine - 1]).toBe(String.raw`#Include commands\custom\automation.ahk`)
+    expect(lines[mine - 1]).toBe(AUTOMATION)
     expect(lines[mine + 1]).toMatch(/^; Your own commands/)
   })
 
@@ -100,14 +109,14 @@ describe('listFor', () => {
     )
   })
 
-  it('gives the same text for the same files in another order', () => {
+  it('gives the same text for the same files in another order, sorted by code unit on the lower-case path', () => {
     const own = ['ahk/commands/custom/b.ahk', 'ahk/commands/custom/a.ahk', 'ahk/commands/custom/c.ahk']
     const deleted = ['ahk/commands/custom/vscode.ahk', 'ahk/commands/custom/ssh.ahk']
     const text = listFor(real, deleted, own)
     expect(listFor(real, [...deleted].reverse(), [...own].reverse())).toBe(text)
     expect(listFor(real, deleted, [own[1], own[2], own[0]])).toBe(text)
-    expect(text.indexOf('custom\\a.ahk')).toBeLessThan(text.indexOf('custom\\b.ahk'))
-    expect(text.indexOf('custom\\b.ahk')).toBeLessThan(text.indexOf('custom\\c.ahk'))
+    expect(text.indexOf(A)).toBeLessThan(text.indexOf(B))
+    expect(text.indexOf(B)).toBeLessThan(text.indexOf(C))
   })
 
   it('changes nothing when there is nothing to delete or add', () => {
@@ -123,12 +132,19 @@ describe('listFor', () => {
     expect(listedCommandFiles(text)).toEqual(['ahk/commands/custom/chrome.ahk', 'ahk/commands/custom/mine.ahk'])
   })
 
-  it('leaves paths that are not command files alone', () => {
-    expect(listFor(SMALL, ['local/ahk/mine.ahk', 'ahk/lib/json.ahk'], ['local/ahk/mine.ahk', 'ahk/main.ahk'])).toBe(SMALL)
+  it('adds no line for a path that is not a command file', () => {
+    expect(listFor(SMALL, [], ['local/ahk/mine.ahk', 'ahk/main.ahk'])).toBe(SMALL)
+  })
+
+  it('takes out no line for a path that is not a command file, even one the personal hub would list', () => {
+    // `#Include mine.ahk` is what removeListing would take out for local/ahk/mine.ahk if it were let through.
+    const text = SMALL + '\n#Include mine.ahk'
+    expect(ahk.removeListing(text, 'local/ahk/mine.ahk')).not.toBe(text)
+    expect(listFor(text, ['local/ahk/mine.ahk', 'ahk/lib/json.ahk'], [])).toBe(text)
   })
 
   it('throws what addListing throws when the file has no Custom Commands section', () => {
-    const text = '#Requires AutoHotkey v2.0\n#Include lib\\json.ahk\n'
+    const text = '#Requires AutoHotkey v2.0\n' + String.raw`#Include lib\json.ahk` + '\n'
     let expected = ''
     try {
       ahk.addListing(text, 'ahk/commands/custom/mine.ahk')
@@ -149,7 +165,7 @@ describe('adjustList', () => {
   it('keeps every other line byte for byte, in a CRLF file', () => {
     const text = crlf(real)
     const expected = crlf(
-      real.replace(SSH + '\n', '').replace('#Include commands\\custom\\automation.ahk\n', (all) => all + MINE + '\n'),
+      real.replace(SSH + '\n', '').replace(AUTOMATION + '\n', (all) => all + MINE + '\n'),
     )
     expect(adjustList(text, ['ahk/commands/custom/mine.ahk'], ['ahk/commands/custom/ssh.ahk'])).toBe(expected)
   })
@@ -196,6 +212,12 @@ describe('listsExactly', () => {
     ['a different file in the place of one', [...REAL_FILES.slice(1), 'ahk/commands/custom/mine.ahk']],
   ])('is false with %s', (_name, present) => {
     expect(listsExactly(real, present)).toBe(false)
+  })
+
+  it('is true for a file listed twice, and for one listed in another case than the folder has it', () => {
+    const text = [String.raw`#include COMMANDS\Helper.AHK`, String.raw`#Include commands\helper.ahk`].join('\n')
+    expect(listsExactly(text, ['ahk/commands/helper.ahk'])).toBe(true)
+    expect(listsExactly(text, ['AHK/Commands/Helper.ahk', 'ahk/commands/helper.ahk'])).toBe(true)
   })
 
   it('is true for no files and no includes', () => {

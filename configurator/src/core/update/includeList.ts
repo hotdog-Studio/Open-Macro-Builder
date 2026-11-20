@@ -1,4 +1,4 @@
-import { ahk, includeTarget } from '../languages/ahk'
+import { ahk, includeTarget, linesOf } from '../languages/ahk'
 
 /** The file that lists the shared AutoHotkey command files, one `#Include` line each. */
 export const INCLUDE_FILE = 'ahk/config.ahk'
@@ -24,13 +24,21 @@ function listablePaths(paths: string[]): string[] {
   return out
 }
 
+/** Orders paths by the code units of their lower-case form. */
+function byLowerCase(a: string, b: string): number {
+  const x = a.toLowerCase()
+  const y = b.toLowerCase()
+  if (x === y) return 0
+  return x < y ? -1 : 1
+}
+
 /** The AutoHotkey command files `text` includes, as folder paths ('ahk/commands/...'), lower-cased. */
 export function listedCommandFiles(text: string): string[] {
   const files = new Set<string>()
-  // Each line keeps its own line end: the language reads a line as it finds it.
-  for (const line of text.split(/(?<=\n)/)) {
+  for (const line of linesOf(text)) {
     const target = includeTarget(line, 'ahk')
-    if (target?.startsWith(COMMANDS_DIR)) files.add(target)
+    // A command file is an .ahk file: an include of a folder or of any other file is none.
+    if (target?.startsWith(COMMANDS_DIR) && target.endsWith('.ahk')) files.add(target)
   }
   return [...files]
 }
@@ -39,8 +47,9 @@ export function listedCommandFiles(text: string): string[] {
 export function adjustList(text: string, added: string[], removed: string[]): string {
   let out = text
   for (const path of listablePaths(removed)) out = ahk.removeListing(out, path)
-  // Sorted, so the same files give the same text whatever order they come in.
-  const sorted = listablePaths(added).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+  // Sorted by code unit on the lower-case path, so the same files give the same text whatever order they
+  // come in and whatever the machine's locale.
+  const sorted = listablePaths(added).sort(byLowerCase)
   for (const path of sorted) out = ahk.addListing(out, path)
   return out
 }

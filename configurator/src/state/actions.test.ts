@@ -4,7 +4,12 @@ import { ConflictError } from '../core/folder/textFile'
 import { MemoryFolder } from '../core/folder/memory'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
 import { SETTINGS_PATH } from '../core/settings'
+import type { StarterFile } from '../core/starter'
+import { applyUpdate } from '../core/update/apply'
+import { fingerprint, type StarterIndex } from '../core/update/fingerprint'
+import type { KnownReleases } from '../core/update/history'
 import { MANIFEST_PATH, readManifest } from '../core/update/manifest'
+import { planUpdate } from '../core/update/plan'
 import type { LangId } from '../core/languages'
 import type { Platform } from '../platform/types'
 import { writeConfig } from '../core/config/write'
@@ -79,8 +84,11 @@ interface Setup {
   languages?: LangId[]
 }
 
+/** The repository's scripts that every folder of these tests holds. */
+const REPO_SCRIPTS = ['config.json', 'ahk/main.ahk', 'ahk/config.ahk', 'ahk/commands', 'powershell/commands', 'img']
+
 function repoFolder({ files = {}, noPersonalConfig, noSettings, languages = ['ahk'] }: Setup = {}): Flaky {
-  const inner = memoryFolderFromRepo(['config.json', 'ahk/main.ahk', 'ahk/config.ahk', 'ahk/commands', 'powershell/commands', 'img'])
+  const inner = memoryFolderFromRepo(REPO_SCRIPTS)
   const folder = new Flaky(inner)
   const put = (path: string, text: string) => inner.writeBytes(path, enc.encode(text))
   if (!noPersonalConfig) void put(CONFIG, EXAMPLE)
@@ -1050,8 +1058,16 @@ describe('command files', () => {
       expect(await deletedIn(h.folder.inner)).toEqual([SSH_PS])
     })
 
+    it('notes a deleted shared command file the manifest does not name among its files', async () => {
+      const h = await opened(withManifest(manifestOf([OTHER_PS])))
+      expect(await h.actions.deleteCommandFile(SSH_PS)).toBeNull()
+      const manifest = await readManifest(h.folder.inner)
+      expect(manifest?.deleted).toEqual([SSH_PS])
+      expect(Object.keys(manifest?.files ?? {})).toEqual([OTHER_PS])
+    })
+
     it.each([
-      ['a file the manifest does not name (the person\'s own)', MINE, manifestOf([SSH_PS])],
+      ['a file of the person\'s own under local/, which no shared command folder holds', MINE, manifestOf([SSH_PS])],
       ['a file the manifest already has among the deleted, in another case', SSH_PS, manifestOf([SSH_PS], [SSH_PS.toUpperCase()])],
     ])('leaves the manifest byte for byte after deleting %s', async (_what, path, text) => {
       const h = await opened({ files: { ...shared, ...withMine.files, [MANIFEST_PATH]: text } })
@@ -1065,6 +1081,45 @@ describe('command files', () => {
       const h = await opened({ files: shared })
       expect(await h.actions.deleteCommandFile(SSH_PS)).toBeNull()
       expect(h.folder.text(MANIFEST_PATH)).toBeNull()
+    })
+
+    describe('after the first update of a folder from before the manifest', () => {
+      const WINDOWS = 'ahk/commands/windows.ahk'
+
+      /** Every file below `dir`, as the folder spells it. */
+      async function filesIn(folder: FolderAccess, dir = ''): Promise<string[]> {
+        const found = await Promise.all(
+          (await folder.list(dir)).map((entry) => {
+            const path = dir === '' ? entry.name : `${dir}/${entry.name}`
+            return entry.kind === 'file' ? [path] : filesIn(folder, path)
+          }),
+        )
+        return found.flat()
+      }
+
+      /** The app's copy (1.0.6): the repository's scripts, which 1.0.5 shipped as they are. */
+      async function appCopy(): Promise<{ files: StarterFile[]; index: StarterIndex; known: KnownReleases }> {
+        const repo = memoryFolderFromRepo(REPO_SCRIPTS)
+        const files = await Promise.all((await filesIn(repo)).map(async (path) => ({ path, data: (await repo.readBytes(path))! })))
+        const prints = await Promise.all(files.map(async ({ path, data }) => [path, await fingerprint(path, data)] as const))
+        return {
+          files,
+          index: { version: '1.0.6', files: Object.fromEntries(prints) },
+          known: { last: '1.0.5', files: Object.fromEntries(prints.map(([path, print]) => [path, { [print]: ['1.0.5'] }])) },
+        }
+      }
+
+      it('keeps a changed shared command file deleted in the Commands tab deleted: the next check offers nothing', async () => {
+        const { files, index, known } = await appCopy()
+        // Set up by 1.0.5, with no manifest; the person changed windows.ahk.
+        const h = await opened({ files: { [WINDOWS]: `${readRepoText(WINDOWS)}; my own line\n` } })
+        const first = await planUpdate(h.folder, index, known)
+        expect(first.changed).toEqual([WINDOWS])
+        expect((await applyUpdate(h.folder, first, { replaceChanged: [], restoreDeleted: [] }, files)).ok).toBe(true)
+        expect(await h.actions.deleteCommandFile(WINDOWS)).toBeNull()
+        const next = await planUpdate(h.folder, index, known)
+        expect({ deleted: next.deleted, add: next.add, news: next.news }).toEqual({ deleted: [WINDOWS], add: [], news: false })
+      })
     })
 
     it('does not rewrite a manifest it cannot read', async () => {

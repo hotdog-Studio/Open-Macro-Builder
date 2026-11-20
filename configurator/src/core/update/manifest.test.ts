@@ -117,7 +117,19 @@ describe('withDeleted', () => {
   })
 
   it.each([
-    ['the files do not name the path', 'ahk/commands/other.ahk'],
+    ['a file of ahk/commands', 'ahk/commands/other.ahk'],
+    ['a file in a folder below ahk/commands', 'ahk/commands/custom/deep/other.ahk'],
+    ['a file of powershell/commands', 'powershell/commands/other.ps1'],
+    ['a file in a folder below powershell/commands', 'powershell/commands/custom/other.ps1'],
+    ['a file of a command folder spelled in another case', 'AHK/Commands/Other.ahk'],
+  ])('adds %s that the files do not name', (_what, path) => {
+    expect(withDeleted(manifest, path)?.deleted).toEqual(['ahk/commands/gone.ahk', path])
+  })
+
+  it.each([
+    ['the path is the person\'s own, under local/', 'local/ahk/commands/mine.ahk'],
+    ['the path is a shared file outside the command folders', 'ahk/lib/json.ahk'],
+    ['the path is in a folder whose name only starts like a command folder', 'ahk/commandsX/other.ahk'],
     ['the deleted files have it already', 'ahk/commands/gone.ahk'],
     ['the deleted files have it already in another case', 'AHK/commands/GONE.ahk'],
   ])('gives null when %s', (_why, path) => {

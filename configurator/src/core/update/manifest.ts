@@ -75,12 +75,20 @@ export async function writeManifest(folder: FolderAccess, manifest: Manifest): P
 
 const sameInCase = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
+/** The shared command folders, whose files a delete in the Commands tab is recorded for. */
+const SHARED_COMMAND_DIRS = ['ahk/commands/', 'powershell/commands/']
+
 /**
- * The manifest with `path` among its deleted files, as it was deleted. Null (nothing to change) when
- * `files` does not name the path or `deleted` has it already, both ignoring case.
+ * The manifest with `path` among its deleted files, as it was deleted. Null (nothing to change) when the
+ * path is not in a shared command folder (through every folder below it) or `deleted` has it already, both
+ * ignoring case. Whether `files` names the path does not matter: a first update of a folder from before the
+ * manifest records no file the person had changed, and such a file deleted later must stay deleted. An entry
+ * for a file of the person's own does nothing: the check counts only a path of the app's copy as deleted, and
+ * the next update writes `deleted` anew.
  */
 export function withDeleted(manifest: Manifest, path: string): Manifest | null {
-  if (!Object.keys(manifest.files).some((p) => sameInCase(p, path))) return null
+  const key = path.toLowerCase()
+  if (!SHARED_COMMAND_DIRS.some((dir) => key.startsWith(dir))) return null
   if (manifest.deleted.some((p) => sameInCase(p, path))) return null
   return { ...manifest, deleted: [...manifest.deleted, path] }
 }

@@ -66,7 +66,7 @@ Both architectures:
 docker buildx build --platform linux/amd64,linux/arm64 --build-arg "APP_VERSION=$(node scripts/ci-version.mjs)" -t open-macro-builder .
 ```
 
-The build argument gives the page its version, as Jenkins gives it: without it the image is a development version, `<MAJOR>.<MINOR>.0-dev`, which counts as older than every later release of its line, so it never offers its scripts to a folder such a release set up or updated.
+The build argument gives the page its version, as Jenkins gives it: without it the image is a development version, `<MAJOR>.<MINOR>.0-dev`, which counts as older than every later release of its line, so it never offers its scripts to a folder such a release set up or updated. The command needs Node and a clone with its tags (`git fetch --tags origin`): without the tags it gives `<MAJOR>.<MINOR>.0`, and without Node or the clone's `.git` it gives nothing, so the image is the development version again.
 
 The page is built once, on the machine doing the build, and copied into each architecture's image, so no emulation is needed.
 

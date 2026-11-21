@@ -1462,6 +1462,15 @@ describe('the update action on its own', () => {
     expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true } })
   })
 
+  it('shows the outcome when that scan fails, and does not hide the failure', async () => {
+    const { folder, source, plan } = await worked()
+    const rescan = () => Promise.reject(new Error('The scan failed.'))
+    const { actions, shown } = actionsFor(source, plan, { folder: () => folder, rescan })
+    await expect(actions.applyUpdate(NO_PICKS)).rejects.toThrow('The scan failed.')
+    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true } })
+    expect(actions.updating()).toBe(false)
+  })
+
   it.each<{ name: string; files?: () => Promise<StarterFile[]>; rescans: number; result: object }>([
     { name: 'a success', rescans: 1, result: { ok: true } },
     { name: 'a throw', files: BROKEN, rescans: 1, result: { ok: false, threw: 'A broken copy.' } },

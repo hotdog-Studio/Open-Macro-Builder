@@ -151,9 +151,9 @@
       "title": "Window Management",
       "icon": "window_management",
       "macros": [
-        { "action": "SnapThirdsLeft", "name": "1/3 <-", "description": "Snap the window to the left third" },
+        null,
         { "action": "SnapWindowTop", "name": "Snap Up", "description": "Snap the window up" },
-        { "action": "SnapThirdsRight", "name": "1/3 ->", "description": "Snap the window to the right third" },
+        null,
         { "action": "SnapWindowLeft", "name": "Snap <-", "description": "Snap the window left" },
         { "action": "SnapWindowBottom", "name": "Snap Down", "description": "Snap the window down" },
         { "action": "SnapWindowRight", "name": "Snap ->", "description": "Snap the window right" },

@@ -27,9 +27,7 @@ function SnippingTool { param($Macro) Start-Program 'ms-screenclip:' }
 function SnapWindowTop { param($Macro) Send-Chord 'LWin+LAlt+Up' }
 function SnapWindowBottom { param($Macro) Send-Chord 'LWin+LAlt+Down' }
 function SnapWindowLeft { param($Macro) Send-Chord 'LWin+Left' }
-function SnapThirdsLeft { param($Macro) Send-Chord 'LWin+LAlt+Left' }
 function SnapWindowRight { param($Macro) Send-Chord 'LWin+Right' }
-function SnapThirdsRight { param($Macro) Send-Chord 'LWin+LAlt+Right' }
 function MoveWindowUp { param($Macro) Send-Chord 'LWin+Up' }
 function MoveWindowDown { param($Macro) Send-Chord 'LWin+Down' }
 

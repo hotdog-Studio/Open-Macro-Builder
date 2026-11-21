@@ -834,10 +834,6 @@ function Get-E2eCases {
         # bottom half) with no version note; its Windows 10 list has neither.
         (New-E2ePlacementCase 'SnapWindowTop' { param($h) Test-E2eSnapped $h Top } 'the top half of the screen (Win+Alt+Up)' -Source $script:E2eDocs.Windows)
         (New-E2ePlacementCase 'SnapWindowBottom' { param($h) Test-E2eSnapped $h Bottom } 'the bottom half of the screen (Win+Alt+Down)' -Source $script:E2eDocs.Windows)
-        # Win+Alt+Left and Win+Alt+Right are not in Microsoft's list of Windows shortcuts: what they do
-        # depends on the PC (a window manager such as PowerToys), so the keys are checked, not a place.
-        @{ Command = 'SnapThirdsLeft'; File = 'windows'; Kind = 'Watch' }
-        @{ Command = 'SnapThirdsRight'; File = 'windows'; Kind = 'Watch' }
         (New-E2ePlacementCase 'MoveWindowUp' { param($h) (Get-WindowState $h) -eq 'Maximized' } 'maximized (Win+Up)')
         (New-E2ePlacementCase 'MoveWindowDown' { param($h) (Get-WindowState $h) -eq 'Minimized' } 'minimized (Win+Down)')
         # Win+Home minimizes every other window, a person's too, and on Windows 11 does so only with

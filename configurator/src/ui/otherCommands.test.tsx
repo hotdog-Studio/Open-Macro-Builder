@@ -136,10 +136,13 @@ describe('Other commands available', () => {
     return within(list).getAllByRole('button', { expanded: false })
   }
 
+  /** AutoHotkey's own functions are fetched when the tab first shows: waits until the list has them. */
+  const referenceShown = () => within(other()).findByRole('heading', { name: "AutoHotkey's own functions" })
+
   it("lists AutoHotkey's own functions after the folder's, by group, closed until asked", async () => {
     const { user } = await start()
     await user.click(pairButton('windows'))
-    const heading = within(other()).getByRole('heading', { name: "AutoHotkey's own functions" })
+    const heading = await referenceShown()
     const commands = within(other()).getByRole('heading', { name: 'Commands in other files' })
     expect(commands.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const labels = groupsUnder("AutoHotkey's own functions").map((b) => b.textContent!.replace(/^[▸▾]/, '').replace(/\d+$/, '').trim())
@@ -152,6 +155,7 @@ describe('Other commands available', () => {
   it("shows a built-in's card from the list, with what the PowerShell version uses and its page", async () => {
     const { user } = await start()
     await user.click(pairButton('windows'))
+    await referenceShown()
     await user.click(group(/^Sound/))
     await user.hover(row('SoundSetMute'))
     const tip = screen.getByRole('tooltip')
@@ -163,6 +167,7 @@ describe('Other commands available', () => {
   it("finds AutoHotkey's own functions with the filter", async () => {
     const { user } = await start()
     await user.click(pairButton('windows'))
+    await referenceShown()
     await user.type(within(other()).getByRole('textbox', { name: 'Filter other commands' }), 'clipboard')
     expect(row('ClipWait')).toBeTruthy()
     expect(group(/^The clipboard/).getAttribute('aria-expanded')).toBe('true')
@@ -172,6 +177,7 @@ describe('Other commands available', () => {
   it("lists a function of the folder named like a built-in in the folder's group, and gives its card first", async () => {
     const { user } = await start()
     await user.click(pairButton('windows'))
+    await referenceShown()
     replaceAll('/**\n * My own sleep.\n * @param Delay - How long.\n */\nSleep(Delay)\n{\n}\n')
     await user.click(group(/^Waiting and timing/))
     // The folder's function heads the list; the built-in stays in its own group, with its own card.
@@ -186,6 +192,7 @@ describe('Other commands available', () => {
   it('lists none of them for a PowerShell file', async () => {
     const { user } = await start()
     await user.click(pairButton('windows'))
+    await referenceShown()
     await user.click(langButton('PowerShell'))
     expect(within(other()).queryByRole('heading', { name: "AutoHotkey's own functions" })).toBeNull()
     expect(within(other()).queryByRole('button', { name: /^Keys and mouse\b/ })).toBeNull()

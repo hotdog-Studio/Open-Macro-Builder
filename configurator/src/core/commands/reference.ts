@@ -1,5 +1,4 @@
 import { LANGUAGES, type FunctionInfo, type LangId } from '../languages'
-import autohotkey from './reference/autohotkey.ahk?raw'
 
 /** The headings of the reference's groups, in the order the list shows them. */
 export const REFERENCE_GROUPS = [
@@ -86,6 +85,3 @@ export function readReference(text: string): ReferenceEntry[] {
     .sort((a, b) => groupOrder(a.entry.group) - groupOrder(b.entry.group) || a.i - b.i)
     .map(({ entry }) => entry)
 }
-
-/** AutoHotkey's own functions, as `reference/autohotkey.ahk` describes them. */
-export const AHK_REFERENCE: Reference = { lang: 'ahk', entries: readReference(autohotkey) }

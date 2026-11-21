@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildDictionary, type DictEntry } from '../../core/commands/dictionary'
-import { AHK_REFERENCE } from '../../core/commands/reference'
+import { AHK_REFERENCE } from '../../core/commands/ahkReference'
 import { newTextFile } from '../../core/folder/textFile'
 import { commandFileAt, LANGUAGES, type CommandFile } from '../../core/languages'
 import { DocCard } from './DocCard'

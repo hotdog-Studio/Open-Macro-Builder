@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { buildDictionary, parseCache, type DictEntry, type Dictionary } from '../core/commands/dictionary'
-import { AHK_REFERENCE } from '../core/commands/reference'
+import type { Reference } from '../core/commands/reference'
 import { checkNewFile } from '../core/commands/files'
 import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
@@ -8,6 +8,7 @@ import { keysUsing } from '../core/commands/usage'
 import { EncodingError } from '../core/folder/textFile'
 import { definedNames, isCommand, LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
 import type { SyntaxProblem } from '../platform/types'
+import { loadAhkReference } from '../state/ahkReference'
 import { shownPair, type AfterSave, type CommandDialog } from '../state/commandsSlice'
 import { useEditor } from '../state/store'
 import { CodeEditor } from './code/CodeEditor'
@@ -626,6 +627,28 @@ function Outline({ pair, dicts }: Readonly<{ pair: CommandPair; dicts: Record<La
   )
 }
 
+/** A reference with nothing in it: what the tab goes on with when the reference's chunk cannot be fetched. */
+const NO_REFERENCE: Reference = { lang: 'ahk', entries: [] }
+
+/**
+ * The bundled AutoHotkey reference, fetched on demand when the tab first shows: undefined until it has come.
+ * A chunk that cannot be fetched (a tab left open across an update of the page) leaves the tab without it.
+ */
+function useAhkReference(): Reference | undefined {
+  const [reference, setReference] = useState<Reference>()
+  useEffect(() => {
+    let live = true
+    const settle = (loaded: Reference) => {
+      if (live) setReference(loaded)
+    }
+    loadAhkReference().then(settle, () => settle(NO_REFERENCE))
+    return () => {
+      live = false
+    }
+  }, [])
+  return reference
+}
+
 /** The Commands tab: each command file pair, and an editor for one language of the chosen pair. */
 export function CommandsTab() {
   const { state } = useEditor()
@@ -637,15 +660,16 @@ export function CommandsTab() {
   const file = pair?.files[lang]
   // Kept across renders, so a keystroke in one file parses that file's text only.
   const cache = useMemo(() => parseCache(), [])
+  const reference = useAhkReference()
   // A dictionary per language: the editor and the list use the shown language's, and a row of the
   // outline is looked up in its pair's own files, whichever language has the command.
   const dicts = useMemo(() => {
     cache.keep(drafts)
-    // The AutoHotkey reference is bundled with the app; the PowerShell dictionary leaves it out.
+    // The AutoHotkey reference comes with the app, once fetched; the PowerShell dictionary leaves it out.
     const build = (l: LangId) =>
-      buildDictionary({ lang: l, shown: pair?.files[l]?.file.path ?? null, commandFiles, libraryFiles, drafts, reference: AHK_REFERENCE }, cache)
+      buildDictionary({ lang: l, shown: pair?.files[l]?.file.path ?? null, commandFiles, libraryFiles, drafts, reference }, cache)
     return { ahk: build('ahk'), ps: build('ps') }
-  }, [cache, pair, commandFiles, libraryFiles, drafts])
+  }, [cache, pair, commandFiles, libraryFiles, drafts, reference])
   const dict = dicts[lang]
   return (
     <>

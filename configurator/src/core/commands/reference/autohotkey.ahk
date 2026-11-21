@@ -19,7 +19,7 @@
 
 /**
  * Presses keys and types text in the active window, as if they were typed on the keyboard. Most characters are typed as they are; a few symbols hold down Ctrl, Alt, Shift or Win for the next key, and braces name keys that are not characters. Send "^c" and Send("^c") are the same call. Windows does not let any program send Ctrl+Alt+Del, and keys may not reach a program that runs as administrator when the macropad does not.
- * @param {String} Keys - What to press, in quotes. ^ before a key holds Ctrl for it, ! holds Alt, + holds Shift and # holds the Windows key; they act on the next key only and can be combined, so "^+t" is Ctrl+Shift+T. A capital letter is typed with Shift, so "!A" is Alt+Shift+A: write letters in lower case after a symbol. < and > are no symbols here and are typed as they are; for only the left or right Ctrl, Alt, Shift or Win, name it in braces: {LCtrl}, {RCtrl}, {LAlt}, {RAlt}, {LShift}, {RShift}, {LWin}, {RWin}. A key name goes in braces: {Enter}, {Tab}, {Esc}, {Space}, {Backspace}, {Delete}, {Insert}, {Home}, {End}, {PgUp}, {PgDn}, {Up}, {Down}, {Left}, {Right}, {F1} to {F24}, {Ctrl}, {Alt}, {Shift}, {AppsKey}, {PrintScreen}, {CapsLock}, {Numpad0} to {Numpad9}, {Volume_Up}, {Volume_Down}, {Volume_Mute}, {Media_Play_Pause}, {Media_Next}, {Browser_Back}. A number after the name presses the key that many times: {Left 3}. Down or up after the name only presses or only lets go of the key, to hold it while others are pressed: {Shift down}...{Shift up}. To type ^ ! + # { or } themselves, put one in braces: {!}, {#}, {{}, {}}. {Raw} types everything after it as written, symbols included. {Text} does the same, sends each character as a character rather than as a key, and sends a new line as Enter: the safest way to type text. {Click} clicks the left mouse button where the pointer is.
+ * @param {String} Keys - What to press, in quotes. ^ before a key holds Ctrl for it, ! holds Alt, + holds Shift and # holds the Windows key; they act on the next key only and can be combined, so "^+t" is Ctrl+Shift+T. A capital letter is typed with Shift, so "!A" is Alt+Shift+A: write letters in lower case after a symbol. < and > are no symbols here and are typed as they are; for only the left or right Ctrl, Alt, Shift or Win, name it in braces: {LCtrl}, {RCtrl}, {LAlt}, {RAlt}, {LShift}, {RShift}, {LWin}, {RWin}. A key name goes in braces: {Enter}, {Tab}, {Esc}, {Space}, {Backspace}, {Delete}, {Insert}, {Home}, {End}, {PgUp}, {PgDn}, {Up}, {Down}, {Left}, {Right}, {F1} to {F24}, {Ctrl}, {Alt}, {Shift}, {AppsKey}, {PrintScreen}, {CapsLock}, {Numpad0} to {Numpad9}, {Volume_Up}, {Volume_Down}, {Volume_Mute}, {Media_Play_Pause}, {Media_Next}, {Browser_Back}. A number after the name presses the key that many times: {Left 3}. Down or up after the name only presses or only lets go of the key, to hold it while others are pressed: {Shift down}...{Shift up}. To type ^ ! + # { or } themselves, put one in braces: {^}, {!}, {+}, {#}, {{}, {}}. {Raw} types everything after it as written, symbols included. {Text} does the same, sends each character as a character rather than as a key, and sends a new line as Enter: the safest way to type text. {Click} clicks the left mouse button where the pointer is.
  * @example Send "^c"  ; Ctrl+C: copy
  * @example Send "Kind regards,{Enter}Sam"
  * @example Send "#{Left}"  ; Win+Left: the window takes the left half of the screen
@@ -296,7 +296,7 @@ WinActivateBottom(WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) {
 }
 
 /**
- * Lists every window that matches, newest first, as an array of window handles to go through with a for loop.
+ * Lists every window that matches, from the topmost window down, as an array of window handles to go through with a for loop.
  * @param {String} WinTitle - Which windows: part of their title, "ahk_exe notepad.exe" for every window of that program, or "ahk_class " and a class name. Left out, with the others left out too, every window there is.
  * @param {String} WinText - Text that must appear inside the window, as Window Spy lists it. Usually left out.
  * @param {String} ExcludeTitle - Leaves out windows whose title contains this.
@@ -611,7 +611,7 @@ WinSetTransparent(N, WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) {
 
 /**
  * Makes every pixel of one colour in a window invisible, so what is behind shows through there, and a click there goes to the window behind.
- * @param {String} Color - The colour: a name such as "White", or a number in red-green-blue form such as 0xFFFFFF. A space and a number from 0 to 255 after it also makes the rest of the window see-through: "White 150". "Off" turns it off.
+ * @param {String} Color - The colour: a name such as "White", or a number in red-green-blue form such as 0xFFFFFF. A space and a number from 0 to 255 after it also makes the rest of the window see-through: "White 150". "Off" or "" (empty) turns it off.
  * @param {String} WinTitle - Which window: "A" for the active window, part of its title, "ahk_exe notepad.exe" for a window of that program, or a window handle. Left out, the last found window.
  * @param {String} WinText - Text that must appear inside the window, as Window Spy lists it. Usually left out.
  * @param {String} ExcludeTitle - Leaves out windows whose title contains this.
@@ -621,7 +621,7 @@ WinSetTransparent(N, WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) {
  * @powershell Set-WindowTransparency
  * @see https://www.autohotkey.com/docs/v2/lib/WinSetTransColor.htm
  */
-WinSetTransColor(Color?, WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) {
+WinSetTransColor(Color, WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) {
 }
 
 /**
@@ -672,13 +672,14 @@ WinSetStyle(Value, WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) {
 }
 
 /**
- * Changes a window's extended style bits, such as letting clicks pass through it.
+ * Changes a window's extended style bits, such as letting clicks pass through a window that WinSetTransparent made see-through.
  * @param {String} Value - The bits: "+" and a number adds them, "-" takes them away, "^" switches them; a number alone replaces the whole extended style.
  * @param {String} WinTitle - Which window: "A" for the active window, part of its title, "ahk_exe notepad.exe" for a window of that program, or a window handle. Left out, the last found window.
  * @param {String} WinText - Text that must appear inside the window, as Window Spy lists it. Usually left out.
  * @param {String} ExcludeTitle - Leaves out windows whose title contains this.
  * @param {String} ExcludeText - Leaves out windows that show this text inside them.
- * @example WinSetExStyle "^0x20", "A"  ; WS_EX_TRANSPARENT: clicks pass through, or no longer do
+ * @example WinSetTransparent 200, "A"
+ * WinSetExStyle "+0x20", "A"  ; WS_EX_TRANSPARENT: clicks now pass through the see-through window
  * @group Windows
  * @powershell Set-WindowStyle
  * @see https://www.autohotkey.com/docs/v2/lib/WinSetStyle.htm
@@ -723,7 +724,7 @@ GroupAdd(GroupName, WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) {
  * @param {String} ExcludeTitle - Leaves out windows whose title contains this.
  * @param {String} ExcludeText - Leaves out windows that show this text inside them.
  * @returns {Integer} The control's handle, which the Control parameter of the other Control functions accepts.
- * @example edit := ControlGetHwnd("Edit1", "ahk_exe notepad.exe")
+ * @example box := ControlGetHwnd("Edit1", "ahk_exe notepad.exe")
  * @group Windows
  * @powershell Find-Control
  * @see https://www.autohotkey.com/docs/v2/lib/ControlGetHwnd.htm
@@ -1086,6 +1087,17 @@ IniWrite(Value, Filename, Section, Key?) {
 EnvGet(EnvVar) {
 }
 
+/**
+ * Makes a folder, and every folder above it that is missing. Stops the command with an error when it cannot be made.
+ * @param {String} DirName - The folder's path, such as "C:\Backup\2026". A path without a drive counts from the macropad's working folder.
+ * @example if !DirExist("C:\Backup")
+ *     DirCreate "C:\Backup"
+ * @group Programs and files
+ * @see https://www.autohotkey.com/docs/v2/lib/DirCreate.htm
+ */
+DirCreate(DirName) {
+}
+
 ; ************************* Text *************************
 
 /**
@@ -1179,7 +1191,7 @@ Trim(String, OmitChars?) {
  * @param {String} String - The text.
  * @param {String} OmitChars - The characters to take off, each one counted alone. Left out, spaces and tabs.
  * @returns {String} The trimmed text.
- * @example number := LTrim("000420", "0")  ; "420"
+ * @example digits := LTrim("000420", "0")  ; "420"
  * @group Text
  * @see https://www.autohotkey.com/docs/v2/lib/Trim.htm
  */
@@ -1264,6 +1276,18 @@ RegExMatch(Haystack, NeedleRegEx, &OutputVar?, StartingPos?) {
  * @see https://www.autohotkey.com/docs/v2/lib/RegExReplace.htm
  */
 RegExReplace(Haystack, NeedleRegEx, Replacement?, &OutputVarCount?, Limit?, StartingPos?) {
+}
+
+/**
+ * Writes a date and time as text, in the pattern you give: the time now, unless you give another.
+ * @param {String} YYYYMMDDHH24MISS - The date and time to write, as digits: year, month, day, hour (0 to 23), minutes, seconds, such as "20261121143000"; the start alone, such as "20261121", will do. Left out, now.
+ * @param {String} Format - The pattern: yyyy the year, MM the month, dd the day, HH the hour (0 to 23), mm the minutes, ss the seconds, ddd the day's short name, as in "yyyy-MM-dd HH:mm"; or a word, "ShortDate", "LongDate" or "Time", for Windows' own way. Left out, the time and the long date.
+ * @returns {String} The date and time as text.
+ * @example SendText FormatTime(, "yyyy-MM-dd")  ; today's date, such as 2026-11-21
+ * @group Text
+ * @see https://www.autohotkey.com/docs/v2/lib/FormatTime.htm
+ */
+FormatTime(YYYYMMDDHH24MISS?, Format?) {
 }
 
 ; ************************* The clipboard *************************
@@ -1627,7 +1651,7 @@ InputBox(Prompt?, Title?, Options?, Default?) {
  * @param {Integer} X - Where it goes, pixels from the left. Points count from the top left corner of the inside of the active window, unless CoordMode "ToolTip", "Screen" was called first. Left out, near the pointer.
  * @param {Integer} Y - Where it goes, pixels from the top. Left out, near the pointer.
  * @param {Integer} WhichToolTip - Which of up to 20 notes, so several can show at once. Left out, 1.
- * @returns {Integer} The note's window handle; nothing when it is taken away.
+ * @returns {Integer} The note's window handle; 0 when it is taken away.
  * @example ToolTip "Copied"
  * SetTimer () => ToolTip(), -1500  ; takes it away in 1.5 seconds
  * @group Messages and dialogs
@@ -1788,6 +1812,21 @@ StrGet(Source, Length?, Encoding?) {
 }
 
 /**
+ * Writes text into a block of memory, such as a Buffer a DllCall will read. With only the text and an encoding, it tells how many bytes the text needs instead.
+ * @param {String} String - The text to write.
+ * @param {Buffer} Target - The Buffer, or a memory address.
+ * @param {Integer} Length - The most characters to write, the ending zero included. Usually left out.
+ * @param {String} Encoding - How to store the text, such as "UTF-8" or "UTF-16". Left out, as AutoHotkey stores text.
+ * @returns {Integer} The number of bytes written; with Target left out, the number of bytes the text needs.
+ * @example buf := Buffer(StrPut("Hello", "UTF-8"))
+ * StrPut("Hello", buf, "UTF-8")
+ * @group Other
+ * @see https://www.autohotkey.com/docs/v2/lib/StrPut.htm
+ */
+StrPut(String, Target?, Length?, Encoding?) {
+}
+
+/**
  * Tells whether a variable has a value yet, such as a global that the first press of a key sets.
  * @param {Variable} Var - The variable, written plainly, without quotes.
  * @returns {Integer} 1 (true) when it has a value, 0 (false) when it has none.
@@ -1834,6 +1873,19 @@ Min(Number1, Number2*) {
  * @see https://www.autohotkey.com/docs/v2/lib/Math.htm#Max
  */
 Max(Number1, Number2*) {
+}
+
+/**
+ * Rounds a number: to a whole number, or to a number of decimal places.
+ * @param {Number} Number - The number to round.
+ * @param {Integer} N - How many decimal places to keep; a negative number rounds to tens (-1), hundreds (-2) and so on. Left out, 0: a whole number.
+ * @returns {Number} The rounded number.
+ * @example ToolTip "Volume: " Round(SoundGetVolume()) "%"
+ * @example price := Round(4.256, 2)  ; 4.26
+ * @group Other
+ * @see https://www.autohotkey.com/docs/v2/lib/Math.htm#Round
+ */
+Round(Number, N?) {
 }
 
 /**

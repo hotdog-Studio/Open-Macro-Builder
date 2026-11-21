@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { memoryFolderFromRepo, readRepoText } from '../../../test/repo'
 import { LANGUAGES, scanCommands } from '../languages'
-import { AHK_DOCS, AHK_REFERENCE, REFERENCE_GROUPS, type ReferenceEntry } from './reference'
+import { AHK_REFERENCE } from './ahkReference'
+import { AHK_DOCS, REFERENCE_GROUPS, type ReferenceEntry } from './reference'
 import TEXT from './reference/autohotkey.ahk?raw'
 
 // The bundled AutoHotkey reference, reference/autohotkey.ahk, held to the standard of the project's
@@ -119,16 +120,18 @@ function codeLines(text: string): string[] {
   return out
 }
 
-/** The names a line calls: a name right before `(`, or first on the line (`Send "^c"`); not after a dot. */
-function calledNames(line: string): string[] {
+/**
+ * The built-ins a text of AutoHotkey code names, lower-cased: every name of BUILT_INS outside comments and
+ * strings and not after a dot (a member such as obj.Send). Stricter than looking for calls, as a call can
+ * take any form (`else Send "x"`, `try Run "x"`, `{ WinClose "A" }`).
+ */
+function builtInsIn(text: string): string[] {
   const names: string[] = []
-  for (const m of line.matchAll(/\w+/g)) {
-    const [name] = m
-    const after = line[m.index + name.length]
-    // A member (obj.Send), a number, or a name followed by anything but a call's ( or a space is no call.
-    if (line[m.index - 1] === '.' || /^\d/.test(name)) continue
-    const first = line.slice(0, m.index).trim() === ''
-    if (after === '(' || (first && (after === undefined || /[\s,]/.test(after)))) names.push(name)
+  for (const line of codeLines(text)) {
+    for (const m of line.matchAll(/\w+/g)) {
+      const name = m[0].toLowerCase()
+      if (line[m.index - 1] !== '.' && builtIns.has(name)) names.push(name)
+    }
   }
   return names
 }
@@ -167,10 +170,15 @@ describe('the AutoHotkey reference', () => {
     const files = (await scanCommands(memoryFolderFromRepo(['ahk/commands']))).filter((f) => f.lang === 'ahk')
     // A function the folder defines (power.ahk has a Shutdown command) is called instead of the built-in.
     const defined = new Set(files.flatMap((f) => f.functions.map((fn) => fn.name.toLowerCase())))
-    const called = new Set(files.flatMap((f) => codeLines(f.file.text).flatMap(calledNames)).map((n) => n.toLowerCase()))
-    const builtInsCalled = [...called].filter((n) => builtIns.has(n) && !defined.has(n))
-    expect(builtInsCalled.length).toBeGreaterThan(20)
-    expect(builtInsCalled.filter((n) => !entryOf(n)).map((n) => builtIns.get(n))).toEqual([])
+    const named = [...new Set(files.flatMap((f) => builtInsIn(f.file.text)))].filter((n) => !defined.has(n))
+    expect(named.length).toBeGreaterThan(30)
+    expect(named.filter((n) => !entryOf(n)).map((n) => builtIns.get(n))).toEqual([])
+  })
+
+  it('calls in its examples only built-ins that have an entry', () => {
+    const named = new Set(entries.flatMap((e) => e.fn.doc.examples.flatMap(builtInsIn)))
+    expect(named.size).toBeGreaterThan(50)
+    expect([...named].filter((n) => !entryOf(n)).map((n) => builtIns.get(n))).toEqual([])
   })
 
   it('has no entry for a built-in that a function of the shared scripts hides', () => {

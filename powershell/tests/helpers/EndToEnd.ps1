@@ -1152,9 +1152,9 @@ function Wait-E2eStandinLog {
 # commands.ahk and commands.ps1, the stand-in; the launcher's File.AppendAllText shares reading, which
 # is enough beside a reader), so the test and a writer never refuse each other, however their opens
 # fall. One log has a writer that is not the suite's: the PowerShell macropad's own (Write-MacropadLog,
-# Add-Content), which shares only writing and so refuses a reader for the moment of its write. For that
-# the reader waits for the file as for any other condition, for up to 300 ms, and then fails saying
-# what refused it.
+# which appends through a stream sharing reading and writing, as Add-Content did not). A program outside
+# the suite may still refuse a reader, so the reader waits for the file as for any other condition, for
+# up to 300 ms, and then fails saying what refused it.
 function Read-E2eLog {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return @() }

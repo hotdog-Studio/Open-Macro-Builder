@@ -40,6 +40,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ### Fixed
 
+- PowerShell version: writing to the macropad's log (`%TEMP%\LayeredMacropad.log`) no longer fails while another program has the file open, such as a log viewer. A line that still cannot be written is dropped and never stops the macropad.
 - AutoHotkey version: the overlay is shown without taking the focus, as in the PowerShell version. The window you were typing in keeps the keyboard while the overlay is up, and is still the active window when the Fn key is let go.
 - AutoHotkey version: holding Fn works when another program sends the Fn key, such as an on-screen keyboard or a key remapper. The overlay used to flash and go, and the next key ran its macro instead of picking a layer.
 - AutoHotkey version: `RunPythonScript` and `RunPowerShellScript` run the script. They used to hand Python or PowerShell an empty name before it, so the script never ran. An `&` in the `Args` of `ActivateOrOpen`, `Open` or `EnsureActiveOrOpen` no longer cuts the command line, and these three no longer show an error when no window appears within 5 seconds. An `Args` of `0` is no longer dropped by any of the helpers.

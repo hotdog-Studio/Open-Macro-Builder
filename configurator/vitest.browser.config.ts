@@ -53,7 +53,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**'],
-      exclude: ['**/*.test.*', '**/*.css', '**/*.d.mts'],
+      // Data, not code: the provider would try to parse a declaration file or a JSON file
+      // (src/core/update/knownReleases.json) as JavaScript, and print the error it meets.
+      exclude: ['**/*.test.*', '**/*.css', '**/*.d.mts', '**/*.json'],
       reporter: ['text-summary', ['lcov', { projectRoot: '..' }]],
       reportsDirectory: '../coverage/configurator-browser',
     },

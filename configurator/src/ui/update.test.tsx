@@ -1210,6 +1210,21 @@ describe('updating', () => {
   })
 })
 
+describe('the update dialog, when ahk/config.ahk switches a command off', () => {
+  const SWITCHED_OFF = 'Ticking ahk/config.ahk puts back the #Include lines you took out.'
+  /** 1.0.4's include file without the line of a command file the folder still holds. */
+  const OFF = { ...FILES_4, [INCLUDE]: FILES_4[INCLUDE].replace(`${REPO_LINES[0]}\n`, '') }
+
+  it.each<[string, Record<string, string | null>, number]>([
+    ['leaves out the line of a command file still in the folder', OFF, 1],
+    ['only has a body of its own', WORKED, 0],
+  ])('under the ticks, says that ticking it puts the lines back exactly when it %s', async (_name, files, lines) => {
+    const { dialog } = await reviewed(files)
+    expect(within(dialog).getByRole('checkbox', { name: INCLUDE })).toBeTruthy()
+    expect(within(dialog).queryAllByText(SWITCHED_OFF)).toHaveLength(lines)
+  })
+})
+
 describe('the update action on its own', () => {
   /** The update actions alone, with the editor's dialog open on `plan`, and `deps` changed. */
   function actionsFor(source: UpdateSource, plan: UpdatePlan, deps: Partial<UpdateDeps>) {

@@ -16,11 +16,14 @@ const BACKUP = 'A ticked file is replaced, and yours is kept beside it as <name>
 const DELETED = 'You deleted these. They stay deleted unless you tick them.'
 const ADJUST = `${INCLUDE_FILE}: yours is kept, and its list of command files was brought up to date.`
 const START_AGAIN = 'Start the macropad again to use the new scripts.'
+const SWITCHED_OFF = `Ticking ${INCLUDE_FILE} puts back the #Include lines you took out.`
 const PATHS = 'break-all font-mono text-[12px] text-zinc-400'
 /** What a button that is off does. */
 const NOTHING = () => undefined
 
 const files = (n: number) => (n === 1 ? '1 file' : `${n} files`)
+
+const isInclude = (path: string) => path.toLowerCase() === INCLUDE_FILE
 
 /** The dialog's first line: from which version to which. */
 function firstLine({ from, to }: Pick<UpdatePlan, 'from' | 'to'>): string {
@@ -162,7 +165,9 @@ interface PlanViewProps {
 function PlanView({ plan, picks, onTick, onUpdate }: Readonly<PlanViewProps>) {
   const { state, actions } = useEditor()
   const blockers = updateBlockers(Object.keys(state.commands.drafts))
-  const includeTicked = picks.replaceChanged.some((path) => path.toLowerCase() === INCLUDE_FILE)
+  const includeTicked = picks.replaceChanged.some(isInclude)
+  // Ticking a changed include file that leaves out a command file's line brings that command back.
+  const switchedOff = plan.changed.some(isInclude) && plan.switchedOff.length > 0
   return (
     <ConfirmDialog
       title={TITLE}
@@ -185,6 +190,7 @@ function PlanView({ plan, picks, onTick, onUpdate }: Readonly<PlanViewProps>) {
           <p className="text-[12px] text-zinc-400">{BACKUP}</p>
         </Ticks>
       )}
+      {switchedOff && <p className="mt-1 text-[12px] text-zinc-400">{SWITCHED_OFF}</p>}
       {plan.list === 'adjust' && !includeTicked && <p className="mt-2 text-[12px] text-zinc-400">{ADJUST}</p>}
       {plan.deleted.length > 0 && (
         <Ticks
@@ -239,7 +245,6 @@ function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: Up
   const line = macropadLine(offer)
   // An include file whose list alone this update rewrote is said so, never listed as kept as it is: under the
   // person's body, under one that changed since the plan, or as a repair of its list under the app's body.
-  const isInclude = (path: string) => path.toLowerCase() === INCLUDE_FILE
   const adjusted = result.adjusted.some(isInclude)
   const kept = adjusted ? result.kept.filter((path) => !isInclude(path)) : result.kept
   return (

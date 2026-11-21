@@ -2,7 +2,7 @@ import { compareText } from '../folder/path'
 import type { DirEntry, FolderAccess } from '../folder/types'
 import { fingerprint, type StarterIndex } from './fingerprint'
 import { everShipped, releasesOf, type KnownReleases } from './history'
-import { INCLUDE_FILE, listsAll, listsExactly } from './includeList'
+import { INCLUDE_FILE, listedCommandFiles, listsAll, listsExactly } from './includeList'
 import { isSharedCommandPath, readManifest, type Manifest } from './manifest'
 import { compareVersions, isVersion } from './version'
 
@@ -40,6 +40,11 @@ export interface UpdatePlan {
    * it in.
    */
   unfinished: string[]
+  /**
+   * The AutoHotkey command files in the folder whose `#Include` line ahk/config.ahk leaves out, as folder paths: the
+   * commands the person switched off. Not counted: an unfinished one, and one the update removes.
+   */
+  switchedOff: string[]
   manifest: Manifest | null
 }
 
@@ -109,6 +114,7 @@ function skipped(index: StarterIndex, skip: NonNullable<UpdatePlan['skip']>, man
     seen: {},
     ownAhkCommandFiles: [],
     unfinished: [],
+    switchedOff: [],
     manifest,
   }
 }
@@ -218,16 +224,20 @@ function unfinishedOf(
 }
 
 /**
- * Whether the include file leaves out the line of an AutoHotkey command file the folder has (a shared one or one of
- * the person's own): the person switched that command off, which is an edit of the file whatever its body. Not
- * counted: an unfinished one, and one the update removes, which the folder will not hold afterwards.
+ * The AutoHotkey command files the folder has (shared ones and the person's own) whose line the include file leaves
+ * out: the person switched those commands off, which is an edit of the file whatever its body. Not counted: an
+ * unfinished one, and one the update removes, which the folder will not hold afterwards.
  */
-function switchesOff(present: Map<string, Present>, files: string[], notCounted: string[]): boolean {
+function switchedOffOf(present: Map<string, Present>, files: string[], notCounted: string[]): string[] {
   const data = present.get(INCLUDE_FILE)?.data
-  if (data === undefined) return false
+  if (data === undefined) return []
   const skip = new Set(notCounted.map((path) => path.toLowerCase()))
-  const counted = files.filter((path) => isAhkCommandFile(path.toLowerCase()) && !skip.has(path.toLowerCase()))
-  return !listsAll(new TextDecoder().decode(data), counted)
+  const listed = new Set(listedCommandFiles(new TextDecoder().decode(data)))
+  const off = files.filter((path) => {
+    const key = path.toLowerCase()
+    return isAhkCommandFile(key) && !skip.has(key) && !listed.has(key)
+  })
+  return off.sort(byLowerCase)
 }
 
 /** What the check makes of a path by its fingerprint, the app's copy compared first. */
@@ -268,9 +278,8 @@ function editedState(state: State): State {
 }
 
 /** The entries, with the include file made the person's when it switches a command off. */
-function withSwitchedOff(entries: Entry[], present: Map<string, Present>, files: string[], unfinished: string[]): Entry[] {
-  const removed = entries.filter((e) => e.state === 'remove').map((e) => e.path)
-  if (!switchesOff(present, files, [...unfinished, ...removed])) return entries
+function withSwitchedOff(entries: Entry[], switchedOff: string[]): Entry[] {
+  if (switchedOff.length === 0) return entries
   return entries.map((e) => (e.key === INCLUDE_FILE ? { ...e, state: editedState(e.state) } : e))
 }
 
@@ -356,7 +365,9 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
   const present = await readPresent(folder, files, targets)
   const from = fromOf(manifest, present, known)
   const unfinished = unfinishedOf(targets, present, manifest, known)
-  const entries = withSwitchedOff(entriesOf(targets, present, manifest, known), present, files, unfinished)
+  const checked = entriesOf(targets, present, manifest, known)
+  const switchedOff = switchedOffOf(present, files, [...unfinished, ...pathsIn(checked, 'remove')])
+  const entries = withSwitchedOff(checked, switchedOff)
   // An unfinished command file without its line is news too: the app's own update, left unfinished, to finish.
   const news = hasNews(entries, manifest) || leavesOutUnfinished(present, unfinished)
   // Without a manifest, files of a release newer than the app (a development build meeting a folder a
@@ -381,6 +392,7 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
     seen: Object.fromEntries(entries.map((e) => [e.path, e.print])),
     ownAhkCommandFiles: own,
     unfinished,
+    switchedOff,
     manifest,
   }
 }

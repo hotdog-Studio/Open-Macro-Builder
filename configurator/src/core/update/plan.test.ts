@@ -365,6 +365,7 @@ describe('planUpdate: a folder that is not checked', () => {
       seen: {},
       ownAhkCommandFiles: [],
       unfinished: [],
+      switchedOff: [],
       manifest: null,
     })
     expect(folder.calls).toEqual([{ op: 'list', path: '' }])
@@ -389,6 +390,7 @@ describe('planUpdate: a folder that is not checked', () => {
       seen: {},
       ownAhkCommandFiles: [],
       unfinished: [],
+      switchedOff: [],
       manifest: { version: folderVersion, files: {}, deleted: [], offered: {} },
     })
   })
@@ -416,6 +418,7 @@ describe('planUpdate: a folder that is not checked', () => {
       seen: {},
       ownAhkCommandFiles: [],
       unfinished: [],
+      switchedOff: [],
       manifest: null,
     })
   })
@@ -730,6 +733,21 @@ describe('planUpdate: the include file', () => {
 
   it('is left alone when no version has one', async () => {
     expect((await planOf()).list).toBe('none')
+  })
+})
+
+describe('planUpdate: the command files switched off', () => {
+  it.each<[string, Changes, string[]]>([
+    ['none, with every line in', {}, []],
+    ["the person's own command file without its line", { 'ahk/commands/custom/mine.ahk': 'mine\n' }, ['ahk/commands/custom/mine.ahk']],
+    ['a shared command file without its line', { 'ahk/config.ahk': lines('; my config', CHROME_LINE) }, ['ahk/commands/windows.ahk']],
+    ['both, in the order of their lower-case paths', { 'ahk/config.ahk': lines('; config 1.0.5'), 'ahk/commands/custom/Mine.ahk': 'mine\n' }, ['ahk/commands/custom/chrome.ahk', 'ahk/commands/custom/Mine.ahk', 'ahk/commands/windows.ahk']],
+    // Not switched off: a deleted command file's line, and the line of a command file the update removes.
+    ['none, for a deleted command file without its line', { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE), 'ahk/commands/custom/chrome.ahk': null }, []],
+    ['none, for a command file the update removes without its line', { 'ahk/commands/gone.ahk': 'gone 1.0.4\n' }, []],
+  ])('names %s', async (_row, changes, switchedOff) => {
+    const plan = await planOf(changes, null, LISTED)
+    expect(plan.switchedOff).toEqual(switchedOff)
   })
 })
 

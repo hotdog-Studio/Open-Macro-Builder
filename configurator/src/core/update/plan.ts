@@ -301,6 +301,12 @@ function listAction(state: State | undefined, listsWhatItWillHold: boolean, ahkC
   }
 }
 
+/** Whether the include file leaves out the line of an unfinished command file: an update of the app's left unfinished. */
+function leavesOutUnfinished(present: Map<string, Present>, unfinished: string[]): boolean {
+  const data = present.get(INCLUDE_FILE)?.data
+  return data !== undefined && !listsAll(new TextDecoder().decode(data), unfinished)
+}
+
 /**
  * The include file's action, from the AutoHotkey command files the folder will hold after an update. An unfinished
  * file without its line is a change to its list, as a file to add is.
@@ -308,10 +314,9 @@ function listAction(state: State | undefined, listsWhatItWillHold: boolean, ahkC
 function includeListOf(entries: Entry[], present: Map<string, Present>, own: string[], unfinished: string[]): UpdatePlan['list'] {
   const willHold = [...entries.filter((e) => HELD.has(e.state) && isAhkCommandFile(e.key)).map((e) => e.path), ...own]
   const data = present.get(INCLUDE_FILE)?.data
-  const text = data === undefined ? null : new TextDecoder().decode(data)
-  const exact = text !== null && listsExactly(text, willHold)
+  const exact = data !== undefined && listsExactly(new TextDecoder().decode(data), willHold)
   const addsOrRemoves = entries.some((e) => (e.state === 'add' || e.state === 'remove') && isAhkCommandFile(e.key))
-  const change = addsOrRemoves || (text !== null && !listsAll(text, unfinished))
+  const change = addsOrRemoves || leavesOutUnfinished(present, unfinished)
   return listAction(entries.find((e) => e.key === INCLUDE_FILE)?.state, exact, change)
 }
 
@@ -352,7 +357,8 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
   const from = fromOf(manifest, present, known)
   const unfinished = unfinishedOf(targets, present, manifest, known)
   const entries = withSwitchedOff(entriesOf(targets, present, manifest, known), present, files, unfinished)
-  const news = hasNews(entries, manifest)
+  // An unfinished command file without its line is news too: the app's own update, left unfinished, to finish.
+  const news = hasNews(entries, manifest) || leavesOutUnfinished(present, unfinished)
   // Without a manifest, files of a release newer than the app (a development build meeting a folder a
   // release set up) are never offered the app's older copy. With nothing to offer (a copy of the app's
   // own files, as a developer opens it), the plan is the ordinary one and nothing is said.

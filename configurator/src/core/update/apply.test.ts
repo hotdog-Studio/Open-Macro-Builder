@@ -797,6 +797,29 @@ describe('applyUpdate: a failure', () => {
     expect((await readManifest(folder))?.version).toBe('1.0.6')
   })
 
+  it('at the include file itself, with nothing else left: the rerun is news and lists the command file the stopped update added', async () => {
+    const folder = await folderOf({ ...UP_TO_DATE, [NEW_FILE]: null, [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, CHROME) })
+    const { result } = await update(folder, { fails: (call) => call.op === 'writeBytes' && call.path === INCLUDE_FILE })
+    expect(result).toMatchObject({ ok: false, failedAt: INCLUDE_FILE, added: [NEW_FILE] })
+    expect(lists(folder, NEW_FILE)).toBe(false)
+    const again = await update(folder)
+    expect(again.plan).toMatchObject({ replace: [], add: [], remove: [], changed: [], unfinished: [NEW_FILE], news: true })
+    expect(again.result.ok).toBe(true)
+    expect(folder.text(INCLUDE_FILE)).toBe(APP[INCLUDE_FILE])
+    expect(await nextPlan(folder)).toMatchObject({ unfinished: [], news: false })
+  })
+
+  it('does not list an unfinished command file the person deleted between the plan and the update', async () => {
+    // new.ahk as an update that stopped left it, under an include file the person changed; gone.ahk to remove.
+    const folder = await folderOf({ [NEW_FILE]: APP[NEW_FILE], [INCLUDE_FILE]: includeText('; my config', WINDOWS, CHROME, GONE) })
+    const { plan, result } = await update(folder, { later: { [NEW_FILE]: null } })
+    expect(plan.unfinished).toEqual([NEW_FILE])
+    expect(plan.list).toBe('adjust')
+    expect(result.ok).toBe(true)
+    expect(folder.text(INCLUDE_FILE)).toBe(includeText('; my config', WINDOWS, CHROME))
+    expect(await listsWhatItHolds(folder)).toBe(true)
+  })
+
   it('at the third write, with a command switched off: the rerun lists the command file the stopped update added, and keeps the other off', async () => {
     const folder = await folderOf({ [INCLUDE_FILE]: includeText('; config 1.0.5', CHROME, GONE) })
     const { result } = await update(folder, { fails: nthWrite(3) })

@@ -270,7 +270,8 @@ $script:E2eFirstKeyVk = 0x7C
 $script:E2eKeyCount = 11
 # The keys a run may hold down: Shift, Ctrl, Alt (both sides), the Windows keys, and Fn.
 $script:E2eHoldableVk = @(0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C, 0x87)
-# The variables run.ps1 sets for the test: no program the test starts gets them.
+# The variables run.ps1 sets for the test: no program the test starts gets them, but for OMB_E2E, which
+# the macropad under test gets again (Get-E2eMacropadEnvironment).
 $script:E2eOwnVariables = @('OMB_E2E', 'OMB_E2E_CASE', 'OMB_E2E_CI', 'OMB_E2E_LIMIT', 'OMB_E2E_REPEAT')
 # The windows of Windows' own shell that can come up by themselves and take the keyboard (Snap Assist,
 # Task View, the desktop, the taskbar), and the desktop itself, which a key may leave in front (on a
@@ -937,9 +938,102 @@ function Get-E2eMarks {
     @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'marks.log') | Select-Object -Skip $Mark)
 }
 
-function Wait-E2eMark {
-    param([int]$Mark, [string]$Like, [int]$TimeoutMs = 10000)
-    Wait-E2eCondition { Get-E2eMarks $Mark | Where-Object { $_ -like $Like } | Select-Object -First 1 } -TimeoutMs $TimeoutMs
+# ---------------------------------------------------------------------------------------------------
+# The macropad's command log. A macropad the test starts (OMB_E2E and OMB_E2E_DIR set) appends to the
+# run's commands.log a line when a command that a key or a click on the overlay runs starts, and one
+# when it has returned or thrown, the same in both languages: 'start <command>', 'done <command>',
+# 'failed <command>: <message>'. <command> is the function the layout names (RunMacroAction in
+# ahk\lib\io.ahk, Invoke-EngineMacro in powershell\lib\Engine.ps1). A press the macropad did not take,
+# or dropped while another command ran, writes nothing; a command that never returns writes only its
+# start, and so does one that the macropad's exit ended. A case reads the lines written since its press
+# (a mark: the number of lines before it).
+
+function Get-E2eCommandLogPath { Join-Path $script:E2eRun.Dir 'commands.log' }
+
+# How many lines the command log has now: read the lines after this mark.
+function Get-E2eCommandMark { @(Read-E2eLog (Get-E2eCommandLogPath)).Count }
+
+# The command log's lines after Mark.
+function Get-E2eCommandLines {
+    param([int]$Mark = 0)
+    @(Read-E2eLog (Get-E2eCommandLogPath) | Select-Object -Skip $Mark)
+}
+
+# One line of the command log: Kind (start, done, failed), Command and Message (a failure's); $null for a
+# line of another form.
+function ConvertFrom-E2eCommandLine {
+    param([string]$Line)
+    if ($Line -match '^(start|done) (.+)$') { return [pscustomobject]@{ Kind = $Matches[1]; Command = $Matches[2]; Message = '' } }
+    if ($Line -match '^failed (.+?): (.*)$') { return [pscustomobject]@{ Kind = 'failed'; Command = $Matches[1]; Message = $Matches[2] } }
+    $null
+}
+
+# What the Run-th run of Command among Lines came to: State 'not started', 'running' (started, no end
+# yet), 'done' or 'failed', and Message (a failure's). A run ends at the first end of the same command
+# after its start: a command another key started meanwhile (AutoHotkey runs it in a thread that
+# interrupts the first) ends in between. The same command never runs twice at once: AutoHotkey ignores
+# a key whose press is still being handled, and the PowerShell macropad drops every key while a command
+# runs.
+function Get-E2eCommandState {
+    param([string[]]$Lines, [string]$Command, [int]$Run = 1)
+    $starts = 0
+    $open = $false
+    foreach ($line in @($Lines)) {
+        $l = ConvertFrom-E2eCommandLine $line
+        if ($null -eq $l -or $l.Command -ne $Command) { continue }
+        if ($l.Kind -eq 'start') { $starts++; $open = $starts -eq $Run }
+        elseif ($open) { return [pscustomobject]@{ State = $l.Kind; Message = $l.Message } }
+    }
+    $state = if ($starts -ge $Run) { 'running' } else { 'not started' }
+    [pscustomobject]@{ State = $state; Message = '' }
+}
+
+# A state of Get-E2eCommandState in words, for a failure message, with the lines it was read from.
+function Get-E2eCommandText {
+    param($State, [string]$Command, [string[]]$Lines)
+    $what = switch ($State.State) {
+        'not started' { "the macropad never started $Command (it did not take the key, or dropped it while another command ran)" }
+        'running' { "the macropad started $Command, and it has not finished" }
+        'done' { "the macropad ran $Command to its end, so what is missing is what the command did, not its run" }
+        default { "$Command failed: $($State.Message)" }
+    }
+    $all = @($Lines | Where-Object { $_ })
+    $seen = if ($all.Count -gt 0) { $all -join ' / ' } else { 'nothing' }
+    "$what (the command log since the press: $seen)"
+}
+
+# Waits, at most TimeoutMs, for the Run-th run of Command after Mark to end (done or failed). The state
+# it came to (Get-E2eCommandState), with Lines: the log's lines after Mark, read after the wait.
+function Wait-E2eCommand {
+    param([int]$Mark, [string]$Command, [int]$Run = 1, [int]$TimeoutMs = 10000)
+    [void](Wait-E2eCondition {
+            $s = Get-E2eCommandState (Get-E2eCommandLines $Mark) $Command $Run
+            if ($s.State -in 'done', 'failed') { $s }
+        } -TimeoutMs $TimeoutMs)
+    $lines = @(Get-E2eCommandLines $Mark)
+    Get-E2eCommandState $lines $Command $Run | Add-Member Lines $lines -PassThru
+}
+
+# The command a press ran (Mark: the command log's length before the press) must have finished: its
+# Run-th run after Mark ends with done within TimeoutMs. Throws otherwise, saying whether the macropad
+# never started it, started it and it has not finished, or it failed. The state (Wait-E2eCommand).
+function Assert-E2eCommandDone {
+    param([int]$Mark, [string]$Command, [int]$Run = 1, [int]$TimeoutMs = 10000)
+    $s = Wait-E2eCommand $Mark $Command $Run $TimeoutMs
+    if ($s.State -ne 'done') { throw "Waited $TimeoutMs ms for $Command to finish: $(Get-E2eCommandText $s $Command $s.Lines)" }
+    $s
+}
+
+# The message a case fails with: its failure, and, when the case pressed its key, what the command log
+# says of the case's command since the press ($ctx.Commands), unless the failure says that already.
+function Get-E2eFailureText {
+    param([string]$Message, $ctx)
+    if (-not $ctx.Pressed -or $Message -like '*(the command log since the press:*') { return $Message }
+    try {
+        $lines = @(Get-E2eCommandLines $ctx.Commands)
+        $note = Get-E2eCommandText (Get-E2eCommandState $lines $ctx.Case.Command) $ctx.Case.Command $lines
+    } catch { $note = "it could not be read: $($_.Exception.Message)" }
+    "$Message`nWhat the macropad's command log says of $($ctx.Case.Command): $note"
 }
 
 # Waits for a window that fits a WinTitle, is not in Before and is on the screen (not cloaked); with
@@ -1107,9 +1201,12 @@ function Close-E2eNewDesktops {
     }
 }
 
-# The environment a macropad under test gets on top of this process's own.
+# The environment a macropad under test gets on top of this process's own. OMB_E2E, one of the test's
+# own variables that Start-E2eProcess takes away, is given back to it: with OMB_E2E_DIR it turns on the
+# macropad's command log (what its keys' commands did, Get-E2eCommandLines).
 function Get-E2eMacropadEnvironment {
     @{
+        OMB_E2E         = '1'
         OMB_E2E_DIR     = $script:E2eRun.Dir
         OMB_E2E_STANDIN = Join-Path $script:E2eFixtures 'standin.ahk'
         PATH            = (Join-Path $script:E2eRun.Dir 'path') + ';' + $env:PATH
@@ -1293,11 +1390,10 @@ function Start-E2eMacropad {
         $p = Start-E2eProcess 'powershell.exe' $arguments -Environment $envs -WorkingDirectory $app
     }
     $script:E2eRun.Macropad = [pscustomobject]@{ Lang = $Lang; Process = $p; Layer = 1; Chunk = $Chunk }
-    # Ready when it answers a key: the first key of the first layer runs E2eMark, which writes a line.
-    # Until the macropad takes the key, it reaches the window in front: the stand-in B, a window of the
-    # harness, which must be in front for every tap.
-    $marks = Join-Path $script:E2eRun.Dir 'marks.log'
-    $before = @(Read-E2eLog $marks).Count
+    # Ready when it answers a key: the first key of the first layer runs E2eMark, and the macropad's
+    # command log says that the command ran to its end. Until the macropad takes the key, it reaches the
+    # window in front: the stand-in B, a window of the harness, which must be in front for every tap.
+    $commands = Get-E2eCommandMark
     # B is made active once; should something else take the keyboard, B is taken back only under -Ci
     # (nobody at that desktop): on a developer's desktop the start fails, saying what was in front.
     $b = $script:E2eRun.Standins['B'].Hwnd
@@ -1307,9 +1403,12 @@ function Start-E2eMacropad {
         if ($env:OMB_E2E_CI -eq '1') { [void](Set-E2eActive $b) }
         Assert-E2eFront $b 'the stand-in B (readiness taps)'
         Send-E2eTap $script:E2eFirstKeyVk
-        Wait-E2eCondition { @(Read-E2eLog $marks).Count -gt $before } -TimeoutMs 700
+        Wait-E2eCondition { @(Get-E2eCommandLines $commands) -contains 'done E2eMark' } -TimeoutMs 700
     } -TimeoutMs 30000 -EveryMs 10
-    if (-not $ready) { throw "The $Lang macropad did not answer its keys within 30 s." }
+    if (-not $ready) {
+        $lines = @(Get-E2eCommandLines $commands)
+        throw "The $Lang macropad did not answer its keys within 30 s: $(Get-E2eCommandText (Get-E2eCommandState $lines 'E2eMark') 'E2eMark' $lines)"
+    }
     $script:E2eRun.Macropad
 }
 
@@ -1484,6 +1583,9 @@ $script:E2eChordArrange = {
 $script:E2eChordAssert = {
     param($ctx)
     $want = @($ctx.Expected)
+    # The keys are counted once the command has returned, when it has sent all it will send; a command
+    # that never ran or never finished says so, instead of a list of keys that is short.
+    [void](Assert-E2eCommandDone $ctx.Commands $ctx.Case.Command -TimeoutMs 8000)
     try { $got = Wait-E2eTaps { Get-E2eStandinTaps $ctx.Standin $ctx.Mark } $want.Count -TimeoutMs 8000 }
     catch { throw "The stand-in's key events are not whole chords ($($_.Exception.Message)): $((@(Read-E2eLog $ctx.Standin.Log) | Select-Object -Skip $ctx.Mark) -join ' / ')" }
     ($got -join ', ') | Should -Be ($want -join ', ') -Because "the stand-in must receive exactly the keys of $($ctx.Case.Command) (in front now: $(Get-E2eForegroundText); the stand-in's lines: $((@(Read-E2eLog $ctx.Standin.Log) | Select-Object -Skip $ctx.Mark) -join ' / '))"
@@ -1500,6 +1602,7 @@ $script:E2eWatchArrange = {
 $script:E2eWatchAssert = {
     param($ctx)
     $want = @($ctx.Expected)
+    [void](Assert-E2eCommandDone $ctx.Commands $ctx.Case.Command -TimeoutMs 8000)
     $got = Wait-E2eTaps { Get-E2eWatchTaps } $want.Count
     ($got -join ', ') | Should -Be ($want -join ', ') -Because "the keys pressed must be exactly those of $($ctx.Case.Command) (the key watch saw: $([OmbE2e.KeyWatch]::Events() -join ' / '))"
 }
@@ -1545,6 +1648,7 @@ function Invoke-E2eCase {
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         $ctx = @{ Case = $Case; Lang = $Lang; Run = $script:E2eRun; Pressed = $false }
         $failure = $null
+        $failureText = $null
         $foreign = $null
         # What the clean-up after the case could not do: every step of it runs whatever the one before
         # did, and a step that fails is reported beside the case's own failure, never in its place.
@@ -1559,12 +1663,20 @@ function Invoke-E2eCase {
             # one it made active; or, with FrontDesktop, the desktop itself. Never whatever is in front.
             if (-not $ctx.Front) { $ctx.Front = $script:E2eRun.LastActivated }
             [OmbE2e.KeyWatch]::Swallow = [bool]$Case.Swallow
+            # The command log's length before the press: what the macropad ran for it comes after.
+            $ctx.Commands = Get-E2eCommandMark
             Invoke-E2eCaseKey $ctx -FrontDesktop:([bool]$ctx.FrontDesktop)
             & $assert $ctx
             $errors = @(Get-E2eErrorLines | Select-Object -Skip $errorsBefore)
             $errors -join "`n" | Should -BeNullOrEmpty -Because 'the macropad must not report an error'
+            # Also a failure the macropad does not report (the AutoHotkey key handler drops an "Invalid
+            # index." error a command throws).
+            $failed = @(Get-E2eCommandLines $ctx.Commands | Where-Object { $_ -like 'failed *' })
+            $failed -join "`n" | Should -BeNullOrEmpty -Because 'no command the case ran may fail (the macropad''s command log)'
         } catch {
             $failure = $_
+            # Read now, before the clean-up: what the macropad's command log says at the failure.
+            $failureText = Get-E2eFailureText $failure.Exception.Message $ctx
             $foreign = Get-E2eForeignForeground $Case
         } finally {
             [OmbE2e.KeyWatch]::Swallow = $false
@@ -1583,13 +1695,18 @@ function Invoke-E2eCase {
             Write-Host "End-to-end: $($Case.Name) failed while $foreign had the focus, a window the test did not open; trying once more. The failure was: $($failure.Exception.Message)"
             continue
         }
+        # A failure after the press says what the macropad's command log says of the case's command:
+        # never started, not finished, finished (so what is missing is its effect), or failed.
         if ($problems.Count -eq 0) {
-            if ($failure) { throw $failure }
+            if ($failure) {
+                if ($failureText -eq $failure.Exception.Message) { throw $failure }
+                throw $failureText
+            }
             if ($ctx.NotRun) { $script:E2eRun.NotRun.Add("$Lang $($Case.Name): $($ctx.NotRun)") }
             return $ctx.NotRun
         }
         $text = "The clean-up after $($Case.Name) had problems: $($problems -join '; ')"
-        if ($failure) { $text = "$($failure.Exception.Message)`n$text" }
+        if ($failure) { $text = "$failureText`n$text" }
         throw $text
     }
 }

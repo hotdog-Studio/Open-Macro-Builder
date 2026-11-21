@@ -27,11 +27,11 @@ E2eWrite(File, Line) {
 }
 
 /**
- * Writes the macro's name to marks.log: the test presses it until the macropad answers.
- * @param {Macro} Macro - Its name is written.
+ * Does nothing: the test presses its key until the macropad's command log (RunMacroAction in
+ * ahk\lib\io.ahk) says that it ran to its end.
+ * @param {Macro} Macro - The macro object (not used).
  */
 E2eMark(Macro) {
-    E2eWrite("marks.log", Macro.name)
 }
 
 /**
@@ -68,7 +68,6 @@ E2eRunScripts(Macro) {
     RunBatchScript(dir "\args.bat", "one two three many")
     Sleep(2000)
     RunBatchScript(dir "\args.bat", "0")
-    E2eWrite("marks.log", "scripts started")
 }
 
 /**
@@ -77,7 +76,6 @@ E2eRunScripts(Macro) {
  */
 E2eAmpersand(Macro) {
     ActivateOrOpen("ahk_exe e2e-never.exe", "pythonw", "-c `"open(r'" E2eTestDir() "\amp.txt','w').write('a&b')`"")
-    E2eWrite("marks.log", "ampersand done")
 }
 
 /**
@@ -86,7 +84,6 @@ E2eAmpersand(Macro) {
  */
 E2eOpenSpaces(Macro) {
     ActivateOrOpen("ahk_exe e2e app.exe", E2eTestDir() "\e2e app.exe", '"' E2eTestDir() '\note a.txt"')
-    E2eWrite("marks.log", "spaces done")
 }
 
 /**
@@ -112,14 +109,13 @@ E2eNeverAppears(Macro) {
 }
 
 /**
- * ActivateOrOpen brings the top window of the program forward, then the bottom one. The mark says
- * that it has returned: the test waits for it before it presses the key again, since AutoHotkey
- * ignores a key whose earlier press is still being handled.
+ * ActivateOrOpen brings the top window of the program forward, then the bottom one. The test presses
+ * the key again only when the macropad's command log says that the command has returned, since
+ * AutoHotkey ignores a key whose earlier press is still being handled.
  * @param {Macro} Macro - The macro object (not used).
  */
 E2eStep(Macro) {
     ActivateOrOpen("ahk_exe e2eapp.exe", E2eLauncher())
-    E2eWrite("marks.log", "step done")
 }
 
 /**

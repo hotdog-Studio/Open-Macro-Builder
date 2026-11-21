@@ -7,6 +7,11 @@
 # so neither is refused. The AutoHotkey writers (commands.ahk, standin.ahk) open the file the same way;
 # only the end-to-end test runs them.
 #
+# How the test reads the macropads' command log (what the command of a press came to: never started,
+# not finished, done or failed), what a case says from it, and that the lines the PowerShell engine
+# writes are the ones the test reads (the AutoHotkey macropad's are read by the end-to-end test itself,
+# which waits for them before every case can run).
+#
 # How a wait counts its limit (Wait-E2eCondition), and which waits a run lists at its end as having
 # come close to theirs (Add-E2eSlowWait).
 #
@@ -79,6 +84,121 @@ Describe 'End-to-end logs: the test reads a file while another process writes it
         # The wait with its clock taken out: one look, and the limit has passed.
         Mock Wait-E2eCondition { [void](& $Condition); $null }
         { Read-E2eLog $script:Log } | Should -Throw -ExpectedMessage "The log $($script:Log) could not be opened for reading for 300 ms*being used by another process*does not share reading*"
+    }
+}
+
+Describe 'End-to-end command log: what the macropad says of the commands its keys ran' {
+    BeforeAll {
+        . "$root\powershell\lib\Engine.ps1"
+        function E2eHarnessAct { param($m) }
+    }
+    BeforeEach {
+        $script:E2eRun = [pscustomobject]@{ Dir = $TestDrive; Deadline = [DateTime]::MaxValue; LimitMinutes = 20; Case = 'ps SomeCase'; SlowWaits = [System.Collections.Generic.List[string]]::new() }
+        $script:CommandLog = Join-Path $TestDrive 'commands.log'
+        Remove-Item -LiteralPath $script:CommandLog -ErrorAction SilentlyContinue
+    }
+    AfterEach { $script:E2eRun = $null }
+
+    It 'reads the line ''<Line>''' -ForEach @(
+        @{ Line = 'start E2eStep'; Kind = 'start'; Command = 'E2eStep'; Message = '' }
+        @{ Line = 'done Two Words'; Kind = 'done'; Command = 'Two Words'; Message = '' }
+        @{ Line = 'failed ChromeNewTab: boom: and more'; Kind = 'failed'; Command = 'ChromeNewTab'; Message = 'boom: and more' }
+    ) {
+        $l = ConvertFrom-E2eCommandLine $Line
+        "$($l.Kind)|$($l.Command)|$($l.Message)" | Should -BeExactly "$Kind|$Command|$Message"
+    }
+
+    It 'reads no line of another form: ''<Line>''' -ForEach @(@{ Line = '' }, @{ Line = 'started E2eStep' }, @{ Line = 'done' }) {
+        ConvertFrom-E2eCommandLine $Line | Should -BeNullOrEmpty
+    }
+
+    It 'says <State> for run <Run> of <Command> after <Lines>' -ForEach @(
+        @{ Lines = @(); Command = 'A'; Run = 1; State = 'not started'; Message = '' }
+        @{ Lines = @('start B', 'done B'); Command = 'A'; Run = 1; State = 'not started'; Message = '' }
+        @{ Lines = @('start A'); Command = 'A'; Run = 1; State = 'running'; Message = '' }
+        @{ Lines = @('start A', 'done A'); Command = 'A'; Run = 1; State = 'done'; Message = '' }
+        @{ Lines = @('start A', 'failed A: boom'); Command = 'A'; Run = 1; State = 'failed'; Message = 'boom' }
+        # Another key's command that interrupted A (AutoHotkey runs it in a thread of its own).
+        @{ Lines = @('start A', 'start B', 'done B', 'done A'); Command = 'A'; Run = 1; State = 'done'; Message = '' }
+        @{ Lines = @('start A', 'start B', 'done B', 'done A'); Command = 'B'; Run = 1; State = 'done'; Message = '' }
+        @{ Lines = @('start A', 'start B', 'done B'); Command = 'A'; Run = 1; State = 'running'; Message = '' }
+        @{ Lines = @('start A', 'done A', 'start A'); Command = 'A'; Run = 2; State = 'running'; Message = '' }
+        @{ Lines = @('start A', 'done A', 'start A', 'failed A: second'); Command = 'A'; Run = 2; State = 'failed'; Message = 'second' }
+        @{ Lines = @('start A', 'done A'); Command = 'A'; Run = 2; State = 'not started'; Message = '' }
+    ) {
+        $s = Get-E2eCommandState $Lines $Command $Run
+        "$($s.State)|$($s.Message)" | Should -BeExactly "$State|$Message"
+    }
+
+    It 'puts <State> in words, with the lines it read' -ForEach @(
+        @{ State = 'not started'; Message = ''; Lines = @(); Want = 'the macropad never started E2eStep (it did not take the key, or dropped it while another command ran) (the command log since the press: nothing)' }
+        @{ State = 'running'; Message = ''; Lines = @('start E2eStep'); Want = 'the macropad started E2eStep, and it has not finished (the command log since the press: start E2eStep)' }
+        @{ State = 'done'; Message = ''; Lines = @('start E2eStep', 'done E2eStep'); Want = 'the macropad ran E2eStep to its end, so what is missing is what the command did, not its run (the command log since the press: start E2eStep / done E2eStep)' }
+        @{ State = 'failed'; Message = 'boom'; Lines = @('start E2eStep', 'failed E2eStep: boom'); Want = 'E2eStep failed: boom (the command log since the press: start E2eStep / failed E2eStep: boom)' }
+    ) {
+        Get-E2eCommandText ([pscustomobject]@{ State = $State; Message = $Message }) 'E2eStep' $Lines | Should -BeExactly $Want
+    }
+
+    It 'reads only the lines written after a mark' {
+        [System.IO.File]::WriteAllText($script:CommandLog, "start E2eMark`ndone E2eMark`n")
+        $mark = Get-E2eCommandMark
+        [System.IO.File]::AppendAllText($script:CommandLog, "start E2eStep`n")
+        $mark | Should -Be 2
+        Get-E2eCommandLines $mark | Should -Be @('start E2eStep')
+        @(Get-E2eCommandLines 0).Count | Should -Be 3
+    }
+
+    It 'gives nothing, and a mark of 0, before the macropad has written the log' {
+        Get-E2eCommandMark | Should -Be 0
+        @(Get-E2eCommandLines 0).Count | Should -Be 0
+    }
+
+    It 'returns the state of a command that finished, with the lines after the mark' {
+        [System.IO.File]::WriteAllText($script:CommandLog, "start E2eMark`ndone E2eMark`nstart E2eStep`ndone E2eStep`n")
+        $s = Assert-E2eCommandDone 2 'E2eStep' -TimeoutMs 1000
+        $s.State | Should -Be 'done'
+        $s.Lines | Should -Be @('start E2eStep', 'done E2eStep')
+    }
+
+    It 'fails, saying what the log says, when the command <Why>' -ForEach @(
+        @{ Text = ''; Why = 'never started'; Want = 'Waited 1000 ms for E2eStep to finish: the macropad never started E2eStep*(the command log since the press: nothing)' }
+        @{ Text = "start E2eStep`n"; Why = 'did not finish'; Want = 'Waited 1000 ms for E2eStep to finish: the macropad started E2eStep, and it has not finished*' }
+        @{ Text = "start E2eStep`nfailed E2eStep: boom`n"; Why = 'failed'; Want = 'Waited 1000 ms for E2eStep to finish: E2eStep failed: boom*' }
+    ) {
+        if ($Text) { [System.IO.File]::WriteAllText($script:CommandLog, $Text) }
+        # The wait with its clock taken out: one look, and the limit has passed (unless it was met).
+        Mock Wait-E2eCondition { & $Condition }
+        { Assert-E2eCommandDone 0 'E2eStep' -TimeoutMs 1000 } | Should -Throw -ExpectedMessage $Want
+    }
+
+    It 'reads the lines the PowerShell macropad''s engine writes, for a command that finished and one that failed' {
+        $engine = [pscustomobject]@{ Busy = $false; CommandLog = $script:CommandLog; RunMacro = { param($m) Invoke-Macro $m }; OnError = { param($m, $e) } }
+        [void](Invoke-EngineMacro $engine ([pscustomobject]@{ Action = 'E2eHarnessAct'; Name = 'its name' }))
+        [void](Invoke-EngineMacro $engine ([pscustomobject]@{ Action = { throw "it broke`nhere" }; Name = 'Broken' }))
+        $lines = Get-E2eCommandLines 0
+        (Get-E2eCommandState $lines 'E2eHarnessAct').State | Should -Be 'done'
+        $s = Get-E2eCommandState $lines 'Broken'
+        "$($s.State)|$($s.Message)" | Should -BeExactly 'failed|it broke here'
+    }
+
+    It 'adds to a failure after the press what the log says of the case''s command' {
+        [System.IO.File]::WriteAllText($script:CommandLog, "start E2eMark`ndone E2eMark`nstart E2eStep`n")
+        $ctx = @{ Case = @{ Command = 'E2eStep' }; Pressed = $true; Commands = 2 }
+        Get-E2eFailureText 'Expected B in front.' $ctx | Should -BeExactly "Expected B in front.`nWhat the macropad's command log says of E2eStep: the macropad started E2eStep, and it has not finished (the command log since the press: start E2eStep)"
+    }
+
+    It 'leaves a failure as it is when <Why>' -ForEach @(
+        @{ Pressed = $false; Message = 'Not pressed: B was not in front.'; Why = 'nothing was pressed' }
+        @{ Pressed = $true; Message = 'Waited 1000 ms for E2eStep to finish: E2eStep failed: boom (the command log since the press: start E2eStep / failed E2eStep: boom)'; Why = 'it says what the log says already' }
+    ) {
+        $ctx = @{ Case = @{ Command = 'E2eStep' }; Pressed = $Pressed; Commands = 0 }
+        Get-E2eFailureText $Message $ctx | Should -BeExactly $Message
+    }
+
+    It 'gives the macropad under test OMB_E2E, which turns its command log on, and the run''s folder' {
+        $envs = Get-E2eMacropadEnvironment
+        $envs.OMB_E2E | Should -Be '1'
+        $envs.OMB_E2E_DIR | Should -Be $TestDrive
     }
 }
 

@@ -269,15 +269,20 @@ function New-E2eOpenerCase {
             }
             if ($ctx.Case.SecondPress) {
                 # The command may still be running after its window came forward (Settings' start
-                # returns late, and the command then brings that window forward itself): the window
-                # must stay in front for 1.5 s before the second press.
-                $held = [System.Diagnostics.Stopwatch]::new()
-                $steady = Wait-E2eCondition { if ([Macropad.WindowApi]::Foreground() -eq $ctx.Window) { if (-not $held.IsRunning) { $held.Start() }; $held.ElapsedMilliseconds -ge 1500 } else { $held.Reset(); $false } } -TimeoutMs 8000
-                $steady | Should -BeTrue -Because "the window must stay in front after the first press (in front: $(Get-E2eForegroundText))"
+                # returns late, and the command then brings that window forward itself), and a press
+                # while it runs is not taken: the second press comes once the first has returned, with
+                # its window in front.
+                [void](Assert-E2eCommandDone $ctx.Commands $ctx.Case.Command -TimeoutMs $ctx.Case.TimeoutMs)
+                $front = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $ctx.Window } -TimeoutMs 8000
+                $front | Should -BeTrue -Because "the window must be in front once the first press's command has returned (in front: $(Get-E2eForegroundText))"
                 $b = Use-E2eStandin 'B'
+                $commands = Get-E2eCommandMark
                 Invoke-E2eCaseKey $ctx -Front $b.Hwnd
                 $again = Wait-E2eCondition { if ([Macropad.WindowApi]::Foreground() -eq $ctx.Window) { $true } } -TimeoutMs 6000
                 $again | Should -BeTrue -Because "a second press must bring the same window forward (in front: $(Get-E2eForegroundText); windows that fit, hidden ones too: $(Get-E2eWindowReport $ctx.Case.WinTitle))"
+                # The window in front proves nothing of a press the macropad did not take: the second
+                # press's command must have run to its end too.
+                [void](Assert-E2eCommandDone $commands $ctx.Case.Command -TimeoutMs $ctx.Case.TimeoutMs)
                 # A wrongly reopening command shows its window within the 5 seconds a helper gives a
                 # program; watch that long, and fail as soon as one appears. PseudoConsoleWindow is the
                 # helper window Windows makes for a shell that Windows Terminal shows (ConPTY); it
@@ -373,6 +378,15 @@ function Test-E2eOneCalculator {
     ''
 }
 
+# How many times the macropad ran OpenCalculator since the case's press (Mark: the command log's length
+# before it), for how many presses, for the series' line in the log: a press that comes while the
+# command still runs is not taken, and this says how many of the presses ran the command at all.
+function Get-E2eCalculatorRunText {
+    param([int]$Mark, [int]$Presses)
+    $ran = @(Get-E2eCommandLines $Mark | Where-Object { $_ -eq 'start OpenCalculator' }).Count
+    "The macropad ran OpenCalculator $ran time(s) for $Presses press(es); a press while the command still runs is not taken."
+}
+
 # Closes the Calculator windows the case's presses brought, paced: the ones the case recorded as it saw
 # them. A hidden one is among them: a window the case closed by its close button may stay, hidden, for
 # a while, and is closed again here should it have come back (Close-E2eWindow says when a window is
@@ -399,12 +413,12 @@ function Get-E2eCases {
                 [void](Use-E2eStandin 'B')
                 $ctx.Dir = Join-Path $ctx.Run.Dir 'E2E Test'
                 Get-ChildItem -LiteralPath $ctx.Dir -Filter '*-out*.txt' | Remove-Item -Force
-                $ctx.Marks = @(Get-E2eMarks).Count
             }
             Assert  = {
                 param($ctx)
                 $want = [ordered]@{ 'py-out.txt' = '--quick a&b'; 'ps-out-args.txt' = 'one|two'; 'ps-out-none.txt' = '|'; 'bat-out-many.txt' = 'one|two|three'; 'bat-out-.txt' = '0||' }
-                [void](Wait-E2eMark $ctx.Marks 'scripts started' -TimeoutMs 20000)
+                # The command starts the five scripts two seconds apart and returns after the last.
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eRunScripts' -TimeoutMs 20000)
                 [void](Wait-E2eCondition { -not ($want.Keys | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ctx.Dir $_)) }) } -TimeoutMs 10000)
                 foreach ($f in $want.Keys) {
                     $path = Join-Path $ctx.Dir $f
@@ -415,30 +429,34 @@ function Get-E2eCases {
             }
         }
         @{ Command = 'E2eAmpersand'; File = 'e2e'; Kind = 'Custom'; Covers = 'an & in the Args of a program reaches the program whole: the command line is not cut there'
-            Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.File = Join-Path $ctx.Run.Dir 'E2E Test\amp.txt'; Remove-Item -LiteralPath $ctx.File -ErrorAction SilentlyContinue; $ctx.Marks = @(Get-E2eMarks).Count }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.File = Join-Path $ctx.Run.Dir 'E2E Test\amp.txt'; Remove-Item -LiteralPath $ctx.File -ErrorAction SilentlyContinue }
             Assert  = {
                 param($ctx)
+                # The helper gives the program's window 5 s, which never comes, and returns.
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eAmpersand' -TimeoutMs 15000)
                 # Through cmd.exe, the & would end the command and the file would hold nothing or 'a'.
                 $text = Wait-E2eCondition { if (Test-Path -LiteralPath $ctx.File) { [System.IO.File]::ReadAllText($ctx.File) } } -TimeoutMs 8000
                 $text | Should -BeExactly 'a&b' -Because "the program must get the argument with its & whole and write it to $($ctx.File) (the file exists: $(Test-Path -LiteralPath $ctx.File))"
-                [void](Wait-E2eMark $ctx.Marks 'ampersand done' -TimeoutMs 10000)
             }
         }
         @{ Command = 'E2eOpenSpaces'; File = 'e2e'; Kind = 'Custom'; Covers = 'a program whose path has spaces starts with an argument in double quotes that has a space (the command line only; that the window of a started program then comes forward is proven by the opener cases, OpenCalculator, OpenFileExplorer and the others)'
-            Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Launches = Get-E2eLaunchMark; $ctx.Marks = @(Get-E2eMarks).Count }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Launches = Get-E2eLaunchMark }
             Assert  = {
                 param($ctx)
+                # The launcher shows no window: the helper gives it 5 s and returns.
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eOpenSpaces' -TimeoutMs 15000)
                 $dir = Join-Path $ctx.Run.Dir 'E2E Test'
                 Assert-E2eLaunch $ctx 'e2e app.exe' ('"{0}"' -f (Join-Path $dir 'note a.txt')) -Folder $dir
-                [void](Wait-E2eMark $ctx.Marks 'spaces done' -TimeoutMs 10000)
             }
         }
         @{ Command = 'E2eEnsureActive'; File = 'e2e'; Kind = 'Custom'; Covers = 'EnsureActiveOrOpen, called without Args, says that a window of the program is active at the end and brings its top window forward'
             Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A'); $ctx.Marks = @(Get-E2eMarks).Count }
             Assert  = {
                 param($ctx)
-                $waited = Wait-E2eMark $ctx.Marks 'ensure *'
-                $waited | Should -Be 'ensure 1' -Because "EnsureActiveOrOpen says that a window of the program is active (marks since the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); in front: $(Get-E2eForegroundText))"
+                # The command writes its mark before it returns.
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eEnsureActive' -TimeoutMs 10000)
+                $said = Get-E2eMarks $ctx.Marks | Where-Object { $_ -like 'ensure *' } | Select-Object -First 1
+                $said | Should -Be 'ensure 1' -Because "EnsureActiveOrOpen says that a window of the program is active (marks since the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); in front: $(Get-E2eForegroundText))"
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'the top window of the program comes forward'
             }
         }
@@ -446,14 +464,16 @@ function Get-E2eCases {
             Arrange = { param($ctx) [void](Use-E2eStandin 'B'); $ctx.Marks = @(Get-E2eMarks).Count; $ctx.Launches = Get-E2eLaunchMark }
             Assert  = {
                 param($ctx)
-                $waited = Wait-E2eMark $ctx.Marks 'never *' -TimeoutMs 25000
-                $waited | Should -Be 'never 0' -Because "the three helpers give up after 5 s each and EnsureActiveOrOpen says no (marks within 25 s of the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); errors: $((Get-E2eErrorLines) -join ' / '))"
+                # The three helpers give up after 5 s each; the command writes its mark before it returns.
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNeverAppears' -TimeoutMs 25000)
+                $said = Get-E2eMarks $ctx.Marks | Where-Object { $_ -like 'never *' } | Select-Object -First 1
+                $said | Should -Be 'never 0' -Because "the three helpers give up after 5 s each and EnsureActiveOrOpen says no (marks since the press: $((Get-E2eMarks $ctx.Marks) -join ' / '); errors: $((Get-E2eErrorLines) -join ' / '))"
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 3 -Because 'Open, ActivateOrOpen and EnsureActiveOrOpen each start the program'
                 [Macropad.WindowApi]::Foreground() | Should -Be $ctx.Run.Standins['B'].Hwnd -Because 'nothing is activated when no window appears'
             }
         }
         @{ Command = 'E2eStep'; File = 'e2e'; Kind = 'Custom'; Covers = 'ActivateOrOpen brings the top window of the program forward, then, while one of its windows is active, the bottom one'
-            Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A'); $ctx.Marks = @(Get-E2eMarks).Count }
+            Arrange = { param($ctx) [void](Use-E2eStandin 'C'); [void](Use-E2eStandin 'B'); [void](Use-E2eStandin 'A') }
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd; $c = $ctx.Run.Standins['C'].Hwnd
@@ -463,18 +483,18 @@ function Get-E2eCases {
                 $waited | Should -BeTrue -Because "the program's top window comes forward first (in front: $(Get-E2eForegroundText))"
                 Wait-ScreenChange -Observed  # B came forward just now: the next change keeps its distance from this one
                 # The key is pressed again only when the command has returned from the first press, which
-                # its mark says. B in front is too early: the AutoHotkey macropad ignores a key while its
-                # earlier press is still being handled (one thread per hotkey, AutoHotkey's default), and
-                # WinActivate keeps the command for about 100 ms after the window is in front.
-                $waited = Wait-E2eMark $ctx.Marks 'step done' -TimeoutMs 6000
-                $waited | Should -Be 'step done' -Because "the command returns from the first press (marks since that press: $((Get-E2eMarks $ctx.Marks) -join ' / '); in front: $(Get-E2eForegroundText))"
-                $marks = @(Get-E2eMarks).Count
+                # the macropad's command log says. B in front is too early: the AutoHotkey macropad ignores
+                # a key while its earlier press is still being handled (one thread per hotkey, AutoHotkey's
+                # default), and WinActivate keeps the command for about 100 ms after the window is in front.
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eStep' -TimeoutMs 6000)
+                $commands = Get-E2eCommandMark
                 $before = & $order
                 Invoke-E2eCaseKey $ctx -Front $b
+                $second = Wait-E2eCommand $commands 'E2eStep' -TimeoutMs 6000
                 $waited = Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $c } -TimeoutMs 6000
-                # What tells a key the macropad did not take (the command ran 0 times) from an activation
-                # that Windows refused or that went to another window (it ran, and the order shows where).
-                $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText); the command ran $(@(Get-E2eMarks $marks).Count) time(s) for this press; the program's windows from the top, before the press: $before; now: $(& $order))"
+                # What tells a key the macropad did not take (never started) from an activation that
+                # Windows refused or that went to another window (it ran, and the order shows where).
+                $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText); for this press, $(Get-E2eCommandText $second 'E2eStep' $second.Lines); the program's windows from the top, before the press: $before; now: $(& $order))"
             }
         }
         (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -TimeoutMs $script:E2eSlowStartMs -Covers 'opens or brings forward a File Explorer window, not the taskbar, where File Explorer starts' `
@@ -562,12 +582,12 @@ function Get-E2eCases {
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd
-                $n = Get-E2eRepeat; $hit = 0; $tries = 0
+                $n = Get-E2eRepeat; $hit = 0; $tries = 0; $presses = 1
                 $failed = [System.Collections.Generic.List[string]]::new()
                 $moments = [System.Collections.Generic.List[string]]::new()
                 while ($hit -lt $n -and $tries -lt 3 * $n) {
                     $tries++
-                    if ($tries -gt 1) { [void](Use-E2eStandin 'B'); Invoke-E2eCaseKey $ctx -Front $b }
+                    if ($tries -gt 1) { [void](Use-E2eStandin 'B'); Invoke-E2eCaseKey $ctx -Front $b; $presses++ }
                     $sincePress = [System.Diagnostics.Stopwatch]::StartNew()
                     Wait-ScreenChange
                     $first = Wait-E2eCondition { $w = Get-E2eCalculatorWindows $ctx.Before; if ($w.Count -gt 0) { $w[0] } } -TimeoutMs 15000 -EveryMs 5
@@ -594,6 +614,7 @@ function Get-E2eCases {
                     } else {
                         $ctx.Pressed = $true
                         Invoke-E2eMacroKey $ctx.Case.Slot
+                        $presses++
                         if ([OmbE2e.Dwm]::Cloaked($first)) { $hit++; $moments.Add("$seen ms, pressed while cloaked") } else { $moments.Add("$seen ms, shown while the key went down") }
                     }
                     Add-E2eRunWindow $first
@@ -602,7 +623,7 @@ function Get-E2eCases {
                     Close-E2eCalculators $ctx.Before
                 }
                 $told = "{0} reached in {1} tries, {2} failed. First window seen after the first press: {3}" -f $hit, $tries, $failed.Count, ($moments -join '; ')
-                Write-Host "End-to-end Calculator series, $($ctx.Lang), second press while it starts: $told"
+                Write-Host "End-to-end Calculator series, $($ctx.Lang), second press while it starts: $told. $(Get-E2eCalculatorRunText $ctx.Commands $presses)"
                 ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every try must end with exactly one Calculator window, shown and active'
                 # Every miss left here is "already shown when first seen", "no window had the keyboard"
                 # or "shown while the key went down".
@@ -626,7 +647,7 @@ function Get-E2eCases {
             Assert  = {
                 param($ctx)
                 $b = $ctx.Run.Standins['B'].Hwnd
-                $n = Get-E2eRepeat; $existed = 0
+                $n = Get-E2eRepeat; $existed = 0; $presses = 1
                 $failed = [System.Collections.Generic.List[string]]::new()
                 $times = [System.Collections.Generic.List[string]]::new()
                 $why = Test-E2eOneCalculator $ctx.Before
@@ -640,12 +661,13 @@ function Get-E2eCases {
                     # only, paced as every press is.
                     if (-not (Wait-E2eCondition { [Macropad.WindowApi]::Foreground() -eq $b } -TimeoutMs 1500 -EveryMs 5) -and $env:OMB_E2E_CI -eq '1') { [void](Use-E2eStandin 'B') }
                     Invoke-E2eCaseKey $ctx -Front $b
+                    $presses++
                     if ([Macropad.WindowApi]::Exists($old)) { $existed++ }
                     $why = Test-E2eOneCalculator $ctx.Before
                     if ($why) { $failed.Add("try ${try}: $why"); break }
                     $times.Add("$($script:E2eShownAfterMs) ms")
                 }
-                Write-Host ("End-to-end Calculator series, {0}, closed and opened again: {1} presses, {2} with the closed window still there, {3} failed. New window shown after the press: {4}" -f $ctx.Lang, $times.Count, $existed, $failed.Count, ($times -join '; '))
+                Write-Host ("End-to-end Calculator series, {0}, closed and opened again: {1} presses, {2} with the closed window still there, {3} failed. New window shown after the press: {4}. {5}" -f $ctx.Lang, $times.Count, $existed, $failed.Count, ($times -join '; '), (Get-E2eCalculatorRunText $ctx.Commands $presses))
                 ($failed -join '; ') | Should -BeNullOrEmpty -Because 'every press after a close must bring one new Calculator window, shown and active'
             }
             CleanUp = { param($ctx) if ($null -ne $ctx.Before) { Close-E2eCalculators $ctx.Before } }
@@ -691,8 +713,11 @@ function Get-E2eCases {
             }
             Assert  = {
                 param($ctx)
-                # EnsureActiveOrOpen gives a window 5 seconds; nothing may be sent, then or after.
-                Wait-Pump 6500
+                # EnsureActiveOrOpen gives a window 5 seconds; nothing may be sent, then or after. Once the
+                # command has returned it sends nothing more; a key it sent just before is given 300 ms
+                # to reach the key watch and the stand-in.
+                [void](Assert-E2eCommandDone $ctx.Commands 'ChromeNewTab' -TimeoutMs 15000)
+                Wait-Pump 300
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 1 -Because 'the command starts Chrome when it has no window'
                 (Get-E2eWatchTaps) -join ', ' | Should -BeNullOrEmpty -Because 'no key may be sent when Chrome did not come forward'
                 (Get-E2eStandinTaps $ctx.B $ctx.Mark) -join ', ' | Should -BeNullOrEmpty -Because "no key may reach the window in front when Chrome did not come forward (B's lines: $((@(Read-E2eLog $ctx.B.Log) | Select-Object -Skip $ctx.Mark) -join ' / '))"

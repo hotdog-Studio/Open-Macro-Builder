@@ -988,6 +988,17 @@ function Get-E2eCommandState {
     [pscustomobject]@{ State = $state; Message = '' }
 }
 
+# The failed lines among Lines (the command log after a case's press) that are the case's: those of its own
+# Command and of E2eMark (the test's own key). The command an earlier case ran may end, and fail, after this
+# case's mark: its line is that case's, not this one's.
+function Get-E2eCaseFailedLines {
+    param([string[]]$Lines, [string]$Command)
+    @(foreach ($line in @($Lines)) {
+            $l = ConvertFrom-E2eCommandLine $line
+            if ($null -ne $l -and $l.Kind -eq 'failed' -and $l.Command -in @($Command, 'E2eMark')) { $line }
+        })
+}
+
 # A state of Get-E2eCommandState in words, for a failure message, with the lines it was read from.
 function Get-E2eCommandText {
     param($State, [string]$Command, [string[]]$Lines)
@@ -1673,8 +1684,9 @@ function Invoke-E2eCase {
             $errors = @(Get-E2eErrorLines | Select-Object -Skip $errorsBefore)
             $errors -join "`n" | Should -BeNullOrEmpty -Because 'the macropad must not report an error'
             # Also a failure the macropad does not report (the AutoHotkey key handler drops an "Invalid
-            # index." error a command throws).
-            $failed = @(Get-E2eCommandLines $ctx.Commands | Where-Object { $_ -like 'failed *' })
+            # index." error a command throws): of the case's own command or E2eMark, not of an earlier case's
+            # command that ended after the mark.
+            $failed = @(Get-E2eCaseFailedLines (Get-E2eCommandLines $ctx.Commands) $Case.Command)
             $failed -join "`n" | Should -BeNullOrEmpty -Because 'no command the case ran may fail (the macropad''s command log)'
         } catch {
             $failure = $_

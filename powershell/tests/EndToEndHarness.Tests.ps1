@@ -195,6 +195,20 @@ Describe 'End-to-end command log: what the macropad says of the commands its key
         "$($s.State)|$($s.Message)" | Should -BeExactly 'failed|it broke here'
     }
 
+    # A case fails on a failed line after its mark, but only on one of its own command or of E2eMark: the command
+    # an earlier case ran may end, and fail, after this case's mark.
+    It 'takes as the case''s failures <Want> when the log after the mark is <Lines>' -ForEach @(
+        @{ Lines = @('start E2eStep', 'failed Earlier: late', 'done E2eStep'); Want = @() }
+        @{ Lines = @('failed Earlier: late'); Want = @() }
+        @{ Lines = @('start E2eStep', 'failed E2eStep: boom'); Want = @('failed E2eStep: boom') }
+        @{ Lines = @('start E2eMark', 'failed E2eMark: boom', 'start E2eStep', 'done E2eStep'); Want = @('failed E2eMark: boom') }
+        @{ Lines = @('failed Earlier: late', 'start E2eStep', 'failed E2eStep: again', 'failed Other: also late'); Want = @('failed E2eStep: again') }
+        @{ Lines = @(); Want = @() }
+    ) {
+        $got = @(Get-E2eCaseFailedLines $Lines 'E2eStep')
+        ($got -join ' / ') | Should -BeExactly ($Want -join ' / ')
+    }
+
     It 'adds to a failure after the press what the log says of the case''s command' {
         [System.IO.File]::WriteAllText($script:CommandLog, "start E2eMark`ndone E2eMark`nstart E2eStep`n")
         $ctx = @{ Case = @{ Command = 'E2eStep' }; Pressed = $true; Commands = 2 }

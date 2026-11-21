@@ -109,3 +109,86 @@ Describe 'Invoke-EngineMacro guard' {
         $calls | Should -Be @('run:Cancelled'); $e.Busy | Should -BeFalse
     }
 }
+# The end-to-end test's command log (docs\development.md): a macropad the test started writes a line
+# when a command starts, and one when it has finished or failed, as the AutoHotkey version does.
+Describe 'The command log of the end-to-end test' {
+    BeforeAll {
+        function Get-LogLines { @([System.IO.File]::ReadAllText($script:log) -split "`n" | Where-Object { $_ -ne '' }) }
+    }
+    BeforeEach {
+        $script:envBefore = @{ OMB_E2E = $env:OMB_E2E; OMB_E2E_DIR = $env:OMB_E2E_DIR }
+        $script:log = Join-Path $TestDrive 'commands.log'
+        Remove-Item -LiteralPath $script:log -ErrorAction SilentlyContinue
+        $script:held = $null
+    }
+    AfterEach {
+        if ($script:held) { $script:held.Dispose() }
+        $env:OMB_E2E = $script:envBefore.OMB_E2E; $env:OMB_E2E_DIR = $script:envBefore.OMB_E2E_DIR
+    }
+
+    It 'is the run folder''s commands.log when OMB_E2E and OMB_E2E_DIR are set' {
+        $env:OMB_E2E = '1'; $env:OMB_E2E_DIR = $TestDrive
+        (New-TestEngine).CommandLog | Should -Be $script:log
+    }
+    It 'is off (<Why>), and a macro then writes nothing' -ForEach @(
+        @{ E2e = ''; Dir = 'set'; Why = 'OMB_E2E not set: a person''s macropad' }
+        @{ E2e = '1'; Dir = ''; Why = 'OMB_E2E_DIR not set: no folder to write in' }
+    ) {
+        $env:OMB_E2E = $E2e; $env:OMB_E2E_DIR = $(if ($Dir) { $TestDrive } else { '' })
+        $e = New-TestEngine
+        $e.CommandLog | Should -BeNullOrEmpty
+        Invoke-EngineKey $e 0; Invoke-EngineKey $e 2
+        $calls | Should -Be @('run:M0', 'run:Bad', 'error:Bad:boom') -Because 'the macros run and report as without the log'
+        Test-Path -LiteralPath $script:log | Should -BeFalse
+    }
+    It 'says start and done with the function the action names, not the macro''s name' {
+        $e = New-TestEngine; $e.CommandLog = $script:log
+        Invoke-EngineKey $e 0
+        Get-LogLines | Should -Be @('start Act', 'done Act')
+        $ran | Should -Be 'M0'
+    }
+    It 'names a scriptblock action by the macro''s name, and says failed with the message on one line, before the error is reported' {
+        $e = New-TestEngine; $e.CommandLog = $script:log
+        $e.OnError = { param($m, $err) [void]$script:calls.Add("error with the log: $((Get-LogLines) -join ' / ')") }
+        $e.Layout.Layers[0].Macros[1] = Macro { throw "first line`r`n  second line" } 'Two Lines'
+        Invoke-EngineKey $e 1
+        Get-LogLines | Should -Be @('start Two Lines', 'failed Two Lines: first line second line')
+        $calls[-1] | Should -Be 'error with the log: start Two Lines / failed Two Lines: first line second line'
+        $e.Busy | Should -BeFalse
+    }
+    It 'says only start for a command that the macropad''s exit cancelled: it did not finish, and did not fail' {
+        $e = New-TestEngine; $e.CommandLog = $script:log
+        $e.Layout.Layers[0].Macros[1] = Macro { throw [OperationCanceledException]::new('Macropad is exiting') } 'Cancelled'
+        Invoke-EngineKey $e 1
+        Get-LogLines | Should -Be @('start Cancelled')
+    }
+    It 'writes nothing for a key dropped while a command runs, and the command''s own lines around it' {
+        $e = New-TestEngine; $e.CommandLog = $script:log; $script:eng = $e
+        $e.Layout.Layers[0].Macros[1] = Macro { param($m) Invoke-EngineKey $script:eng 0 } 'Outer'
+        Invoke-EngineKey $e 1
+        Get-LogLines | Should -Be @('start Outer', 'done Outer')
+        $ran | Should -BeNullOrEmpty
+    }
+    It 'writes its line while the test has the log open to read it' {
+        $e = New-TestEngine; $e.CommandLog = $script:log
+        [System.IO.File]::WriteAllText($script:log, "start Earlier`n")
+        # As the test's reader (Read-E2eLog) opens it.
+        $script:held = [System.IO.FileStream]::new($script:log, 'Open', 'Read', 'ReadWrite')
+        Invoke-EngineKey $e 0
+        $script:held.Dispose(); $script:held = $null
+        Get-LogLines | Should -Be @('start Earlier', 'start Act', 'done Act')
+    }
+    It 'writes UTF-8 without a byte order mark, each line ended by a bare line feed, as the AutoHotkey version' {
+        $e = New-TestEngine; $e.CommandLog = $script:log
+        $name = "Caf$([char]0xE9)"  # written as a code, since Windows PowerShell reads a script without a BOM in the ANSI code page
+        $e.Layout.Layers[0].Macros[1] = Macro { } $name
+        Invoke-EngineKey $e 1
+        # GetString keeps a byte order mark as U+FEFF, so the exact text also says that there is none.
+        [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($script:log)) | Should -BeExactly "start $name`ndone $name`n"
+    }
+    It 'runs the macro and reports nothing when the log cannot be written' {
+        $e = New-TestEngine; $e.CommandLog = Join-Path $TestDrive 'no such folder\commands.log'
+        Invoke-EngineKey $e 0
+        $calls | Should -Be @('run:M0'); $ran | Should -Be 'M0'; $e.Busy | Should -BeFalse
+    }
+}

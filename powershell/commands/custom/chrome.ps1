@@ -43,7 +43,11 @@ function ChromeNewTab { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Sen
 # keyboard, as after Ctrl+T. Chrome has no shortcut for it, so no key is pressed: WM_COMMAND (0x111) with
 # IDC_NEW_TAB_TO_RIGHT (35024, chrome/app/chrome_command_ids.h in Chromium) is posted to the active Chrome
 # window, which runs that menu item on its active tab. Any display language, no extension, no setting.
-# Nothing happens while a bubble or dialog of Chrome's has the keyboard. Windows refusing the message is an
+# 35024 is Chrome's internal number, not a published interface: unchanged from M110 to M159; if Chrome
+# renumbers it, another command runs. Nothing happens while a bubble or dialog of Chrome's has the keyboard,
+# in an installed app's window, a DevTools window or a popup window (where Ctrl+T, and so ChromeNewTab,
+# opens the tab in a normal window instead), or in a Chrome run as administrator when the macropad is not.
+# When the active tab is pinned, the new tab opens after the pinned tabs. Windows refusing the message is an
 # error, as AutoHotkey's PostMessage raises one.
 function ChromeNewTabInGroup {
     param($Macro)

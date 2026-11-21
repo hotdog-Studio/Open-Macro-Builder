@@ -160,6 +160,7 @@ Command functions live in `ahk/commands/` and `powershell/commands/`, with the s
 
 - `helper`, `media`, `power`, `windows`: the core commands.
 - `custom/chrome`, `custom/vscode`, `custom/vsstudio`: keyboard shortcuts for Chrome, VS Code and Visual Studio, and in Chrome a new tab in the active tab's group (`ChromeNewTabInGroup`), which Chrome has no shortcut for.
+  To try it, put it on a key, open a tab group with a few tabs in Chrome and click a tab in the middle of it, then press the key: a New Tab page opens right after that tab, inside the same group, with the cursor in its address bar. It was checked against Chrome's source for version 159; `chrome://version` shows yours.
 - `custom/ssh`: `LoadPuttySession`, `SshMacroName` and `SshMacroDescription` (open the saved PuTTY session named like the macro), and `SshExample`.
 - `custom/examples`: small commands to copy from, for opening a website, a program, Calculator or a folder.
 - `custom/automation`: forms that send a key or replay a click after a delay.

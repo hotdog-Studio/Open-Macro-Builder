@@ -10,7 +10,7 @@ const electron = vi.hoisted(() => {
   const state = {
     appOn: new Map<string, Listener[]>(),
     windows: [] as Array<{
-      options: { title: string; width: number; height: number; webPreferences: { preload: string; contextIsolation: boolean; nodeIntegration: boolean; sandbox: boolean } }
+      options: { title: string; width: number; height: number; icon: string; webPreferences: { preload: string; contextIsolation: boolean; nodeIntegration: boolean; sandbox: boolean } }
       listeners: Map<string, Listener>
       contents: Map<string, Listener>
       handler: { current: ((details: { url: string }) => unknown) | null }
@@ -133,6 +133,17 @@ describe('the window', () => {
   it('has a title and a size', async () => {
     const { options } = await start()
     expect(options).toMatchObject({ title: 'Open Macro Builder', width: 1280, height: 860 })
+  })
+
+  it.each([
+    // The app folder is app.asar; electron-builder.yml puts the logo beside it, in resources/.
+    ['installed', true, join('app-root', 'logo.ico')],
+    // The app folder is configurator/, beside the repository's img/.
+    ['run from the repository', false, join('app-root', 'img', 'logo.ico')],
+  ])('shows the logo as its icon, as the page and the installer do, when %s', async (_how, packaged, icon) => {
+    electron.packaged = packaged
+    const { options } = await start()
+    expect(options.icon).toBe(icon)
   })
 
   it('loads the built page from the app folder', async () => {

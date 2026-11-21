@@ -20,7 +20,7 @@ The macropad itself only runs on Windows. The configurator, the validator and al
 - `config.json`: the example layout.
 - `ahk/`: the AutoHotkey version (`main.ahk`, `lib/`, `commands/`, `tests/`).
 - `powershell/`: the PowerShell version, its tests and its docs.
-- `img/`: icon sets, one folder per icon; `icon.svg` and `logo.svg`, and the `icon.ico` and `logo.png` made from them.
+- `img/`: icon sets, one folder per icon; `icon.svg` and `logo.svg`, and the `icon.ico`, `logo.ico` and `logo.png` made from them.
 - `qmk/`: the VIA/QMK layout of the EPOMAKER EK21 keypad this was built for.
 - `scripts/`: the config validator, the private-details check and their tests.
 - `configurator/`: the web and desktop configurator (React, Vite, TypeScript, Electron).
@@ -104,7 +104,7 @@ The tests that the header fits on one row (`the header, drawn with the fonts of 
 
 ## Icons and logo
 
-`img/icon.svg` is the hotdog; `img/logo.svg` is the hotdog on a key. `img/icon.ico` (the tray icon of both macropad versions, and the icon of the desktop app and its installer) and `img/logo.png` are made from them. After editing an SVG:
+`img/icon.svg` is the hotdog; `img/logo.svg` is the hotdog on a key. Three files are made from them: `img/icon.ico`, the hotdog, is the tray icon of both macropad versions; `img/logo.ico`, the logo, is the icon of the desktop app (its program, its installer, its window and its taskbar button: `configurator/electron-builder.yml` and `configurator/electron/main.ts`); and `img/logo.png` is the logo at 512 px, which the web page shows beside `img/logo.svg` as its icon (`configurator/index.html`). The page and the desktop app have the same icon, and a running macropad keeps another, so the two are told apart in the taskbar and the tray. After editing an SVG:
 
 ```
 cd configurator && node scripts/make-icon.mjs

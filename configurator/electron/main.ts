@@ -3,11 +3,21 @@ import { join } from 'node:path'
 import { isAllowedLink } from '../src/core/links'
 import { registerIpc } from './ipc'
 
+/**
+ * The logo, the icon of the window and its taskbar button, as the page, the program and its installer have it:
+ * beside app.asar in the installed app (electron-builder.yml's extraResources), in the repository's img/ when run
+ * from it. The macropads' tray keeps the hotdog (img/icon.ico), so the two are told apart.
+ */
+function iconPath(): string {
+  return app.isPackaged ? join(app.getAppPath(), '..', 'logo.ico') : join(app.getAppPath(), '..', 'img', 'logo.ico')
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 860,
     title: 'Open Macro Builder',
+    icon: iconPath(),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,

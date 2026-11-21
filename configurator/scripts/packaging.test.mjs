@@ -25,6 +25,13 @@ describe('Windows packaging', () => {
     ).not.toThrow()
   })
 
+  it('gives the program, its installer and its window the logo, as the web page has it', () => {
+    const config = builderConfig()
+    expect(config.win.icon).toBe('../img/logo.ico')
+    // Beside app.asar, where electron/main.ts finds it for the window.
+    expect(config.extraResources).toEqual([{ from: '../img/logo.ico', to: 'logo.ico' }])
+  })
+
   it('builds both Windows targets', () => {
     const pkg = packageJson()
     expect(pkg.scripts.dist).toContain('--win nsis portable')

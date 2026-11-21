@@ -34,7 +34,8 @@ function Write-MacropadLog {
     catch { $null = $_ }
     try {
         $bytes = [System.Text.Encoding]::Default.GetBytes("$(Get-Date -Format s) $Line" + [Environment]::NewLine)
-        $stream = [System.IO.FileStream]::new($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path), [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+        $fullPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+        $stream = [System.IO.FileStream]::new($fullPath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
         try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
     }
     catch { $null = $_ }

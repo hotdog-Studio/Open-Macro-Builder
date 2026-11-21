@@ -31,8 +31,10 @@ class LayerSelectGui {
       this.labels := []
 
       ; Window
+      ; +E0x08000000 is WS_EX_NOACTIVATE: a click on the overlay never takes the focus, as with the
+      ; PowerShell overlay (OverlayForm in powershell\lib\Native.ps1). It still gets the mouse messages.
       this.window := Gui()
-      this.window.Opt("-MinimizeBox -MaximizeBox -SysMenu +AlwaysOnTop -Caption +Owner -Parent")
+      this.window.Opt("-MinimizeBox -MaximizeBox -SysMenu +AlwaysOnTop -Caption +Owner -Parent +E0x08000000")
       this.window.Title := ""
       this.window.SetFont(fontColor " bold italic", "Consolas")
       this.window.BackColor := transColor

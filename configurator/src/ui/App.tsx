@@ -6,7 +6,7 @@ import { Header } from './Header'
 import { LayersTab } from './LayersTab'
 import { MacrosTab } from './MacrosTab'
 import { OpenScreen } from './OpenScreen'
-import { SaveFlow } from './SaveFlow'
+import { OutsideChangeBar, SaveFlow } from './SaveFlow'
 import { ShapeTab } from './ShapeTab'
 import { Toast } from './Toast'
 import { UpdateDialog } from './UpdateDialog'
@@ -22,11 +22,18 @@ function Editor() {
       <div className="flex h-full flex-col" inert={updating}>
         <Header />
         <SaveFlow />
-        {/* Under the changed-on-disk bar when both show; neither replaces the other. */}
-        <UpdateNotice />
-        {/* The relative wrapper is where messages float: over the tabs, taking no room. */}
+        {/* The relative wrapper is where the bars and messages float: over the tabs, taking no room. */}
         <div className="relative flex min-h-0 flex-1">
-          <Toast />
+          {/*
+            The changed-on-disk bar, the update bar under it and the message under both, stacked at the top
+            centre; none replaces another. The stack takes no clicks, only what is in it does, so the space
+            beside them reaches the tab under it.
+          */}
+          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center gap-2 p-2">
+            <OutsideChangeBar />
+            <UpdateNotice />
+            <Toast />
+          </div>
           {state.tab === 'start' && (
             <main className="min-w-0 flex-1 overflow-y-auto p-5">
               <GetStarted folderName={state.folder.name} languages={state.settings.languages} />

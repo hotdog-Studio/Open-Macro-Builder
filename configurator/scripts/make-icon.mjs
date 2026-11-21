@@ -4,9 +4,10 @@
 //   cd configurator && node scripts/make-icon.mjs
 //
 // Writes:
-//   img/icon.ico   the tray icon of both macropad versions (ahk/main.ahk, powershell/main.ps1) and
-//                  the icon of the desktop app and its installer (electron-builder.yml)
-//   img/logo.png   the logo at 512 px, for places that cannot show an SVG
+//   img/icon.ico   the hotdog: the tray icon of both macropad versions (ahk/main.ahk, powershell/main.ps1)
+//   img/logo.ico   the logo, the hotdog on a key: the icon of the desktop app, its window and its installer
+//                  (electron-builder.yml, electron/main.ts), as the web page has it
+//   img/logo.png   the logo at 512 px, for places that cannot show an SVG (the web page's icon)
 //
 // Draws with the Chromium that Playwright installs for the browser tests
 // (`npx playwright install chromium`), so there is nothing else to install.
@@ -95,19 +96,24 @@ try {
     )
   }
 
-  const icon = readFileSync(resolve(img, 'icon.svg'), 'utf8')
-  const entries = []
-  for (const size of SIZES) {
-    const { rgba, png } = await draw(icon, size)
-    // The largest is kept as a PNG, as Windows itself writes icons; the rest as plain bitmaps,
-    // which every reader of .ico files understands.
-    entries.push({ size, data: size === 256 ? Buffer.from(png, 'base64') : bitmapEntry(size, rgba) })
+  /** The .ico file of an SVG, with an image at each of SIZES. */
+  async function ico(svg) {
+    const entries = []
+    for (const size of SIZES) {
+      const { rgba, png } = await draw(svg, size)
+      // The largest is kept as a PNG, as Windows itself writes icons; the rest as plain bitmaps,
+      // which every reader of .ico files understands.
+      entries.push({ size, data: size === 256 ? Buffer.from(png, 'base64') : bitmapEntry(size, rgba) })
+    }
+    return icoFile(entries)
   }
-  writeFileSync(resolve(img, 'icon.ico'), icoFile(entries))
 
-  const logo = await draw(readFileSync(resolve(img, 'logo.svg'), 'utf8'), 512)
-  writeFileSync(resolve(img, 'logo.png'), Buffer.from(logo.png, 'base64'))
-  console.log(`Wrote img/icon.ico (${SIZES.join(', ')} px) and img/logo.png (512 px).`)
+  const icon = readFileSync(resolve(img, 'icon.svg'), 'utf8')
+  const logo = readFileSync(resolve(img, 'logo.svg'), 'utf8')
+  writeFileSync(resolve(img, 'icon.ico'), await ico(icon))
+  writeFileSync(resolve(img, 'logo.ico'), await ico(logo))
+  writeFileSync(resolve(img, 'logo.png'), Buffer.from((await draw(logo, 512)).png, 'base64'))
+  console.log(`Wrote img/icon.ico and img/logo.ico (${SIZES.join(', ')} px), and img/logo.png (512 px).`)
 } finally {
   await browser.close()
 }

@@ -11,9 +11,14 @@ files:
   # Source maps carry the source and the build machine's paths; the app does not need them.
   - '!**/*.map'
 asar: true
+# The logo, as the web page has it, for the window: electron/main.ts finds it beside app.asar.
+extraResources:
+  - from: ../img/logo.ico
+    to: logo.ico
 win:
-  # The repository's tray icon; it has a 256x256 image, which the installer needs.
-  icon: ../img/icon.ico
+  # The logo, for the program and its installer; it has a 256x256 image, which the installer needs. The
+  # macropads' tray keeps the hotdog (img/icon.ico), so a running macropad and the configurator are told apart.
+  icon: ../img/logo.ico
 nsis:
   oneClick: false
   perMachine: false

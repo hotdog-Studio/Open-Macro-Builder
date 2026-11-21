@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ahk } from '../languages/ahk'
 import { fingerprint } from './fingerprint'
-import { INCLUDE_FILE, adjustList, listFor, listedCommandFiles, listsExactly } from './includeList'
+import { INCLUDE_FILE, adjustList, listFor, listedCommandFiles, listsAll, listsExactly } from './includeList'
 
-const real = readFileSync(new URL('../../../../ahk/config.ahk', import.meta.url), 'utf8')
+// As LF, as the repository stores it: a checkout with core.autocrlf has CRLF on disk (test/repo.ts does the same).
+const real = readFileSync(new URL('../../../../ahk/config.ahk', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 const bytes = (s: string) => new TextEncoder().encode(s)
 const crlf = (s: string) => s.replaceAll('\n', '\r\n')
 
@@ -204,6 +205,22 @@ describe('adjustList', () => {
     expect(listedCommandFiles(text)).toEqual(
       REAL_FILES.filter((p) => p !== 'ahk/commands/power.ahk' && p !== 'ahk/commands/custom/chrome.ahk'),
     )
+  })
+})
+
+describe('listsAll', () => {
+  it.each<[string, string[], boolean]>([
+    ['true for every file the real file includes', REAL_FILES, true],
+    ['true for fewer files than it includes: a line for a file not there is no matter', REAL_FILES.slice(1), true],
+    ['true for the files in another case', REAL_FILES.map((p) => p.toUpperCase()), true],
+    ["false for a file it has no line for, one of the person's own", [...REAL_FILES, 'ahk/commands/custom/mine.ahk'], false],
+  ])('is %s', (_name, present, all) => {
+    expect(listsAll(real, present)).toBe(all)
+  })
+
+  it('is false for a file whose line is commented out', () => {
+    const text = [String.raw`; #Include commands\helper.ahk`, String.raw`#Include commands\media.ahk`].join('\n')
+    expect(listsAll(text, ['ahk/commands/helper.ahk', 'ahk/commands/media.ahk'])).toBe(false)
   })
 })
 

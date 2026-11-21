@@ -4,7 +4,7 @@ import type { FolderAccess } from '../folder/types'
 import { messageOf } from '../message'
 import type { StarterFile } from '../starter'
 import { fingerprint } from './fingerprint'
-import { INCLUDE_FILE, adjustList, listFor } from './includeList'
+import { INCLUDE_FILE, adjustList, listFor, listsAll } from './includeList'
 import { isSharedCommandPath, MANIFEST_PATH, writeManifest, type Manifest } from './manifest'
 import { walk, type UpdatePlan } from './plan'
 
@@ -230,11 +230,31 @@ function appFileOf(ctx: Context, path: string): AppFile {
 
 const seenOf = (plan: UpdatePlan, path: string) => plan.seen[path] ?? null
 
+/**
+ * Whether the include file, as read again, leaves out the line of an AutoHotkey command file the folder holds: a
+ * command the person switched off, as the plan counts it. Not counted: the files this update adds and the plan's
+ * unfinished ones, whose lines are the update's to put in, and those it removes, which will not be there.
+ */
+function switchesOff(ctx: Context, data: Uint8Array): boolean {
+  const { plan } = ctx
+  const skip = new Set([...plan.add, ...ctx.tickedDeleted, ...plan.unfinished, ...plan.remove].map(keyOf))
+  return !listsAll(decode(data), ctx.ahkFiles.filter((path) => !skip.has(keyOf(path))))
+}
+
+/**
+ * Whether a path read again is as the plan saw it: the same fingerprint (or missing still) and, for the include
+ * file, no command switched off.
+ */
+function asSeen(ctx: Context, now: Now): boolean {
+  if (now.print !== seenOf(ctx.plan, now.path)) return false
+  return now.data === null || keyOf(now.path) !== INCLUDE_FILE || !switchesOff(ctx, now.data)
+}
+
 /** What the look-again found of a path to replace or remove: as the plan saw it, changed since, or gone. */
 function foundOf(ctx: Context, path: string): 'asSeen' | 'changed' | 'gone' {
   const now = nowOf(ctx, path)
   if (now.data === null) return 'gone'
-  return now.print === seenOf(ctx.plan, path) ? 'asSeen' : 'changed'
+  return asSeen(ctx, now) ? 'asSeen' : 'changed'
 }
 
 /** Queues the app's copy to be written at `path` in step 2; the include file waits for step 3. */
@@ -291,12 +311,15 @@ function sortTicked(ctx: Context, work: Work, path: string): void {
   queueWrite(work, path, app, 'replaced')
 }
 
-/** The include file the plan had as up to date that changed since: it is the person's now, kept. */
+/**
+ * The include file the plan had as up to date that changed since, or that switches a command off now: it is the
+ * person's now, kept.
+ */
 function sortInclude(ctx: Context, work: Work): void {
   const now = ctx.now.get(INCLUDE_FILE)
   if (!now?.print) return
-  const seen = seenOf(ctx.plan, now.path)
-  if (seen === ctx.app.get(INCLUDE_FILE)?.print && now.print !== seen) work.kept.push(now.path)
+  const upToDate = seenOf(ctx.plan, now.path) === ctx.app.get(INCLUDE_FILE)?.print && !ctx.plan.changed.includes(now.path)
+  if (upToDate && !asSeen(ctx, now)) work.kept.push(now.path)
 }
 
 /** Every path of the plan sorted into what is written, removed, kept or gone. */
@@ -357,29 +380,34 @@ async function wholeWrite(ctx: Context, work: Work, app: AppFile, now: Now, tick
 }
 
 /**
- * The folder's include file with a line for each command file this update brings in, and none for each it
- * removes or found gone; null when that changes nothing. The text is the person's: decoded strictly with its
- * byte-order mark kept, as textFile does for a file it edits, and one that is not UTF-8 is never edited.
+ * The folder's include file with a line for each command file this update brings in (and for each unfinished one
+ * an update that stopped brought in, while it is there), and none for each it removes or found gone; null when that
+ * changes nothing. The text is the person's: decoded strictly with its byte-order mark kept, as textFile does for a
+ * file it edits, and one that is not UTF-8 is never edited.
  */
 async function adjustedWrite(ctx: Context, work: Work, path: string, data: Uint8Array): Promise<Write | null> {
   const { file, utf8 } = await decodeLenient(path, data)
   const revived = ctx.tickedChanged.filter((ticked) => nowOf(ctx, ticked).data === null)
-  const text = adjustList(file.text, [...ctx.plan.add, ...ctx.tickedDeleted, ...revived], [...work.removals, ...work.gone])
+  const held = heldOf(ctx, work)
+  const unfinished = ctx.plan.unfinished.filter((unlisted) => held.has(keyOf(unlisted)))
+  const added = [...ctx.plan.add, ...ctx.tickedDeleted, ...revived, ...unfinished]
+  const text = adjustList(file.text, added, [...work.removals, ...work.gone])
   if (text === file.text) return null
   if (!utf8) throw new Error(`${path} is not UTF-8 text, so its list of command files cannot be brought up to date.`)
   return recorded(work, { path, data: encodeTextFile({ ...file, text }), into: 'adjusted' })
 }
 
 /**
- * Step 3: ahk/config.ahk written whole when the plan replaces it and it is as the plan saw it, or when it is
- * ticked; otherwise with its list alone adjusted. Null when the app has none or nothing would change.
+ * Step 3: ahk/config.ahk written whole when the plan replaces it and it is as the plan saw it (no command switched
+ * off since), or when it is ticked; otherwise with its list alone adjusted. Null when the app has none or nothing
+ * would change.
  */
 async function includeWrite(ctx: Context, work: Work): Promise<Write | null> {
   const app = ctx.app.get(INCLUDE_FILE)
   if (app === undefined) return null
   const now = nowOf(ctx, INCLUDE_FILE)
   const ticked = ctx.tickedChanged.some((path) => keyOf(path) === INCLUDE_FILE)
-  if (ticked || (ctx.plan.list === 'replace' && now.print === seenOf(ctx.plan, now.path))) {
+  if (ticked || (ctx.plan.list === 'replace' && asSeen(ctx, now))) {
     return wholeWrite(ctx, work, app, now, ticked)
   }
   return now.data === null ? null : adjustedWrite(ctx, work, now.path, now.data)

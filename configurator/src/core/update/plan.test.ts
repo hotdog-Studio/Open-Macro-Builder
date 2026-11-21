@@ -364,6 +364,7 @@ describe('planUpdate: a folder that is not checked', () => {
       news: false,
       seen: {},
       ownAhkCommandFiles: [],
+      unfinished: [],
       manifest: null,
     })
     expect(folder.calls).toEqual([{ op: 'list', path: '' }])
@@ -387,6 +388,7 @@ describe('planUpdate: a folder that is not checked', () => {
       news: false,
       seen: {},
       ownAhkCommandFiles: [],
+      unfinished: [],
       manifest: { version: folderVersion, files: {}, deleted: [], offered: {} },
     })
   })
@@ -413,6 +415,7 @@ describe('planUpdate: a folder that is not checked', () => {
       news: false,
       seen: {},
       ownAhkCommandFiles: [],
+      unfinished: [],
       manifest: null,
     })
   })
@@ -472,11 +475,28 @@ describe('planUpdate: news', () => {
   it.each<[string, Changes]>([
     ['a deleted command file', { 'powershell/commands/custom/ssh.ps1': null }],
     ['a removed file the person changed', { 'ahk/commands/gone.ahk': 'my gone\n' }],
-    ['an include file to replace for its list alone', { 'ahk/commands/custom/mine.ahk': 'mine\n' }],
+    ['an include file to replace for its list alone', { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, CHROME_LINE, MINE_LINE) }],
+    [
+      "an include file of the app's body with the person's own command file switched off",
+      { 'ahk/commands/custom/mine.ahk': 'mine\n' },
+    ],
+    ["an include file of the app's body with a shared command file switched off", { 'ahk/config.ahk': lines('; config 1.0.6', CHROME_LINE) }],
   ])('is false for %s alone', async (_rule, changes) => {
     const plan = await planOf(changes, null, LISTED)
     expect(plan.replace.length + plan.add.length + plan.remove.length).toBe(0)
     expect(plan.news).toBe(false)
+  })
+
+  it.each<[string, ManifestTexts | null]>([
+    ['no manifest', null],
+    [
+      'a manifest that records the earlier body',
+      { version: '1.0.5', files: { 'ahk/config.ahk': lines('; config 1.0.5', CHROME_LINE), 'ahk/commands/windows.ahk': 'windows 1.0.2\n' } },
+    ],
+  ])('is true for an include file of an earlier body with a command file switched off, with %s', async (_rule, manifest) => {
+    const plan = await planOf({ 'ahk/config.ahk': lines('; config 1.0.5', CHROME_LINE) }, manifest, LISTED)
+    expect(listsOf(plan)).toEqual({ ...NO_LISTS, changed: ['ahk/config.ahk'] })
+    expect(plan.news).toBe(true)
   })
 })
 
@@ -485,11 +505,88 @@ describe('planUpdate: the include file', () => {
     ['missing: added, replaced', { 'ahk/config.ahk': null }, null, { add: ['ahk/config.ahk'] }, 'replace'],
     ["the app's body, listing exactly the files it will hold: left", {}, null, {}, 'none'],
     [
-      "the app's body, not listing one of the person's files: replaced",
-      { 'ahk/commands/custom/mine.ahk': 'mine\n' },
+      "the app's body, still listing a command file the person deleted: replaced",
+      { 'ahk/commands/custom/chrome.ahk': null },
+      null,
+      { deleted: ['ahk/commands/custom/chrome.ahk'] },
+      'replace',
+    ],
+    // What is not an edit: a missing line for a deleted command file, a line for one of the person's own, a line in another case.
+    [
+      "the app's body, without the line of a command file the person deleted: left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE), 'ahk/commands/custom/chrome.ahk': null },
+      null,
+      { deleted: ['ahk/commands/custom/chrome.ahk'] },
+      'none',
+    ],
+    [
+      "the app's body, listing the person's own command file: left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, CHROME_LINE, MINE_LINE), 'ahk/commands/custom/mine.ahk': 'mine\n' },
       null,
       {},
-      'replace',
+      'none',
+    ],
+    [
+      "the app's body, listing a command file in another case: left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', String.raw`#Include commands\WINDOWS.ahk`, CHROME_LINE) },
+      null,
+      {},
+      'none',
+    ],
+    // A command file in the folder without its line was switched off by the person: an edit, kept.
+    [
+      "the app's body, without the line of the person's own command file: changed, kept, its list left",
+      { 'ahk/commands/custom/mine.ahk': 'mine\n' },
+      null,
+      { changed: ['ahk/config.ahk'] },
+      'none',
+    ],
+    [
+      "the app's body, without the line of a shared command file: changed, kept, its list left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', CHROME_LINE) },
+      null,
+      { changed: ['ahk/config.ahk'] },
+      'none',
+    ],
+    [
+      "the app's body, without the line of a shared command file, with a command file to add: changed, kept, its list adjusted",
+      { 'ahk/config.ahk': lines('; config 1.0.6', CHROME_LINE), 'ahk/commands/custom/chrome.ahk': null },
+      { version: '1.0.5', files: { 'ahk/commands/windows.ahk': 'windows 1.0.2\n' } },
+      { changed: ['ahk/config.ahk'], add: ['ahk/commands/custom/chrome.ahk'] },
+      'adjust',
+    ],
+    [
+      "an earlier body, without the line of the person's own command file, with a command file to remove: changed, kept, its list adjusted",
+      {
+        'ahk/config.ahk': lines('; config 1.0.5', WINDOWS_LINE, CHROME_LINE, String.raw`#Include commands\gone.ahk`),
+        'ahk/commands/custom/mine.ahk': 'mine\n',
+        'ahk/commands/gone.ahk': 'gone 1.0.4\n',
+      },
+      null,
+      { changed: ['ahk/config.ahk'], remove: ['ahk/commands/gone.ahk'] },
+      'adjust',
+    ],
+    // A command file the update removes is not switched off: the folder will not hold it. One kept, the app no longer has, is.
+    [
+      "the app's body, without the line of a command file the update removes: left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, CHROME_LINE), 'ahk/commands/gone.ahk': 'gone 1.0.4\n' },
+      null,
+      { remove: ['ahk/commands/gone.ahk'] },
+      'none',
+    ],
+    [
+      "the app's body, without the line of a changed command file the app no longer has: changed, kept, its list left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, CHROME_LINE), 'ahk/commands/gone.ahk': 'my gone\n' },
+      null,
+      { changed: ['ahk/config.ahk'], keptRemoved: ['ahk/commands/gone.ahk'] },
+      'none',
+    ],
+    [
+      'an earlier body, without the line of a shared command file: changed, kept, its list left',
+      { 'ahk/config.ahk': lines('; config 1.0.5', CHROME_LINE) },
+      null,
+      { changed: ['ahk/config.ahk'] },
+      'none',
     ],
     [
       "an earlier body with the person's own line and a deleted file's line missing: replaced",
@@ -529,6 +626,91 @@ describe('planUpdate: the include file', () => {
     expect(plan.list).toBe(list)
   })
 
+  /** LISTED, where the app's copy has a command file no release shipped. */
+  const NEW_LINE = String.raw`#Include commands\custom\new.ahk`
+  const WITH_NEW = fixtureOf(
+    {
+      ...LISTED_APP,
+      'ahk/commands/custom/new.ahk': 'new 1.0.6\n',
+      'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, CHROME_LINE, NEW_LINE),
+    },
+    LISTED_OLD,
+  )
+  const CHROME_OFF: Changes = { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE) }
+
+  it.each<[string, Changes, ManifestTexts | null, Promise<Fixture>, string[], UpdatePlan['list'], string[]]>([
+    [
+      'one no release shipped, in a folder without a manifest',
+      { 'ahk/config.ahk': lines('; config 1.0.5', WINDOWS_LINE, CHROME_LINE) },
+      null,
+      WITH_NEW,
+      ['ahk/config.ahk'],
+      'replace',
+      ['ahk/commands/custom/new.ahk'],
+    ],
+    [
+      'one the manifest does not name',
+      CHROME_OFF,
+      { version: '1.0.5', files: { 'ahk/commands/windows.ahk': 'windows 1.0.6\n' } },
+      LISTED,
+      [],
+      'replace',
+      ['ahk/commands/custom/chrome.ahk'],
+    ],
+    [
+      'one the manifest names as deleted',
+      CHROME_OFF,
+      {
+        version: '1.0.5',
+        files: { 'ahk/commands/windows.ahk': 'windows 1.0.6\n', 'ahk/commands/custom/chrome.ahk': 'chrome 1.0.5\n' },
+        deleted: ['ahk/commands/custom/chrome.ahk'],
+      },
+      LISTED,
+      [],
+      'replace',
+      ['ahk/commands/custom/chrome.ahk'],
+    ],
+  ])(
+    "does not count a missing line for a command file of the app's copy the folder had no record of, %s: an update that stopped wrote it",
+    async (_case, changes, manifest, fixture, replace, list, unfinished) => {
+      const plan = await planOf(changes, manifest, fixture)
+      expect(plan.unfinished).toEqual(unfinished)
+      expect(plan.changed).toEqual([])
+      expect(plan.replace).toEqual(replace)
+      expect(plan.list).toBe(list)
+    },
+  )
+
+  it('adjusts the list of a changed include file that leaves out an unfinished command file, so the update puts its line in', async () => {
+    const plan = await planOf({ 'ahk/config.ahk': lines('; my config', WINDOWS_LINE, CHROME_LINE) }, null, WITH_NEW)
+    expect(plan.unfinished).toEqual(['ahk/commands/custom/new.ahk'])
+    expect(plan.changed).toEqual(['ahk/config.ahk'])
+    expect(plan.list).toBe('adjust')
+  })
+
+  it.each<[string, Changes, ManifestTexts | null]>([
+    [
+      'the manifest names it',
+      CHROME_OFF,
+      { version: '1.0.6', files: { 'ahk/commands/windows.ahk': 'windows 1.0.6\n', 'ahk/commands/custom/chrome.ahk': 'chrome 1.0.6\n' } },
+    ],
+    ['a release shipped it, without a manifest', CHROME_OFF, null],
+    [
+      'the manifest names it only among its offers, as a changed file kept at an update',
+      CHROME_OFF,
+      { version: '1.0.6', files: { 'ahk/commands/windows.ahk': 'windows 1.0.6\n' }, offered: { 'ahk/commands/custom/chrome.ahk': 'chrome 1.0.6\n' } },
+    ],
+    [
+      "it is not as the app's copy has it",
+      { ...CHROME_OFF, 'ahk/commands/custom/chrome.ahk': 'my chrome\n' },
+      { version: '1.0.5', files: { 'ahk/commands/windows.ahk': 'windows 1.0.6\n' } },
+    ],
+  ])("counts a missing line for a command file of the app's copy when %s", async (_case, changes, manifest) => {
+    const plan = await planOf(changes, manifest, LISTED)
+    expect(plan.unfinished).toEqual([])
+    expect(plan.changed).toContain('ahk/config.ahk')
+  })
+
   it("names a kept removed command file among the folder's own, so a list that names it is left", async () => {
     const GONE_LINE = String.raw`#Include commands\gone.ahk`
     const plan = await planOf(
@@ -539,6 +721,11 @@ describe('planUpdate: the include file', () => {
     expect(listsOf(plan)).toEqual({ ...NO_LISTS, keptRemoved: ['ahk/commands/gone.ahk'] })
     expect(plan.ownAhkCommandFiles).toEqual(['ahk/commands/gone.ahk'])
     expect(plan.list).toBe('none')
+  })
+
+  it('keeps an include file the app no longer has when it switches a command off, though a release shipped it as it is', async () => {
+    const plan = await planOf({ 'ahk/config.ahk': lines('; config 1.0.5', CHROME_LINE) }, null, fixtureOf(APP, LISTED_OLD))
+    expect(listsOf(plan)).toEqual({ ...NO_LISTS, keptRemoved: ['ahk/config.ahk'] })
   })
 
   it('is left alone when no version has one', async () => {

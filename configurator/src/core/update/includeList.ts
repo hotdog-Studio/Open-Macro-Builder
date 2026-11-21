@@ -66,6 +66,15 @@ export function listFor(appText: string, deleted: string[], own: string[]): stri
   return adjustList(appText, own, deleted)
 }
 
+/**
+ * Whether `text` has a line for each of `present` (AutoHotkey command files in the folder), ignoring case. The
+ * update uses it to tell a command the person switched off by taking its line out.
+ */
+export function listsAll(text: string, present: string[]): boolean {
+  const listed = new Set(listedCommandFiles(text))
+  return present.every((path) => listed.has(path.toLowerCase()))
+}
+
 /** Whether `text` lists exactly `present` (AutoHotkey command files in the folder), ignoring case and order. */
 export function listsExactly(text: string, present: string[]): boolean {
   const listed = new Set(listedCommandFiles(text))

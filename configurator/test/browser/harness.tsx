@@ -6,7 +6,7 @@ import type { Workspace } from '../../src/core/config/model'
 import { MemoryFolder } from '../../src/core/folder/memory'
 import { SETTINGS_PATH } from '../../src/core/settings'
 import type { Platform } from '../../src/platform/types'
-import { AppProvider, useApp } from '../../src/state/store'
+import { AppProvider, useApp, type Banner } from '../../src/state/store'
 import type { UpdateSource } from '../../src/state/updateActions'
 import { App } from '../../src/ui/App'
 import type { PointerPath, TouchPath } from './commands'
@@ -88,7 +88,7 @@ export const dirty = (): boolean => editor().dirty
 
 /**
  * Renders the app full-window, as index.html does, with a Probe beside it. No update check unless an
- * `updateSource` is given: the folder lacks shared files, and the bar would push the editor down
+ * `updateSource` is given: the folder lacks shared files, and the bar would float over the editor
  * part-way through a test.
  */
 export function mount(platform: Platform, updateSource: UpdateSource | null = null): void {
@@ -292,6 +292,12 @@ export function strip(name: string): string | null {
 /** The copy of a dragged chip or command row that follows the mouse, or null when nothing is carried. */
 export function carried(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.cursor-grabbing')
+}
+
+/** Shows `message` as the app shows its messages, floating over the editor. */
+export function showMessage(message: Banner): void {
+  if (!seen) throw new Error('the app is not mounted')
+  seen.dispatch({ type: 'banner', banner: message })
 }
 
 /** The message floating over the editor (a notice, a refused action or an error), or null. */

@@ -3,6 +3,7 @@ import type { Workspace } from '../core/config/model'
 import { dropOverflow } from '../core/config/ops'
 import { useEditor, type SaveDialog } from '../state/store'
 import { ConfirmDialog } from './ConfirmDialog'
+import { FLOATING_BAR } from './floating'
 
 /** A list of checkWorkspace messages. */
 function Messages({ items }: Readonly<{ items: string[] }>) {
@@ -125,11 +126,15 @@ function SaveDialogView({ dialog }: Readonly<{ dialog: SaveDialog }>) {
   }
 }
 
-/** The changed-on-disk banner; the unsaved edits stay until the user chooses. */
-function OutsideChangeBanner() {
-  const { dispatch, actions } = useEditor()
+/**
+ * The changed-on-disk bar, floating at the top of the content area (App.tsx); the unsaved edits stay until the
+ * user chooses.
+ */
+export function OutsideChangeBar() {
+  const { state, dispatch, actions } = useEditor()
+  if (!state.outsideChange || state.outsideChange.dismissed) return null
   return (
-    <div role="alert" className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-amber-200">
+    <div role="alert" className={`${FLOATING_BAR} border-amber-500/60 bg-amber-950 text-amber-200`}>
       <p className="flex-1">config.json changed on disk.</p>
       <button
         type="button"
@@ -150,8 +155,8 @@ function OutsideChangeBanner() {
 }
 
 /**
- * Save dialogs and the outside-change banner; rechecks config.json and the command files when the
- * window regains focus.
+ * Save dialogs; rechecks config.json and the command files when the window regains focus, which may show
+ * the changed-on-disk bar (OutsideChangeBar).
  */
 export function SaveFlow() {
   const { state, actions } = useEditor()
@@ -165,10 +170,5 @@ export function SaveFlow() {
     return () => window.removeEventListener('focus', onFocus)
   }, [actions])
 
-  return (
-    <>
-      {state.outsideChange && !state.outsideChange.dismissed && <OutsideChangeBanner />}
-      {state.saveDialog && <SaveDialogView dialog={state.saveDialog} />}
-    </>
-  )
+  return state.saveDialog ? <SaveDialogView dialog={state.saveDialog} /> : null
 }

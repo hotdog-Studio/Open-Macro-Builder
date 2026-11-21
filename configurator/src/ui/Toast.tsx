@@ -74,7 +74,7 @@ function ToastCard({ banner, dispatch }: Readonly<{ banner: Banner; dispatch: (a
   return (
     <div
       ref={frame}
-      className="pointer-events-auto flex max-h-full max-w-[min(40rem,90vw)]"
+      className="pointer-events-auto flex max-h-full min-h-0 max-w-[min(40rem,90vw)]"
       onPointerEnter={() => setPointerOn(true)}
       onPointerLeave={() => setPointerOn(false)}
       onFocus={noteFocusChange}
@@ -86,15 +86,11 @@ function ToastCard({ banner, dispatch }: Readonly<{ banner: Banner; dispatch: (a
 }
 
 /**
- * The message the app has for the user, floating at the top centre of the area under the header.
- * Its holder takes no room and no clicks, so nothing moves when a message comes or goes.
+ * The message the app has for the user, floating at the top centre of the area under the header, below the
+ * bars (App.tsx). The stack it stands in takes no room and no clicks, so nothing moves when a message comes or goes.
  */
 export function Toast() {
   const { state, dispatch } = useApp()
   if (state.screen !== 'edit' || !state.banner) return null
-  return (
-    <div className="pointer-events-none absolute inset-0 z-30 flex items-start justify-center p-2">
-      <ToastCard banner={state.banner} dispatch={dispatch} />
-    </div>
-  )
+  return <ToastCard banner={state.banner} dispatch={dispatch} />
 }

@@ -1,10 +1,11 @@
 import { screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
+import type { MemoryFolder } from '../core/folder/memory'
 import { fingerprint } from '../core/update/fingerprint'
 import type { KnownReleases } from '../core/update/history'
 import type { UpdateSource } from '../state/updateActions'
-import { click, repoFiles, startApp, unmount } from '../../test/browser/harness'
+import { click, repoFiles, showMessage, startApp, unmount, type StartHow } from '../../test/browser/harness'
 
 // The update's bar and dialog as the page lays them out, in the 1280×900 window of the other suites: a
 // folder of an older release, with thirty icons to replace, two command files the person changed and
@@ -112,7 +113,7 @@ const reachable = (el: Element) => {
 }
 
 describe('the update, at 1280 × 900', () => {
-  it("shows the bar in the page, clear of the header's buttons", async () => {
+  it("shows the bar under the header, clear of the header's buttons", async () => {
     await opened(false)
     const review = screen.getByRole('button', REVIEW)
     const bar = review.closest('output')
@@ -190,5 +191,174 @@ describe('the update, at 1280 × 900', () => {
     expect(folder.text(MINE)).toBe(MINE_TEXT)
     release()
     expect(await screen.findByText(/^Updated to 1\.0\.6: 30 replaced/)).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------- the bars float
+
+const ON_DISK = 'config.json changed on disk.'
+const MESSAGE = 'A message that stays until it is dismissed.'
+const SIZES: [number, number][] = [
+  [1280, 900],
+  [760, 420],
+]
+
+/** The older release's folder, whose check waits until `release` is called. */
+async function heldRelease(): Promise<{ how: StartHow; release: () => void }> {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => (release = resolve))
+  const { updateSource, files } = await olderRelease()
+  const loadIndex = async () => {
+    await held
+    return updateSource.loadIndex()
+  }
+  return { how: { updateSource: { ...updateSource, loadIndex }, files }, release }
+}
+
+/** Where each element of the app is now. */
+function placesOf(): Map<Element, string> {
+  const places = new Map<Element, string>()
+  for (const el of document.querySelectorAll('#root *')) {
+    const r = el.getBoundingClientRect()
+    places.set(el, `${r.left},${r.top},${r.width},${r.height}`)
+  }
+  return places
+}
+
+/** The elements still in the page that are not where `before` had them, named for a failure message. */
+function moved(before: Map<Element, string>): string[] {
+  const now = placesOf()
+  return [...before]
+    .filter(([el, place]) => el.isConnected && now.get(el) !== place)
+    .map(([el, place]) => `<${el.tagName.toLowerCase()}> ${el.textContent?.slice(0, 40)}: ${place} -> ${now.get(el)}`)
+}
+
+/** Makes config.json change on disk and the window get the focus back, then waits for the bar that says so. */
+async function changeOnDisk(folder: MemoryFolder): Promise<HTMLElement> {
+  await folder.writeBytes('local/config.json', new TextEncoder().encode(`${folder.text('local/config.json')}\n`))
+  window.dispatchEvent(new Event('focus'))
+  const bar = (await screen.findByText(ON_DISK)).closest<HTMLElement>('[role="alert"]')
+  if (!bar) throw new Error('the changed-on-disk text is not in an alert')
+  return bar
+}
+
+const updateBar = () => {
+  const bar = screen.getByRole('button', REVIEW).closest<HTMLElement>('output')
+  if (!bar) throw new Error('Review the update is not in the bar')
+  return bar
+}
+
+const messageCard = () => {
+  const card = screen.getByText(MESSAGE).closest<HTMLElement>('[role="alert"]')
+  if (!card) throw new Error('the message is not in an alert')
+  return card
+}
+
+interface Spot {
+  x: number
+  y: number
+  under: Element
+}
+
+/** A point of the content area beside `bar`, level with its middle, and what is there. */
+function besideOf(bar: HTMLElement): Spot {
+  const r = bar.getBoundingClientRect()
+  const x = r.left / 2
+  const y = r.top + r.height / 2
+  const under = document.elementFromPoint(x, y)
+  if (!under) throw new Error('nothing beside the bar')
+  return { x, y, under }
+}
+
+/** Whether a real click at the spot reaches the element there. */
+async function clickReaches({ x, y, under }: Spot): Promise<boolean> {
+  let reached = false
+  const note = () => {
+    reached = true
+  }
+  under.addEventListener('click', note)
+  const r = under.getBoundingClientRect()
+  // Through the browser, which refuses when another element would take the click at that point.
+  await userEvent.click(under, { position: { x: x - r.left, y: y - r.top } })
+  under.removeEventListener('click', note)
+  return reached
+}
+
+describe('the bars float over the top of the content area', () => {
+  it.each(SIZES)('at %i × %i, nothing in the page moves when the changed-on-disk bar comes or goes', async (width, height) => {
+    await page.viewport(width, height)
+    const { folder } = await startApp()
+    const before = placesOf()
+    const bar = await changeOnDisk(folder)
+    expect(moved(before)).toEqual([])
+    const shown = placesOf()
+    await click(within(bar).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByText(ON_DISK)).toBeNull()
+    expect(moved(shown)).toEqual([])
+  })
+
+  it.each(SIZES)('at %i × %i, nothing in the page moves when the update bar comes or goes', async (width, height) => {
+    await page.viewport(width, height)
+    const { how, release } = await heldRelease()
+    await startApp('Pad shape', undefined, how)
+    const before = placesOf()
+    release()
+    await screen.findByRole('button', REVIEW)
+    expect(moved(before)).toEqual([])
+    const shown = placesOf()
+    await click(within(updateBar()).getByRole('button', { name: 'Not now' }))
+    expect(screen.queryByRole('button', REVIEW)).toBeNull()
+    expect(moved(shown)).toEqual([])
+  })
+
+  it.each(SIZES)(
+    'at %i × %i, stacks the changed-on-disk bar, the update bar and a message in that order, apart and clear of the header, and each of their buttons can be pressed',
+    async (width, height) => {
+      await page.viewport(width, height)
+      const { folder } = await startApp('Pad shape', undefined, await olderRelease())
+      await screen.findByRole('button', REVIEW)
+      const onDisk = await changeOnDisk(folder)
+      showMessage({ kind: 'warning', text: MESSAGE, stays: true })
+      await screen.findByText(MESSAGE)
+      const message = messageCard()
+      const update = updateBar()
+      const boxes = [onDisk, update, message].map((el) => el.getBoundingClientRect())
+      for (const box of boxes) expect(inWindow(box)).toBe(true)
+      expect(boxes[0].bottom).toBeLessThanOrEqual(boxes[1].top)
+      expect(boxes[1].bottom).toBeLessThanOrEqual(boxes[2].top)
+      const header = screen.getByRole('banner').getBoundingClientRect()
+      for (const box of boxes) expect(box.top).toBeGreaterThanOrEqual(header.bottom)
+      for (const el of document.querySelectorAll('header button, header a')) {
+        for (const box of boxes) expect(overlap(el.getBoundingClientRect(), box), el.textContent ?? '').toBe(false)
+      }
+      const buttons = [
+        within(onDisk).getByRole('button', { name: 'Reload from disk' }),
+        within(onDisk).getByRole('button', { name: 'Dismiss' }),
+        within(update).getByRole('button', REVIEW),
+        within(update).getByRole('button', { name: 'Not now' }),
+        within(message).getByRole('button', { name: 'Dismiss' }),
+      ]
+      for (const button of buttons) expect(reachable(button), button.textContent ?? '').toBe(true)
+      // Pressed from the last up, each goes, and the bar above stays where it was.
+      await click(within(message).getByRole('button', { name: 'Dismiss' }))
+      expect(screen.queryByText(MESSAGE)).toBeNull()
+      await click(within(update).getByRole('button', { name: 'Not now' }))
+      expect(screen.queryByRole('button', REVIEW)).toBeNull()
+      expect(onDisk.getBoundingClientRect().top).toBe(boxes[0].top)
+      await click(within(onDisk).getByRole('button', { name: 'Dismiss' }))
+      expect(screen.queryByText(ON_DISK)).toBeNull()
+    },
+  )
+
+  it('lets a click on the empty space beside each bar reach what is under it', async () => {
+    const { folder } = await startApp('Pad shape', undefined, await olderRelease())
+    await screen.findByRole('button', REVIEW)
+    const onDisk = await changeOnDisk(folder)
+    for (const bar of [onDisk, updateBar()]) {
+      const beside = besideOf(bar)
+      // The bars stand in the stack they float in; the point beside them is not in it.
+      expect(bar.parentElement?.contains(beside.under), beside.under.tagName).toBe(false)
+      expect(await clickReaches(beside)).toBe(true)
+    }
   })
 })

@@ -429,8 +429,11 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
             (e: unknown) => `${path} was created, but ${listPath} was not updated: ${messageOf(e)}`,
           )
     // A file made again is no longer one the person deleted. When the manifest cannot be updated
-    // nothing is reported: a `deleted` entry for a file that is in the folder has no effect (the
-    // check treats only missing files as deleted), and the next update writes `deleted` anew.
+    // nothing is reported: a `deleted` entry for a file that is in the folder never makes it count as
+    // deleted (the check treats only missing files so). At most, while the file is the app's copy, a
+    // missing line for it in ahk/config.ahk counts as the update's to put in rather than a command the
+    // person switched off; the Commands tab has just written that line, and the next update writes
+    // `deleted` anew.
     await updateManifest(folder, (m) => withoutDeleted(m, path))
     if (deps.folder() !== folder) return error
     const file: CommandFile = { ...at, file: made, functions: lang.findFunctions(made.text), editable: true }

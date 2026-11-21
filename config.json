@@ -111,7 +111,7 @@
       "macros": [
         { "action": "VsStudioShowSolutionExplorer", "name": "Solution", "description": "Show Solution Explorer" },
         { "action": "VsStudioShowTestExplorer", "name": "Tests", "description": "Show Test Explorer" },
-        { "action": "VsStudioSplitPanel", "name": "Split", "description": "Split the editor" },
+        null,
         { "action": "VsStudioBuild", "name": "Build", "description": "Build the solution" },
         { "action": "VsStudioGoToDefinition", "name": "Go to Def", "description": "Go to the definition" }
       ]

@@ -1030,7 +1030,7 @@ function Get-E2eCases {
         @{ Command = 'VsCodeMoveGroupRight'; File = 'custom\vscode'; Chords = @('Ctrl+k', 'Right'); Source = $script:E2eDocs.VsCode }
 
         # ---- custom\vsstudio (no Visual Studio is used) ----
-        foreach ($c in 'VsStudioShowSolutionExplorer', 'VsStudioSplitPanel', 'VsStudioBuild', 'VsStudioGoToDefinition') { @{ Command = $c; File = 'custom\vsstudio' } }
+        foreach ($c in 'VsStudioShowSolutionExplorer', 'VsStudioBuild', 'VsStudioGoToDefinition') { @{ Command = $c; File = 'custom\vsstudio' } }
     )
     $cases = @($cases | ForEach-Object { $_ })
     if ($env:OMB_E2E_CASE -and -not $All) { $cases = @($cases | Where-Object { $(if ($_.Name) { $_.Name } else { $_.Command }) -match $env:OMB_E2E_CASE }) }

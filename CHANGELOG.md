@@ -34,6 +34,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 ### Removed
 
 - Both versions: `ChromeNewTabInGroup`. It pressed Shift+Alt+T, which moves the focus to Chrome's toolbar, and Chrome has no shortcut for a new tab in a group. A layout that still names it fails the config check.
+- Both versions: `VsStudioSplitPanel`, and its key in the example layout. It pressed Ctrl+W+V, which Visual Studio binds to nothing unless you bound those keys yourself. A layout that still names it fails the config check; to keep it, copy the command into your own `local/` folder.
 - AutoHotkey version: `EncodeInteger`, from `helper.ahk`. Nothing called it, and it cut a 64-bit address short.
 
 ### Fixed

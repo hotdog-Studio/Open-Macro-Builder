@@ -34,9 +34,10 @@ export interface UpdatePlan {
   ownAhkCommandFiles: string[]
   /**
    * The AutoHotkey command files of the app's copy that the folder holds as the app has them but had no record of:
-   * the manifest names them as deleted or not at all, or (without one) no release shipped them. Only an update that
-   * stopped before it wrote the include file leaves one there without its line, so a missing line for one is that
-   * update's unfinished work, not a command the person switched off: the update puts it in.
+   * the manifest names them as deleted or in neither its files nor its offers, or (without one) no release shipped
+   * them. Mainly an update that stopped before it wrote the include file leaves one there without its line, so a
+   * missing line for one is that update's unfinished work, not a command the person switched off: the update puts
+   * it in.
    */
   unfinished: string[]
   manifest: Manifest | null
@@ -191,12 +192,13 @@ function missingState(key: string, target: Target, manifest: Manifest | null, kn
 }
 
 /**
- * Whether the folder had a record of a path: the manifest names it among its files and not as deleted; without a
- * manifest, a release shipped it.
+ * Whether the folder had a record of a path: the manifest names it among its files or its offers (a changed file
+ * kept at an update), and not as deleted; without a manifest, a release shipped it.
  */
-function recorded(key: string, target: Target, manifest: Manifest | null, known: KnownReleases): boolean {
+function hadRecordOf(key: string, target: Target, manifest: Manifest | null, known: KnownReleases): boolean {
   if (manifest === null) return everShipped(known, key)
-  return target.recorded !== undefined && !manifest.deleted.some((path) => path.toLowerCase() === key)
+  const named = target.recorded !== undefined || Object.keys(manifest.offered).some((path) => path.toLowerCase() === key)
+  return named && !manifest.deleted.some((path) => path.toLowerCase() === key)
 }
 
 /** See UpdatePlan's `unfinished`: as the folder spells them. */
@@ -209,7 +211,7 @@ function unfinishedOf(
   const unfinished = [...targets].flatMap(([key, target]) => {
     const file = present.get(key)
     const asTheApp = file !== undefined && file.print === target.app
-    const isUnfinished = isAhkCommandFile(key) && asTheApp && !recorded(key, target, manifest, known)
+    const isUnfinished = isAhkCommandFile(key) && asTheApp && !hadRecordOf(key, target, manifest, known)
     return isUnfinished ? [file.path] : []
   })
   return unfinished.sort(byLowerCase)

@@ -4,7 +4,8 @@ import { ahk } from '../languages/ahk'
 import { fingerprint } from './fingerprint'
 import { INCLUDE_FILE, adjustList, listFor, listedCommandFiles, listsAll, listsExactly } from './includeList'
 
-const real = readFileSync(new URL('../../../../ahk/config.ahk', import.meta.url), 'utf8')
+// As LF, as the repository stores it: a checkout with core.autocrlf has CRLF on disk (test/repo.ts does the same).
+const real = readFileSync(new URL('../../../../ahk/config.ahk', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 const bytes = (s: string) => new TextEncoder().encode(s)
 const crlf = (s: string) => s.replaceAll('\n', '\r\n')
 

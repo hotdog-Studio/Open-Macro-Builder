@@ -696,6 +696,11 @@ describe('planUpdate: the include file', () => {
     ],
     ['a release shipped it, without a manifest', CHROME_OFF, null],
     [
+      'the manifest names it only among its offers, as a changed file kept at an update',
+      CHROME_OFF,
+      { version: '1.0.6', files: { 'ahk/commands/windows.ahk': 'windows 1.0.6\n' }, offered: { 'ahk/commands/custom/chrome.ahk': 'chrome 1.0.6\n' } },
+    ],
+    [
       "it is not as the app's copy has it",
       { ...CHROME_OFF, 'ahk/commands/custom/chrome.ahk': 'my chrome\n' },
       { version: '1.0.5', files: { 'ahk/commands/windows.ahk': 'windows 1.0.6\n' } },

@@ -61,6 +61,18 @@ ChromeNewTab(Macro) {
 }
 
 /**
+ * Opens a new tab in Google Chrome inside the tab group of the active tab, right after it, as "New tab to the right" in the tab's right-click menu does. When the active tab is in no group, the new tab opens right after it, in no group. The address bar of the new tab has the keyboard, as after Ctrl+T. Chrome has no keyboard shortcut for this, so no key is pressed: the command posts Chrome's own command for it to the active Chrome window. It works in any display language, with no extension and no change to Chrome's settings. Nothing happens while a bubble or dialog of Chrome's has the keyboard, such as the one the bookmark star opens.
+ * @param {Macro} Macro - The macro object (not used in this function).
+ */
+ChromeNewTabInGroup(Macro) {
+    ; WM_COMMAND (0x111) with IDC_NEW_TAB_TO_RIGHT (35024, chrome/app/chrome_command_ids.h in Chromium), which
+    ; Chrome runs on the active tab of the window that gets it: the tab menu's "New tab to the right", which puts the
+    ; new tab in the active tab's group. Posted, so a busy Chrome never holds the macropad up.
+    if EnsureActiveOrOpenChrome(Macro) && (chrome := WinActive("ahk_exe chrome.exe"))
+        PostMessage(0x111, 35024, 0, , chrome)
+}
+
+/**
  * Opens a new window in Google Chrome.
  * @param {Macro} Macro - The macro object (not used in this function).
  */

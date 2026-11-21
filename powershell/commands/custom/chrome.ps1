@@ -37,6 +37,21 @@ function OpenGoogle { param($Macro) ActivateOrOpenChrome 'https://www.google.com
 function ChromeOpen { param($Macro) ActivateOrOpenChrome }
 
 function ChromeNewTab { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+t' } }
+
+# A new tab inside the tab group of the active tab, right after it, as "New tab to the right" in the tab's
+# right-click menu does (no group when the active tab has none); the address bar of the new tab has the
+# keyboard, as after Ctrl+T. Chrome has no shortcut for it, so no key is pressed: WM_COMMAND (0x111) with
+# IDC_NEW_TAB_TO_RIGHT (35024, chrome/app/chrome_command_ids.h in Chromium) is posted to the active Chrome
+# window, which runs that menu item on its active tab. Any display language, no extension, no setting.
+# Nothing happens while a bubble or dialog of Chrome's has the keyboard. Windows refusing the message is an
+# error, as AutoHotkey's PostMessage raises one.
+function ChromeNewTabInGroup {
+    param($Macro)
+    if (-not (EnsureActiveOrOpenChrome $Macro)) { return }
+    $chrome = Test-WindowActive 'ahk_exe chrome.exe'
+    if ($chrome -eq [IntPtr]::Zero) { return }
+    if ((Send-WindowMessage $chrome 0x111 35024 0 -Post) -eq 0) { throw 'Windows did not pass the new tab command to Chrome.' }
+}
 function ChromeOpenNewWindow { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+n' } }
 function ChromeOpenIncognitoWindow { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+Shift+n' } }
 function ChromeOpenDownloads { param($Macro) if (EnsureActiveOrOpenChrome $Macro) { Send-Chord 'Ctrl+j' } }

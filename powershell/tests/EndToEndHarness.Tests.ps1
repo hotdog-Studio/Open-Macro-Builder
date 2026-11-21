@@ -7,6 +7,9 @@
 # so neither is refused. The AutoHotkey writers (commands.ahk, standin.ahk) open the file the same way;
 # only the end-to-end test runs them.
 #
+# How the test reads a stand-in's log: a command posted to the window (WM_COMMAND, as
+# ChromeNewTabInGroup posts one) is an event of its own, not a key.
+#
 # How the test reads the macropads' command log (what the command of a press came to: never started,
 # not finished, done or failed), what a case says from it, and that the lines the PowerShell engine
 # writes are the ones the test reads (the AutoHotkey macropad's are read by the end-to-end test itself,
@@ -84,6 +87,17 @@ Describe 'End-to-end logs: the test reads a file while another process writes it
         # The wait with its clock taken out: one look, and the limit has passed.
         Mock Wait-E2eCondition { [void](& $Condition); $null }
         { Read-E2eLog $script:Log } | Should -Throw -ExpectedMessage "The log $($script:Log) could not be opened for reading for 300 ms*being used by another process*does not share reading*"
+    }
+}
+
+Describe 'End-to-end stand-in log: what reached a stand-in window' {
+    It 'reads a command line (a WM_COMMAND posted to the window) as a command with its number, and not as a key' {
+        $standin = [pscustomobject]@{ Log = (Join-Path $TestDrive 'standin-A.log') }
+        [System.IO.File]::WriteAllText($standin.Log, "start A pid=1 hwnd=2`ncommand 35024`ndown vk=41 sc=01E repeat=0 mods=-`nup vk=41 sc=01E repeat=0 mods=-`n")
+        $events = @(Get-E2eStandinEvents $standin 1)
+        ($events | ForEach-Object { $_.Kind }) -join ',' | Should -Be 'command,down,up'
+        $events[0].Id | Should -Be 35024
+        @(Get-E2eStandinTaps $standin 1).Count | Should -Be 1 -Because 'the key is one tap, and the command is none'
     }
 }
 

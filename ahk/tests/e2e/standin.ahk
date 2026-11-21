@@ -14,6 +14,8 @@
 ;   down|up vk=<hex> sc=<hex> repeat=<0|1> mods=<C S A W held, or ->
 ;   char <hex>          a character typed as text (SendText, Send-Text), which comes as VK_PACKET
 ;   click <left|right|middle> <client x> <client y>
+;   command <id>        a WM_COMMAND from a menu or a program (not from a control), id in decimal, as a
+;                       program's own command, such as Chrome's IDC_NEW_TAB_TO_RIGHT (35024)
 ;   close
 ; Every other key message is answered here and not passed on, so a key never does anything in the
 ; stand-in itself (Alt+F4 does not close it, F10 opens no menu).
@@ -93,6 +95,17 @@ StandinChar(wParam, lParam, msg, hwnd) {
     return 0
 }
 
+; A command posted to the window. A control's notification (lParam is the control's handle) is left to
+; AutoHotkey; one with no control is logged and answered here, so it does nothing in the stand-in.
+StandinCommand(wParam, lParam, msg, hwnd) {
+    global window
+    Critical(1000)
+    if (lParam != 0 || hwnd != window.Hwnd)
+        return
+    StandinLog("command " (wParam & 0xFFFF))
+    return 0
+}
+
 for message in [0x100, 0x101, 0x104, 0x105]  ; WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP
     OnMessage(message, StandinKey)
 OnMessage(0x102, StandinChar)  ; WM_CHAR, made only from typed characters (VK_PACKET)
@@ -102,6 +115,7 @@ OnMessage(0x207, StandinClick.Bind("middle"))  ; WM_MBUTTONDOWN
 ; A second click on the same spot soon after the first comes as a double click.
 OnMessage(0x203, StandinClick.Bind("left"))    ; WM_LBUTTONDBLCLK
 OnMessage(0x206, StandinClick.Bind("right"))   ; WM_RBUTTONDBLCLK
+OnMessage(0x111, StandinCommand)  ; WM_COMMAND
 
 window := Gui("+Resize -DPIScale", "OMB e2e stand-in: " name)
 window.BackColor := "404040"

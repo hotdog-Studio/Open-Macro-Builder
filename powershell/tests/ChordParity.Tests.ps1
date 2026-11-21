@@ -45,6 +45,7 @@ BeforeDiscovery {
                 OpenYoutube              = 'opens a web address in Chrome'
                 OpenGoogle               = 'opens a web address in Chrome'
                 ChromeOpen               = 'activates or opens Chrome'
+                ChromeNewTabInGroup      = 'posts Chrome''s own command to the window (WM_COMMAND), not keys'
                 ChromeOpenExtensions     = 'types an address into the address bar after a chord and a pause'
                 ChromeOpenSettings       = 'types an address into the address bar after a chord and a pause'
             }

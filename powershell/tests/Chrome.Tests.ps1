@@ -1,8 +1,9 @@
 # The Chrome commands (powershell/commands/custom/chrome.ps1), with every function that starts a
-# program, looks at windows or sends keys mocked, so nothing starts and no key is pressed.
+# program, looks at windows, sends keys or posts a window message mocked, so nothing starts, no key is
+# pressed and no message is posted.
 BeforeAll {
     $ps = Split-Path $PSScriptRoot -Parent
-    foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'Window', 'WinTitle', 'AhkSyntax', 'Send') { . "$ps\lib\$f.ps1" }
+    foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'Window', 'WinTitle', 'WindowOps', 'AhkSyntax', 'Send') { . "$ps\lib\$f.ps1" }
     . "$ps\commands\helper.ps1"
     . "$ps\commands\custom\chrome.ps1"
 }
@@ -52,10 +53,12 @@ Describe 'Chrome commands send their keys only to Chrome' {
         Mock Send-Chord { $script:sent.Add("chord $Chord") }
         Mock Send-Key { $script:sent.Add("key $Name") }
         Mock Send-Text { $script:sent.Add("text $Text") }
+        Mock Send-WindowMessage { $script:sent.Add("message $Hwnd $Msg $WParam $LParam post=$([bool]$Post)"); 1 }
+        Mock Test-WindowActive { [IntPtr]42 }
         Mock Wait-Pump {}
     }
     It '<Command> asks EnsureActiveOrOpen for chrome.exe and sends nothing when Chrome is not active' -ForEach @(
-        @{ Command = 'ChromeNewTab' }, @{ Command = 'ChromeOpenNewWindow' }, @{ Command = 'ChromeOpenIncognitoWindow' },
+        @{ Command = 'ChromeNewTab' }, @{ Command = 'ChromeNewTabInGroup' }, @{ Command = 'ChromeOpenNewWindow' }, @{ Command = 'ChromeOpenIncognitoWindow' },
         @{ Command = 'ChromeOpenDownloads' }, @{ Command = 'ChromeOpenHistory' }, @{ Command = 'ChromeOpenBookmarks' },
         @{ Command = 'ChromeOpenExtensions' }, @{ Command = 'ChromeOpenSettings' }
     ) {
@@ -64,8 +67,22 @@ Describe 'Chrome commands send their keys only to Chrome' {
         Should -Invoke EnsureActiveOrOpen -Times 1 -Exactly -ParameterFilter { $Exe -eq 'chrome.exe' -and $Program -eq 'chrome.exe' }
         $script:sent.Count | Should -Be 0
     }
-    It 'has no ChromeNewTabInGroup: Chrome has no shortcut for a new tab in a group, and Shift+Alt+T focuses the toolbar' {
-        Get-Command ChromeNewTabInGroup -CommandType Function -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    It 'ChromeNewTabInGroup posts Chrome''s command IDC_NEW_TAB_TO_RIGHT (WM_COMMAND 35024) to the active Chrome window, and presses no key' {
+        Mock EnsureActiveOrOpen { $true }
+        ChromeNewTabInGroup $null
+        $script:sent -join ' | ' | Should -Be 'message 42 273 35024 0 post=True'
+        Should -Invoke Test-WindowActive -Times 1 -Exactly -ParameterFilter { $WinTitle -eq 'ahk_exe chrome.exe' }
+    }
+    It 'ChromeNewTabInGroup posts nothing when Chrome is no longer the active window after the guard' {
+        Mock EnsureActiveOrOpen { $true }
+        Mock Test-WindowActive { [IntPtr]::Zero }
+        ChromeNewTabInGroup $null
+        $script:sent.Count | Should -Be 0
+    }
+    It 'ChromeNewTabInGroup raises an error when Windows does not take the message, as AutoHotkey''s PostMessage does' {
+        Mock EnsureActiveOrOpen { $true }
+        Mock Send-WindowMessage { 0 }
+        { ChromeNewTabInGroup $null } | Should -Throw '*new tab command*'
     }
     It 'EnsureActiveOrOpenChrome passes on whether Chrome is active' {
         Mock EnsureActiveOrOpen { $true }

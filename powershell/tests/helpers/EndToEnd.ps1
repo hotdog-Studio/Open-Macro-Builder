@@ -1277,7 +1277,8 @@ function Get-E2eStandinMark {
     @(Read-E2eLog $Standin.Log).Count
 }
 
-# The stand-in's log lines after Mark, as events: Kind (down, up, char, click, close), Vk, Up.
+# The stand-in's log lines after Mark, as events: Kind (down, up, char, click, close, command), Vk, Up;
+# a command (a WM_COMMAND posted to the window, such as Chrome's own commands) has its number in Id.
 function Get-E2eStandinEvents {
     param($Standin, [int]$Mark = 0)
     $lines = @(Read-E2eLog $Standin.Log)
@@ -1287,6 +1288,8 @@ function Get-E2eStandinEvents {
             [pscustomobject]@{ Kind = $Matches[1]; Vk = [Convert]::ToInt32($Matches[2], 16); Up = $Matches[1] -eq 'up'; Repeat = $Matches[4] -eq '1'; Mods = $Matches[5]; Line = $line }
         } elseif ($line -match '^char ([0-9A-F]{4})$') {
             [pscustomobject]@{ Kind = 'char'; Vk = 0; Char = [char][Convert]::ToInt32($Matches[1], 16); Up = $false; Repeat = $false; Mods = ''; Line = $line }
+        } elseif ($line -match '^command (\d+)$') {
+            [pscustomobject]@{ Kind = 'command'; Vk = 0; Id = [int]$Matches[1]; Up = $false; Repeat = $false; Mods = ''; Line = $line }
         } elseif ($line -match '^(click|close)') {
             [pscustomobject]@{ Kind = $Matches[1]; Vk = 0; Up = $false; Repeat = $false; Mods = ''; Line = $line }
         }

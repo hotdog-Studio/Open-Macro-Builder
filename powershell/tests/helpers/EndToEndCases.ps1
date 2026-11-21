@@ -697,7 +697,7 @@ function Get-E2eCases {
                 @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 0 -Because 'Chrome is not started again while it has a window'
             }
         }
-        @{ Name = 'ChromeNewTab (Chrome shows no window)'; Command = 'ChromeNewTab'; File = 'custom\chrome'; Kind = 'Custom'; Covers = 'when Chrome shows no window, the command starts it and sends no key, then or after the 5 seconds it waits, and nothing comes forward (one of the eight commands that bring Chrome forward first, since all eight call the same guard, EnsureActiveOrOpenChrome)'
+        @{ Name = 'ChromeNewTab (Chrome shows no window)'; Command = 'ChromeNewTab'; File = 'custom\chrome'; Kind = 'Custom'; Covers = 'when Chrome shows no window, the command starts it and sends no key, then or after the 5 seconds it waits, and nothing comes forward (one of the nine commands that bring Chrome forward first, since all nine call the same guard, EnsureActiveOrOpenChrome)'
             SkipIf  = {
                 $f = Get-E2eForeignWindows 'ahk_exe chrome.exe'
                 if ($f.Count -gt 0) { "a Chrome the test did not start has windows open; for this case Chrome must have none" }
@@ -727,6 +727,35 @@ function Get-E2eCases {
         }
         foreach ($c in 'ChromeNewTab', 'ChromeOpenNewWindow', 'ChromeOpenIncognitoWindow', 'ChromeOpenDownloads', 'ChromeOpenHistory', 'ChromeOpenBookmarks') {
             @{ Command = $c; File = 'custom\chrome'; From = 'B'; Covers = 'brings Chrome forward from another window, then sends its keys into Chrome only' }
+        }
+        # No real Chrome: the stand-in A (chrome.exe) logs the WM_COMMAND it gets. That Chrome runs this
+        # number as "New tab to the right" on the active tab, in its group, is read from Chromium's source
+        # (chrome_command_ids.h, BrowserView::ExecuteWindowsCommand), not run here.
+        @{ Command = 'ChromeNewTabInGroup'; File = 'custom\chrome'; Kind = 'Custom'; Targets = 'chrome.exe'
+            Covers  = 'brings Chrome forward from another window, then posts Chrome''s own command IDC_NEW_TAB_TO_RIGHT (WM_COMMAND 35024) to the Chrome window once and presses no key. Not run: that Chrome opens the tab in the active tab''s group (no Chrome on the test machine)'
+            Arrange = {
+                param($ctx)
+                $ctx.A = Use-E2eStandin 'A'
+                $ctx.Mark = Get-E2eStandinMark $ctx.A
+                $ctx.B = Use-E2eStandin 'B'
+                $ctx.BMark = Get-E2eStandinMark $ctx.B
+                $ctx.Launches = Get-E2eLaunchMark
+            }
+            Assert  = {
+                param($ctx)
+                [void](Assert-E2eCommandDone $ctx.Commands 'ChromeNewTabInGroup' -TimeoutMs 8000)
+                # The message is posted: it is given a moment to reach the stand-in and its log, and then
+                # 300 ms more, so that a second one or a key after it shows too.
+                [void](Wait-E2eCondition { @(Get-E2eStandinEvents $ctx.A $ctx.Mark | Where-Object { $_.Kind -eq 'command' }).Count -gt 0 } -TimeoutMs 3000)
+                Wait-Pump 300
+                $lines = (@(Read-E2eLog $ctx.A.Log) | Select-Object -Skip $ctx.Mark) -join ' / '
+                (@(Get-E2eStandinEvents $ctx.A $ctx.Mark | Where-Object { $_.Kind -eq 'command' } | ForEach-Object { $_.Id }) -join ', ') | Should -Be '35024' -Because "Chrome's window must get IDC_NEW_TAB_TO_RIGHT once (the stand-in's lines: $lines)"
+                (Get-E2eStandinTaps $ctx.A $ctx.Mark) -join ', ' | Should -BeNullOrEmpty -Because "the command presses no key in Chrome (the stand-in's lines: $lines)"
+                (Get-E2eStandinTaps $ctx.B $ctx.BMark) -join ', ' | Should -BeNullOrEmpty -Because 'no key may reach the window that was in front before'
+                (Get-E2eWatchTaps) -join ', ' | Should -BeNullOrEmpty -Because 'the command presses no key'
+                [Macropad.WindowApi]::Foreground() | Should -Be $ctx.A.Hwnd -Because "the command brings Chrome forward (in front: $(Get-E2eForegroundText))"
+                @(Get-E2eLaunches $ctx.Launches).Count | Should -Be 0 -Because 'Chrome is not started again while it has a window'
+            }
         }
         @{ Command = 'ChromeOpenExtensions'; File = 'custom\chrome'; From = 'B'; Chords = @('Ctrl+l', 'text:chrome://extensions', 'Enter'); Source = $script:E2eDocs.Chrome; Covers = 'brings Chrome forward, then opens the page through the address bar, since Chrome has no shortcut for it' }
         @{ Command = 'ChromeOpenSettings'; File = 'custom\chrome'; From = 'B'; Chords = @('Ctrl+l', 'text:chrome://settings', 'Enter'); Source = $script:E2eDocs.Chrome; Covers = 'brings Chrome forward, then opens the page through the address bar, since Chrome has no shortcut for it' }

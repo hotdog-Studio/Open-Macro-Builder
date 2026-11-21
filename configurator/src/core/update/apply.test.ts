@@ -509,6 +509,12 @@ describe('applyUpdate: the include file', () => {
       lists: ['replaced'],
     },
     {
+      row: 'of an earlier body, the line of a command file to remove taken out after the plan: not a switched-off command, written whole, replaced',
+      later: { [INCLUDE_FILE]: includeText('; config 1.0.5', WINDOWS, CHROME) },
+      text: APP[INCLUDE_FILE],
+      lists: ['replaced'],
+    },
+    {
       row: 'of an earlier body, a command file to add there now without its line: not a switched-off command, written whole, replaced',
       later: { [NEW_FILE]: APP[NEW_FILE] },
       text: APP[INCLUDE_FILE],
@@ -598,7 +604,7 @@ describe('applyUpdate: the include file', () => {
 const lists = (folder: MemoryFolder, path: string) => listedCommandFiles(folder.text(INCLUDE_FILE) ?? '').includes(path)
 
 describe('applyUpdate: a command file switched off by taking its line out of the include file', () => {
-  it.each<{ row: string; changes: Changes; off: string; text: string }>([
+  it.each<{ row: string; changes: Changes; manifest?: ManifestTexts; off: string; text: string }>([
     {
       row: "the app's body, a shared command file",
       changes: { [INCLUDE_FILE]: includeText('; config 1.0.6', CHROME, GONE) },
@@ -623,8 +629,15 @@ describe('applyUpdate: a command file switched off by taking its line out of the
       off: MINE_FILE,
       text: includeText('; config 1.0.5', WINDOWS, CHROME, NEW),
     },
-  ])('$row: the file is kept, only its list adjusted, and the next check offers nothing and leaves it off', async ({ changes, off, text }) => {
-    const folder = await folderOf(changes)
+    {
+      row: 'an earlier body, a shared command file, in a folder with a manifest',
+      changes: { [INCLUDE_FILE]: includeText('; config 1.0.5', CHROME, GONE) },
+      manifest: { version: '1.0.5', files: OLD },
+      off: WINDOWS_FILE,
+      text: includeText('; config 1.0.5', CHROME, NEW),
+    },
+  ])('$row: the file is kept, only its list adjusted, and the next check offers nothing and leaves it off', async ({ changes, manifest, off, text }) => {
+    const folder = await folderOf(changes, manifest)
     const { plan, result } = await update(folder)
     expect(plan.changed).toEqual([INCLUDE_FILE])
     expect(plan.list).toBe('adjust')
@@ -636,6 +649,19 @@ describe('applyUpdate: a command file switched off by taking its line out of the
     const next = await nextPlan(folder)
     expect(next).toMatchObject({ replace: [], add: [], remove: [], changed: [INCLUDE_FILE], list: 'none', news: false })
     expect(lists(folder, off)).toBe(false)
+  })
+
+  it('does not count the line of a command file the update removes: the include file is replaced, and lists what the folder holds', async () => {
+    // The person switched off gone.ahk, which 1.0.6 no longer has, and nothing else.
+    const folder = await folderOf({ [INCLUDE_FILE]: includeText('; config 1.0.5', WINDOWS, CHROME) })
+    const { plan, result } = await update(folder)
+    expect(plan.changed).toEqual([])
+    expect(plan.replace).toContain(INCLUDE_FILE)
+    expect(plan.remove).toContain(GONE_FILE)
+    expect(result.ok).toBe(true)
+    expect(folder.text(GONE_FILE)).toBeNull()
+    expect(folder.text(INCLUDE_FILE)).toBe(APP[INCLUDE_FILE])
+    expect(await listsWhatItHolds(folder)).toBe(true)
   })
 
   // An earlier body kept is offered again at the next check, as any file kept because it changed after the plan.
@@ -769,6 +795,20 @@ describe('applyUpdate: a failure', () => {
     expect(Object.fromEntries(Object.keys(APP).map((path) => [path, folder.text(path)]))).toEqual(APP)
     expect(folder.text(GONE_FILE)).toBeNull()
     expect((await readManifest(folder))?.version).toBe('1.0.6')
+  })
+
+  it('at the third write, with a command switched off: the rerun lists the command file the stopped update added, and keeps the other off', async () => {
+    const folder = await folderOf({ [INCLUDE_FILE]: includeText('; config 1.0.5', CHROME, GONE) })
+    const { result } = await update(folder, { fails: nthWrite(3) })
+    expect(result).toMatchObject({ ok: false, failedAt: WINDOWS_FILE, added: [NEW_FILE] })
+    const again = await update(folder)
+    expect(again.plan.unfinished).toEqual([NEW_FILE])
+    expect(again.plan.changed).toEqual([INCLUDE_FILE])
+    expect(again.plan.list).toBe('adjust')
+    expect(again.result.ok).toBe(true)
+    expect(folder.text(INCLUDE_FILE)).toBe(includeText('; config 1.0.5', CHROME, NEW))
+    expect(lists(folder, WINDOWS_FILE)).toBe(false)
+    expect(folder.text(WINDOWS_FILE)).toBe(APP[WINDOWS_FILE])
   })
 
   it('says the include file was adjusted when a removal after it fails', async () => {

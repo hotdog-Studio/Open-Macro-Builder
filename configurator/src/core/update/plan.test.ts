@@ -566,6 +566,21 @@ describe('planUpdate: the include file', () => {
       { changed: ['ahk/config.ahk'], remove: ['ahk/commands/gone.ahk'] },
       'adjust',
     ],
+    // A command file the update removes is not switched off: the folder will not hold it. One kept, the app no longer has, is.
+    [
+      "the app's body, without the line of a command file the update removes: left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, CHROME_LINE), 'ahk/commands/gone.ahk': 'gone 1.0.4\n' },
+      null,
+      { remove: ['ahk/commands/gone.ahk'] },
+      'none',
+    ],
+    [
+      "the app's body, without the line of a changed command file the app no longer has: changed, kept, its list left",
+      { 'ahk/config.ahk': lines('; config 1.0.6', WINDOWS_LINE, CHROME_LINE), 'ahk/commands/gone.ahk': 'my gone\n' },
+      null,
+      { changed: ['ahk/config.ahk'], keptRemoved: ['ahk/commands/gone.ahk'] },
+      'none',
+    ],
     [
       'an earlier body, without the line of a shared command file: changed, kept, its list left',
       { 'ahk/config.ahk': lines('; config 1.0.5', CHROME_LINE) },
@@ -666,6 +681,13 @@ describe('planUpdate: the include file', () => {
     },
   )
 
+  it('adjusts the list of a changed include file that leaves out an unfinished command file, so the update puts its line in', async () => {
+    const plan = await planOf({ 'ahk/config.ahk': lines('; my config', WINDOWS_LINE, CHROME_LINE) }, null, WITH_NEW)
+    expect(plan.unfinished).toEqual(['ahk/commands/custom/new.ahk'])
+    expect(plan.changed).toEqual(['ahk/config.ahk'])
+    expect(plan.list).toBe('adjust')
+  })
+
   it.each<[string, Changes, ManifestTexts | null]>([
     [
       'the manifest names it',
@@ -694,6 +716,11 @@ describe('planUpdate: the include file', () => {
     expect(listsOf(plan)).toEqual({ ...NO_LISTS, keptRemoved: ['ahk/commands/gone.ahk'] })
     expect(plan.ownAhkCommandFiles).toEqual(['ahk/commands/gone.ahk'])
     expect(plan.list).toBe('none')
+  })
+
+  it('keeps an include file the app no longer has when it switches a command off, though a release shipped it as it is', async () => {
+    const plan = await planOf({ 'ahk/config.ahk': lines('; config 1.0.5', CHROME_LINE) }, null, fixtureOf(APP, LISTED_OLD))
+    expect(listsOf(plan)).toEqual({ ...NO_LISTS, keptRemoved: ['ahk/config.ahk'] })
   })
 
   it('is left alone when no version has one', async () => {

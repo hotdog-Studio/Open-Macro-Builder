@@ -232,12 +232,13 @@ const seenOf = (plan: UpdatePlan, path: string) => plan.seen[path] ?? null
 
 /**
  * Whether the include file, as read again, leaves out the line of an AutoHotkey command file the folder holds: a
- * command the person switched off, as the plan counts it. The files this update adds, and the plan's unfinished
- * ones, are not counted: their lines are the update's to put in.
+ * command the person switched off, as the plan counts it. Not counted: the files this update adds and the plan's
+ * unfinished ones, whose lines are the update's to put in, and those it removes, which will not be there.
  */
 function switchesOff(ctx: Context, data: Uint8Array): boolean {
-  const added = new Set([...ctx.plan.add, ...ctx.tickedDeleted, ...ctx.plan.unfinished].map(keyOf))
-  return !listsAll(decode(data), ctx.ahkFiles.filter((path) => !added.has(keyOf(path))))
+  const { plan } = ctx
+  const skip = new Set([...plan.add, ...ctx.tickedDeleted, ...plan.unfinished, ...plan.remove].map(keyOf))
+  return !listsAll(decode(data), ctx.ahkFiles.filter((path) => !skip.has(keyOf(path))))
 }
 
 /**
@@ -379,14 +380,18 @@ async function wholeWrite(ctx: Context, work: Work, app: AppFile, now: Now, tick
 }
 
 /**
- * The folder's include file with a line for each command file this update brings in, and none for each it
- * removes or found gone; null when that changes nothing. The text is the person's: decoded strictly with its
- * byte-order mark kept, as textFile does for a file it edits, and one that is not UTF-8 is never edited.
+ * The folder's include file with a line for each command file this update brings in (and for each unfinished one
+ * an update that stopped brought in, while it is there), and none for each it removes or found gone; null when that
+ * changes nothing. The text is the person's: decoded strictly with its byte-order mark kept, as textFile does for a
+ * file it edits, and one that is not UTF-8 is never edited.
  */
 async function adjustedWrite(ctx: Context, work: Work, path: string, data: Uint8Array): Promise<Write | null> {
   const { file, utf8 } = await decodeLenient(path, data)
   const revived = ctx.tickedChanged.filter((ticked) => nowOf(ctx, ticked).data === null)
-  const text = adjustList(file.text, [...ctx.plan.add, ...ctx.tickedDeleted, ...revived], [...work.removals, ...work.gone])
+  const held = heldOf(ctx, work)
+  const unfinished = ctx.plan.unfinished.filter((unlisted) => held.has(keyOf(unlisted)))
+  const added = [...ctx.plan.add, ...ctx.tickedDeleted, ...revived, ...unfinished]
+  const text = adjustList(file.text, added, [...work.removals, ...work.gone])
   if (text === file.text) return null
   if (!utf8) throw new Error(`${path} is not UTF-8 text, so its list of command files cannot be brought up to date.`)
   return recorded(work, { path, data: encodeTextFile({ ...file, text }), into: 'adjusted' })

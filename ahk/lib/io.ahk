@@ -75,7 +75,9 @@ ActivateOrSelectMacro(Keyname)
  * @description
  * Runs a macro's command: what a macro key and a click on the overlay do. (A hotkey or hotstring of
  * config.json calls its action itself, through ConfigRunner in config.ahk, and writes no line: unlike
- * the PowerShell version, whose hotkeys go through the same function as its keys.)
+ * the PowerShell version, whose hotkeys go through the same function as its keys. ConfigRunner is not
+ * changed to call this, since config.ahk is the person's include file and the configurator's update
+ * fingerprints its body: a change to it would make every person's copy news in the update.)
  * When the end-to-end test started this macropad (OMB_E2E and OMB_E2E_DIR set), it
  * also writes to the test's command log a line when the command starts, and one when it has returned
  * or thrown: "start <command>", "done <command>", "failed <command>: <message>". A thrown error goes on

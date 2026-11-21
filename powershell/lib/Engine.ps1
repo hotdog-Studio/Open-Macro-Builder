@@ -102,18 +102,21 @@ function Test-MacroCancelled {
 # error is reported; a dropped request writes nothing, and a macro the macropad's exit cancelled only
 # its start. The AutoHotkey version writes the same lines for its keys and overlay clicks
 # (RunMacroAction in ahk\lib\io.ahk), but not for config.json's hotkeys and hotstrings, which here come
-# through this function too. The variables have names of their own: a command runs inside this function
-# and could read a plain $name.
+# through this function too: there they run through ConfigRunner in ahk\config.ahk, the person's include
+# file, left as it is because the configurator's update fingerprints its body and a change to it would
+# make every person's copy news. The variables have names of their own: a command runs inside this
+# function and could read a plain $name. All that follows setting Busy is inside the try, so that the
+# finally always clears it.
 function Invoke-EngineMacro {
     param($Engine, $Macro)
     if ($Engine.Busy) { return $false }
     $Engine.Busy = $true
-    $engineCommandLog = $Engine.CommandLog
-    if ($engineCommandLog) {
-        $engineCommandName = Get-EngineCommandName $Macro
-        Write-EngineCommandLog $engineCommandLog "start $engineCommandName"
-    }
     try {
+        $engineCommandLog = $Engine.CommandLog
+        if ($engineCommandLog) {
+            $engineCommandName = Get-EngineCommandName $Macro
+            Write-EngineCommandLog $engineCommandLog "start $engineCommandName"
+        }
         [void](& $Engine.RunMacro $Macro)
         if ($engineCommandLog) { Write-EngineCommandLog $engineCommandLog "done $engineCommandName" }
     } catch {

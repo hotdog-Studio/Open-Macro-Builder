@@ -1,6 +1,9 @@
+import { readdirSync } from 'node:fs'
+import { dirname, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { memoryFolderFromRepo, readRepoText } from '../../../test/repo'
-import { scanCommands } from '../languages'
+import { LANGUAGES, scanCommands } from '../languages'
 import { AHK_DOCS, AHK_REFERENCE, REFERENCE_GROUPS, type ReferenceEntry } from './reference'
 import TEXT from './reference/autohotkey.ahk?raw'
 
@@ -69,6 +72,17 @@ const NO_ENTRY: Record<string, string> = {
   SendPlay: 'Deprecated: AutoHotkey says it may do nothing at all on Windows 11, or with User Account Control on.',
   SendLevel: "Decides whether one script's keys can fire another's hotkeys; the macropad's keys are set up by the engine.",
   KeyHistory: 'A debugging window of the last keys pressed, for writing the engine, not for a command.',
+  Shutdown:
+    'Hidden by the Shutdown command of ahk/commands/power.ahk, which AutoHotkey calls in its place, so the scripts cannot reach it. ' +
+    'Use the Restart and Shutdown commands, or Run "shutdown /r /t 0".',
+}
+
+/** Every .ahk file of the repository's ahk folder but its tests, as paths from the repository's root. */
+function sharedAhkFiles(): string[] {
+  const ahk = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../ahk')
+  return readdirSync(ahk, { recursive: true, encoding: 'utf8' })
+    .map((p) => `ahk/${p.split(sep).join('/')}`)
+    .filter((p) => p.endsWith('.ahk') && !p.startsWith('ahk/tests/'))
 }
 
 /** A row of the table in ahk-builtins.md: the AutoHotkey names, what the PowerShell version uses, and the kind. */
@@ -157,6 +171,16 @@ describe('the AutoHotkey reference', () => {
     const builtInsCalled = [...called].filter((n) => builtIns.has(n) && !defined.has(n))
     expect(builtInsCalled.length).toBeGreaterThan(20)
     expect(builtInsCalled.filter((n) => !entryOf(n)).map((n) => builtIns.get(n))).toEqual([])
+  })
+
+  it('has no entry for a built-in that a function of the shared scripts hides', () => {
+    // AutoHotkey calls a script's function in place of a built-in of the same name, so the scripts never reach that built-in.
+    const files = sharedAhkFiles()
+    expect(files).toContain('ahk/commands/power.ahk')
+    expect(files).toContain('ahk/lib/io.ahk')
+    const defined = files.flatMap((p) => LANGUAGES.ahk.findFunctions(readRepoText(p)).map((fn) => fn.name))
+    expect(defined).toContain('Shutdown')
+    expect(defined.filter((name) => entryOf(name))).toEqual([])
   })
 
   it('has an entry for every function ahk-builtins.md names, or says why not', () => {

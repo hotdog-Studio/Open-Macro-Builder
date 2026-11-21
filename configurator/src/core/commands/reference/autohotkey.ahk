@@ -996,17 +996,6 @@ ProcessClose(PIDOrName) {
 }
 
 /**
- * Logs off, shuts down or restarts the computer. A function of the scripts with the same name is called in its place: the shared commands define one (ahk/commands/power.ahk), and while they do, Shutdown runs that command instead.
- * @param {Integer} Flag - What to do, as a sum: 0 logs off, 1 shuts down, 2 restarts, 8 shuts down and powers off; add 4 to force programs to close, losing anything unsaved. 9 (1 + 8) shuts down and switches the computer off.
- * @example Shutdown 2  ; restart
- * @group Programs and files
- * @powershell shutdown.exe
- * @see https://www.autohotkey.com/docs/v2/lib/Shutdown.htm
- */
-Shutdown(Flag) {
-}
-
-/**
  * Tells whether a file or folder exists.
  * @param {String} FilePattern - The path of the file or folder, such as "C:\Notes\todo.txt". It may hold * and ? as wildcards: "C:\Notes\*.txt". A path without a drive counts from the macropad's working folder.
  * @returns {String} Letters for the attributes of the first match, such as "A" or "D" (a folder); empty (false) when there is none, so it works in an if.

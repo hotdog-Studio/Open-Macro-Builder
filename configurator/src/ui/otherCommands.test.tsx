@@ -3,6 +3,7 @@ import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { langButton, pairButton, startCommands } from '../../test/commandsTab'
+import { REFERENCE_GROUPS } from '../core/commands/reference'
 
 afterEach(cleanup)
 
@@ -23,7 +24,9 @@ describe('Other commands available', () => {
     const helpers = within(other()).getAllByRole('button', { name: /^helper/ })
     expect(helpers.map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
     expect(within(row('ActivateOrOpen')).getByText("Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows. After starting the Program it waits up to 5 seconds for the Window to appear and activates it; if none appears in that time, nothing is activated.")).toBeTruthy()
-    expect(within(other()).getByText("AutoHotkey's own functions, such as Send and Run, are not listed here. They are described at autohotkey.com/docs/v2.")).toBeTruthy()
+    expect(other().lastElementChild!.textContent).toBe(
+      "Everything else AutoHotkey has, such as its A_ variables and directives like #Include, is described at https://www.autohotkey.com/docs/v2/",
+    )
     // Below the outline, in the same panel.
     const outline = screen.getByRole('region', { name: 'Commands in this file' })
     expect(outline.compareDocumentPosition(other()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -125,6 +128,67 @@ describe('Other commands available', () => {
     await user.click(pairButton('windows'))
     replaceAll('/**\n * A tool typed just now.\n */\nJustTyped(A, B)\n{\n}\n')
     expect(within(row('JustTyped')).getByText('A tool typed just now.')).toBeTruthy()
+  })
+
+  /** The group buttons of the list under the heading `title`, such as "AutoHotkey's own functions". */
+  const groupsUnder = (title: string) => {
+    const list = within(other()).getByRole('heading', { name: title }).nextElementSibling as HTMLElement
+    return within(list).getAllByRole('button', { expanded: false })
+  }
+
+  it("lists AutoHotkey's own functions after the folder's, by group, closed until asked", async () => {
+    const { user } = await start()
+    await user.click(pairButton('windows'))
+    const heading = within(other()).getByRole('heading', { name: "AutoHotkey's own functions" })
+    const commands = within(other()).getByRole('heading', { name: 'Commands in other files' })
+    expect(commands.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const labels = groupsUnder("AutoHotkey's own functions").map((b) => b.textContent!.replace(/^[▸▾]/, '').replace(/\d+$/, '').trim())
+    expect(labels).toEqual([...REFERENCE_GROUPS])
+    expect(within(other()).queryByRole('button', { name: /^Send\b/ })).toBeNull()
+    await user.click(group(/^Keys and mouse/))
+    expect(within(row('Send')).getByText(/^Presses keys and types text in the active window/)).toBeTruthy()
+  })
+
+  it("shows a built-in's card from the list, with what the PowerShell version uses and its page", async () => {
+    const { user } = await start()
+    await user.click(pairButton('windows'))
+    await user.click(group(/^Sound/))
+    await user.hover(row('SoundSetMute'))
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toContain('SoundSetMute(NewSetting, Component?, Device?)')
+    expect(tip.textContent).toContain('In the PowerShell version: Set-SoundMute, Switch-SoundMute')
+    expect(tip.textContent).toContain('https://www.autohotkey.com/docs/v2/lib/SoundSetMute.htm')
+  })
+
+  it("finds AutoHotkey's own functions with the filter", async () => {
+    const { user } = await start()
+    await user.click(pairButton('windows'))
+    await user.type(within(other()).getByRole('textbox', { name: 'Filter other commands' }), 'clipboard')
+    expect(row('ClipWait')).toBeTruthy()
+    expect(group(/^The clipboard/).getAttribute('aria-expanded')).toBe('true')
+    expect(within(other()).queryByRole('button', { name: /^Sound\b/ })).toBeNull()
+  })
+
+  it("lists a function of the folder named like a built-in in the folder's group, and gives its card first", async () => {
+    const { user } = await start()
+    await user.click(pairButton('windows'))
+    replaceAll('/**\n * My own sleep.\n * @param Delay - How long.\n */\nSleep(Delay)\n{\n}\n')
+    await user.click(group(/^Waiting and timing/))
+    // The folder's function heads the list; the built-in stays in its own group, with its own card.
+    const [own, builtIn] = within(other()).getAllByRole('button', { name: /^Sleep\b/ })
+    expect(within(own).getByText('My own sleep.')).toBeTruthy()
+    await user.hover(own)
+    expect(screen.getByRole('tooltip').textContent).toContain('My own sleep.')
+    await user.hover(builtIn)
+    await waitFor(() => expect(screen.getByRole('tooltip').textContent).toContain('https://www.autohotkey.com/docs/v2/lib/Sleep.htm'))
+  })
+
+  it('lists none of them for a PowerShell file', async () => {
+    const { user } = await start()
+    await user.click(pairButton('windows'))
+    await user.click(langButton('PowerShell'))
+    expect(within(other()).queryByRole('heading', { name: "AutoHotkey's own functions" })).toBeNull()
+    expect(within(other()).queryByRole('button', { name: /^Keys and mouse\b/ })).toBeNull()
   })
 
   it('works in a folder that has no library', async () => {

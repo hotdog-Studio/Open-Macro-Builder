@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { filterSections, listSections, type DictEntry, type Dictionary, type ListGroup } from '../core/commands/dictionary'
+import { AHK_DOCS } from '../core/commands/reference'
 import type { LangId } from '../core/languages'
 import { DocCard } from './code/DocCard'
 import { useDocHover, type RowHoverFor } from './DocHover'
 import { STYLE } from './Panels'
 
+/** The list's last line: what it leaves out. Plain text, as the page opens no outside addresses. */
 const CLOSING: Record<LangId, string> = {
-  ahk: "AutoHotkey's own functions, such as Send and Run, are not listed here. They are described at autohotkey.com/docs/v2.",
+  ahk: `Everything else AutoHotkey has, such as its A_ variables and directives like #Include, is described at ${AHK_DOCS}`,
   ps: "PowerShell's own cmdlets are not listed here.",
 }
 
@@ -151,7 +153,8 @@ export function OtherCommands({ dict }: Readonly<{ dict: Dictionary }>) {
       />
       {section('Functions to call', sections.functions, true)}
       {section('Commands in other files', sections.commands, false)}
-      {filtering && sections.functions.length === 0 && sections.commands.length === 0 && (
+      {section("AutoHotkey's own functions", sections.reference, false)}
+      {filtering && [sections.functions, sections.commands, sections.reference].every((groups) => groups.length === 0) && (
         <p className={STYLE.note}>Nothing matches.</p>
       )}
       <p className={STYLE.note}>{CLOSING[dict.lang]}</p>

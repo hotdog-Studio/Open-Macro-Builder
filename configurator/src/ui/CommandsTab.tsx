@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { buildDictionary, parseCache, type DictEntry, type Dictionary } from '../core/commands/dictionary'
+import { AHK_REFERENCE } from '../core/commands/reference'
 import { checkNewFile } from '../core/commands/files'
 import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
@@ -640,8 +641,9 @@ export function CommandsTab() {
   // outline is looked up in its pair's own files, whichever language has the command.
   const dicts = useMemo(() => {
     cache.keep(drafts)
+    // The AutoHotkey reference is bundled with the app; the PowerShell dictionary leaves it out.
     const build = (l: LangId) =>
-      buildDictionary({ lang: l, shown: pair?.files[l]?.file.path ?? null, commandFiles, libraryFiles, drafts }, cache)
+      buildDictionary({ lang: l, shown: pair?.files[l]?.file.path ?? null, commandFiles, libraryFiles, drafts, reference: AHK_REFERENCE }, cache)
     return { ahk: build('ahk'), ps: build('ps') }
   }, [cache, pair, commandFiles, libraryFiles, drafts])
   const dict = dicts[lang]

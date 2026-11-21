@@ -12,6 +12,7 @@ import {
   type Dictionary,
   type ListSections,
 } from './dictionary'
+import { readReference, type Reference } from './reference'
 
 function cmd(path: string, text: string): CommandFile {
   const at = commandFileAt(path)!
@@ -87,7 +88,7 @@ describe('buildDictionary', () => {
         [HELPER_PS.file.path]: 'function Get-Elsewhere {\n}\n',
       },
     }))
-    expect(dict.lookup('Get-Typed')!.source.line).toBe(4)
+    expect(dict.lookup('Get-Typed')!.source).toMatchObject({ line: 4 })
     expect(dict.lookup('Get-Elsewhere')).toBeDefined()
     expect(dict.lookup('Get-Private')).toBeUndefined()
   })
@@ -274,6 +275,95 @@ describe('filterSections', () => {
   })
 })
 
+// Written with the Windows group first, so only the reference's own order puts Keys and mouse first.
+const REFERENCE_TEXT = [
+  '/**', ' * Makes a window active.', ' * @param {String} WinTitle - The window.', ' * @example WinActivate "ahk_exe notepad.exe"',
+  ' * @group Windows', ' * @see https://www.autohotkey.com/docs/v2/lib/WinActivate.htm', ' */', 'WinActivate(WinTitle?) {', '}',
+  '/**', ' * Presses keys and types text.', ' * @param {String} Keys - What to press.', ' * @example Send "^c"',
+  ' * @group Keys and mouse', ' * @powershell Send-Ahk', ' * @see https://www.autohotkey.com/docs/v2/lib/Send.htm', ' */', 'Send(Keys) {', '}',
+  '/**', ' * Waits.', ' * @group Waiting and timing', ' * @see https://www.autohotkey.com/docs/v2/lib/Sleep.htm', ' */', 'Sleep(Delay) {', '}',
+].join('\n')
+const REFERENCE: Reference = { lang: 'ahk', entries: readReference(REFERENCE_TEXT) }
+const AHK_HELPER = cmd('ahk/commands/helper.ahk', '/**\n * Opens it.\n */\nOpenIt(Window)\n{\n}\n')
+const withReference = (over: Partial<DictInput> = {}) =>
+  buildDictionary({ lang: 'ahk', shown: WIN_AHK.file.path, commandFiles: [AHK_HELPER, WIN_AHK], libraryFiles: [], drafts: {}, reference: REFERENCE, ...over })
+
+describe('the bundled reference', () => {
+  it('gives a built-in an entry of its own, from the reference, after the folder', () => {
+    const dict = withReference()
+    expect(dict.lookup('send')).toMatchObject({
+      lang: 'ahk',
+      command: false,
+      summary: 'Presses keys and types text.',
+      borrowed: null,
+      source: { kind: 'reference', page: 'https://www.autohotkey.com/docs/v2/lib/Send.htm', powershell: 'Send-Ahk' },
+      group: { key: 'reference:Keys and mouse', kind: 'reference', label: 'Keys and mouse', file: null },
+    })
+    expect(dict.lookup('WinActivate')!.source).toMatchObject({ powershell: null })
+    expect(dict.entries.findIndex((e) => e.group.kind === 'reference')).toBe(dict.entries.length - REFERENCE.entries.length)
+  })
+
+  it('lets a function of the folder with the name of a built-in win, and keeps both', () => {
+    const own = cmd('ahk/commands/windows.ahk', '/**\n * Mine.\n */\nSleep(Macro)\n{\n}\n')
+    const dict = withReference({ shown: own.file.path, commandFiles: [own] })
+    expect(dict.lookup('SLEEP')).toMatchObject({ summary: 'Mine.', source: { kind: 'file' } })
+    expect(dict.entries.filter((e) => e.fn.name === 'Sleep').map((e) => e.source.kind)).toEqual(['file', 'reference'])
+  })
+
+  it('is left out of a dictionary of another language', () => {
+    const dict = buildDictionary(input({ reference: REFERENCE }))
+    expect(dict.lookup('Send')).toBeUndefined()
+    expect(listSections(dict).reference).toEqual([])
+  })
+
+  it('is never found in a file', () => {
+    expect(withReference().lookupIn(WIN_AHK.file.path, 'Send')).toBeUndefined()
+  })
+
+  it("lists its groups after the folder's, in the order of its headings", () => {
+    const { functions, commands, reference } = listSections(withReference())
+    expect(functions.map((g) => g.group.label)).toEqual(['helper'])
+    expect(commands.map((g) => g.group.label)).toEqual([])
+    expect(reference.map((g) => [g.group.label, g.entries.map((e) => e.fn.name)])).toEqual([
+      ['Keys and mouse', ['Send']],
+      ['Windows', ['WinActivate']],
+      ['Waiting and timing', ['Sleep']],
+    ])
+  })
+
+  it('is filtered with the rest', () => {
+    const all = listSections(withReference())
+    expect(filterSections(all, 'press').reference.flatMap((g) => g.entries.map((e) => e.fn.name))).toEqual(['Send'])
+    expect(filterSections(all, 'opens').reference).toEqual([])
+    expect(filterSections(all, 'opens').functions).toHaveLength(1)
+  })
+
+  it("gives each entry an id apart from a file's entry of the same name", () => {
+    const own = cmd('ahk/commands/windows.ahk', 'Send(Keys)\n{\n}\n')
+    const ids = withReference({ shown: own.file.path, commandFiles: [own] }).entries.filter((e) => e.fn.name === 'Send').map((e) => e.id)
+    expect(new Set(ids).size).toBe(2)
+  })
+})
+
+describe('readReference', () => {
+  it('reads the tags of each block, the first of each name', () => {
+    const text = '/**\n * Twice.\n * @group Text\n * @group Other\n * @see a\n */\nTwice(A) {\n}\n'
+    expect(readReference(text).map(({ group, page, powershell }) => ({ group, page, powershell }))).toEqual([
+      { group: 'Text', page: 'a', powershell: null },
+    ])
+  })
+
+  it('leaves out a function without a doc block, and puts a group it does not know last', () => {
+    const text =
+      'Bare() {\n}\n/**\n * Odd.\n * @group Unheard of\n */\nOdd() {\n}\n/**\n * Plain.\n */\nPlain() {\n}\n/**\n * Last.\n * @group Other\n */\nLast() {\n}\n'
+    expect(readReference(text).map((e) => [e.fn.name, e.group, e.page])).toEqual([
+      ['Last', 'Other', ''],
+      ['Odd', 'Unheard of', ''],
+      ['Plain', '', ''],
+    ])
+  })
+})
+
 describe('nameAt', () => {
   it('finds the name under a column', () => {
     expect(nameAt("    Send-Chord 'Ctrl+c'", 6, 'ps')).toEqual({ from: 4, to: 14, name: 'Send-Chord' })
@@ -305,5 +395,10 @@ describe('nameAt', () => {
 describe('sourceText', () => {
   it('writes where an entry is defined', () => {
     expect(sourceText({ kind: 'file', path: 'powershell/lib/Input.ps1', line: 79 })).toBe('powershell/lib/Input.ps1 · line 79')
+  })
+
+  it('gives the page of a reference entry', () => {
+    const page = 'https://www.autohotkey.com/docs/v2/lib/Send.htm'
+    expect(sourceText({ kind: 'reference', page, powershell: 'Send-Ahk' })).toBe(page)
   })
 })

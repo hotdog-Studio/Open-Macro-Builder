@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildDictionary, type DictEntry } from '../../core/commands/dictionary'
+import { AHK_REFERENCE } from '../../core/commands/ahkReference'
 import { newTextFile } from '../../core/folder/textFile'
 import { commandFileAt, LANGUAGES, type CommandFile } from '../../core/languages'
 import { DocCard } from './DocCard'
@@ -162,6 +163,28 @@ describe('DocCard', () => {
       'Optional, off when left out.',
       'Optional, 3 when left out.',
     ])
+  })
+
+  /** The entry for `name` in the bundled AutoHotkey reference. */
+  const builtIn = (name: string): DictEntry =>
+    buildDictionary({ lang: 'ahk', shown: null, commandFiles: [], libraryFiles: [], drafts: {}, reference: AHK_REFERENCE }).lookup(name)!
+
+  it("shows a built-in's docs, what the PowerShell version uses, and its page instead of a file", () => {
+    const { container } = render(<DocCard entry={builtIn('Send')} />)
+    expect(screen.getByText('Send(Keys)')).toBeTruthy()
+    expect(container.querySelector('pre')!.textContent).toBe('Send "^c"  ; Ctrl+C: copy')
+    expect(screen.getByText('In the PowerShell version: Send-Ahk')).toBeTruthy()
+    expect(screen.getByText('https://www.autohotkey.com/docs/v2/lib/Send.htm')).toBeTruthy()
+    expect(container.textContent).not.toContain('· line')
+    // The PowerShell line comes before the page, the last line of the card.
+    const text = container.textContent!
+    expect(text.indexOf('In the PowerShell version')).toBeLessThan(text.indexOf('https://www.autohotkey.com/docs/v2/lib/Send.htm'))
+  })
+
+  it('says nothing of the PowerShell version for a built-in it does not have', () => {
+    const { container } = render(<DocCard entry={builtIn('SetKeyDelay')} />)
+    expect(container.textContent).not.toContain('In the PowerShell version')
+    expect(screen.getByText('https://www.autohotkey.com/docs/v2/lib/SetKeyDelay.htm')).toBeTruthy()
   })
 
   it('shows markup from a script as text', () => {

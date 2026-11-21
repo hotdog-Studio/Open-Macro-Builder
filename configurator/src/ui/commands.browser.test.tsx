@@ -493,6 +493,48 @@ describe('Commands tab: docs on hover', () => {
     expect(card()!.textContent).toContain('ahk/commands/helper.ahk · line')
   })
 
+  /** Whether `el` lies wholly inside the window. */
+  const inWindow = (el: HTMLElement) => {
+    const box = el.getBoundingClientRect()
+    return box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight
+  }
+
+  /** AutoHotkey's own functions are fetched when the tab first shows: waits until the list has them. */
+  const referenceShown = () =>
+    within(screen.getByRole('region', { name: 'Other commands available' })).findByRole('heading', { name: "AutoHotkey's own functions" })
+
+  it("shows the card of an AutoHotkey built-in as text, inside the window", async () => {
+    await start()
+    await openFile('windows')
+    // The editor's card comes from the same reference, so it too waits until it has been fetched.
+    await referenceShown()
+    // A call to Send in a command's body: indented, as AutoHotkey's own function is called there.
+    const call = /^([ \t]+)Send\(/m.exec(text())!
+    await hover(await pointAt(call.index + call[1].length + 2))
+    await waitFor(() => expect(card()?.textContent).toContain('Send(Keys)'))
+    const box = card()!
+    expect(box.textContent).toContain('In the PowerShell version: Send-Ahk')
+    expect(box.textContent).toContain('https://www.autohotkey.com/docs/v2/lib/Send.htm')
+    // The braces and symbols of its docs stay text: no link, no markup.
+    expect(box.textContent).toContain('{Shift down}...{Shift up}')
+    expect(box.querySelector('a, b, i, img, script')).toBeNull()
+    await waitFor(() => expect(inWindow(box)).toBe(true))
+  })
+
+  it("shows the card of a built-in from the list inside the window, at its full height or scrolled", async () => {
+    await start()
+    await openFile('windows')
+    const other = screen.getByRole('region', { name: 'Other commands available' })
+    await click(await within(other).findByRole('button', { name: /^Keys and mouse\b/ }))
+    const row = within(other).getByRole('button', { name: /^Send\b/ })
+    row.scrollIntoView({ block: 'center' })
+    await hover(row)
+    const tip = await screen.findByRole('tooltip')
+    expect(tip.textContent).toContain('Send(Keys)')
+    expect(tip.querySelector('a, b, i, img, script')).toBeNull()
+    await waitFor(() => expect(inWindow(tip)).toBe(true))
+  })
+
   it('shows a PowerShell library function with how to call it', async () => {
     await start()
     await click(pairButton('windows'))

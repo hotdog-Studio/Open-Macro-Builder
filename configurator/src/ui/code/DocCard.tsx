@@ -45,7 +45,10 @@ function ParamRow({ param, notes }: Readonly<{ param: ParamDoc; notes: string[] 
   )
 }
 
-/** What the docs of a function say: how to call it, what it does, an example, each parameter, and where it is. */
+/**
+ * What the docs of a function say: how to call it, what it does, an example, each parameter, and where it
+ * is. For a function of the bundled reference, what the PowerShell version uses in its place, and its page.
+ */
 export function DocCard({ entry }: Readonly<{ entry: DictEntry }>) {
   const { fn, summary, borrowed, source } = entry
   // A parameter gets a row when anything is known of it: a note, a type, a default or its values.
@@ -78,7 +81,10 @@ export function DocCard({ entry }: Readonly<{ entry: DictEntry }>) {
           <p className="text-zinc-300">{fn.doc.returns}</p>
         </div>
       )}
-      <p className="font-mono text-[11px] text-zinc-500">{sourceText(source)}</p>
+      {source.kind === 'reference' && source.powershell !== null && (
+        <p className="text-zinc-400">{`In the PowerShell version: ${source.powershell}`}</p>
+      )}
+      <p className="break-words font-mono text-[11px] text-zinc-500">{sourceText(source)}</p>
     </div>
   )
 }

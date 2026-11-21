@@ -2,7 +2,7 @@ import { functionNames } from '../../../../scripts/validate-config-core.mjs'
 import { compareText as compare } from '../folder/path'
 import type { FolderAccess } from '../folder/types'
 import { hashBytes } from '../folder/hash'
-import { decodeLenient, readTextFileLenient, type TextFile } from '../folder/textFile'
+import { decodeLenient, type TextFile } from '../folder/textFile'
 import { ahk } from './ahk'
 import { ps } from './ps'
 import { isCommand, type FunctionInfo, type LangId, type Language } from './types'
@@ -79,10 +79,16 @@ export function commandFilePath(lang: LangId, group: 'yours' | 'shared', pair: s
  * path is not a command file (an include hub, another extension, outside the four folders).
  */
 export async function readCommandFile(folder: FolderAccess, path: string): Promise<CommandFile | null> {
+  if (!commandFileAt(path)) return null
+  const raw = await folder.readBytes(path)
+  return raw === null ? null : commandFileOf(path, raw)
+}
+
+/** A command file from bytes already read, as readCommandFile reads it; null when the path is not a command file's. */
+async function commandFileOf(path: string, raw: Uint8Array): Promise<CommandFile | null> {
   const at = commandFileAt(path)
   if (!at) return null
-  const read = await readTextFileLenient(folder, path, NOT_UTF8[at.lang])
-  if (!read) return null
+  const read = await decodeLenient(path, raw, NOT_UTF8[at.lang])
   return {
     lang: at.lang,
     group: at.group,
@@ -91,6 +97,15 @@ export async function readCommandFile(folder: FolderAccess, path: string): Promi
     functions: BY_ID[at.lang].findFunctions(read.file.text),
     editable: read.utf8,
   }
+}
+
+/**
+ * The command files among files held in memory (the app's copy of the scripts), read and sorted as scanCommands
+ * reads a folder's; every other file is left out.
+ */
+export async function commandFilesIn(files: readonly { path: string; data: Uint8Array }[]): Promise<CommandFile[]> {
+  const read = await Promise.all(files.map(({ path, data }) => commandFileOf(path, data)))
+  return sortCommandFiles(read.filter((file) => file !== null))
 }
 
 /** Yours before shared, then by pair, then AutoHotkey before PowerShell, then by path. */
@@ -179,7 +194,7 @@ export function commandCatalog(files: CommandFile[]): CatalogEntry[] {
 }
 
 /** Lower-cased names of every function in the files of one language, counted like the validator. */
-export function definedNames(files: CommandFile[], lang: LangId): Set<string> {
+export function definedNames(files: readonly CommandFile[], lang: LangId): Set<string> {
   const names = new Set<string>()
   for (const cf of files) {
     if (cf.lang !== lang) continue

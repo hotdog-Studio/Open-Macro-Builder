@@ -194,6 +194,71 @@ describe('the update, at 1280 × 900', () => {
   })
 })
 
+// ---------------------------------------------------------------- a command the update takes away
+
+const VS_AHK = 'ahk/commands/custom/vsstudio.ahk'
+const VS_PS1 = 'powershell/commands/custom/vsstudio.ps1'
+/** A command only 1.0.4's vsstudio files defined, with a name too long for one line of the dialog. */
+const LONG = 'VsStudioSplitTheEditorIntoTwoPanelsSideBySideWithACommandNameFarTooLongForOneLine'
+/** A layer title that would be markup if it were not shown as text. */
+const MARKUP = '<b>VS</b> Studio & <i>more</i>'
+const UNSET_HEAD = "Your layout's keys run commands that no file defines after this update:"
+
+/**
+ * The repository's scripts as the app's copy (1.0.6); a folder whose vsstudio files are 1.0.4's, which also defined
+ * LONG; and a layout whose first layer, titled MARKUP, runs LONG on its first key (F13).
+ */
+async function takenAway(): Promise<{ how: StartHow; layout: string }> {
+  const repo = await repoFiles()
+  const enc = new TextEncoder()
+  const dec = new TextDecoder()
+  const shipped: [string, Uint8Array][] = [
+    [VS_AHK, enc.encode(`${dec.decode(repo[VS_AHK])}\n${LONG}(Macro) {\n}\n`)],
+    [VS_PS1, enc.encode(`${dec.decode(repo[VS_PS1])}function ${LONG} { param($Macro) }\n`)],
+  ]
+  const [index, old] = await Promise.all([printsOf(Object.entries(repo)), printsOf(shipped)])
+  const known: KnownReleases = {
+    last: '1.0.4',
+    files: Object.fromEntries(Object.entries(old).map(([path, print]) => [path, { [print]: ['1.0.4'] }])),
+  }
+  const updateSource: UpdateSource = {
+    loadIndex: async () => ({ version: '1.0.6', files: index }),
+    loadFiles: async () => Object.entries(repo).map(([path, data]) => ({ path, data })),
+    known,
+  }
+  const config = JSON.parse(dec.decode(repo['config.json'])) as { layers: { title: string; macros: unknown[] }[] }
+  config.layers[0].title = MARKUP
+  config.layers[0].macros[0] = { action: LONG, name: 'Split' }
+  return { how: { updateSource, files: Object.fromEntries(shipped) }, layout: JSON.stringify(config, null, 2) }
+}
+
+describe('the warning of a command the update takes away', () => {
+  it.each([
+    [1280, 900],
+    [760, 420],
+  ])('at %i × %i, reads as text and fits the dialog', async (width, height) => {
+    await page.viewport(width, height)
+    const { how, layout } = await takenAway()
+    await startApp('Pad shape', layout, how)
+    const dialog = await review(true)
+    if (!dialog) throw new Error('no dialog')
+    const list = await within(dialog).findByRole('list', { name: UNSET_HEAD })
+    const items = within(list).getAllByRole('listitem')
+    expect(items.map((item) => item.textContent)).toEqual([`${LONG} (${MARKUP} · F13)`])
+    expect(dialog.querySelector('b, i')).toBeNull()
+    const box = dialog.getBoundingClientRect()
+    expect(inWindow(box)).toBe(true)
+    for (const el of [list.parentElement ?? list, list, ...items]) {
+      el.scrollIntoView({ block: 'nearest' })
+      const r = el.getBoundingClientRect()
+      expect(r.left >= box.left && r.right <= box.right, el.textContent ?? '').toBe(true)
+      expect(el.scrollWidth, el.textContent ?? '').toBeLessThanOrEqual(el.clientWidth)
+    }
+    expect(reachable(within(dialog).getByRole('button', { name: 'Update' }))).toBe(true)
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(document.documentElement.clientWidth)
+  })
+})
+
 // ---------------------------------------------------------------- the bars float
 
 const ON_DISK = 'config.json changed on disk.'

@@ -137,12 +137,19 @@ export interface AppActions {
    * Update, in the update's dialog, and Try again: waits for the Commands tab's work in flight, makes the plan
    * again, carries out the picks that are still in it, and shows what came of it in the dialog. Refused while
    * a shared command file has unsaved changes. Nothing may open, close or reload a folder until the outcome
-   * is shown. Afterwards what the load reads from the shared files is read again: the command lists, the
-   * library and the icon sets.
+   * is shown. When the update may have changed the shared files, what the load reads from them is read again
+   * before the outcome shows (the command lists, the library and the icon sets), so the dialog checks the layout
+   * against the command lists the update left.
    */
   applyUpdate(picks: UpdatePicks): Promise<void>
   /** Electron: Reload the macropad, once the update's dialog says what was done; the dialog then shows what happened. */
   reloadMacropadAfterUpdate(): Promise<void>
+  /**
+   * The command files of the app's copy of the scripts, read as a folder's are, for the update's dialog to tell
+   * which commands no file defines after the update; null when there is no copy to check against or its files
+   * cannot be loaded.
+   */
+  appCommandFiles(): Promise<CommandFile[] | null>
 }
 
 /** The config file as the app last read or wrote it, with its folder. */
@@ -748,6 +755,7 @@ export function createActions(
     dismissUpdate: update.dismissUpdate,
     applyUpdate: update.applyUpdate,
     reloadMacropadAfterUpdate: update.reloadMacropadAfterUpdate,
+    appCommandFiles: update.appCommandFiles,
 
     async recheck() {
       await saveDone()

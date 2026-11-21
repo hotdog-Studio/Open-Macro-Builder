@@ -1,7 +1,9 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import type { CommandFile } from '../core/languages'
 import { withoutFullStop } from '../core/message'
 import type { UpdateDone, UpdatePicks } from '../core/update/apply'
 import { INCLUDE_FILE } from '../core/update/includeList'
+import { commandFilesAfter, lostCommands, undefinedCommands, type NamedCommand } from '../core/update/lostCommands'
 import { MANIFEST_PATH } from '../core/update/manifest'
 import type { UpdatePlan } from '../core/update/plan'
 import { compareVersions } from '../core/update/version'
@@ -17,6 +19,10 @@ const DELETED = 'You deleted these. They stay deleted unless you tick them.'
 const ADJUST = `${INCLUDE_FILE}: yours is kept, and its list of command files was brought up to date.`
 const START_AGAIN = 'Start the macropad again to use the new scripts.'
 const SWITCHED_OFF = `Ticking ${INCLUDE_FILE} puts back the #Include lines you took out.`
+const UNSET_HEAD = "Your layout's keys run commands that no file defines after this update:"
+const UNSET_FIX =
+  'The macropad will not start until you clear those keys in the Macros tab, or keep the commands in your own local/ folder (the changelog says how).'
+const CLEAR_THEN_RELOAD = 'Clear those keys in the Macros tab (or keep the commands in local/), save, and then reload the macropad.'
 const PATHS = 'break-all font-mono text-[12px] text-zinc-400'
 /** What a button that is off does. */
 const NOTHING = () => undefined
@@ -77,6 +83,32 @@ function NamedPaths({ heading, paths }: Readonly<{ heading: string; paths: strin
       </p>
       <Paths aria-labelledby={id} paths={paths} />
     </>
+  )
+}
+
+/** A key by the names the Macros tab shows: `VS Studio · F15`. */
+const keyName = (use: NamedCommand['keys'][number]) => `${use.layer} · ${use.key}`
+
+/** A command and the keys that run it: `VsStudioSplitPanel (VS Studio · F15)`. */
+const commandLine = (command: NamedCommand) => `${command.name} (${command.keys.map(keyName).join(', ')})`
+
+/**
+ * The commands the layout's keys run that no file defines after the update, and what that does to the macropad;
+ * the same words before the update and after it. Names from the layout and the files are shown as text.
+ */
+function Unset({ commands }: Readonly<{ commands: NamedCommand[] }>) {
+  const id = useId()
+  if (commands.length === 0) return null
+  return (
+    <div className="mt-3 break-words text-amber-300">
+      <p id={id}>{UNSET_HEAD}</p>
+      <ul aria-labelledby={id} className="mt-1 space-y-0.5 pl-4">
+        {commands.map((command) => (
+          <li key={command.name}>{commandLine(command)}</li>
+        ))}
+      </ul>
+      <p className="mt-1">{UNSET_FIX}</p>
+    </div>
   )
 }
 
@@ -157,14 +189,29 @@ function Ticks({ heading, children, paths, ticked, onTick }: Readonly<TicksProps
 interface PlanViewProps {
   plan: UpdatePlan
   picks: UpdatePicks
+  /** The command files of the app's copy; null while they load or when they could not be loaded. */
+  app: CommandFile[] | null
   onTick: (kind: keyof UpdatePicks, path: string, on: boolean) => void
   onUpdate: () => void
 }
 
+/**
+ * The commands the layout's keys run that a file defines now and none would after the update with these picks;
+ * none until the app's command files have loaded.
+ */
+function useLost(plan: UpdatePlan, picks: UpdatePicks, app: CommandFile[] | null): NamedCommand[] {
+  const { ws, settings, commandFiles } = useEditor().state
+  return useMemo(
+    () => (app === null ? [] : lostCommands(ws, settings.languages, commandFiles, commandFilesAfter(commandFiles, app, plan, picks))),
+    [ws, settings.languages, commandFiles, app, plan, picks],
+  )
+}
+
 /** What the update would do, the tick boxes, and Not now and Update. */
-function PlanView({ plan, picks, onTick, onUpdate }: Readonly<PlanViewProps>) {
+function PlanView({ plan, picks, app, onTick, onUpdate }: Readonly<PlanViewProps>) {
   const { state, actions } = useEditor()
   const blockers = updateBlockers(Object.keys(state.commands.drafts))
+  const lost = useLost(plan, picks, app)
   const includeTicked = picks.replaceChanged.some(isInclude)
   // Ticking a changed include file that leaves out a command file's line brings that command back.
   const switchedOff = plan.changed.some(isInclude) && plan.switchedOff.length > 0
@@ -200,6 +247,7 @@ function PlanView({ plan, picks, onTick, onUpdate }: Readonly<PlanViewProps>) {
           onTick={(path, on) => onTick('restoreDeleted', path, on)}
         />
       )}
+      <Unset commands={lost} />
       {blockers.map((blocker) => (
         <p key={blocker} className="mt-3 text-amber-300">
           {blocker}
@@ -231,30 +279,42 @@ function BusyView() {
   )
 }
 
-/** After an update, the macropad's line: none while Reload the macropad is offered, then what the reload said. */
-function macropadLine(offer: UpdateOffer): string | null {
+/**
+ * After an update, the macropad's line: none while Reload the macropad is offered, then what the reload said. While
+ * the layout's keys run commands no file defines, the macropad would not start: the line says what to do first.
+ */
+function macropadLine(offer: UpdateOffer, unset: boolean): string | null {
+  if (unset) return CLEAR_THEN_RELOAD
   if (offer.macropad) return null
   return offer.note ?? START_AGAIN
 }
 
-/** What the update did, in numbers and by name, and how to use the new scripts. */
+/**
+ * What the update did, in numbers and by name, and how to use the new scripts. The layout is checked against the
+ * command lists as the update left them (read again before this shows): Reload the macropad is not offered while
+ * the layout's keys run a command no file defines.
+ */
 function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: UpdateDone }>) {
-  const { actions } = useEditor()
+  const { state, actions } = useEditor()
+  const { ws, settings, commandFiles } = state
+  const unset = useMemo(() => undefinedCommands(ws, settings.languages, commandFiles), [ws, settings.languages, commandFiles])
   const close = { label: 'Close', autoFocus: true, onChoose: actions.dismissUpdate }
   const reload = { label: 'Reload the macropad', primary: true, autoFocus: false, onChoose: () => void actions.reloadMacropadAfterUpdate() }
-  const line = macropadLine(offer)
+  const offersReload = offer.macropad !== null && unset.length === 0
+  const line = macropadLine(offer, unset.length > 0)
   // An include file whose list alone this update rewrote is said so, never listed as kept as it is: under the
   // person's body, under one that changed since the plan, or as a repair of its list under the app's body.
   const adjusted = result.adjusted.some(isInclude)
   const kept = adjusted ? result.kept.filter((path) => !isInclude(path)) : result.kept
   return (
-    <ConfirmDialog title={TITLE} onDismiss={actions.dismissUpdate} choices={offer.macropad ? [reload, close] : [{ ...close, primary: true }]}>
+    <ConfirmDialog title={TITLE} onDismiss={actions.dismissUpdate} choices={offersReload ? [reload, close] : [{ ...close, primary: true }]}>
       <p>
         {`Updated to ${offer.plan.to}: ${result.replaced.length} replaced, ${result.added.length} added, ${result.removed.length} removed.`}
       </p>
       {kept.length > 0 && <NamedPaths heading="Kept as they are:" paths={kept} />}
       {adjusted && <p className="mt-3">{ADJUST}</p>}
       {result.backups.length > 0 && <NamedPaths heading="Your versions, kept beside the new ones:" paths={result.backups} />}
+      <Unset commands={unset} />
       {line && <p className="mt-3">{line}</p>}
     </ConfirmDialog>
   )
@@ -277,6 +337,23 @@ function FailureView({ result, onRetry }: Readonly<{ result: Failure; onRetry: (
   )
 }
 
+/** The command files of the app's copy, loaded once the dialog opens; null while they load or when they cannot be. */
+function useAppCommandFiles(open: boolean): CommandFile[] | null {
+  const { actions } = useEditor()
+  const [files, setFiles] = useState<CommandFile[] | null>(null)
+  useEffect(() => {
+    if (!open) return
+    let current = true
+    void actions.appCommandFiles().then((loaded) => {
+      if (current) setFiles(loaded)
+    })
+    return () => {
+      current = false
+    }
+  }, [open, actions])
+  return files
+}
+
 /**
  * The dialog behind Review the update: what the update would do, with a tick box for each file the person
  * changed or deleted (none ticked at the start); then, in the same dialog, what came of it. The ticks live
@@ -286,6 +363,7 @@ export function UpdateDialog() {
   const { state, actions } = useEditor()
   const [picks, setPicks] = useState<UpdatePicks>({ replaceChanged: [], restoreDeleted: [] })
   const offer = state.update
+  const app = useAppCommandFiles(offer?.dialog === true)
   if (!offer?.dialog) return null
   const update = () => void actions.applyUpdate(picks)
   const tick = (kind: keyof UpdatePicks, path: string, on: boolean) =>
@@ -293,5 +371,5 @@ export function UpdateDialog() {
   if (offer.busy) return <BusyView />
   if (offer.result?.ok) return <ResultView offer={offer} result={offer.result} />
   if (offer.result) return <FailureView result={offer.result} onRetry={update} />
-  return <PlanView plan={offer.plan} picks={picks} onTick={tick} onUpdate={update} />
+  return <PlanView plan={offer.plan} picks={picks} app={app} onTick={tick} onUpdate={update} />
 }

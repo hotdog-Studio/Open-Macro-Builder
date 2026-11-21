@@ -8,6 +8,7 @@ export {
   commandCatalog,
   commandFileAt,
   commandFileNotices,
+  commandFilesIn,
   commandFilePath,
   definedNames,
   libraryTitle,

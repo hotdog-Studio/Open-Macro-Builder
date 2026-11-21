@@ -1,5 +1,5 @@
 import type { FolderAccess } from '../core/folder/types'
-import { commandFileAt } from '../core/languages'
+import { commandFileAt, commandFilesIn } from '../core/languages'
 import { messageOf, withoutFullStop } from '../core/message'
 import type { StarterFile } from '../core/starter'
 import { applyUpdate, type UpdatePicks, type UpdateResult } from '../core/update/apply'
@@ -48,7 +48,10 @@ export interface UpdateDeps {
   macropad: MacropadActions
 }
 
-export type UpdateActions = Pick<AppActions, 'reviewUpdate' | 'dismissUpdate' | 'applyUpdate' | 'reloadMacropadAfterUpdate'> & {
+export type UpdateActions = Pick<
+  AppActions,
+  'reviewUpdate' | 'dismissUpdate' | 'applyUpdate' | 'reloadMacropadAfterUpdate' | 'appCommandFiles'
+> & {
   /**
    * Checks the folder load number `token` has just opened, and shows what it found: the update bar
    * when there is something new to offer, a passing message when the folder is newer than the app.
@@ -145,6 +148,19 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
   /** See UpdateActions.updating. */
   let updating = false
 
+  /**
+   * Scans the shared files again when the update may have changed them. A scan that fails leaves the command lists
+   * as they were, and the outcome is shown all the same.
+   */
+  async function rescanAfter(outcome: UpdateOutcome): Promise<void> {
+    if (!mayHaveChanged(outcome)) return
+    try {
+      await deps.rescan()
+    } catch {
+      // The lists stay as the load read them; the next change from outside reads them again.
+    }
+  }
+
   /** The update the bar offers, while a folder is open. */
   const offered = () => {
     const state = getState()
@@ -234,15 +250,17 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
       if (updateBlockers(deps.draftPaths()).length > 0) return
       updating = true
       dispatch({ type: 'update', update: { ...offer, busy: true, result: null, macropad: null, note: null } })
-      let shown: UpdateOffer | null
       try {
-        shown = await outcomeOf(source, folder, offer, picks)
-        if (shown !== null) dispatch({ type: 'update', update: shown })
+        const shown = await outcomeOf(source, folder, offer, picks)
+        if (shown === null) return
+        // Before the outcome shows: the result view checks the layout against the command lists as the update left
+        // them, so it never offers to reload a macropad into commands that are gone.
+        if (shown.result) await rescanAfter(shown.result)
+        dispatch({ type: 'update', update: shown })
       } finally {
         // Only once the outcome is shown: until then no folder may be opened over this one.
         updating = false
       }
-      if (shown?.result && mayHaveChanged(shown.result)) await deps.rescan()
     },
 
     async reloadMacropadAfterUpdate() {
@@ -252,6 +270,16 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
       // Only while the dialog still shows the result that offered the reload.
       const now = offered()
       if (note !== null && now?.result === offer.result) dispatch({ type: 'update', update: { ...now, macropad: null, note } })
+    },
+
+    async appCommandFiles() {
+      if (source === null) return null
+      try {
+        return await commandFilesIn(await source.loadFiles())
+      } catch {
+        // The dialog shows its plan without the warning, as while they load.
+        return null
+      }
     },
 
     updating: () => updating,

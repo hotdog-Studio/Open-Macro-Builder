@@ -84,7 +84,7 @@ When the configurator carries newer scripts than the folder you open, a bar says
 - A command file you deleted in the **Commands** tab stays deleted unless you tick it.
 - Nothing under `local/` is read or changed.
 
-Afterwards, start the macropad again to use the new scripts; while it is running, the desktop app offers **Reload the macropad**. **Not now** hides the bar until the folder is opened again. A folder made with `git clone` never gets the bar: git updates it.
+When your layout's keys run a command that no file would define after the update (one the new version removed), the dialog names the command and its keys before you press **Update**: the macropad will not start until you clear those keys in the **Macros** tab or keep the command in your own `local/` folder ([CHANGELOG.md](CHANGELOG.md) says how). Afterwards, start the macropad again to use the new scripts; while it is running, the desktop app offers **Reload the macropad**, except while your layout still runs such a command. **Not now** hides the bar until the folder is opened again. A folder made with `git clone` never gets the bar: git updates it.
 
 New to AutoHotkey and PowerShell? The **Get started** tab explains the setup from scratch: what to install, how to set up the keypad and how to start the macropad. The start screen shows the same guide before a folder is open, and a folder the configurator has just set up opens on it.
 

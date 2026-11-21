@@ -159,7 +159,7 @@ Both versions load the first of these that exists: the file named by the `OMB_CO
 Command functions live in `ahk/commands/` and `powershell/commands/`, with the same names in both. Each takes the macro as its only parameter.
 
 - `helper`, `media`, `power`, `windows`: the core commands.
-- `custom/chrome`, `custom/vscode`, `custom/vsstudio`: keyboard shortcuts for Chrome, VS Code and Visual Studio.
+- `custom/chrome`, `custom/vscode`, `custom/vsstudio`: keyboard shortcuts for Chrome, VS Code and Visual Studio, and in Chrome a new tab in the active tab's group (`ChromeNewTabInGroup`), which Chrome has no shortcut for.
 - `custom/ssh`: `LoadPuttySession`, `SshMacroName` and `SshMacroDescription` (open the saved PuTTY session named like the macro), and `SshExample`.
 - `custom/examples`: small commands to copy from, for opening a website, a program, Calculator or a folder.
 - `custom/automation`: forms that send a key or replay a click after a delay.

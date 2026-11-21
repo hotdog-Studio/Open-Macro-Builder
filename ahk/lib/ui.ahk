@@ -126,10 +126,11 @@ class LayerSelectGui {
 
    /**
     * @description
-    * Shows the GUI window.
+    * Shows the GUI window without activating it, so the window that has the focus keeps it
+    * (the PowerShell overlay is shown the same way).
     */
    Show() {
-      this.window.Show()
+      this.window.Show("NA")
    }
 
    /**

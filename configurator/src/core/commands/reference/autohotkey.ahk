@@ -1812,12 +1812,12 @@ StrGet(Source, Length?, Encoding?) {
 }
 
 /**
- * Writes text into a block of memory, such as a Buffer a DllCall will read. With only the text and an encoding, it tells how many bytes the text needs instead.
+ * Writes text into a block of memory, such as a Buffer a DllCall will read; or tells how many bytes the text needs. It has three forms: StrPut(String, Target, Length, Encoding) and StrPut(String, Target, Encoding) write, and StrPut(String, Encoding), with no Target, only measures. Encoding is always last: fourth, third or second.
  * @param {String} String - The text to write.
- * @param {Buffer} Target - The Buffer, or a memory address.
+ * @param {Buffer} Target - The Buffer, or a memory address, to write into. Left out (the form with two parameters), nothing is written and the text is only measured.
  * @param {Integer} Length - The most characters to write, the ending zero included. Usually left out.
- * @param {String} Encoding - How to store the text, such as "UTF-8" or "UTF-16". Left out, as AutoHotkey stores text.
- * @returns {Integer} The number of bytes written; with Target left out, the number of bytes the text needs.
+ * @param {String} Encoding - How to store the text, such as "UTF-8" or "UTF-16". It is the last parameter in every form: with Length left out it comes third, and with Target left out too, second. Left out, as AutoHotkey stores text.
+ * @returns {Integer} The number of bytes written; in the form without Target, the number of bytes the text needs.
  * @example buf := Buffer(StrPut("Hello", "UTF-8"))
  * StrPut("Hello", buf, "UTF-8")
  * @group Other

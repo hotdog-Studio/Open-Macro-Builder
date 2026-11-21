@@ -499,9 +499,15 @@ describe('Commands tab: docs on hover', () => {
     return box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight
   }
 
+  /** AutoHotkey's own functions are fetched when the tab first shows: waits until the list has them. */
+  const referenceShown = () =>
+    within(screen.getByRole('region', { name: 'Other commands available' })).findByRole('heading', { name: "AutoHotkey's own functions" })
+
   it("shows the card of an AutoHotkey built-in as text, inside the window", async () => {
     await start()
     await openFile('windows')
+    // The editor's card comes from the same reference, so it too waits until it has been fetched.
+    await referenceShown()
     // A call to Send in a command's body: indented, as AutoHotkey's own function is called there.
     const call = /^([ \t]+)Send\(/m.exec(text())!
     await hover(await pointAt(call.index + call[1].length + 2))
@@ -519,7 +525,7 @@ describe('Commands tab: docs on hover', () => {
     await start()
     await openFile('windows')
     const other = screen.getByRole('region', { name: 'Other commands available' })
-    await click(within(other).getByRole('button', { name: /^Keys and mouse\b/ }))
+    await click(await within(other).findByRole('button', { name: /^Keys and mouse\b/ }))
     const row = within(other).getByRole('button', { name: /^Send\b/ })
     row.scrollIntoView({ block: 'center' })
     await hover(row)

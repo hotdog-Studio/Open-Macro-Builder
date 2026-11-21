@@ -1703,7 +1703,8 @@ function Invoke-E2eCase {
         if ($problems.Count -eq 0) {
             if ($failure) {
                 if ($failureText -eq $failure.Exception.Message) { throw $failure }
-                throw $failureText
+                # A text thrown here would point at this line: it says where the case failed.
+                throw "$failureText`n$($failure.InvocationInfo.PositionMessage)"
             }
             if ($ctx.NotRun) { $script:E2eRun.NotRun.Add("$Lang $($Case.Name): $($ctx.NotRun)") }
             return $ctx.NotRun

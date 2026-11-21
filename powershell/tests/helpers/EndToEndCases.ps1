@@ -54,7 +54,7 @@ $script:E2eControlPanel = '::{26EE0668-A00A-44D7-9371-BEB064C98683}'
 # ---- Pieces the cases share ----
 
 # B is active, A behind it: a command that brings Chrome (A) forward has something to do.
-$script:E2eFromB = { param($ctx) [void](Use-E2eStandin 'A'); [void](Use-E2eStandin 'B'); $ctx.Launches = Get-E2eLaunchMark; $ctx.Marks = @(Get-E2eMarks).Count }
+$script:E2eFromB = { param($ctx) [void](Use-E2eStandin 'A'); [void](Use-E2eStandin 'B'); $ctx.Launches = Get-E2eLaunchMark }
 
 # The program a macropad of this language starts others from: AutoHotkey runs them itself, the
 # PowerShell macropad through Start-Process (ShellExecute) in its own process.

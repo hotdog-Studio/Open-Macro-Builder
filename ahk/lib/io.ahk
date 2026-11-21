@@ -96,7 +96,10 @@ RunMacroAction(M) {
    CommandLogWrite(path, "start " name)
    try M.action()
    catch Any as err {
-      CommandLogWrite(path, "failed " name ": " CommandLogMessage(err))
+      ; What was thrown, on one line: an Error's message, or anything else a script may throw.
+      text := ""
+      try text := (err is Error) ? err.Message : String(err)
+      CommandLogWrite(path, "failed " name ": " RegExReplace(text, "\s*\R\s*", " "))
       throw err
    }
    CommandLogWrite(path, "done " name)
@@ -115,7 +118,8 @@ CommandLogPath() {
 /**
  * @description
  * The name a line of the command log gives a macro's command: the name of the function of its action,
- * else the macro's name.
+ * else the macro's name. The layout's actions are always named functions (ConfigAction takes only a
+ * Func); the macro's name is for an action that has none, a closure or a BoundFunc.
  * @param {Macro} M
  * The macro.
  */
@@ -126,18 +130,6 @@ CommandLogName(M) {
    }
    try return M.name
    return ""
-}
-
-/**
- * @description
- * What a thrown value says, on one line.
- * @param Err
- * The thrown value: an Error, or anything else a script may throw.
- */
-CommandLogMessage(Err) {
-   text := ""
-   try text := (Err is Error) ? Err.Message : String(Err)
-   return RegExReplace(text, "\s*\R\s*", " ")
 }
 
 /**

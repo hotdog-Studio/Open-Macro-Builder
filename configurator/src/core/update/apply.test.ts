@@ -6,7 +6,7 @@ import type { StarterFile } from '../starter'
 import { applyUpdate, type UpdateDone, type UpdatePicks, type UpdateResult } from './apply'
 import { fingerprint, type StarterIndex } from './fingerprint'
 import { everShipped, type KnownReleases } from './history'
-import { INCLUDE_FILE, listsExactly } from './includeList'
+import { INCLUDE_FILE, listedCommandFiles, listsExactly } from './includeList'
 import { MANIFEST_PATH, readManifest } from './manifest'
 import { planUpdate, type UpdatePlan } from './plan'
 
@@ -370,7 +370,7 @@ describe('applyUpdate: the manifest', () => {
     // A whole write differs from the app's text only in its #Include commands\ lines, which the fingerprint
     // leaves out, so this always equals the app's fingerprint: the test pins only that an entry is recorded for
     // the bytes written. An adjusted, kept include gets no new entry (decision 6), so there is nothing else to pin.
-    const folder = await folderOf({ [MINE_FILE]: 'mine\n' })
+    const folder = await folderOf({ [MINE_FILE]: 'mine\n', [INCLUDE_FILE]: includeText('; config 1.0.5', WINDOWS, CHROME, GONE, MINE) })
     await update(folder)
     const written = folder.text(INCLUDE_FILE) ?? ''
     expect(written).toBe(includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE))
@@ -498,14 +498,20 @@ describe('applyUpdate: the include file', () => {
     { row: 'missing: written whole, added', changes: { [INCLUDE_FILE]: null }, text: APP[INCLUDE_FILE], lists: ['added'] },
     {
       row: "of an earlier body: written whole with the person's own line and without an unticked deleted file's, replaced",
-      changes: { [CHROME_FILE]: null, [MINE_FILE]: 'mine\n' },
+      changes: { [CHROME_FILE]: null, [MINE_FILE]: 'mine\n', [INCLUDE_FILE]: includeText('; config 1.0.5', WINDOWS, CHROME, GONE, MINE) },
       text: includeText('; config 1.0.6', WINDOWS, NEW, MINE),
       lists: ['replaced'],
     },
     {
-      row: "of an earlier body, the person's own file added after the plan: written whole with its line, replaced",
-      later: { [MINE_FILE]: 'mine\n' },
+      row: "of an earlier body, the person's own file and its line added after the plan: written whole with its line, replaced",
+      later: { [MINE_FILE]: 'mine\n', [INCLUDE_FILE]: includeText('; config 1.0.5', WINDOWS, CHROME, GONE, MINE) },
       text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
+      lists: ['replaced'],
+    },
+    {
+      row: 'of an earlier body, a command file to add there now without its line: not a switched-off command, written whole, replaced',
+      later: { [NEW_FILE]: APP[NEW_FILE] },
+      text: APP[INCLUDE_FILE],
       lists: ['replaced'],
     },
     { row: 'changed: its list adjusted, kept', changes: MY_INCLUDE, text: includeText('; my config', WINDOWS, CHROME, NEW), lists: ['kept', 'adjusted'] },
@@ -517,9 +523,9 @@ describe('applyUpdate: the include file', () => {
       lists: ['kept', 'adjusted'],
     },
     {
-      row: "up to date, its list missing the person's own file: its list rebuilt, adjusted",
-      changes: { ...APP, [MINE_FILE]: 'mine\n' },
-      text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
+      row: 'up to date, its list still naming a command file the person deleted: its list rebuilt, adjusted',
+      changes: { ...UP_TO_DATE, [CHROME_FILE]: null },
+      text: includeText('; config 1.0.6', WINDOWS, NEW),
       lists: ['adjusted'],
     },
     {
@@ -547,9 +553,9 @@ describe('applyUpdate: the include file', () => {
     },
     {
       row: 'up to date, its list put right by the person after the plan: not written, in no list',
-      changes: { ...APP, [MINE_FILE]: 'mine\n' },
-      later: { [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE) },
-      text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW, MINE),
+      changes: { ...UP_TO_DATE, [CHROME_FILE]: null },
+      later: { [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, NEW) },
+      text: includeText('; config 1.0.6', WINDOWS, NEW),
       written: false,
     },
     {
@@ -585,6 +591,92 @@ describe('applyUpdate: the include file', () => {
     expect(result.ok).toBe(true)
     expect(folder.text(INCLUDE_FILE)).toBeNull()
     expect(changesIn(guarded.calls).filter((call) => call.path === INCLUDE_FILE)).toEqual([])
+  })
+})
+
+/** Whether the folder's include file names `path`. */
+const lists = (folder: MemoryFolder, path: string) => listedCommandFiles(folder.text(INCLUDE_FILE) ?? '').includes(path)
+
+describe('applyUpdate: a command file switched off by taking its line out of the include file', () => {
+  it.each<{ row: string; changes: Changes; off: string; text: string }>([
+    {
+      row: "the app's body, a shared command file",
+      changes: { [INCLUDE_FILE]: includeText('; config 1.0.6', CHROME, GONE) },
+      off: WINDOWS_FILE,
+      text: includeText('; config 1.0.6', CHROME, NEW),
+    },
+    {
+      row: "the app's body, the person's own command file",
+      changes: { [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, CHROME, GONE), [MINE_FILE]: 'mine\n' },
+      off: MINE_FILE,
+      text: includeText('; config 1.0.6', WINDOWS, CHROME, NEW),
+    },
+    {
+      row: 'an earlier body, a shared command file',
+      changes: { [INCLUDE_FILE]: includeText('; config 1.0.5', CHROME, GONE) },
+      off: WINDOWS_FILE,
+      text: includeText('; config 1.0.5', CHROME, NEW),
+    },
+    {
+      row: "an earlier body, the person's own command file",
+      changes: { [MINE_FILE]: 'mine\n' },
+      off: MINE_FILE,
+      text: includeText('; config 1.0.5', WINDOWS, CHROME, NEW),
+    },
+  ])('$row: the file is kept, only its list adjusted, and the next check offers nothing and leaves it off', async ({ changes, off, text }) => {
+    const folder = await folderOf(changes)
+    const { plan, result } = await update(folder)
+    expect(plan.changed).toEqual([INCLUDE_FILE])
+    expect(plan.list).toBe('adjust')
+    expect(result.ok).toBe(true)
+    expect(listsHolding(result, INCLUDE_FILE)).toEqual(['kept', 'adjusted'])
+    expect(folder.text(INCLUDE_FILE)).toBe(text)
+    expect(folder.text(off)).not.toBeNull()
+    expect(lists(folder, off)).toBe(false)
+    const next = await nextPlan(folder)
+    expect(next).toMatchObject({ replace: [], add: [], remove: [], changed: [INCLUDE_FILE], list: 'none', news: false })
+    expect(lists(folder, off)).toBe(false)
+  })
+
+  // An earlier body kept is offered again at the next check, as any file kept because it changed after the plan.
+  it.each<{ row: string; changes: Changes; list: UpdatePlan['list']; later: string; text: string; lists: string[]; news: boolean }>([
+    {
+      row: 'of an earlier body, to replace',
+      changes: {},
+      list: 'replace',
+      later: includeText('; config 1.0.5', CHROME, GONE),
+      text: includeText('; config 1.0.5', CHROME, NEW),
+      lists: ['kept', 'adjusted'],
+      news: true,
+    },
+    {
+      row: "of the app's body, its list to rebuild",
+      changes: { [INCLUDE_FILE]: includeText('; config 1.0.6', WINDOWS, CHROME, GONE) },
+      list: 'replace',
+      later: includeText('; config 1.0.6', CHROME, GONE),
+      text: includeText('; config 1.0.6', CHROME, NEW),
+      lists: ['kept', 'adjusted'],
+      news: false,
+    },
+    {
+      row: "of the app's body, listing what the folder holds",
+      changes: { ...UP_TO_DATE, 'config.json': 'config 1.0.5\n' },
+      list: 'none',
+      later: includeText('; config 1.0.6', CHROME, NEW),
+      text: includeText('; config 1.0.6', CHROME, NEW),
+      lists: ['kept'],
+      news: false,
+    },
+  ])('keeps an include file $row whose line of a shared command file was taken out after the plan', async (row) => {
+    const folder = await folderOf(row.changes)
+    const { plan, result } = await update(folder, { later: { [INCLUDE_FILE]: row.later } })
+    expect(plan.changed).toEqual([])
+    expect(plan.list).toBe(row.list)
+    expect(result.ok).toBe(true)
+    expect(folder.text(INCLUDE_FILE)).toBe(row.text)
+    expect(listsHolding(result, INCLUDE_FILE)).toEqual(row.lists)
+    expect(lists(folder, WINDOWS_FILE)).toBe(false)
+    expect(await nextPlan(folder)).toMatchObject({ changed: [INCLUDE_FILE], news: row.news })
   })
 })
 

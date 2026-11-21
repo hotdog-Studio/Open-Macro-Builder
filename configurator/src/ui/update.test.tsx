@@ -514,9 +514,22 @@ const NEW_LINE = String.raw`#Include commands\custom\new.ahk`
 const BACK_LINE = String.raw`#Include commands\custom\back.ahk`
 const GONE_LINE = String.raw`#Include commands\custom\gone.ahk`
 
-/** An include file: a title line, then a Custom Commands section listing `listed`, then the next section. */
+/**
+ * The lines of the repository's command files. The folders of these tests hold its ahk/commands, which are the
+ * person's own to the app's copy here, and a real folder lists each of them: one without its line would be a
+ * command the person switched off, which makes the include file theirs.
+ */
+const REPO_LINES = readRepoText('ahk/config.ahk')
+  .split('\n')
+  .map((line) => line.trimEnd())
+  .filter((line) => /^#Include commands\\/i.test(line))
+
+/**
+ * An include file: a title line, then a Custom Commands section listing `listed` and the repository's command
+ * files, then the next section.
+ */
 const includeOf = (title: string, ...listed: string[]) =>
-  [title, '; ****** Custom Commands ******', ...listed, '; ****** Macro Definitions ******', ''].join('\n')
+  [title, '; ****** Custom Commands ******', ...listed, ...REPO_LINES, '; ****** Macro Definitions ******', ''].join('\n')
 
 /** The app's copy of the scripts in the tests of the update (1.0.6): new.ahk is new in it, gone.ahk and gone.ps1 are gone from it. */
 const APP_6: Record<string, string> = {

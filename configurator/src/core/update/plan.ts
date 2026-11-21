@@ -2,7 +2,7 @@ import { compareText } from '../folder/path'
 import type { DirEntry, FolderAccess } from '../folder/types'
 import { fingerprint, type StarterIndex } from './fingerprint'
 import { everShipped, releasesOf, type KnownReleases } from './history'
-import { INCLUDE_FILE, listsExactly } from './includeList'
+import { INCLUDE_FILE, listsAll, listsExactly } from './includeList'
 import { isSharedCommandPath, readManifest, type Manifest } from './manifest'
 import { compareVersions, isVersion } from './version'
 
@@ -32,6 +32,13 @@ export interface UpdatePlan {
    * there, as folder paths: those no version ever had, and those in keptRemoved. The include file lists them.
    */
   ownAhkCommandFiles: string[]
+  /**
+   * The AutoHotkey command files of the app's copy that the folder holds as the app has them but had no record of:
+   * the manifest names them as deleted or not at all, or (without one) no release shipped them. Only an update that
+   * stopped before it wrote the include file leaves one there without its line, so a missing line for one is that
+   * update's unfinished work, not a command the person switched off.
+   */
+  unfinished: string[]
   manifest: Manifest | null
 }
 
@@ -100,6 +107,7 @@ function skipped(index: StarterIndex, skip: NonNullable<UpdatePlan['skip']>, man
     news: false,
     seen: {},
     ownAhkCommandFiles: [],
+    unfinished: [],
     manifest,
   }
 }
@@ -182,11 +190,59 @@ function missingState(key: string, target: Target, manifest: Manifest | null, kn
   return isSharedCommandPath(key) && deleted ? 'deleted' : 'add'
 }
 
-/** What the check makes of a path, the app's copy compared first. */
-function stateOf(key: string, target: Target, file: Present | undefined, manifest: Manifest | null, known: KnownReleases): State {
+/**
+ * Whether the folder had a record of a path: the manifest names it among its files and not as deleted; without a
+ * manifest, a release shipped it.
+ */
+function recorded(key: string, target: Target, manifest: Manifest | null, known: KnownReleases): boolean {
+  if (manifest === null) return everShipped(known, key)
+  return target.recorded !== undefined && !manifest.deleted.some((path) => path.toLowerCase() === key)
+}
+
+/** See UpdatePlan's `unfinished`: as the folder spells them. */
+function unfinishedOf(
+  targets: Map<string, Target>,
+  present: Map<string, Present>,
+  manifest: Manifest | null,
+  known: KnownReleases,
+): string[] {
+  const unfinished = [...targets].flatMap(([key, target]) => {
+    const file = present.get(key)
+    const asTheApp = file !== undefined && file.print === target.app
+    const isUnfinished = isAhkCommandFile(key) && asTheApp && !recorded(key, target, manifest, known)
+    return isUnfinished ? [file.path] : []
+  })
+  return unfinished.sort(byLowerCase)
+}
+
+/**
+ * Whether the include file leaves out the line of an AutoHotkey command file the folder has (a shared one or one of
+ * the person's own), an unfinished one aside: the person switched that command off, which is an edit of the file
+ * whatever its body.
+ */
+function switchesOff(present: Map<string, Present>, files: string[], unfinished: string[]): boolean {
+  const data = present.get(INCLUDE_FILE)?.data
+  if (data === undefined) return false
+  const skip = new Set(unfinished.map((path) => path.toLowerCase()))
+  const counted = files.filter((path) => isAhkCommandFile(path.toLowerCase()) && !skip.has(path.toLowerCase()))
+  return !listsAll(new TextDecoder().decode(data), counted)
+}
+
+/**
+ * What the check makes of a path, the app's copy compared first. An `edited` file is changed by the person
+ * whatever its fingerprint: the include file that switches a command off.
+ */
+function stateOf(
+  key: string,
+  target: Target,
+  file: Present | undefined,
+  manifest: Manifest | null,
+  known: KnownReleases,
+  edited: boolean,
+): State {
   if (file === undefined) return missingState(key, target, manifest, known)
-  if (file.print === target.app) return 'upToDate'
-  const untouched = file.print === target.recorded || releasesOf(known, key, file.print).length > 0
+  if (file.print === target.app && !edited) return 'upToDate'
+  const untouched = !edited && (file.print === target.recorded || releasesOf(known, key, file.print).length > 0)
   if (target.app === undefined) return untouched ? 'remove' : 'keptRemoved'
   return untouched ? 'replace' : 'changed'
 }
@@ -195,6 +251,7 @@ function stateOf(key: string, target: Target, file: Present | undefined, manifes
 function entriesOf(
   targets: Map<string, Target>,
   present: Map<string, Present>,
+  edited: boolean,
   manifest: Manifest | null,
   known: KnownReleases,
 ): Entry[] {
@@ -204,7 +261,7 @@ function entriesOf(
       return {
         key,
         path: file?.path ?? target.spelling,
-        state: stateOf(key, target, file, manifest, known),
+        state: stateOf(key, target, file, manifest, known, key === INCLUDE_FILE && edited),
         print: file?.print ?? null,
         app: target.app,
         recorded: target.recorded,
@@ -251,11 +308,13 @@ function includeListOf(entries: Entry[], present: Map<string, Present>, own: str
 
 /**
  * Something to replace, add or remove, or a changed file for which the app's copy is not what the person last
- * had from the app: the manifest's offered fingerprint, else the one it recorded as written (none: news).
+ * had from the app: the manifest's offered fingerprint, else the one it recorded as written (none: news). An
+ * include file changed only by a switched-off command, under the app's body, has the app's copy already.
  */
 function hasNews(entries: Entry[], manifest: Manifest | null): boolean {
   const offered = byLowerPath(manifest?.offered ?? {})
-  return entries.some((e) => NEWS.has(e.state) || (e.state === 'changed' && (offered.get(e.key) ?? e.recorded) !== e.app))
+  const offers = (e: Entry) => e.print !== e.app && (offered.get(e.key) ?? e.recorded) !== e.app
+  return entries.some((e) => NEWS.has(e.state) || (e.state === 'changed' && offers(e)))
 }
 
 /** The AutoHotkey command files the app's copy does not have that an update leaves in the folder. */
@@ -282,7 +341,8 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
   const files = await walk(folder, '', root, leadingFolders(targets.keys()))
   const present = await readPresent(folder, files, targets)
   const from = fromOf(manifest, present, known)
-  const entries = entriesOf(targets, present, manifest, known)
+  const unfinished = unfinishedOf(targets, present, manifest, known)
+  const entries = entriesOf(targets, present, switchesOff(present, files, unfinished), manifest, known)
   const news = hasNews(entries, manifest)
   // Without a manifest, files of a release newer than the app (a development build meeting a folder a
   // release set up) are never offered the app's older copy. With nothing to offer (a copy of the app's
@@ -305,6 +365,7 @@ export async function planUpdate(folder: FolderAccess, index: StarterIndex, know
     news,
     seen: Object.fromEntries(entries.map((e) => [e.path, e.print])),
     ownAhkCommandFiles: own,
+    unfinished,
     manifest,
   }
 }

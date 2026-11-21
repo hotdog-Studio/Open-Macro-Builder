@@ -4,7 +4,7 @@ import type { FolderAccess } from '../folder/types'
 import { messageOf } from '../message'
 import type { StarterFile } from '../starter'
 import { fingerprint } from './fingerprint'
-import { INCLUDE_FILE, adjustList, listFor } from './includeList'
+import { INCLUDE_FILE, adjustList, listFor, listsAll } from './includeList'
 import { isSharedCommandPath, MANIFEST_PATH, writeManifest, type Manifest } from './manifest'
 import { walk, type UpdatePlan } from './plan'
 
@@ -230,11 +230,30 @@ function appFileOf(ctx: Context, path: string): AppFile {
 
 const seenOf = (plan: UpdatePlan, path: string) => plan.seen[path] ?? null
 
+/**
+ * Whether the include file, as read again, leaves out the line of an AutoHotkey command file the folder holds: a
+ * command the person switched off, as the plan counts it. The files this update adds, and the plan's unfinished
+ * ones, are not counted: their lines are the update's to put in.
+ */
+function switchesOff(ctx: Context, data: Uint8Array): boolean {
+  const added = new Set([...ctx.plan.add, ...ctx.tickedDeleted, ...ctx.plan.unfinished].map(keyOf))
+  return !listsAll(decode(data), ctx.ahkFiles.filter((path) => !added.has(keyOf(path))))
+}
+
+/**
+ * Whether a path read again is as the plan saw it: the same fingerprint (or missing still) and, for the include
+ * file, no command switched off.
+ */
+function asSeen(ctx: Context, now: Now): boolean {
+  if (now.print !== seenOf(ctx.plan, now.path)) return false
+  return now.data === null || keyOf(now.path) !== INCLUDE_FILE || !switchesOff(ctx, now.data)
+}
+
 /** What the look-again found of a path to replace or remove: as the plan saw it, changed since, or gone. */
 function foundOf(ctx: Context, path: string): 'asSeen' | 'changed' | 'gone' {
   const now = nowOf(ctx, path)
   if (now.data === null) return 'gone'
-  return now.print === seenOf(ctx.plan, path) ? 'asSeen' : 'changed'
+  return asSeen(ctx, now) ? 'asSeen' : 'changed'
 }
 
 /** Queues the app's copy to be written at `path` in step 2; the include file waits for step 3. */
@@ -291,12 +310,15 @@ function sortTicked(ctx: Context, work: Work, path: string): void {
   queueWrite(work, path, app, 'replaced')
 }
 
-/** The include file the plan had as up to date that changed since: it is the person's now, kept. */
+/**
+ * The include file the plan had as up to date that changed since, or that switches a command off now: it is the
+ * person's now, kept.
+ */
 function sortInclude(ctx: Context, work: Work): void {
   const now = ctx.now.get(INCLUDE_FILE)
   if (!now?.print) return
-  const seen = seenOf(ctx.plan, now.path)
-  if (seen === ctx.app.get(INCLUDE_FILE)?.print && now.print !== seen) work.kept.push(now.path)
+  const upToDate = seenOf(ctx.plan, now.path) === ctx.app.get(INCLUDE_FILE)?.print && !ctx.plan.changed.includes(now.path)
+  if (upToDate && !asSeen(ctx, now)) work.kept.push(now.path)
 }
 
 /** Every path of the plan sorted into what is written, removed, kept or gone. */
@@ -371,15 +393,16 @@ async function adjustedWrite(ctx: Context, work: Work, path: string, data: Uint8
 }
 
 /**
- * Step 3: ahk/config.ahk written whole when the plan replaces it and it is as the plan saw it, or when it is
- * ticked; otherwise with its list alone adjusted. Null when the app has none or nothing would change.
+ * Step 3: ahk/config.ahk written whole when the plan replaces it and it is as the plan saw it (no command switched
+ * off since), or when it is ticked; otherwise with its list alone adjusted. Null when the app has none or nothing
+ * would change.
  */
 async function includeWrite(ctx: Context, work: Work): Promise<Write | null> {
   const app = ctx.app.get(INCLUDE_FILE)
   if (app === undefined) return null
   const now = nowOf(ctx, INCLUDE_FILE)
   const ticked = ctx.tickedChanged.some((path) => keyOf(path) === INCLUDE_FILE)
-  if (ticked || (ctx.plan.list === 'replace' && now.print === seenOf(ctx.plan, now.path))) {
+  if (ticked || (ctx.plan.list === 'replace' && asSeen(ctx, now))) {
     return wholeWrite(ctx, work, app, now, ticked)
   }
   return now.data === null ? null : adjustedWrite(ctx, work, now.path, now.data)

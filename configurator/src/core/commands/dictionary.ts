@@ -1,15 +1,22 @@
 import { isCommand, LANG_IDS, LANGUAGES, type CommandFile, type FunctionInfo, type LangId, type LibraryFile } from '../languages'
+import type { Reference, ReferenceEntry } from './reference'
 
-/** Where an entry comes from. The follow-up adds a bundled reference as a second kind. */
-export type DictSource = { kind: 'file'; path: string; line: number }
+/**
+ * Where an entry comes from: a file of the folder, at a line; or a bundled reference of the
+ * language's own functions, with the address of the function's page and what the PowerShell
+ * version uses in its place (null when it says nothing).
+ */
+export type DictSource =
+  | { kind: 'file'; path: string; line: number }
+  | { kind: 'reference'; page: string; powershell: string | null }
 
 export interface DictGroup {
-  /** `shown:<group>:<pair>`, `yours:<pair>`, `shared:<pair>` or `library:<path>`. */
+  /** `shown:<group>:<pair>`, `yours:<pair>`, `shared:<pair>`, `library:<path>` or `reference:<heading>`. */
   key: string
-  kind: 'shown' | 'yours' | 'shared' | 'library'
+  kind: 'shown' | 'yours' | 'shared' | 'library' | 'reference'
   /**
    * A command file's pair name, with ` · yours` or ` · shared` when a pair of the other group has
-   * the same name; a library file's title.
+   * the same name; a library file's title; a reference group's heading.
    */
   label: string
   /** `lib/<name>` for a library file; null otherwise. */
@@ -35,11 +42,11 @@ export interface DictEntry {
 
 export interface Dictionary {
   lang: LangId
-  /** In the order names resolve: the shown file, yours, shared, the library. */
+  /** In the order names resolve: the shown file, yours, shared, the library, the reference. */
   entries: DictEntry[]
   /** Ignores case; the first entry in that order. */
   lookup(name: string): DictEntry | undefined
-  /** Ignores case; the first entry of that name defined in the file at `path`. */
+  /** Ignores case; the first entry of that name defined in the file at `path`. Never a reference entry. */
   lookupIn(path: string, name: string): DictEntry | undefined
 }
 
@@ -51,6 +58,8 @@ export interface DictInput {
   libraryFiles: LibraryFile[]
   /** Unsaved text by path. */
   drafts: Record<string, string>
+  /** A bundled reference of a language's own functions; used when it is of `lang`. None when left out. */
+  reference?: Reference
 }
 
 export interface ListGroup {
@@ -61,6 +70,8 @@ export interface ListGroup {
 export interface ListSections {
   functions: ListGroup[]
   commands: ListGroup[]
+  /** The groups of the bundled reference, in its order. */
+  reference: ListGroup[]
 }
 
 /** Reads the functions of a text in a language. */
@@ -158,8 +169,20 @@ function libraryEntries(file: LibraryFile): Unnamed[] {
   }))
 }
 
-/** What names a source in an id. The follow-up's bundled reference is a kind of source of its own. */
-const sourceKey = (source: DictSource) => `${source.kind}:${source.path}`
+function referenceEntry(lang: LangId, { fn, group, page, powershell }: ReferenceEntry): Unnamed {
+  return {
+    fn,
+    lang,
+    command: false,
+    summary: fn.doc.summary,
+    borrowed: null,
+    source: { kind: 'reference', page, powershell },
+    group: { key: `reference:${group}`, kind: 'reference', label: group, file: null },
+  }
+}
+
+/** What names a source in an id: a file by its path; the reference by itself, as a name is in it once. */
+const sourceKey = (source: DictSource) => (source.kind === 'file' ? `file:${source.path}` : 'reference')
 
 /** The entries with their ids: the second entry of a name in one source is numbered 1, and so on. */
 function withIds(entries: Unnamed[]): DictEntry[] {
@@ -182,6 +205,11 @@ function groupLabels(files: CommandFile[]): (file: CommandFile) => string {
   return (f) => (groups.get(f.pair.toLowerCase())!.size > 1 ? `${f.pair} · ${f.group}` : f.pair)
 }
 
+/** The entries of the input's reference, when it is of the input's language. */
+function referenceEntries({ lang, reference }: DictInput): Unnamed[] {
+  return reference?.lang === lang ? reference.entries.map((entry) => referenceEntry(lang, entry)) : []
+}
+
 /**
  * The dictionary for one language. `cache` parses the drafts: one kept across builds reads a text
  * only once however often the dictionary is built again; by default a draft is parsed once per build.
@@ -198,6 +226,7 @@ export function buildDictionary(input: DictInput, cache: ParseCache = parseCache
   const entries = withIds([
     ...ordered.flatMap((f) => commandEntries(input, f, isShown(f), label(f), cache.parse)),
     ...input.libraryFiles.filter((f) => f.lang === input.lang).flatMap(libraryEntries),
+    ...referenceEntries(input),
   ])
   const byName = new Map<string, DictEntry>()
   for (const entry of entries) {
@@ -206,7 +235,7 @@ export function buildDictionary(input: DictInput, cache: ParseCache = parseCache
   }
   const lookupIn = (path: string, name: string) => {
     const lower = name.toLowerCase()
-    return entries.find((e) => e.source.path === path && e.fn.name.toLowerCase() === lower)
+    return entries.find((e) => e.source.kind === 'file' && e.source.path === path && e.fn.name.toLowerCase() === lower)
   }
   return { lang: input.lang, entries, lookup: (name) => byName.get(name.toLowerCase()), lookupIn }
 }
@@ -223,9 +252,11 @@ function groupEntries(entries: DictEntry[]): ListGroup[] {
 }
 
 export function listSections(dict: Dictionary): ListSections {
+  const own = dict.entries.filter((e) => e.group.kind !== 'reference')
   return {
-    functions: groupEntries(dict.entries.filter((e) => !e.command && e.fn.doc.form === 'block')),
-    commands: groupEntries(dict.entries.filter((e) => e.command && e.group.kind !== 'shown')),
+    functions: groupEntries(own.filter((e) => !e.command && e.fn.doc.form === 'block')),
+    commands: groupEntries(own.filter((e) => e.command && e.group.kind !== 'shown')),
+    reference: groupEntries(dict.entries.filter((e) => e.group.kind === 'reference')),
   }
 }
 
@@ -238,7 +269,7 @@ export function filterSections(sections: ListSections, query: string): ListSecti
     groups
       .map((g) => ({ group: g.group, entries: g.entries.filter(keep) }))
       .filter((g) => g.entries.length > 0)
-  return { functions: filter(sections.functions), commands: filter(sections.commands) }
+  return { functions: filter(sections.functions), commands: filter(sections.commands), reference: filter(sections.reference) }
 }
 
 /** Whether a character can be part of a name: ASCII letters, digits and `_`, plus `-` in PowerShell. */
@@ -276,7 +307,7 @@ export function nameAt(line: string, column: number, lang: LangId): { from: numb
   return { from, to, name }
 }
 
-/** `<path> · line <n>` */
+/** `<path> · line <n>` for a file; the page's address for the reference. */
 export function sourceText(source: DictSource): string {
-  return `${source.path} · line ${source.line}`
+  return source.kind === 'file' ? `${source.path} · line ${source.line}` : source.page
 }

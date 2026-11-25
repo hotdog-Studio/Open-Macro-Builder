@@ -6,6 +6,7 @@ import type { FolderAccess } from '../core/folder/types'
 import type { CatalogEntry, CommandFile, LangId, LibraryFile } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { UpdateResult } from '../core/update/apply'
+import type { NamedCommand } from '../core/update/lostCommands'
 import type { UpdatePlan } from '../core/update/plan'
 import type { Platform } from '../platform/types'
 import { createActions, type AppActions } from './actions'
@@ -111,6 +112,12 @@ export interface UpdateOffer {
   macropad: LangId | null
   /** What came of pressing Reload the macropad. */
   note: string | null
+  /**
+   * After an update that may have changed the shared files: the commands the layout runs that what was carried out
+   * took away (by the app's files and the command lists before it), and whether the command lists were read again.
+   * The result view offers Reload the macropad only when the first is empty and the second true.
+   */
+  after?: { lost: NamedCommand[]; rescanned: boolean }
 }
 
 /** The editor as the reducer keeps it: no derived fields. */

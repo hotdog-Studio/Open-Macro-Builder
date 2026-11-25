@@ -1,10 +1,12 @@
 import type { FolderAccess } from '../core/folder/types'
-import { commandFileAt, commandFilesIn } from '../core/languages'
+import type { Workspace } from '../core/config/model'
+import { commandFileAt, commandFilesIn, type CommandFile, type LangId } from '../core/languages'
 import { messageOf, withoutFullStop } from '../core/message'
 import type { StarterFile } from '../core/starter'
 import { applyUpdate, type UpdatePicks, type UpdateResult } from '../core/update/apply'
 import type { StarterIndex } from '../core/update/fingerprint'
 import { KNOWN_RELEASES, type KnownReleases } from '../core/update/history'
+import { commandFilesAfter, lostCommands, type NamedCommand } from '../core/update/lostCommands'
 import { planUpdate, type UpdatePlan } from '../core/update/plan'
 import { compareVersions } from '../core/update/version'
 import type { AppActions } from './actions'
@@ -42,8 +44,9 @@ export interface UpdateDeps {
   /**
    * Scans again everything the load reads from the shared files (the command lists, the library, the icon
    * sets), as after a change from outside. The layout is the person's, under local/, and is not read again.
+   * True when the command lists were read again and taken up.
    */
-  rescan(): Promise<void>
+  rescan(): Promise<boolean>
   /** Finds and reloads the running macropad, as a save does. */
   macropad: MacropadActions
 }
@@ -136,10 +139,28 @@ async function filesOf(src: UpdateSource): Promise<StarterFile[]> {
   }
 }
 
-/** What came of pressing Update: the plan it carried out (or the one it was offered) and the outcome. */
+/**
+ * What came of pressing Update: the plan it carried out (or the one it was offered), the outcome, and, after a
+ * success, the commands the layout runs that it took away.
+ */
 interface Shown {
   plan: UpdatePlan
   result: UpdateOutcome
+  lost?: NamedCommand[]
+}
+
+/** The editor's layout, the languages the person runs and the command lists, as the press found them. */
+interface Before {
+  ws: Workspace
+  languages: LangId[]
+  files: CommandFile[]
+}
+
+/** The commands the layout runs that the update took away: defined by `before`'s lists, by none it left. */
+async function lostBy(before: Before | null, plan: UpdatePlan, picks: UpdatePicks, files: StarterFile[]): Promise<NamedCommand[]> {
+  if (before === null) return []
+  const after = commandFilesAfter(before.files, await commandFilesIn(files), plan, picks)
+  return lostCommands(before.ws, before.languages, before.files, after)
 }
 
 /** The check after a folder opens, the answers to its bar, and the update its dialog carries out. */
@@ -178,7 +199,13 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
    * carries out the picks that are still in the new plan. Null when `folder` is no longer the open one once
    * the plan is made: in the desktop app a folder access writes to whichever folder is open.
    */
-  async function carryOut(src: UpdateSource, folder: FolderAccess, offer: UpdateOffer, picks: UpdatePicks): Promise<Shown | null> {
+  async function carryOut(
+    src: UpdateSource,
+    folder: FolderAccess,
+    offer: UpdateOffer,
+    picks: UpdatePicks,
+    before: Before | null,
+  ): Promise<Shown | null> {
     // A delete's change of the manifest and the update's own write of it never overlap.
     await deps.idle()
     let prepared: [UpdatePlan, StarterFile[]]
@@ -192,17 +219,25 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
     const [plan, files] = prepared
     const skipped = skipReason(plan)
     if (skipped !== null) return { plan, result: { ok: false, notStarted: skipped } }
-    return { plan, result: await applyUpdate(folder, plan, picks, files) }
+    const result = await applyUpdate(folder, plan, picks, files)
+    // Only after a success: the result view is the only one that offers Reload the macropad.
+    return result.ok ? { plan, result, lost: await lostBy(before, plan, picks, files) } : { plan, result }
   }
 
   /**
    * The outcome of pressing Update, with the running macropad after a success; null when the folder that was
    * open at the press is no longer the open one. Anything that throws is an outcome too, never a dialog left busy.
    */
-  async function outcomeOf(src: UpdateSource, folder: FolderAccess, offer: UpdateOffer, picks: UpdatePicks): Promise<UpdateOffer | null> {
+  async function outcomeOf(
+    src: UpdateSource,
+    folder: FolderAccess,
+    offer: UpdateOffer,
+    picks: UpdatePicks,
+    before: Before | null,
+  ): Promise<UpdateOffer | null> {
     let shown: Shown | null
     try {
-      shown = await carryOut(src, folder, offer, picks)
+      shown = await carryOut(src, folder, offer, picks, before)
     } catch (e) {
       shown = { plan: offer.plan, result: { ok: false, threw: messageOf(e) } }
     }
@@ -210,7 +245,30 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
     // In the desktop app, Reload the macropad when one is running.
     const macropad = shown.result.ok ? await deps.macropad.find() : null
     if (deps.folder() !== folder) return null
-    return { plan: shown.plan, dialog: true, busy: false, result: shown.result, macropad, note: null }
+    const outcome: UpdateOffer = { plan: shown.plan, dialog: true, busy: false, result: shown.result, macropad, note: null }
+    // Not read again yet: applyUpdate says whether the scan landed.
+    return shown.lost ? { ...outcome, after: { lost: shown.lost, rescanned: false } } : outcome
+  }
+
+  /**
+   * Scans the shared files again when the update may have changed them, and records with the outcome whether the
+   * command lists landed. A scan that fails is recorded as not landed, never thrown: the outcome shows all the same.
+   */
+  async function rescannedAfter(shown: UpdateOffer): Promise<UpdateOffer> {
+    if (!shown.result || !mayHaveChanged(shown.result)) return shown
+    let rescanned: boolean
+    try {
+      rescanned = await deps.rescan()
+    } catch {
+      rescanned = false
+    }
+    return shown.after ? { ...shown, after: { ...shown.after, rescanned } } : shown
+  }
+
+  /** The editor's layout, languages and command lists now; null without an open folder. */
+  function listsNow(): Before | null {
+    const state = getState()
+    return state.screen === 'edit' ? { ws: state.ws, languages: state.settings.languages, files: state.commandFiles } : null
   }
 
   return {
@@ -236,18 +294,14 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
       if (source === null || folder === null || updating || !offer?.dialog || offer.busy) return
       if (updateBlockers(deps.draftPaths()).length > 0) return
       updating = true
+      // The command lists before the update: what the commands it takes away are told by.
+      const lists = listsNow()
       dispatch({ type: 'update', update: { ...offer, busy: true, result: null, macropad: null, note: null } })
       try {
-        const shown = await outcomeOf(source, folder, offer, picks)
-        if (shown === null) return
-        try {
-          // Before the outcome shows: the result view checks the layout against the command lists as the update
-          // left them, so it never offers to reload a macropad into commands that are gone.
-          if (shown.result && mayHaveChanged(shown.result)) await deps.rescan()
-        } finally {
-          // Whatever came of the scan, the outcome shows.
-          dispatch({ type: 'update', update: shown })
-        }
+        const shown = await outcomeOf(source, folder, offer, picks, lists)
+        // Before the outcome shows: the result view checks the layout against the command lists as the update left
+        // them, so it never offers to reload a macropad into commands that are gone.
+        if (shown !== null) dispatch({ type: 'update', update: await rescannedAfter(shown) })
       } finally {
         // Only once the outcome is shown: until then no folder may be opened over this one.
         updating = false

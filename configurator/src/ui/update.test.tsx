@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renameKey } from '../core/config/ops'
+import { parseConfig } from '../core/config/parse'
 import { MemoryFolder } from '../core/folder/memory'
 import type { DirEntry, FolderAccess } from '../core/folder/types'
 import { SETTINGS_PATH } from '../core/settings'
@@ -1245,11 +1246,27 @@ function layoutWith(action: string): string {
 }
 
 const SPLIT_LAYOUT = layoutWith('VsStudioSplitPanel')
-const UNSET_HEAD = "Your layout's keys run commands that no file defines after this update:"
+/** The example layout, whose hotkey ^!e and hotstring :X:split run VsStudioSplitPanel. */
+const HOT_LAYOUT = JSON.stringify(
+  {
+    ...JSON.parse(EXAMPLE),
+    hotkeys: [{ hotkey: '^!e', action: 'VsStudioSplitPanel' }],
+    hotstrings: [{ hotstring: ':X:split', action: 'VsStudioSplitPanel' }],
+  },
+  null,
+  2,
+)
+const PLAN_HEAD = 'Your layout runs commands that no file would define after this update:'
+const DONE_HEAD = 'Your layout runs commands that no file defines after this update:'
 const UNSET_FIX =
   'The macropad will not start until you clear those keys in the Macros tab, or keep the commands in your own local/ folder (the changelog says how).'
+const HOT_FIX =
+  'The macropad will not start until you take those hotkeys and hotstrings out of the layout file, or keep the commands in your own local/ folder (the changelog says how).'
 const CLEAR_THEN_RELOAD = 'Clear those keys in the Macros tab (or keep the commands in local/), save, and then reload the macropad.'
+const HOT_THEN_RELOAD = 'Take those hotkeys and hotstrings out of the layout file (or keep the commands in local/), save, and then reload the macropad.'
+const NOT_RESCANNED = 'The command lists could not be read again after the update: open the folder again before you reload the macropad.'
 const SPLIT_ON_F15 = ['VsStudioSplitPanel (VS Studio · F15)']
+const SPLIT_ON_HOT = ['VsStudioSplitPanel (Hotkey ^!e, Hotstring :X:split)']
 const REPLACED_2 = { name: 'Replaced 2 files you have not changed' }
 const RELOAD = { name: 'Reload the macropad' }
 
@@ -1282,49 +1299,124 @@ const running = (reloadMacropad = vi.fn(async () => 'ahk' as const)): Partial<Pl
   reloadMacropad,
 })
 
+/** The desktop app with the AutoHotkey macropad running, whose command lists cannot be read once the update has written. */
+function unreadableAfter(folder: TestFolder): Partial<Platform> {
+  return {
+    ...running(),
+    // The macropad is looked for after the update has written, before the shared files are scanned again.
+    findMacropad: async () => {
+      folder.beforeList = (dir) => {
+        if (dir.startsWith('ahk/commands')) throw new Error('The folder is locked.')
+      }
+      return 'ahk'
+    },
+  }
+}
+
 describe('the update dialog, with a layout that runs a command the update takes away', () => {
   it.each([VS_AHK, VS_PS1])('the tests hold %s as 1.0.5 shipped it', async (path) => {
     expect(releasesOf(KNOWN_RELEASES, path, await print(path, VS_105[path]))).toContain('1.0.5')
   })
 
-  it('says before the buttons which command no file defines after the update, on which key, and how to keep the macropad starting', async () => {
+  it.each<[string, string, string[], string]>([
+    ['a key', SPLIT_LAYOUT, SPLIT_ON_F15, UNSET_FIX],
+    ['a hotkey and a hotstring with the X option', HOT_LAYOUT, SPLIT_ON_HOT, HOT_FIX],
+  ])('says before the buttons which command no file would define after the update, on %s, and how to keep the macropad starting', async (_name, layout, items, fix) => {
     const { source } = await vsSource()
-    const { dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
-    const list = await within(dialog).findByRole('list', { name: UNSET_HEAD })
-    expect(itemsOf(list)).toEqual(SPLIT_ON_F15)
-    expect(within(dialog).getByText(UNSET_FIX)).toBeTruthy()
+    const { dialog } = await reviewed({ [CONFIG]: layout, ...VS_105 }, {}, source)
+    const list = await within(dialog).findByRole('list', { name: PLAN_HEAD })
+    expect(itemsOf(list)).toEqual(items)
+    expect(within(dialog).getByText(fix)).toBeTruthy()
     // Update stays on: it is the person's choice.
     expect(within(dialog).getByRole('button', REPLACED_2)).toBeTruthy()
     expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(false)
   })
 
-  it('after the update, says the same, and in place of Reload the macropad says to clear the keys, save and then reload', async () => {
+  it.each<[string, string, string[], string, string]>([
+    ['a key', SPLIT_LAYOUT, SPLIT_ON_F15, UNSET_FIX, CLEAR_THEN_RELOAD],
+    ['a hotkey and a hotstring with the X option', HOT_LAYOUT, SPLIT_ON_HOT, HOT_FIX, HOT_THEN_RELOAD],
+  ])('after the update, names the command run by %s, and in place of Reload the macropad says what to do first', async (_name, layout, items, fix, first) => {
     const reloadMacropad = vi.fn(async () => 'ahk' as const)
     const { source } = await vsSource()
-    const { user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, running(reloadMacropad), source)
+    const { user, dialog } = await reviewed({ [CONFIG]: layout, ...VS_105 }, running(reloadMacropad), source)
     await press(user, dialog)
     const done = dialogOf()
     expect(within(done).getByText('Updated to 1.0.6: 2 replaced, 0 added, 0 removed.')).toBeTruthy()
-    expect(itemsOf(within(done).getByRole('list', { name: UNSET_HEAD }))).toEqual(SPLIT_ON_F15)
-    expect(within(done).getByText(UNSET_FIX)).toBeTruthy()
-    expect(within(done).getByText(CLEAR_THEN_RELOAD)).toBeTruthy()
+    expect(itemsOf(within(done).getByRole('list', { name: DONE_HEAD }))).toEqual(items)
+    expect(within(done).getByText(fix)).toBeTruthy()
+    expect(within(done).getByText(first)).toBeTruthy()
     expect(within(done).queryByRole('button', RELOAD)).toBeNull()
-    expect(within(done).queryByText(START_AGAIN)).toBeNull()
     expect(document.activeElement).toBe(within(done).getByRole('button', { name: 'Close' }))
     expect(reloadMacropad).not.toHaveBeenCalled()
+  })
+
+  it.each<[string, Partial<Platform>]>([
+    ['with the macropad running', running()],
+    ['in the desktop app with no macropad running', { kind: 'electron', findMacropad: async () => null, reloadMacropad: async () => null }],
+    ['in the web page', {}],
+  ])('after the update, %s, says to clear the keys first in place of starting or reloading the macropad', async (_name, platform) => {
+    const { source } = await vsSource()
+    const { user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, platform, source)
+    await press(user, dialog)
+    const done = dialogOf()
+    expect(within(done).getByText(CLEAR_THEN_RELOAD)).toBeTruthy()
+    expect(within(done).queryByText(START_AGAIN)).toBeNull()
+    expect(within(done).queryByRole('button', RELOAD)).toBeNull()
+  })
+
+  it('names the language that loses a command when the person runs both and the other keeps it', async () => {
+    // The person changed vsstudio.ahk, which still defines VsStudioSplitPanel and is kept; the .ps1 is replaced.
+    const { source, loadFiles } = await vsSource()
+    const { user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105, [VS_AHK]: `${VS_105[VS_AHK]}\n; mine\n` }, {}, source)
+    await appFilesLoaded(loadFiles)
+    expect(itemsOf(within(dialog).getByRole('list', { name: PLAN_HEAD }))).toEqual([
+      'VsStudioSplitPanel in the PowerShell version (VS Studio · F15)',
+    ])
+    await user.click(within(dialog).getByRole('checkbox', { name: VS_AHK }))
+    expect(itemsOf(within(dialog).getByRole('list', { name: PLAN_HEAD }))).toEqual(SPLIT_ON_F15)
   })
 
   it('with a layout that runs only commands defined after the update, says neither, and offers Reload as before', async () => {
     const { source, loadFiles } = await vsSource()
     const { user, dialog } = await reviewed({ ...VS_105 }, running(), source)
     await appFilesLoaded(loadFiles)
-    expect(within(dialog).queryByText(UNSET_HEAD)).toBeNull()
+    expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
     expect(within(dialog).queryByText(UNSET_FIX)).toBeNull()
     await press(user, dialog)
     const done = dialogOf()
     expect(within(done).getByRole('button', RELOAD)).toBeTruthy()
-    expect(within(done).queryByText(UNSET_HEAD)).toBeNull()
+    expect(within(done).queryByText(DONE_HEAD)).toBeNull()
     expect(within(done).queryByText(CLEAR_THEN_RELOAD)).toBeNull()
+    expect(within(done).queryByText(NOT_RESCANNED)).toBeNull()
+  })
+
+  it('when the command lists cannot be read again, names what the update took away from the lists before it, and offers no Reload', async () => {
+    const { source } = await vsSource()
+    const folder = await scriptsFolder({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 })
+    const user = await open(folder, source, unreadableAfter(folder))
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    await press(user, dialogOf())
+    const done = dialogOf()
+    // The lists still hold the files of before, which define it: what was carried out says it is gone.
+    expect(editor().commandFiles.find((f) => f.file.path === VS_AHK)?.file.text).toContain('VsStudioSplitPanel(Macro)')
+    expect(itemsOf(within(done).getByRole('list', { name: DONE_HEAD }))).toEqual(SPLIT_ON_F15)
+    expect(within(done).getByText(CLEAR_THEN_RELOAD)).toBeTruthy()
+    expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
+    expect(within(done).queryByRole('button', RELOAD)).toBeNull()
+  })
+
+  it('when the command lists cannot be read again, offers no Reload and says to open the folder again, though nothing was taken away', async () => {
+    const { source } = await vsSource()
+    const folder = await scriptsFolder({ ...VS_105 })
+    const user = await open(folder, source, unreadableAfter(folder))
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    await press(user, dialogOf())
+    const done = dialogOf()
+    expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
+    expect(within(done).queryByText(DONE_HEAD)).toBeNull()
+    expect(within(done).queryByText(START_AGAIN)).toBeNull()
+    expect(within(done).queryByRole('button', RELOAD)).toBeNull()
+    expect(document.activeElement).toBe(within(done).getByRole('button', { name: 'Close' }))
   })
 
   it("shows the plan without the warning while the app's files load, and the warning once they have", async () => {
@@ -1335,16 +1427,16 @@ describe('the update dialog, with a layout that runs a command the update takes 
     })
     const { dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
     expect(within(dialog).getByRole('button', REPLACED_2)).toBeTruthy()
-    expect(within(dialog).queryByText(UNSET_HEAD)).toBeNull()
+    expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
     release()
-    expect(itemsOf(await within(dialog).findByRole('list', { name: UNSET_HEAD }))).toEqual(SPLIT_ON_F15)
+    expect(itemsOf(await within(dialog).findByRole('list', { name: PLAN_HEAD }))).toEqual(SPLIT_ON_F15)
   })
 
   it("shows no warning when the app's files cannot be loaded, and nothing else changes", async () => {
     const { source, loadFiles } = await vsSource(() => Promise.reject(new Error('Failed to fetch.')))
     const { dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
     await appFilesLoaded(loadFiles)
-    expect(within(dialog).queryByText(UNSET_HEAD)).toBeNull()
+    expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
     expect(within(dialog).queryByText(UNSET_FIX)).toBeNull()
     expect(within(dialog).getByText('From 1.0.5 to 1.0.6. Nothing under local/ is read or changed.')).toBeTruthy()
     expect(within(dialog).getByRole('button', REPLACED_2)).toBeTruthy()
@@ -1357,11 +1449,11 @@ describe('the update dialog, with a layout that runs a command the update takes 
     const { source, loadFiles } = await vsSource()
     const { user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...mine }, {}, source)
     await appFilesLoaded(loadFiles)
-    expect(within(dialog).queryByText(UNSET_HEAD)).toBeNull()
+    expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
     await user.click(within(dialog).getByRole('checkbox', { name: VS_AHK }))
-    expect(itemsOf(within(dialog).getByRole('list', { name: UNSET_HEAD }))).toEqual(SPLIT_ON_F15)
+    expect(itemsOf(within(dialog).getByRole('list', { name: PLAN_HEAD }))).toEqual(['VsStudioSplitPanel in the AutoHotkey version (VS Studio · F15)'])
     await user.click(within(dialog).getByRole('checkbox', { name: VS_AHK }))
-    expect(within(dialog).queryByText(UNSET_HEAD)).toBeNull()
+    expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
   })
 })
 
@@ -1380,6 +1472,9 @@ describe('the update dialog, when ahk/config.ahk switches a command off', () => 
   })
 })
 
+/** What the action-level tests' editor holds: the example layout, both languages, and no command files. */
+const EDITOR = { ws: parseConfig(EXAMPLE, CONFIG), settings: { languages: ['ahk', 'ps'] }, commandFiles: [] }
+
 describe('the update action on its own', () => {
   /** The update actions alone, with the editor's dialog open on `plan`, and `deps` changed. */
   function actionsFor(source: UpdateSource, plan: UpdatePlan, deps: Partial<UpdateDeps>) {
@@ -1392,13 +1487,14 @@ describe('the update action on its own', () => {
         update = action.update
         shown.push(update)
       },
-      getState: () => ({ screen: 'edit', dirty: false, update }) as unknown as AppState,
+      // The layout, the languages and the command lists the update tells what it took away by.
+      getState: () => ({ screen: 'edit', dirty: false, update, ...EDITOR }) as unknown as AppState,
       current: () => true,
       loadNumber: () => 1,
       folder: () => null,
       idle: async () => {},
       draftPaths: () => [],
-      rescan: async () => {},
+      rescan: async () => true,
       macropad: { find: async () => null, reload: async () => null },
       ...deps,
     })
@@ -1454,20 +1550,24 @@ describe('the update action on its own', () => {
       folder: () => folder,
       rescan: async () => {
         shownAtRescan = shown.length
+        return true
       },
     })
     await actions.applyUpdate(NO_PICKS)
     // Only the busy dialog had been shown when the scan ran.
     expect(shownAtRescan).toBe(1)
-    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true } })
+    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { lost: [], rescanned: true } })
   })
 
-  it('shows the outcome when that scan fails, and does not hide the failure', async () => {
+  it.each<[string, () => Promise<boolean>]>([
+    ['throws', () => Promise.reject(new Error('The scan failed.'))],
+    ['is dropped', async () => false],
+  ])('when that scan %s, shows the outcome all the same, recording that the lists were not read again', async (_name, rescan) => {
     const { folder, source, plan } = await worked()
-    const rescan = () => Promise.reject(new Error('The scan failed.'))
     const { actions, shown } = actionsFor(source, plan, { folder: () => folder, rescan })
-    await expect(actions.applyUpdate(NO_PICKS)).rejects.toThrow('The scan failed.')
-    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true } })
+    // Never a rejection: the dialog starts the update with `void`.
+    await expect(actions.applyUpdate(NO_PICKS)).resolves.toBeUndefined()
+    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { rescanned: false } })
     expect(actions.updating()).toBe(false)
   })
 
@@ -1482,7 +1582,7 @@ describe('the update action on its own', () => {
     },
   ])('after $name, scans the shared files again only when they may have changed', async ({ files, rescans, result }) => {
     const { folder, plan } = await worked()
-    const rescan = vi.fn(async () => {})
+    const rescan = vi.fn(async () => true)
     const { actions, shown } = actionsFor(await updateSourceOf({ files }), plan, { folder: () => folder, rescan })
     await actions.applyUpdate(NO_PICKS)
     expect(shown.at(-1)).toMatchObject({ busy: false, result })

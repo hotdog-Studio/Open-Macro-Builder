@@ -216,29 +216,30 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     await manifestWork
   }
 
-  async function recheckCommands(): Promise<void> {
+  async function recheckCommands(): Promise<boolean> {
     // The app's own write is never an outside change: the recheck starts once it has landed.
     await settled()
     const folder = deps.folder()
-    if (!folder) return
-    await recheckCommandFiles(folder)
+    if (!folder) return false
+    const landed = await recheckCommandFiles(folder)
     // Whatever became of the command files: the library has guards of its own.
     await recheckLibrary(folder)
+    return landed
   }
 
-  /** Reads the command files again and takes up what changed on disk. */
-  async function recheckCommandFiles(folder: FolderAccess): Promise<void> {
+  /** Reads the command files again and takes up what changed on disk; false when it took up nothing. */
+  async function recheckCommandFiles(folder: FolderAccess): Promise<boolean> {
     const snapshot = files.get()
     let fresh: CommandFile[]
     try {
       fresh = await scanCommands(folder)
     } catch {
       // Unreadable for now (a locked file, a lost permission); a save or reload says why.
-      return
+      return false
     }
     // The folder was closed or replaced, or a save or reload holds a newer entry or is still
     // writing one: that one decides, and the next recheck sees the rest.
-    if (deps.folder() !== folder || files.get() !== snapshot || saves.size > 0) return
+    if (deps.folder() !== folder || files.get() !== snapshot || saves.size > 0) return false
     const { files: merged } = mergeRescan(snapshot, fresh, new Set(drafts.keys()))
     const held = new Map(snapshot.map((f) => [f.file.path, f]))
     // A file with unsaved edits differs from the disk when the disk is not the version its draft
@@ -259,6 +260,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const list = same ? snapshot : next
     if (!same) files.set(list)
     dispatch({ type: 'command-files', files: list, changed })
+    return true
   }
 
   /** Numbers a read of the library about to start: a recheck's or a reload's. */

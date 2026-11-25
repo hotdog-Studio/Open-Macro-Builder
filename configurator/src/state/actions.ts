@@ -110,9 +110,10 @@ export interface AppActions {
    * Scans the command files again, once no command file is being saved. Files without unsaved
    * edits take what is on disk (new files appear, deleted ones go); files with unsaved edits keep
    * them, and a changed-on-disk banner when the disk differs. Dropped when a save, a reload or a
-   * folder change came first.
+   * folder change came first. True when the command lists were read and taken up; false when the read
+   * failed or was dropped.
    */
-  recheckCommands(): Promise<void>
+  recheckCommands(): Promise<boolean>
   /**
    * New file: a starter file in each chosen language, then (AutoHotkey) the include line that
    * loads it; shows the new pair. Resolves to the first error message, or null when done.
@@ -285,24 +286,26 @@ export function createActions(
 
   /**
    * After an update: what the load reads from the shared files, read again (readSession without the layout,
-   * which is the person's under local/): the command lists and the library, then the icon sets.
+   * which is the person's under local/): the command lists and the library, then the icon sets. Whether the
+   * command lists were read again and taken up.
    */
-  async function rescanShared(): Promise<void> {
+  async function rescanShared(): Promise<boolean> {
     // Taken before the recheck: a folder opened meanwhile is not this update's, and gets nothing of it.
     const folder = held?.folder
-    if (!folder) return
-    await actions.recheckCommands()
-    if (held?.folder !== folder) return
+    if (!folder) return false
+    const landed = await actions.recheckCommands()
+    if (held?.folder !== folder) return false
     let iconSets: string[]
     try {
       iconSets = await listIconSets(folder)
     } catch {
-      // Unreadable for now; the next opening lists them.
-      return
+      // Unreadable for now; the next opening lists them. The command lists landed or not all the same.
+      return landed
     }
     const state = getState()
-    if (held?.folder !== folder || state.screen !== 'edit') return
+    if (held?.folder !== folder || state.screen !== 'edit') return false
     if (iconSets.join('\n') !== state.iconSets.join('\n')) dispatch({ type: 'icon-sets', iconSets })
+    return landed
   }
   /** Stops the platform's watch of the held config file and command files. */
   let stopWatch: (() => void) | null = null

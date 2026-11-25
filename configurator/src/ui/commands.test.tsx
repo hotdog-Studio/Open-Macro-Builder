@@ -614,7 +614,7 @@ describe('outside changes', () => {
    * actions), so a test can wait for each to end instead of waiting some time and hoping.
    */
   function trackRechecks() {
-    const started: Promise<void>[] = []
+    const started: Promise<unknown>[] = []
     const { actions } = seen
     const commands = actions.recheckCommands
     const config = actions.recheck
@@ -899,7 +899,7 @@ describe('outside changes', () => {
       await write(path, data)
       if (path === CHROME_AHK) await writeGate
     }
-    let recheck: Promise<void> | undefined
+    let recheck: Promise<boolean> | undefined
     await act(async () => {
       recheck = seen.actions.recheckCommands()
       await atScanGate
@@ -1071,7 +1071,7 @@ describe('outside changes', () => {
       }
       return bytes
     }
-    let recheck: Promise<void> | undefined
+    let recheck: Promise<boolean> | undefined
     await act(async () => {
       recheck = seen.actions.recheckCommands()
       await atGate

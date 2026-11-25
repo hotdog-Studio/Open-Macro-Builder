@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import type { CommandFile } from '../core/languages'
+import { LANGUAGES, type CommandFile, type LangId } from '../core/languages'
 import { withoutFullStop } from '../core/message'
 import type { UpdateDone, UpdatePicks } from '../core/update/apply'
 import { INCLUDE_FILE } from '../core/update/includeList'
@@ -19,10 +19,10 @@ const DELETED = 'You deleted these. They stay deleted unless you tick them.'
 const ADJUST = `${INCLUDE_FILE}: yours is kept, and its list of command files was brought up to date.`
 const START_AGAIN = 'Start the macropad again to use the new scripts.'
 const SWITCHED_OFF = `Ticking ${INCLUDE_FILE} puts back the #Include lines you took out.`
-const UNSET_HEAD = "Your layout's keys run commands that no file defines after this update:"
-const UNSET_FIX =
-  'The macropad will not start until you clear those keys in the Macros tab, or keep the commands in your own local/ folder (the changelog says how).'
-const CLEAR_THEN_RELOAD = 'Clear those keys in the Macros tab (or keep the commands in local/), save, and then reload the macropad.'
+/** The heading of the warning before the update, and after it. */
+const WOULD_BE_UNSET = 'Your layout runs commands that no file would define after this update:'
+const UNSET = 'Your layout runs commands that no file defines after this update:'
+const NOT_RESCANNED = 'The command lists could not be read again after the update: open the folder again before you reload the macropad.'
 const PATHS = 'break-all font-mono text-[12px] text-zinc-400'
 /** What a button that is off does. */
 const NOTHING = () => undefined
@@ -86,28 +86,63 @@ function NamedPaths({ heading, paths }: Readonly<{ heading: string; paths: strin
   )
 }
 
-/** A key by the names the Macros tab shows: `VS Studio · F15`. */
-const keyName = (use: NamedCommand['keys'][number]) => `${use.layer} · ${use.key}`
+/**
+ * The language a command is missing from, when the person runs more than one and only one of them misses it:
+ * ` in the PowerShell version`. Empty otherwise.
+ */
+function languageNote(command: NamedCommand, languages: readonly LangId[]): string {
+  if (languages.length < 2 || command.langs.length !== 1) return ''
+  return ` in the ${LANGUAGES[command.langs[0]].label} version`
+}
 
-/** A command and the keys that run it: `VsStudioSplitPanel (VS Studio · F15)`. */
-const commandLine = (command: NamedCommand) => `${command.name} (${command.keys.map(keyName).join(', ')})`
+/** A command, where it is missing when that is one language of several, and where the layout runs it. */
+function commandLine(command: NamedCommand, languages: readonly LangId[]): string {
+  const places = command.places.map((place) => place.name).join(', ')
+  return `${command.name}${languageNote(command, languages)} (${places})`
+}
+
+/** What to take out of the layout, by where it runs the commands: keys in the Macros tab, hotkeys and hotstrings in the file. */
+function remedy(commands: readonly NamedCommand[]): string {
+  const kinds = new Set(commands.flatMap((command) => command.places.map((place) => place.kind)))
+  const parts: string[] = []
+  if (kinds.has('key')) parts.push('clear those keys in the Macros tab')
+  if (kinds.has('hotkey') || kinds.has('hotstring')) parts.push('take those hotkeys and hotstrings out of the layout file')
+  return parts.join(' and ')
+}
+
+/** What the macropad does about such commands, and how to set it right. */
+const unsetFix = (commands: readonly NamedCommand[]) =>
+  `The macropad will not start until you ${remedy(commands)}, or keep the commands in your own local/ folder (the changelog says how).`
+
+/** After the update, in place of Reload the macropad: what to do first. */
+function clearThenReload(commands: readonly NamedCommand[]): string {
+  const first = remedy(commands)
+  return `${first.charAt(0).toUpperCase()}${first.slice(1)} (or keep the commands in local/), save, and then reload the macropad.`
+}
+
+interface UnsetProps {
+  heading: string
+  commands: NamedCommand[]
+  /** The languages the person runs. */
+  languages: readonly LangId[]
+}
 
 /**
- * The commands the layout's keys run that no file defines after the update, and what that does to the macropad;
- * the same words before the update and after it. Names from the layout and the files are shown as text.
+ * The commands the layout runs that no file would define after the update (or defines, after it), where it runs
+ * them, and what that does to the macropad. Names from the layout and the files are shown as text.
  */
-function Unset({ commands }: Readonly<{ commands: NamedCommand[] }>) {
+function Unset({ heading, commands, languages }: Readonly<UnsetProps>) {
   const id = useId()
   if (commands.length === 0) return null
   return (
     <div className="mt-3 break-words text-amber-300">
-      <p id={id}>{UNSET_HEAD}</p>
+      <p id={id}>{heading}</p>
       <ul aria-labelledby={id} className="mt-1 space-y-0.5 pl-4">
         {commands.map((command) => (
-          <li key={command.name}>{commandLine(command)}</li>
+          <li key={command.name}>{commandLine(command, languages)}</li>
         ))}
       </ul>
-      <p className="mt-1">{UNSET_FIX}</p>
+      <p className="mt-1">{unsetFix(commands)}</p>
     </div>
   )
 }
@@ -247,7 +282,7 @@ function PlanView({ plan, picks, app, onTick, onUpdate }: Readonly<PlanViewProps
           onTick={(path, on) => onTick('restoreDeleted', path, on)}
         />
       )}
-      <Unset commands={lost} />
+      <Unset heading={WOULD_BE_UNSET} commands={lost} languages={state.settings.languages} />
       {blockers.map((blocker) => (
         <p key={blocker} className="mt-3 text-amber-300">
           {blocker}
@@ -279,14 +314,20 @@ function BusyView() {
   )
 }
 
-/**
- * After an update, the macropad's line: none while Reload the macropad is offered, then what the reload said. While
- * the layout's keys run commands no file defines, the macropad would not start: the line says what to do first.
- */
-function macropadLine(offer: UpdateOffer, unset: boolean): string | null {
-  if (unset) return CLEAR_THEN_RELOAD
+/** After an update, the macropad's line: none while Reload the macropad is offered, then what the reload said. */
+function macropadLine(offer: UpdateOffer): string | null {
   if (offer.macropad) return null
   return offer.note ?? START_AGAIN
+}
+
+/**
+ * The commands the layout runs that no file defines after the update: those the rescanned lists leave undefined,
+ * then those the update took away that they do not name (lists that did not land still hold the old files).
+ */
+function unsetAfter(offer: UpdateOffer, rescanned: NamedCommand[]): NamedCommand[] {
+  const named = new Set(rescanned.map((command) => command.name.toLowerCase()))
+  const lost = (offer.after?.lost ?? []).filter((command) => !named.has(command.name.toLowerCase()))
+  return [...rescanned, ...lost]
 }
 
 /**
@@ -297,11 +338,15 @@ function macropadLine(offer: UpdateOffer, unset: boolean): string | null {
 function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: UpdateDone }>) {
   const { state, actions } = useEditor()
   const { ws, settings, commandFiles } = state
-  const unset = useMemo(() => undefinedCommands(ws, settings.languages, commandFiles), [ws, settings.languages, commandFiles])
+  const undefinedNow = useMemo(() => undefinedCommands(ws, settings.languages, commandFiles), [ws, settings.languages, commandFiles])
+  const unset = unsetAfter(offer, undefinedNow)
+  // Lists that were not read again may still define what the update took away: no Reload on their word.
+  const notRescanned = offer.after?.rescanned === false
   const close = { label: 'Close', autoFocus: true, onChoose: actions.dismissUpdate }
   const reload = { label: 'Reload the macropad', primary: true, autoFocus: false, onChoose: () => void actions.reloadMacropadAfterUpdate() }
-  const offersReload = offer.macropad !== null && unset.length === 0
-  const line = macropadLine(offer, unset.length > 0)
+  const offersReload = offer.macropad !== null && unset.length === 0 && !notRescanned
+  // While the macropad would not start, or that cannot be told, the lines say what to do first.
+  const line = unset.length > 0 || notRescanned ? null : macropadLine(offer)
   // An include file whose list alone this update rewrote is said so, never listed as kept as it is: under the
   // person's body, under one that changed since the plan, or as a repair of its list under the app's body.
   const adjusted = result.adjusted.some(isInclude)
@@ -314,7 +359,9 @@ function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: Up
       {kept.length > 0 && <NamedPaths heading="Kept as they are:" paths={kept} />}
       {adjusted && <p className="mt-3">{ADJUST}</p>}
       {result.backups.length > 0 && <NamedPaths heading="Your versions, kept beside the new ones:" paths={result.backups} />}
-      <Unset commands={unset} />
+      <Unset heading={UNSET} commands={unset} languages={settings.languages} />
+      {unset.length > 0 && <p className="mt-3">{clearThenReload(unset)}</p>}
+      {notRescanned && <p className="mt-3">{NOT_RESCANNED}</p>}
       {line && <p className="mt-3">{line}</p>}
     </ConfirmDialog>
   )

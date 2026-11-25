@@ -202,7 +202,7 @@ const VS_PS1 = 'powershell/commands/custom/vsstudio.ps1'
 const LONG = 'VsStudioSplitTheEditorIntoTwoPanelsSideBySideWithACommandNameFarTooLongForOneLine'
 /** A layer title that would be markup if it were not shown as text. */
 const MARKUP = '<b>VS</b> Studio & <i>more</i>'
-const UNSET_HEAD = "Your layout's keys run commands that no file defines after this update:"
+const UNSET_HEAD = 'Your layout runs commands that no file would define after this update:'
 
 /**
  * The repository's scripts as the app's copy (1.0.6); a folder whose vsstudio files are 1.0.4's, which also defined

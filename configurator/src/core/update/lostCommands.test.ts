@@ -50,14 +50,35 @@ const BOTH: LangId[] = ['ahk', 'ps']
 const NO_PICKS: UpdatePicks = { replaceChanged: [], restoreDeleted: [] }
 const NO_PLAN: Pick<UpdatePlan, 'changed' | 'deleted' | 'remove'> = { changed: [], deleted: [], remove: [] }
 
-const SPLIT = { name: 'VsStudioSplitPanel', keys: [{ layer: 'VS Studio', key: 'F15', parked: false }] }
-const SNAP = {
-  name: 'SnapThirdsLeft',
-  keys: [
-    { layer: 'Windows', key: 'F13', parked: false },
-    { layer: 'Windows', key: 'F15', parked: false },
-  ],
-}
+const key = (name: string) => ({ kind: 'key' as const, name })
+const hotkey = (name: string) => ({ kind: 'hotkey' as const, name: `Hotkey ${name}` })
+const hotstring = (name: string) => ({ kind: 'hotstring' as const, name: `Hotstring ${name}` })
+const split = (...langs: LangId[]) => ({ name: 'VsStudioSplitPanel', places: [key('VS Studio · F15')], langs })
+const snap = (...langs: LangId[]) => ({ name: 'SnapThirdsLeft', places: [key('Windows · F13'), key('Windows · F15')], langs })
+
+/**
+ * LAYOUT with hotkeys and hotstrings: ^!e runs SnapThirdsLeft and ^!r SnapThirdsRight; :X:now runs
+ * SnapThirdsRight and :*X:soon VsStudioSplitPanel. Not counted, as the layout check does not count them: an empty
+ * slot, a hotkey without an action, a hotstring that only replaces text, and one with X0, which runs nothing.
+ */
+const HOT_LAYOUT = parseConfig(
+  JSON.stringify({
+    fn: { key: 'ScrollLock' },
+    keys: [{ key: 'F13' }, { key: 'F14' }, { key: 'F15' }],
+    layers: [
+      { title: 'VS Studio', icon: 'vs_studio', macros: [null, null, { action: 'VsStudioSplitPanel', name: 'Split' }] },
+      { title: 'Windows', icon: 'windows', macros: [{ action: 'SnapThirdsLeft', name: '1/3' }] },
+    ],
+    hotkeys: [{ hotkey: '^!e', action: 'SnapThirdsLeft' }, null, { hotkey: '^!x' }, { hotkey: '^!r', action: 'SnapThirdsRight' }],
+    hotstrings: [
+      { hotstring: ':X:now', action: 'SnapThirdsRight' },
+      { hotstring: '::btw', replacement: 'by the way' },
+      { hotstring: ':X0:off', action: 'Gone' },
+      { hotstring: ':*X:soon', action: 'VsStudioSplitPanel' },
+    ],
+  }),
+  'local/config.json',
+)
 
 /** What 1.0.5 had: the folder's files before the update. */
 const NOW = {
@@ -149,7 +170,17 @@ describe('commandFilesAfter', () => {
 describe('lostCommands', () => {
   it('names each command the layers on keys use that a file defines now and none after the update, with its keys, once', async () => {
     const lost = lostCommands(LAYOUT, BOTH, await filesOf(NOW), await filesOf(APP))
-    expect(lost).toEqual([SPLIT, SNAP])
+    // VsStudioSplitPanel goes from both languages; SnapThirdsLeft only from AutoHotkey, the one that had it.
+    expect(lost).toEqual([split('ahk', 'ps'), snap('ahk')])
+  })
+
+  it('names a command that a hotkey or a hotstring with the X option runs, by that hotkey or hotstring, after its keys', async () => {
+    const now = await filesOf({ ...NOW, [WINDOWS_AHK]: ahkDefining('SnapThirdsLeft', 'SnapThirdsRight', 'Gone') })
+    expect(lostCommands(HOT_LAYOUT, ['ahk'], now, await filesOf(APP))).toEqual([
+      { name: 'VsStudioSplitPanel', places: [key('VS Studio · F15'), hotstring(':*X:soon')], langs: ['ahk'] },
+      { name: 'SnapThirdsLeft', places: [key('Windows · F13'), hotkey('^!e')], langs: ['ahk'] },
+      { name: 'SnapThirdsRight', places: [hotkey('^!r'), hotstring(':X:now')], langs: ['ahk'] },
+    ])
   })
 
   it.each<[string, LangId[], Record<string, string>, Record<string, string>]>([
@@ -162,7 +193,7 @@ describe('lostCommands', () => {
 
   it('names a command lost in one of the languages the person runs, defined in the other', async () => {
     const after = await filesOf({ ...NOW, [SPLIT_PS1]: APP[SPLIT_PS1] })
-    expect(lostCommands(LAYOUT, BOTH, await filesOf(NOW), after)).toEqual([SPLIT])
+    expect(lostCommands(LAYOUT, BOTH, await filesOf(NOW), after)).toEqual([split('ps')])
   })
 
   it('leaves out a command only a parked layer uses: the macropad never loads that layer', async () => {
@@ -174,8 +205,15 @@ describe('lostCommands', () => {
 describe('undefinedCommands', () => {
   it('names each command the layers on keys use that the files leave undefined in a language the person runs', async () => {
     const files = await filesOf({ [SPLIT_AHK]: APP[SPLIT_AHK], [SPLIT_PS1]: NOW[SPLIT_PS1] })
-    expect(undefinedCommands(LAYOUT, BOTH, files)).toEqual([SPLIT, SNAP])
-    expect(undefinedCommands(LAYOUT, ['ps'], files)).toEqual([SNAP])
+    expect(undefinedCommands(LAYOUT, BOTH, files)).toEqual([split('ahk'), snap('ahk', 'ps')])
+    expect(undefinedCommands(LAYOUT, ['ps'], files)).toEqual([snap('ps')])
+  })
+
+  it('names a command only a hotkey or a hotstring with the X option runs', async () => {
+    const files = await filesOf({ [WINDOWS_AHK]: ahkDefining('SnapThirdsLeft', 'VsStudioSplitPanel') })
+    expect(undefinedCommands(HOT_LAYOUT, ['ahk'], files)).toEqual([
+      { name: 'SnapThirdsRight', places: [hotkey('^!r'), hotstring(':X:now')], langs: ['ahk'] },
+    ])
   })
 
   it('names none when the files define every command the layers on keys use', async () => {

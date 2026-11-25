@@ -1250,7 +1250,15 @@ function Start-E2eStandin {
     Wait-ScreenChange
     $p = Start-E2eProcess (Get-E2eAhkCopy $Exe) $arguments
     $standin = Wait-E2eStandinLog $log -TimeoutMs 10000
-    if ($null -eq $standin) { throw "The stand-in '$Name' did not start within 10 s." }
+    if ($null -eq $standin) {
+        # What a person reading the build's log needs to tell a slow start from a stand-in that could not
+        # start: whether its process still runs, a window it shows (AutoHotkey reports a load error in one),
+        # what it wrote, and the window in front.
+        $p.Refresh()
+        $process = if ($p.HasExited) { "its process ended with exit code $($p.ExitCode)" } else { "its process (pid $($p.Id)) still runs, main window '$($p.MainWindowTitle)'" }
+        $wrote = if (Test-Path -LiteralPath $log) { "its log holds: $(@(Read-E2eLog $log) -join ' / ')" } else { 'it wrote no log' }
+        throw "The stand-in '$Name' did not start within 10 s: $process; $wrote; in front: $(Get-E2eForegroundText)."
+    }
     Wait-ScreenChange -Observed
     $standin | Add-Member Process $p
     $standin | Add-Member Rect (Get-WindowRect $standin.Hwnd)

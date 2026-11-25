@@ -110,11 +110,14 @@ function definedIn(files: readonly CommandFile[]): Record<LangId, Set<string>> {
   return defined
 }
 
+/** What an item shows in place of the name of a hotkey whose action is empty (the layout check counts it; no file can define it). */
+const NO_COMMAND = 'no command'
+
 /** The commands with the languages each is missing from, those missing from none left out. */
 function missing(ws: Workspace, isMissing: (lang: LangId, name: string) => boolean, languages: readonly LangId[]): NamedCommand[] {
   return namedCommands(ws).flatMap((c) => {
     const langs = languages.filter((lang) => isMissing(lang, c.name.toLowerCase()))
-    return langs.length > 0 ? [{ ...c, langs }] : []
+    return langs.length > 0 ? [{ ...c, name: c.name === '' ? NO_COMMAND : c.name, langs }] : []
   })
 }
 

@@ -1390,6 +1390,16 @@ describe('the update dialog, with a layout that runs a command the update takes 
     expect(within(done).queryByText(NOT_RESCANNED)).toBeNull()
   })
 
+  it('after the update, shows a hotkey with an empty action as "no command", not as an empty name', async () => {
+    const layout = JSON.stringify({ ...JSON.parse(EXAMPLE), hotkeys: [{ hotkey: '^!x', action: '' }] }, null, 2)
+    const { source } = await vsSource()
+    const { user, dialog } = await reviewed({ [CONFIG]: layout, ...VS_105 }, running(), source)
+    await press(user, dialog)
+    const done = dialogOf()
+    expect(itemsOf(within(done).getByRole('list', { name: DONE_HEAD }))).toEqual(['no command (Hotkey ^!x)'])
+    expect(within(done).queryByRole('button', RELOAD)).toBeNull()
+  })
+
   it('when the command lists cannot be read again, names what the update took away from the lists before it, and offers no Reload', async () => {
     const { source } = await vsSource()
     const folder = await scriptsFolder({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 })
@@ -1477,7 +1487,7 @@ const EDITOR = { ws: parseConfig(EXAMPLE, CONFIG), settings: { languages: ['ahk'
 
 describe('the update action on its own', () => {
   /** The update actions alone, with the editor's dialog open on `plan`, and `deps` changed. */
-  function actionsFor(source: UpdateSource, plan: UpdatePlan, deps: Partial<UpdateDeps>) {
+  function actionsFor(source: UpdateSource, plan: UpdatePlan, deps: Partial<UpdateDeps>, editorNow: Record<string, unknown> = EDITOR) {
     let update: UpdateOffer | null = { plan, dialog: true, busy: false, result: null, macropad: null, note: null }
     const shown: (UpdateOffer | null)[] = []
     const actions = createUpdateActions({
@@ -1488,7 +1498,7 @@ describe('the update action on its own', () => {
         shown.push(update)
       },
       // The layout, the languages and the command lists the update tells what it took away by.
-      getState: () => ({ screen: 'edit', dirty: false, update, ...EDITOR }) as unknown as AppState,
+      getState: () => ({ screen: 'edit', dirty: false, update, ...editorNow }) as unknown as AppState,
       current: () => true,
       loadNumber: () => 1,
       folder: () => null,
@@ -1568,6 +1578,19 @@ describe('the update action on its own', () => {
     // Never a rejection: the dialog starts the update with `void`.
     await expect(actions.applyUpdate(NO_PICKS)).resolves.toBeUndefined()
     expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { rescanned: false } })
+    expect(actions.updating()).toBe(false)
+  })
+
+  it('when telling what the update took away throws after it has written, shows the finished update, recording that the lists were not read again', async () => {
+    const { folder, source, plan } = await worked()
+    const rescan = vi.fn(async () => true)
+    // Command lists that cannot be gone through: the comparison made after the write throws.
+    const { actions, shown } = actionsFor(source, plan, { folder: () => folder, rescan }, { ...EDITOR, commandFiles: undefined })
+    await expect(actions.applyUpdate(NO_PICKS)).resolves.toBeUndefined()
+    expect(folder.changes.length).toBeGreaterThan(0)
+    // Not "The update stopped": the scripts were written, and even a scan that lands does not make the lists known.
+    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { lost: [], rescanned: false } })
+    expect(rescan).toHaveBeenCalledTimes(1)
     expect(actions.updating()).toBe(false)
   })
 

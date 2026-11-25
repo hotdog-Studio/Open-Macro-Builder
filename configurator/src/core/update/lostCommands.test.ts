@@ -219,4 +219,17 @@ describe('undefinedCommands', () => {
   it('names none when the files define every command the layers on keys use', async () => {
     expect(undefinedCommands(LAYOUT, ['ahk'], await filesOf(NOW))).toEqual([])
   })
+
+  it('names a hotkey whose action is empty "no command": the layout check counts it and no file can define it', async () => {
+    const layout = parseConfig(
+      JSON.stringify({
+        fn: { key: 'ScrollLock' },
+        keys: [{ key: 'F13' }],
+        layers: [],
+        hotkeys: [{ hotkey: '^!x', action: '' }],
+      }),
+      'local/config.json',
+    )
+    expect(undefinedCommands(layout, BOTH, await filesOf(NOW))).toEqual([{ name: 'no command', places: [hotkey('^!x')], langs: BOTH }])
+  })
 })

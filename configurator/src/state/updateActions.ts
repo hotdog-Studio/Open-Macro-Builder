@@ -147,6 +147,14 @@ interface Shown {
   plan: UpdatePlan
   result: UpdateOutcome
   lost?: NamedCommand[]
+  /** True when what the update took away could not be told: the outcome is the finished one, recorded as not read again. */
+  untold?: boolean
+}
+
+/** An outcome to show, and whether the commands the update took away could not be told (see Shown.untold). */
+interface Outcome {
+  offer: UpdateOffer
+  untold: boolean
 }
 
 /** The editor's layout, the languages the person runs and the command lists, as the press found them. */
@@ -221,7 +229,14 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
     if (skipped !== null) return { plan, result: { ok: false, notStarted: skipped } }
     const result = await applyUpdate(folder, plan, picks, files)
     // Only after a success: the result view is the only one that offers Reload the macropad.
-    return result.ok ? { plan, result, lost: await lostBy(before, plan, picks, files) } : { plan, result }
+    if (!result.ok) return { plan, result }
+    try {
+      return { plan, result, lost: await lostBy(before, plan, picks, files) }
+    } catch {
+      // The scripts are written: a throw of the comparison never makes the update a failure. The result view
+      // is told the lists were not read again, so it offers no Reload on a list of lost commands it could not make.
+      return { plan, result, lost: [], untold: true }
+    }
   }
 
   /**
@@ -234,7 +249,7 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
     offer: UpdateOffer,
     picks: UpdatePicks,
     before: Before | null,
-  ): Promise<UpdateOffer | null> {
+  ): Promise<Outcome | null> {
     let shown: Shown | null
     try {
       shown = await carryOut(src, folder, offer, picks, before)
@@ -247,14 +262,15 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
     if (deps.folder() !== folder) return null
     const outcome: UpdateOffer = { plan: shown.plan, dialog: true, busy: false, result: shown.result, macropad, note: null }
     // Not read again yet: applyUpdate says whether the scan landed.
-    return shown.lost ? { ...outcome, after: { lost: shown.lost, rescanned: false } } : outcome
+    return { offer: shown.lost ? { ...outcome, after: { lost: shown.lost, rescanned: false } } : outcome, untold: shown.untold === true }
   }
 
   /**
    * Scans the shared files again when the update may have changed them, and records with the outcome whether the
    * command lists landed. A scan that fails is recorded as not landed, never thrown: the outcome shows all the same.
+   * When what the update took away could not be told, it is recorded as not landed whatever the scan did.
    */
-  async function rescannedAfter(shown: UpdateOffer): Promise<UpdateOffer> {
+  async function rescannedAfter({ offer: shown, untold }: Outcome): Promise<UpdateOffer> {
     if (!shown.result || !mayHaveChanged(shown.result)) return shown
     let rescanned: boolean
     try {
@@ -262,7 +278,7 @@ export function createUpdateActions(deps: UpdateDeps): UpdateActions {
     } catch {
       rescanned = false
     }
-    return shown.after ? { ...shown, after: { ...shown.after, rescanned } } : shown
+    return shown.after ? { ...shown, after: { ...shown.after, rescanned: rescanned && !untold } } : shown
   }
 
   /** The editor's layout, languages and command lists now; null without an open folder. */

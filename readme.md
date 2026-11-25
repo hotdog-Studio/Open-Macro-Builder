@@ -82,7 +82,7 @@ When the configurator carries newer scripts than the folder you open, a bar says
 - Scripts you have not changed are replaced with the new ones. Missing ones are added, and unchanged ones the new version no longer has are removed.
 - A script you changed is kept unless you tick it. A ticked one is replaced, and yours is kept beside it as `<name>.before-update.bak`. If you keep your `ahk/config.ahk`, its list of command files still gets a line for each command file the update adds and loses the line of each it removes. Taking out the `#Include` line of a command file that is still in the folder counts as a change to `ahk/config.ahk`, so a command you switched off that way stays off.
 - A command file you deleted in the **Commands** tab stays deleted unless you tick it.
-- Nothing under `local/` is read or changed.
+- Nothing under `local/` is changed.
 
 When your layout runs a command that no file would define after the update (one the new version removed), on a key, a hotkey or a hotstring, the dialog names the command and where it runs before you press **Update**: the macropad will not start until you clear those keys in the **Macros** tab (and take such hotkeys and hotstrings out of the layout file) or keep the command in your own `local/` folder ([CHANGELOG.md](CHANGELOG.md) says how). Afterwards, start the macropad again to use the new scripts; while it is running, the desktop app offers **Reload the macropad**, except while your layout still runs such a command, or when the configurator could not read the command files again after the update. **Not now** hides the bar until the folder is opened again. A folder made with `git clone` never gets the bar: git updates it.
 

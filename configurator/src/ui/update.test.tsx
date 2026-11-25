@@ -640,7 +640,7 @@ describe('the update dialog', () => {
   it('shows the counts of the plan, with nothing ticked and the focus on the dialog', async () => {
     const { dialog } = await reviewed(WORKED)
     expect(document.activeElement).toBe(dialog)
-    expect(within(dialog).getByText('From 1.0.4 to 1.0.6. Nothing under local/ is read or changed.')).toBeTruthy()
+    expect(within(dialog).getByText('From 1.0.4 to 1.0.6. Nothing under local/ is changed.')).toBeTruthy()
     for (const name of ['Replaced 3 files you have not changed', 'Added 1 file', 'Removed 2 files']) {
       expect(within(dialog).getByRole('button', { name, expanded: false })).toBeTruthy()
     }
@@ -700,11 +700,11 @@ describe('the update dialog', () => {
   })
 
   it.each([
-    ['no version, when its files tell none', null, 'From an older version to 1.0.6. Nothing under local/ is read or changed.'],
+    ['no version, when its files tell none', null, 'From an older version to 1.0.6. Nothing under local/ is changed.'],
     [
       'the version both have, when its manifest names it',
       { version: '1.0.6', files: APP_6 },
-      'Brings the scripts back to version 1.0.6. Nothing under local/ is read or changed.',
+      'Brings the scripts back to version 1.0.6. Nothing under local/ is changed.',
     ],
   ])('names %s', async (_name, manifest, line) => {
     const folder = await scriptsFolder({ ...APP_6, [MAIN_PS]: null }, manifest)
@@ -1438,7 +1438,7 @@ describe('the update dialog, with a layout that runs a command the update takes 
     await appFilesLoaded(loadFiles)
     expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
     expect(within(dialog).queryByText(UNSET_FIX)).toBeNull()
-    expect(within(dialog).getByText('From 1.0.5 to 1.0.6. Nothing under local/ is read or changed.')).toBeTruthy()
+    expect(within(dialog).getByText('From 1.0.5 to 1.0.6. Nothing under local/ is changed.')).toBeTruthy()
     expect(within(dialog).getByRole('button', REPLACED_2)).toBeTruthy()
     expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(false)
   })

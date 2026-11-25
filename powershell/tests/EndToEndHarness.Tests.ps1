@@ -209,6 +209,25 @@ Describe 'End-to-end command log: what the macropad says of the commands its key
         ($got -join ' / ') | Should -BeExactly ($Want -join ' / ')
     }
 
+    # The checks Invoke-E2eCase runs after a case's own assertions, through the logs the macropad writes.
+    It 'fails a case on <Why>' -ForEach @(
+        @{ Log = "start E2eStep`nfailed E2eStep: boom`n"; Errors = ''; Want = '*no command the case ran may fail*failed E2eStep: boom*'; Why = 'a failed line of its own command' }
+        @{ Log = "start E2eMark`nfailed E2eMark: boom`n"; Errors = ''; Want = '*no command the case ran may fail*failed E2eMark: boom*'; Why = 'a failed line of E2eMark' }
+        @{ Log = "start E2eStep`ndone E2eStep`n"; Errors = "Error: it broke`n"; Want = '*the macropad must not report an error*it broke*'; Why = 'an error the macropad reported' }
+    ) {
+        [System.IO.File]::WriteAllText($script:CommandLog, "start E2eMark`ndone E2eMark`n$Log")
+        if ($Errors) { [System.IO.File]::WriteAllText((Join-Path $TestDrive 'errors.log'), $Errors) }
+        $ctx = @{ Case = @{ Command = 'E2eStep' }; Commands = 2 }
+        try { { Assert-E2eCaseLogs $ctx 0 } | Should -Throw -ExpectedMessage $Want }
+        finally { Remove-Item -LiteralPath (Join-Path $TestDrive 'errors.log') -ErrorAction SilentlyContinue }
+    }
+
+    It 'passes a case whose log after the press holds only a late failed line of the command an earlier case ran' {
+        [System.IO.File]::WriteAllText($script:CommandLog, "start E2eMark`ndone E2eMark`nstart E2eStep`nfailed Earlier: late`ndone E2eStep`n")
+        $ctx = @{ Case = @{ Command = 'E2eStep' }; Commands = 2 }
+        { Assert-E2eCaseLogs $ctx 0 } | Should -Not -Throw
+    }
+
     It 'adds to a failure after the press what the log says of the case''s command' {
         [System.IO.File]::WriteAllText($script:CommandLog, "start E2eMark`ndone E2eMark`nstart E2eStep`n")
         $ctx = @{ Case = @{ Command = 'E2eStep' }; Pressed = $true; Commands = 2 }

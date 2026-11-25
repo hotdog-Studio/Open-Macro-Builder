@@ -999,6 +999,20 @@ function Get-E2eCaseFailedLines {
         })
 }
 
+# What a case's run left in the macropad's logs, checked after its own assertions (Invoke-E2eCase): no
+# error the macropad reported after the first ErrorsBefore lines of its error logs, and no failure the
+# macropad does not report (the AutoHotkey key handler drops an "Invalid index." error a command throws)
+# in the command log after the press ($ctx.Commands): a failed line of the case's own command
+# ($ctx.Case.Command) or of E2eMark, never one of an earlier case's command that ended after the mark.
+# Throws (Should) at the first it finds.
+function Assert-E2eCaseLogs {
+    param($ctx, [int]$ErrorsBefore)
+    $errors = @(Get-E2eErrorLines | Select-Object -Skip $ErrorsBefore)
+    $errors -join "`n" | Should -BeNullOrEmpty -Because 'the macropad must not report an error'
+    $failed = @(Get-E2eCaseFailedLines (Get-E2eCommandLines $ctx.Commands) $ctx.Case.Command)
+    $failed -join "`n" | Should -BeNullOrEmpty -Because 'no command the case ran may fail (the macropad''s command log)'
+}
+
 # A state of Get-E2eCommandState in words, for a failure message, with the lines it was read from.
 function Get-E2eCommandText {
     param($State, [string]$Command, [string[]]$Lines)
@@ -1681,13 +1695,7 @@ function Invoke-E2eCase {
             $ctx.Commands = Get-E2eCommandMark
             Invoke-E2eCaseKey $ctx -FrontDesktop:([bool]$ctx.FrontDesktop)
             & $assert $ctx
-            $errors = @(Get-E2eErrorLines | Select-Object -Skip $errorsBefore)
-            $errors -join "`n" | Should -BeNullOrEmpty -Because 'the macropad must not report an error'
-            # Also a failure the macropad does not report (the AutoHotkey key handler drops an "Invalid
-            # index." error a command throws): of the case's own command or E2eMark, not of an earlier case's
-            # command that ended after the mark.
-            $failed = @(Get-E2eCaseFailedLines (Get-E2eCommandLines $ctx.Commands) $Case.Command)
-            $failed -join "`n" | Should -BeNullOrEmpty -Because 'no command the case ran may fail (the macropad''s command log)'
+            Assert-E2eCaseLogs $ctx $errorsBefore
         } catch {
             $failure = $_
             # Read now, before the clean-up: what the macropad's command log says at the failure.

@@ -12,7 +12,7 @@ import { scriptsWritten, updateBlockers } from '../state/updateActions'
 import { ConfirmDialog } from './ConfirmDialog'
 
 const TITLE = 'Update the scripts in this folder'
-const LOCAL = 'Nothing under local/ is read or changed.'
+const LOCAL = 'Nothing under local/ is changed.'
 const CHANGED = 'You changed these. They are kept as they are unless you tick them.'
 const BACKUP = 'A ticked file is replaced, and yours is kept beside it as <name>.before-update.bak.'
 const DELETED = 'You deleted these. They stay deleted unless you tick them.'

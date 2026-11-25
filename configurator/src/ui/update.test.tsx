@@ -1264,6 +1264,10 @@ const HOT_FIX =
   'The macropad will not start until you take those hotkeys and hotstrings out of the layout file, or keep the commands in your own local/ folder (the changelog says how).'
 const CLEAR_THEN_RELOAD = 'Clear those keys in the Macros tab (or keep the commands in local/), save, and then reload the macropad.'
 const HOT_THEN_RELOAD = 'Take those hotkeys and hotstrings out of the layout file (or keep the commands in local/), save, and then reload the macropad.'
+const KEY_AND_HOTKEY_FIX =
+  'The macropad will not start until you clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file, or keep the commands in your own local/ folder (the changelog says how).'
+const KEY_AND_HOTKEY_THEN_RELOAD =
+  'Clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file (or keep the commands in local/), save, and then reload the macropad.'
 const NOT_RESCANNED = 'The command lists could not be read again after the update: open the folder again before you reload the macropad.'
 const SPLIT_ON_F15 = ['VsStudioSplitPanel (VS Studio · F15)']
 const SPLIT_ON_HOT = ['VsStudioSplitPanel (Hotkey ^!e, Hotstring :X:split)']
@@ -1400,33 +1404,48 @@ describe('the update dialog, with a layout that runs a command the update takes 
     expect(within(done).queryByRole('button', RELOAD)).toBeNull()
   })
 
-  it('when the command lists cannot be read again, names what the update took away from the lists before it, and offers no Reload', async () => {
+  it.each<{ name: string; files: Record<string, string>; check: (done: HTMLElement) => void }>([
+    {
+      name: 'names what the update took away from the lists before it, and offers no Reload',
+      files: { [CONFIG]: SPLIT_LAYOUT, ...VS_105 },
+      check: (done) => {
+        // The lists still hold the files of before, which define it: what was carried out says it is gone.
+        expect(editor().commandFiles.find((f) => f.file.path === VS_AHK)?.file.text).toContain('VsStudioSplitPanel(Macro)')
+        expect(itemsOf(within(done).getByRole('list', { name: DONE_HEAD }))).toEqual(SPLIT_ON_F15)
+        expect(within(done).getByText(CLEAR_THEN_RELOAD)).toBeTruthy()
+        expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
+        expect(within(done).queryByRole('button', RELOAD)).toBeNull()
+      },
+    },
+    {
+      name: 'offers no Reload and says to open the folder again, though nothing was taken away',
+      files: { ...VS_105 },
+      check: (done) => {
+        expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
+        expect(within(done).queryByText(DONE_HEAD)).toBeNull()
+        expect(within(done).queryByText(START_AGAIN)).toBeNull()
+        expect(within(done).queryByRole('button', RELOAD)).toBeNull()
+        expect(document.activeElement).toBe(within(done).getByRole('button', { name: 'Close' }))
+      },
+    },
+  ])('when the command lists cannot be read again, $name', async ({ files, check }) => {
     const { source } = await vsSource()
-    const folder = await scriptsFolder({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 })
+    const folder = await scriptsFolder(files)
     const user = await open(folder, source, unreadableAfter(folder))
     await user.click(within(await findBar()).getByRole('button', REVIEW))
     await press(user, dialogOf())
-    const done = dialogOf()
-    // The lists still hold the files of before, which define it: what was carried out says it is gone.
-    expect(editor().commandFiles.find((f) => f.file.path === VS_AHK)?.file.text).toContain('VsStudioSplitPanel(Macro)')
-    expect(itemsOf(within(done).getByRole('list', { name: DONE_HEAD }))).toEqual(SPLIT_ON_F15)
-    expect(within(done).getByText(CLEAR_THEN_RELOAD)).toBeTruthy()
-    expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
-    expect(within(done).queryByRole('button', RELOAD)).toBeNull()
+    check(dialogOf())
   })
 
-  it('when the command lists cannot be read again, offers no Reload and says to open the folder again, though nothing was taken away', async () => {
+  it('with a key and a hotkey running the command, joins what to clear and what to take out in one sentence, before and after the update', async () => {
+    const layout = JSON.stringify({ ...JSON.parse(SPLIT_LAYOUT), hotkeys: [{ hotkey: '^!e', action: 'VsStudioSplitPanel' }] }, null, 2)
     const { source } = await vsSource()
-    const folder = await scriptsFolder({ ...VS_105 })
-    const user = await open(folder, source, unreadableAfter(folder))
-    await user.click(within(await findBar()).getByRole('button', REVIEW))
-    await press(user, dialogOf())
-    const done = dialogOf()
-    expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
-    expect(within(done).queryByText(DONE_HEAD)).toBeNull()
-    expect(within(done).queryByText(START_AGAIN)).toBeNull()
-    expect(within(done).queryByRole('button', RELOAD)).toBeNull()
-    expect(document.activeElement).toBe(within(done).getByRole('button', { name: 'Close' }))
+    const { user, dialog } = await reviewed({ [CONFIG]: layout, ...VS_105 }, {}, source)
+    const list = await within(dialog).findByRole('list', { name: PLAN_HEAD })
+    expect(itemsOf(list)).toEqual(['VsStudioSplitPanel (VS Studio · F15, Hotkey ^!e)'])
+    expect(within(dialog).getByText(KEY_AND_HOTKEY_FIX)).toBeTruthy()
+    await press(user, dialog)
+    expect(within(dialogOf()).getByText(KEY_AND_HOTKEY_THEN_RELOAD)).toBeTruthy()
   })
 
   it("shows the plan without the warning while the app's files load, and the warning once they have", async () => {

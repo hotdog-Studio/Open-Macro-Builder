@@ -840,6 +840,76 @@ describe('rechecking config.json', () => {
   })
 })
 
+/** Rechecks the command files with the scan held at its listing; `during` runs once it waits there, and the scan goes on after it. */
+async function recheckedWhile(h: Awaited<ReturnType<typeof opened>>, during: () => Promise<unknown> | void): Promise<boolean> {
+  const hold = gate()
+  const reached = gate()
+  h.folder.onList = () => {
+    reached.open()
+    return hold.wait
+  }
+  const rechecking = h.actions.recheckCommands()
+  await reached.wait
+  await during()
+  hold.open()
+  return rechecking
+}
+
+describe('whether a recheck of the command files took up what it read', () => {
+  it('says so when it did', async () => {
+    const h = await opened(withMine)
+    await h.folder.inner.writeBytes('local/ahk/late.ahk', enc.encode('Late(Macro)\n{\n}\n'))
+    expect(await h.actions.recheckCommands()).toBe(true)
+    expect(h.edit().commandFiles.map((f) => f.file.path)).toContain('local/ahk/late.ahk')
+  })
+
+  it('says it did not without an open folder', async () => {
+    const h = harness()
+    expect(await h.actions.recheckCommands()).toBe(false)
+  })
+
+  it('says it did not when the scan failed', async () => {
+    const h = await opened(withMine)
+    h.folder.onList = () => {
+      throw new Error('The folder is locked.')
+    }
+    expect(await h.actions.recheckCommands()).toBe(false)
+  })
+
+  it.each([
+    [
+      'the folder was closed',
+      async (h: Awaited<ReturnType<typeof opened>>) => {
+        h.actions.closeFolder()
+      },
+    ],
+    [
+      'a save landed',
+      async (h: Awaited<ReturnType<typeof opened>>) => {
+        h.actions.editCommand(MINE, 'Mine(Macro)\n{\n  ; changed\n}\n', versionOf(h, MINE))
+        expect(await h.actions.saveCommandFile(MINE)).toBe('saved')
+      },
+    ],
+  ])('says it did not when %s while it scanned', async (_what, during) => {
+    const h = await opened(withMine)
+    expect(await recheckedWhile(h, () => during(h))).toBe(false)
+  })
+
+  it('says it did not while a save is still writing', async () => {
+    const h = await opened(withMine)
+    const hold = gate()
+    h.folder.onWrite = (path) => (path === MINE ? hold.wait : undefined)
+    let saving: Promise<string> = Promise.resolve('')
+    const landed = await recheckedWhile(h, () => {
+      h.actions.editCommand(MINE, 'Mine(Macro)\n{\n  ; changed\n}\n', versionOf(h, MINE))
+      saving = h.actions.saveCommandFile(MINE)
+    })
+    expect(landed).toBe(false)
+    hold.open()
+    expect(await saving).toBe('saved')
+  })
+})
+
 describe('command files', () => {
   it('scanning again after a failed scan finds the new file', async () => {
     const h = await opened(withMine)

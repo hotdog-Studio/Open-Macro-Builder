@@ -262,6 +262,34 @@ for (const unreleased of ['## Unreleased ', '## Unreleased\t', '## UNRELEASED', 
   });
 }
 
+// The changelog is newest first, so an entry above the version's heading is not released yet,
+// whatever the heading above it is called, and the problem names that heading.
+for (const unreleased of ['## [Unreleased]', '##  Unreleased', '## Unreleased - draft', '## Next']) {
+  test(`entries under '${unreleased}' above the version are still unreleased`, () => {
+    const problem = changelogProblem(`${head}${unreleased}\n\n### Fixed\n\n- x\n\n## 1.0.7 - 2026-12-01\n\n- y\n`, '1.0.7');
+    assert.match(problem, /still has 1 entry under Unreleased/);
+    assert.ok(problem.includes(`'${unreleased}'`), problem);
+  });
+}
+
+for (const [name, entry] of [['a * entry', '* x'], ['an indented entry', '  - x'], ['an indented * entry', '\t* x']]) {
+  test(`${name} under Unreleased is still unreleased`, () => {
+    const problem = changelogProblem(`${head}## Unreleased\n\n### Fixed\n\n${entry}\n\n## 1.0.7 - 2026-12-01\n`, '1.0.7');
+    assert.match(problem, /still has 1 entry under Unreleased/);
+  });
+}
+
+test('entries above the version and under an Unreleased section below it are counted together', () => {
+  const text = `${head}## Next\n\n- a\n* b\n\n## 1.0.7 - 2026-12-01\n\n- released\n\n## [Unreleased]\n\n  - c\n\n## 1.0.6 - 2026-11-25\n\n- old\n`;
+  const problem = changelogProblem(text, '1.0.7');
+  assert.match(problem, /still has 3 entries under Unreleased \('## Next', '## \[Unreleased\]'\)/);
+});
+
+test('the changelog as it is after a release has no problem', () => {
+  const text = `${head}## 1.0.7 - 2026-12-01\n\n### Fixed\n\n- x\n  more of x\n\n## 1.0.6 - 2026-11-25\n\n### Added\n\n- y\n`;
+  assert.equal(changelogProblem(text, '1.0.7'), null);
+});
+
 test('a changelog with Windows line endings is read the same', () => {
   const text = `${head}## Unreleased\n\n## 1.0.7 - 2026-12-01\n\n### Fixed\n\n- x\n`.replaceAll('\n', '\r\n');
   assert.equal(changelogProblem(text, '1.0.7'), null);

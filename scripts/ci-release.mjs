@@ -54,25 +54,37 @@ function previousTag(git) {
   }
 }
 
+const SECTION = /^##[ \t]/;
+const ENTRY = /^[ \t]*[-*][ \t]/;
+const UNRELEASED_SECTION = /^##\s+\[?unreleased\b/i;
+
 /**
  * What is wrong with this CHANGELOG.md for a release of `version`, or null when nothing is. A release
- * needs the heading `## <version> - YYYY-MM-DD` and no entry (a line starting with `- `) left
- * under `## Unreleased`.
+ * needs the heading `## <version> - YYYY-MM-DD` and no entry (a line starting with `- ` or `* `,
+ * indented or not) left unreleased: above that heading, or under an Unreleased section below it.
  */
 export function changelogProblem(text, version) {
   const lines = text.split(/\r?\n/);
-  const heading = lines.find((line) => line === `## ${version}` || line.startsWith(`## ${version} `));
-  if (heading === undefined) return `CHANGELOG.md has no heading '## ${version} - YYYY-MM-DD': move the entries under Unreleased below it`;
+  const at = lines.findIndex((line) => line === `## ${version}` || line.startsWith(`## ${version} `));
+  if (at === -1) return `CHANGELOG.md has no heading '## ${version} - YYYY-MM-DD': move the entries under Unreleased below it`;
+  const heading = lines[at];
   if (!/^ - \d{4}-\d{2}-\d{2}\s*$/.test(heading.slice(`## ${version}`.length))) {
     return `the heading '${heading}' in CHANGELOG.md has no date: write it as '## ${version} - YYYY-MM-DD'`;
   }
-  // Whatever its case or trailing space, a heading that reads "Unreleased" must not hide its entries.
-  const start = lines.findIndex((line) => /^## unreleased\s*$/i.test(line));
-  if (start === -1) return null;
-  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
-  const entries = lines.slice(start + 1, end === -1 ? undefined : end).filter((line) => line.startsWith('- '));
-  if (entries.length > 0) return `CHANGELOG.md still has ${entries.length} entries under Unreleased: move them under '## ${version} - YYYY-MM-DD'`;
-  return null;
+  // The changelog is newest first, so every entry between its first `## ` heading and the version's
+  // is unreleased, whatever that heading is called; one placed lower is found by its name, whatever
+  // its case, brackets or the words after it.
+  const counts = new Map();
+  let section = null;
+  for (const [index, line] of lines.entries()) {
+    if (SECTION.test(line)) section = index < at || UNRELEASED_SECTION.test(line) ? line.trimEnd() : null;
+    else if (section !== null && ENTRY.test(line)) counts.set(section, (counts.get(section) ?? 0) + 1);
+  }
+  if (counts.size === 0) return null;
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  const where = [...counts.keys()].map((name) => `'${name}'`).join(', ');
+  const entries = total === 1 ? '1 entry' : `${total} entries`;
+  return `CHANGELOG.md still has ${entries} under Unreleased (${where}): move ${total === 1 ? 'it' : 'them'} under '## ${version} - YYYY-MM-DD'`;
 }
 
 /** Checks CHANGELOG.md against VERSION: exit 0, or 5 with the reason (2 without a version). */

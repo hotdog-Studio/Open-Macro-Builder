@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import type { MemoryFolder } from '../core/folder/memory'
@@ -39,7 +39,8 @@ async function printsOf(files: [string, Uint8Array][]): Promise<Record<string, s
 /**
  * The repository's scripts as the app's copy (1.0.6), and a folder of 1.0.4 to open: thirty icons as 1.0.4
  * shipped them, two command files the person changed, one they deleted, and a command file of their own.
- * The app's files load once `hold` has resolved.
+ * The app's files load once `hold` has resolved, except for the first load, the dialog's own: Update is off until
+ * that one has ended.
  */
 async function olderRelease(hold: Promise<void> = Promise.resolve()): Promise<{ updateSource: UpdateSource; files: Record<string, Uint8Array | null> }> {
   const repo = await repoFiles()
@@ -53,10 +54,12 @@ async function olderRelease(hold: Promise<void> = Promise.resolve()): Promise<{ 
     last: '1.0.4',
     files: Object.fromEntries(Object.entries(old).map(([path, print]) => [path, { [print]: ['1.0.4'] }])),
   }
+  let loads = 0
   const updateSource: UpdateSource = {
     loadIndex: async () => ({ version: '1.0.6', files: index }),
     loadFiles: async () => {
-      await hold
+      loads += 1
+      if (loads > 1) await hold
       return Object.entries(repo).map(([path, data]) => ({ path, data }))
     },
     known,
@@ -181,7 +184,9 @@ describe('the update, at 1280 × 900', () => {
     await userEvent.keyboard('x')
     const dialog = await review(true)
     if (!dialog) throw new Error('no dialog')
-    await click(within(dialog).getByRole('button', { name: 'Update' }))
+    const update = within(dialog).getByRole('button', { name: 'Update' })
+    await waitFor(() => expect((update as HTMLButtonElement).disabled).toBe(false))
+    await click(update)
     const busy = screen.getByRole('dialog', DIALOG)
     expect(within(busy).getByText('Updating the scripts…')).toBeTruthy()
     expect(document.activeElement).toBe(busy)

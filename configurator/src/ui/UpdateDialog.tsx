@@ -24,6 +24,11 @@ const SWITCHED_OFF = `Ticking ${INCLUDE_FILE} puts back the #Include lines you t
 const WOULD_BE_UNSET = 'Your layout runs commands that no file would define after this update:'
 const UNSET = 'Your layout runs commands that no file defines after this update:'
 const NOT_RESCANNED = 'The command lists could not be read again after the update: open the folder again before you reload the macropad.'
+const NOT_COMPARED =
+  'What the update took away could not be compared with your layout: open the folder again before you reload the macropad.'
+/** Why Update is off while the app's command files load, and when they could not be loaded. */
+const CHECKING = 'Checking your layout against the new scripts…'
+const NOT_READ = 'The new scripts could not be read, so nothing can be updated now. Close this and press Review the update to try again.'
 const PATHS = 'break-all font-mono text-[12px] text-zinc-400'
 /** What a button that is off does. */
 const NOTHING = () => undefined
@@ -87,14 +92,14 @@ function NamedPaths({ heading, paths }: Readonly<{ heading: string; paths: strin
   )
 }
 
-/** What the macropad does about such commands, and how to set it right. */
+/** What the macropad does about such commands, how to set it right, and how to keep a command. */
 const unsetFix = (commands: readonly NamedCommand[]) =>
-  `The macropad will not start until you ${remedy(commands)}, or keep the commands in your own local/ folder (the changelog says how).`
+  `The macropad will not start until you ${remedy(commands)}. To keep a command, copy it into a file of your own before you update: Commands tab, New file.`
 
 /** After the update, in place of Reload the macropad: what to do first. */
 function clearThenReload(commands: readonly NamedCommand[]): string {
   const first = remedy(commands)
-  return `${first.charAt(0).toUpperCase()}${first.slice(1)} (or keep the commands in local/), save, and then reload the macropad.`
+  return `${first.charAt(0).toUpperCase()}${first.slice(1)}, or write the commands into a file of your own (Commands tab, New file); save, and then reload the macropad.`
 }
 
 interface UnsetProps {
@@ -198,18 +203,25 @@ function Ticks({ heading, children, paths, ticked, onTick }: Readonly<TicksProps
   )
 }
 
+/** The command files of the app's copy, and how far the loading has come: `files` is null unless the state is `ready`. */
+interface AppCommandFiles {
+  files: CommandFile[] | null
+  state: 'loading' | 'ready' | 'failed'
+}
+
+const LOADING: AppCommandFiles = { files: null, state: 'loading' }
+
 interface PlanViewProps {
   plan: UpdatePlan
   picks: UpdatePicks
-  /** The command files of the app's copy; null while they load or when they could not be loaded. */
-  app: CommandFile[] | null
+  app: AppCommandFiles
   onTick: (kind: keyof UpdatePicks, path: string, on: boolean) => void
   onUpdate: () => void
 }
 
 /**
  * The commands the layout's keys run that a file defines now and none would after the update with these picks;
- * none until the app's command files have loaded.
+ * none until the app's command files have loaded (Update is off until then).
  */
 function useLost(plan: UpdatePlan, picks: UpdatePicks, app: CommandFile[] | null): NamedCommand[] {
   const { ws, settings, commandFiles } = useEditor().state
@@ -223,7 +235,7 @@ function useLost(plan: UpdatePlan, picks: UpdatePicks, app: CommandFile[] | null
 function PlanView({ plan, picks, app, onTick, onUpdate }: Readonly<PlanViewProps>) {
   const { state, actions } = useEditor()
   const blockers = updateBlockers(Object.keys(state.commands.drafts))
-  const lost = useLost(plan, picks, app)
+  const lost = useLost(plan, picks, app.files)
   const includeTicked = picks.replaceChanged.some(isInclude)
   // Ticking a changed include file that leaves out a command file's line brings that command back.
   const switchedOff = plan.changed.some(isInclude) && plan.switchedOff.length > 0
@@ -234,7 +246,7 @@ function PlanView({ plan, picks, app, onTick, onUpdate }: Readonly<PlanViewProps
       onDismiss={actions.dismissUpdate}
       choices={[
         { label: 'Not now', onChoose: actions.dismissUpdate },
-        { label: 'Update', primary: true, disabled: blockers.length > 0, onChoose: onUpdate },
+        { label: 'Update', primary: true, disabled: blockers.length > 0 || app.state !== 'ready', onChoose: onUpdate },
       ]}
     >
       <p>{firstLine(plan)}</p>
@@ -260,6 +272,12 @@ function PlanView({ plan, picks, app, onTick, onUpdate }: Readonly<PlanViewProps
         />
       )}
       <Unset heading={WOULD_BE_UNSET} commands={lost} languages={state.settings.languages} />
+      {app.state === 'loading' && (
+        <p role="status" className="mt-3 text-zinc-400">
+          {CHECKING}
+        </p>
+      )}
+      {app.state === 'failed' && <p className="mt-3 text-amber-300">{NOT_READ}</p>}
       {blockers.map((blocker) => (
         <p key={blocker} className="mt-3 text-amber-300">
           {blocker}
@@ -319,11 +337,13 @@ function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: Up
   const unset = unsetAfter(offer, undefinedNow)
   // Lists that were not read again may still define what the update took away: no Reload on their word.
   const notRescanned = offer.after?.rescanned === false
+  // Nor when the comparison that tells what the update took away could not be made.
+  const notCompared = offer.after?.compared === false
   const close = { label: 'Close', autoFocus: true, onChoose: actions.dismissUpdate }
   const reload = { label: 'Reload the macropad', primary: true, autoFocus: false, onChoose: () => void actions.reloadMacropadAfterUpdate() }
-  const offersReload = offer.macropad !== null && unset.length === 0 && !notRescanned
+  const offersReload = offer.macropad !== null && unset.length === 0 && !notRescanned && !notCompared
   // While the macropad would not start, or that cannot be told, the lines say what to do first.
-  const line = unset.length > 0 || notRescanned ? null : macropadLine(offer)
+  const line = unset.length > 0 || notRescanned || notCompared ? null : macropadLine(offer)
   // An include file whose list alone this update rewrote is said so, never listed as kept as it is: under the
   // person's body, under one that changed since the plan, or as a repair of its list under the app's body.
   const adjusted = result.adjusted.some(isInclude)
@@ -339,6 +359,7 @@ function ResultView({ offer, result }: Readonly<{ offer: UpdateOffer; result: Up
       <Unset heading={UNSET} commands={unset} languages={settings.languages} />
       {unset.length > 0 && <p className="mt-3">{clearThenReload(unset)}</p>}
       {notRescanned && <p className="mt-3">{NOT_RESCANNED}</p>}
+      {notCompared && <p className="mt-3">{NOT_COMPARED}</p>}
       {line && <p className="mt-3">{line}</p>}
     </ConfirmDialog>
   )
@@ -361,21 +382,23 @@ function FailureView({ result, onRetry }: Readonly<{ result: Failure; onRetry: (
   )
 }
 
-/** The command files of the app's copy, loaded once the dialog opens; null while they load or when they cannot be. */
-function useAppCommandFiles(open: boolean): CommandFile[] | null {
+/** The command files of the app's copy, loaded each time the dialog opens: loading, then ready, or failed when they cannot be. */
+function useAppCommandFiles(open: boolean): AppCommandFiles {
   const { actions } = useEditor()
-  const [files, setFiles] = useState<CommandFile[] | null>(null)
+  const [loaded, setLoaded] = useState<AppCommandFiles>(LOADING)
   useEffect(() => {
     if (!open) return
     let current = true
-    void actions.appCommandFiles().then((loaded) => {
-      if (current) setFiles(loaded)
+    void actions.appCommandFiles().then((files) => {
+      if (current) setLoaded(files === null ? { files: null, state: 'failed' } : { files, state: 'ready' })
     })
     return () => {
       current = false
+      // The next opening loads them again, and Update is off until it has.
+      setLoaded(LOADING)
     }
   }, [open, actions])
-  return files
+  return loaded
 }
 
 /**

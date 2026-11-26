@@ -599,12 +599,19 @@ async function reviewed(files: Record<string, string | null>, more: Partial<Plat
   return { folder, user, dialog: dialogOf() }
 }
 
+/** Waits until Update is on (it is off while the app's command files load), and gives it. */
+async function updateButton(dialog: HTMLElement): Promise<HTMLElement> {
+  const button = within(dialog).getByRole('button', UPDATE)
+  await waitFor(() => expect(disabled(button)).toBe(false))
+  return button
+}
+
 /** Ticks `ticks`, presses Update and waits until the dialog says what came of it. */
 async function press(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement, ticks: string[] = []) {
   act(() => {
     for (const path of ticks) fireEvent.click(within(dialog).getByRole('checkbox', { name: path }))
   })
-  await user.click(within(dialog).getByRole('button', UPDATE))
+  await user.click(await updateButton(dialog))
   await waitFor(() => expect(editor().update?.result).toBeTruthy())
 }
 
@@ -635,6 +642,18 @@ const BROKEN = async (): Promise<StarterFile[]> => [
     },
   },
 ]
+
+/**
+ * The app's copy as the dialog loads it (the first load), and `then` for every load after: one that fails at the
+ * press, after the dialog could read the copy, as Update is off when it could not.
+ */
+const loadedOnceThen = (then: () => Promise<StarterFile[]>) => {
+  let loads = 0
+  return async () => {
+    loads += 1
+    return loads === 1 ? starterFilesOf(APP_6) : then()
+  }
+}
 
 describe('the update dialog', () => {
   it('shows the counts of the plan, with nothing ticked and the focus on the dialog', async () => {
@@ -982,7 +1001,7 @@ describe('updating', () => {
       changes: [],
     },
   ])('says what could not start when $name', async ({ ticks, put, failAt, files, sentence, changes }) => {
-    const { folder, user, dialog } = await reviewed(WORKED, {}, await updateSourceOf({ files }))
+    const { folder, user, dialog } = await reviewed(WORKED, {}, await updateSourceOf({ files: files && loadedOnceThen(files) }))
     // Changed since the bar showed.
     await Promise.all(Object.entries(put).map(([path, text]) => folder.inner.writeBytes(path, enc.encode(text))))
     folder.beforeChange = (path) => {
@@ -1013,7 +1032,7 @@ describe('updating', () => {
   })
 
   it('ends an update that throws in a failure of its own, not in a dialog that stays busy', async () => {
-    const { user, dialog } = await reviewed(WORKED, {}, await updateSourceOf({ files: BROKEN }))
+    const { user, dialog } = await reviewed(WORKED, {}, await updateSourceOf({ files: loadedOnceThen(BROKEN) }))
     await press(user, dialog)
     const failed = dialogOf()
     const sentence = 'The update stopped: A broken copy. Some scripts may already be the new ones. Run the update again to finish it.'
@@ -1259,16 +1278,20 @@ const HOT_LAYOUT = JSON.stringify(
 const PLAN_HEAD = 'Your layout runs commands that no file would define after this update:'
 const DONE_HEAD = 'Your layout runs commands that no file defines after this update:'
 const UNSET_FIX =
-  'The macropad will not start until you clear those keys in the Macros tab, or keep the commands in your own local/ folder (the changelog says how).'
+  'The macropad will not start until you clear those keys in the Macros tab. To keep a command, copy it into a file of your own before you update: Commands tab, New file.'
 const HOT_FIX =
-  'The macropad will not start until you take those hotkeys and hotstrings out of the layout file, or keep the commands in your own local/ folder (the changelog says how).'
-const CLEAR_THEN_RELOAD = 'Clear those keys in the Macros tab (or keep the commands in local/), save, and then reload the macropad.'
-const HOT_THEN_RELOAD = 'Take those hotkeys and hotstrings out of the layout file (or keep the commands in local/), save, and then reload the macropad.'
+  'The macropad will not start until you take those hotkeys and hotstrings out of the layout file. To keep a command, copy it into a file of your own before you update: Commands tab, New file.'
+const CLEAR_THEN_RELOAD = 'Clear those keys in the Macros tab, or write the commands into a file of your own (Commands tab, New file); save, and then reload the macropad.'
+const HOT_THEN_RELOAD = 'Take those hotkeys and hotstrings out of the layout file, or write the commands into a file of your own (Commands tab, New file); save, and then reload the macropad.'
 const KEY_AND_HOTKEY_FIX =
-  'The macropad will not start until you clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file, or keep the commands in your own local/ folder (the changelog says how).'
+  'The macropad will not start until you clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file. To keep a command, copy it into a file of your own before you update: Commands tab, New file.'
 const KEY_AND_HOTKEY_THEN_RELOAD =
-  'Clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file (or keep the commands in local/), save, and then reload the macropad.'
+  'Clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file, or write the commands into a file of your own (Commands tab, New file); save, and then reload the macropad.'
 const NOT_RESCANNED = 'The command lists could not be read again after the update: open the folder again before you reload the macropad.'
+const NOT_COMPARED =
+  'What the update took away could not be compared with your layout: open the folder again before you reload the macropad.'
+const CHECKING = 'Checking your layout against the new scripts…'
+const NOT_READ = 'The new scripts could not be read, so nothing can be updated now. Close this and press Review the update to try again.'
 const SPLIT_ON_F15 = ['VsStudioSplitPanel (VS Studio · F15)']
 const SPLIT_ON_HOT = ['VsStudioSplitPanel (Hotkey ^!e, Hotstring :X:split)']
 const REPLACED_2 = { name: 'Replaced 2 files you have not changed' }
@@ -1437,6 +1460,25 @@ describe('the update dialog, with a layout that runs a command the update takes 
     check(dialogOf())
   })
 
+  it('says the comparison failed when that is what failed, and offers no Reload', async () => {
+    const { source } = await vsSource()
+    await reviewed({ ...VS_105 }, running(), source)
+    const offer = editor().update
+    if (!offer) throw new Error('no offer')
+    const done = { replaced: [], added: [], removed: [], kept: [], backups: [], adjusted: [] }
+    act(() =>
+      seen.dispatch({
+        type: 'update',
+        update: { ...offer, result: { ok: true, ...done }, macropad: 'ahk', after: { lost: [], rescanned: true, compared: false } },
+      }),
+    )
+    const result = dialogOf()
+    expect(within(result).getByText(NOT_COMPARED)).toBeTruthy()
+    expect(within(result).queryByText(NOT_RESCANNED)).toBeNull()
+    expect(within(result).queryByText(START_AGAIN)).toBeNull()
+    expect(within(result).queryByRole('button', RELOAD)).toBeNull()
+  })
+
   it('with a key and a hotkey running the command, joins what to clear and what to take out in one sentence, before and after the update', async () => {
     const layout = JSON.stringify({ ...JSON.parse(SPLIT_LAYOUT), hotkeys: [{ hotkey: '^!e', action: 'VsStudioSplitPanel' }] }, null, 2)
     const { source } = await vsSource()
@@ -1448,7 +1490,7 @@ describe('the update dialog, with a layout that runs a command the update takes 
     expect(within(dialogOf()).getByText(KEY_AND_HOTKEY_THEN_RELOAD)).toBeTruthy()
   })
 
-  it("shows the plan without the warning while the app's files load, and the warning once they have", async () => {
+  it('keeps Update off, and says why, until the layout was checked against the new scripts', async () => {
     const { held, release } = gate()
     const { source } = await vsSource(async () => {
       await held
@@ -1457,19 +1499,87 @@ describe('the update dialog, with a layout that runs a command the update takes 
     const { dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
     expect(within(dialog).getByRole('button', REPLACED_2)).toBeTruthy()
     expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
+    expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(true)
+    expect(disabled(within(dialog).getByRole('button', NOT_NOW))).toBe(false)
+    expect(within(dialog).getByRole('status').textContent).toBe(CHECKING)
     release()
     expect(itemsOf(await within(dialog).findByRole('list', { name: PLAN_HEAD }))).toEqual(SPLIT_ON_F15)
+    expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(false)
+    expect(within(dialog).queryByText(CHECKING)).toBeNull()
+    expect(within(dialog).queryByText(NOT_READ)).toBeNull()
   })
 
-  it("shows no warning when the app's files cannot be loaded, and nothing else changes", async () => {
+  it('starts nothing while Update is off: a press on it, Enter in the dialog and Tab leave the folder as it was', async () => {
+    const { held, release } = gate()
+    const { source, loadFiles } = await vsSource(async () => {
+      await held
+      return starterFilesOf({ 'config.json': EXAMPLE, ...VS_NOW })
+    })
+    const { folder, user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
+    expect(document.activeElement).toBe(dialog)
+    await user.keyboard('{Enter}')
+    await user.click(within(dialog).getByRole('button', UPDATE))
+    // Tab goes to the first control: the button that is off is skipped on the way to Not now.
+    await user.tab()
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', REPLACED_2))
+    await user.tab()
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', NOT_NOW))
+    await user.tab()
+    expect(document.activeElement).not.toBe(within(dialog).getByRole('button', UPDATE))
+    expect(editor().update).toMatchObject({ dialog: true, busy: false, result: null })
+    expect(folder.changes).toEqual([])
+    expect(loadFiles).toHaveBeenCalledTimes(1)
+    release()
+    await waitFor(() => expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(false))
+    expect(editor().update).toMatchObject({ dialog: true, busy: false, result: null })
+    expect(folder.changes).toEqual([])
+  })
+
+  it('keeps Update off when the new scripts could not be read', async () => {
     const { source, loadFiles } = await vsSource(() => Promise.reject(new Error('Failed to fetch.')))
-    const { dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
+    const { user, folder, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
     await appFilesLoaded(loadFiles)
+    expect(within(dialog).getByText(NOT_READ)).toBeTruthy()
+    expect(within(dialog).queryByText(CHECKING)).toBeNull()
     expect(within(dialog).queryByText(PLAN_HEAD)).toBeNull()
     expect(within(dialog).queryByText(UNSET_FIX)).toBeNull()
     expect(within(dialog).getByText('From 1.0.5 to 1.0.6. Nothing under local/ is changed.')).toBeTruthy()
     expect(within(dialog).getByRole('button', REPLACED_2)).toBeTruthy()
-    expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(false)
+    expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(true)
+    await user.click(within(dialog).getByRole('button', UPDATE))
+    expect(editor().update).toMatchObject({ dialog: true, busy: false, result: null })
+    expect(folder.changes).toEqual([])
+  })
+
+  it('loads the new scripts again when the dialog opens again, and keeps Update off until it has', async () => {
+    const { held, release } = gate()
+    let loads = 0
+    const { source } = await vsSource(async () => {
+      loads += 1
+      if (loads > 1) await held
+      return starterFilesOf({ 'config.json': EXAMPLE, ...VS_NOW })
+    })
+    const { dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
+    await waitFor(() => expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(false))
+    const offer = editor().update
+    if (!offer) throw new Error('no offer')
+    act(() => seen.dispatch({ type: 'update', update: { ...offer, dialog: false } }))
+    act(() => seen.dispatch({ type: 'update', update: { ...offer, dialog: true } }))
+    const again = dialogOf()
+    expect(disabled(within(again).getByRole('button', UPDATE))).toBe(true)
+    expect(within(again).getByText(CHECKING)).toBeTruthy()
+    release()
+    await waitFor(() => expect(disabled(within(again).getByRole('button', UPDATE))).toBe(false))
+  })
+
+  it('says how to keep a command without sending the reader to a changelog, before the update and after it', async () => {
+    const { source } = await vsSource()
+    const { user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
+    await within(dialog).findByRole('list', { name: PLAN_HEAD })
+    expect(within(dialog).getByText(/To keep a command, copy it into a file of your own before you update: Commands tab, New file\./)).toBeTruthy()
+    expect(within(dialog).queryByText(/changelog/i)).toBeNull()
+    await press(user, dialog)
+    expect(within(dialogOf()).queryByText(/changelog/i)).toBeNull()
   })
 
   it('counts a changed file as the folder has it until it is ticked', async () => {
@@ -1585,7 +1695,7 @@ describe('the update action on its own', () => {
     await actions.applyUpdate(NO_PICKS)
     // Only the busy dialog had been shown when the scan ran.
     expect(shownAtRescan).toBe(1)
-    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { lost: [], rescanned: true } })
+    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { lost: [], rescanned: true, compared: true } })
   })
 
   it.each<[string, () => Promise<boolean>]>([
@@ -1596,19 +1706,20 @@ describe('the update action on its own', () => {
     const { actions, shown } = actionsFor(source, plan, { folder: () => folder, rescan })
     // Never a rejection: the dialog starts the update with `void`.
     await expect(actions.applyUpdate(NO_PICKS)).resolves.toBeUndefined()
-    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { rescanned: false } })
+    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { rescanned: false, compared: true } })
     expect(actions.updating()).toBe(false)
   })
 
-  it('when telling what the update took away throws after it has written, shows the finished update, recording that the lists were not read again', async () => {
+  it('when telling what the update took away throws after it has written, shows the finished update, recording that the comparison failed and the lists were read again', async () => {
     const { folder, source, plan } = await worked()
     const rescan = vi.fn(async () => true)
     // Command lists that cannot be gone through: the comparison made after the write throws.
     const { actions, shown } = actionsFor(source, plan, { folder: () => folder, rescan }, { ...EDITOR, commandFiles: undefined })
     await expect(actions.applyUpdate(NO_PICKS)).resolves.toBeUndefined()
     expect(folder.changes.length).toBeGreaterThan(0)
-    // Not "The update stopped": the scripts were written, and even a scan that lands does not make the lists known.
-    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { lost: [], rescanned: false } })
+    // Not "The update stopped": the scripts were written. The scan's own outcome is recorded as it was, and the
+    // comparison apart: a scan that lands does not make what the update took away known.
+    expect(shown.at(-1)).toMatchObject({ busy: false, result: { ok: true }, after: { lost: [], rescanned: true, compared: false } })
     expect(rescan).toHaveBeenCalledTimes(1)
     expect(actions.updating()).toBe(false)
   })

@@ -114,10 +114,11 @@ export interface UpdateOffer {
   note: string | null
   /**
    * After an update that may have changed the shared files: the commands the layout runs that what was carried out
-   * took away (by the app's files and the command lists before it), and whether the command lists were read again.
-   * The result view offers Reload the macropad only when the first is empty and the second true.
+   * took away (by the app's files and the command lists before it), whether the command lists were read again,
+   * and whether the comparison that tells the first could be made. The result view offers Reload the macropad only
+   * when the first is empty and the other two are true.
    */
-  after?: { lost: NamedCommand[]; rescanned: boolean }
+  after?: { lost: NamedCommand[]; rescanned: boolean; compared: boolean }
 }
 
 /** The editor as the reducer keeps it: no derived fields. */

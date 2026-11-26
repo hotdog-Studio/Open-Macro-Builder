@@ -58,7 +58,7 @@ if ($EndToEnd -and $env:OMB_E2E -ne '1') {
     } finally { Remove-Item Env:\OMB_E2E, Env:\OMB_E2E_CASE, Env:\OMB_E2E_CI, Env:\OMB_E2E_LIMIT, Env:\OMB_E2E_REPEAT -ErrorAction SilentlyContinue }
     exit $code
 }
-Import-Module Pester -MinimumVersion 5.0 -Force
+Import-Module Pester -MinimumVersion 6.2.0 -Force
 $c = New-PesterConfiguration
 $c.Run.Path = @($PSScriptRoot) + @(Join-Path $root 'local\powershell\tests' | Where-Object { Test-Path -LiteralPath $_ })
 $c.Run.Exit = $true

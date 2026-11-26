@@ -1,7 +1,11 @@
 # Runs the Pester suite, plus the tests for your own commands in local\powershell\tests when that
 # folder exists (git ignores it). -Ci (the Jenkins Windows stage) writes JUnit XML to
 # results/pester/test-results.xml at the repo root and leaves out the Integration tests, which
-# open windows and send real keys. The end-to-end test (tag EndToEnd) is left out of every run but
+# open windows and send real keys. -Integration runs those tests (tag Integration) alone, the
+# end-to-end test still left out: with -Ci its JUnit XML goes to results/pester/integration-results.xml.
+# It takes the screen and the keyboard as -EndToEnd does, and prints the same photosensitivity warning.
+# -Integration with -EndToEnd is refused: run them apart.
+# The end-to-end test (tag EndToEnd) is left out of every run but
 # -EndToEnd, which runs it alone: it takes the keyboard, the mouse and the screen for a few minutes.
 # -EndToEnd always runs it in a PowerShell process started here for it, never in the shell this script
 # was called from: the test's banner watches that process and cleans up when it has ended.
@@ -18,7 +22,7 @@
 # left out. It prints each one. Never use it on your own checkout: your shells stand in it.
 # -LimitMinutes changes the end-to-end run's time limit (20 minutes), after which it stops and cleans
 # up. -Repeat says how many times the cases that repeat a moment (the Calculator series) run it (2).
-param([string[]]$ExcludeTag = @(), [switch]$Ci, [switch]$EndToEnd, [string]$Case, [switch]$EndToEndCleanup, [switch]$EarlierBuilds, [int]$LimitMinutes = 20, [int]$Repeat = 0)
+param([string[]]$ExcludeTag = @(), [switch]$Ci, [switch]$Integration, [switch]$EndToEnd, [string]$Case, [switch]$EndToEndCleanup, [switch]$EarlierBuilds, [int]$LimitMinutes = 20, [int]$Repeat = 0)
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if ($EndToEndCleanup) {
     foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'AhkSyntax', 'WinTitle', 'WindowOps', 'Window') { . (Join-Path $root "powershell\lib\$f.ps1") }
@@ -33,6 +37,10 @@ if ($EndToEndCleanup) {
     Write-Host "End-to-end clean-up: $($result.Done.Count) thing(s) done, $($result.Problems.Count) not done."
     if ($result.Problems.Count -gt 0) { exit 1 }
     exit 0
+}
+if ($Integration -and $EndToEnd) {
+    Write-Host '-Integration and -EndToEnd cannot be used together: run them apart.'
+    exit 1
 }
 if ($EndToEnd -and $env:OMB_E2E -ne '1') {
     # The process the end-to-end test runs in: it gets what was asked for through these variables.
@@ -59,11 +67,16 @@ if ($EndToEnd) {
     $c.Run.Path = @(Join-Path $PSScriptRoot 'EndToEnd.Tests.ps1')
     $c.Filter.Tag = @('EndToEnd')
     $resultFile = 'end-to-end-results.xml'
+} elseif ($Integration) {
+    Write-Host 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
+    $c.Filter.Tag = @('Integration')
+    $resultFile = 'integration-results.xml'
+    $ExcludeTag = @($ExcludeTag) + 'EndToEnd'
 } else {
     $ExcludeTag = @($ExcludeTag) + 'EndToEnd'
 }
 if ($Ci) {
-    if (-not $EndToEnd) { $ExcludeTag = @($ExcludeTag) + 'Integration' }
+    if (-not $EndToEnd -and -not $Integration) { $ExcludeTag = @($ExcludeTag) + 'Integration' }
     $results = Join-Path $root 'results\pester'
     New-Item -ItemType Directory -Force -Path $results | Out-Null
     $c.TestResult.Enabled = $true

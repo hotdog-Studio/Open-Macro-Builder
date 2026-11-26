@@ -12,8 +12,8 @@
 //                          Windows PowerShell 5.1, Pester 5.5+ installed for all users, AutoHotkey
 //                          v2, Node and Git.
 //   OMB_WINDOWS_DESKTOP_LABEL  label of the Windows agent with a real, logged-in desktop that runs
-//                          the end-to-end test (default windows-desktop), on every branch. It needs
-//                          what OMB_WINDOWS_LABEL needs, plus Python on PATH.
+//                          the Integration tests and the end-to-end test (default windows-desktop), on
+//                          every branch. It needs what OMB_WINDOWS_LABEL needs, plus Python on PATH.
 //   OMB_SKIP_BROWSER_TESTS set to anything to skip 'Configurator Browser Test', for an agent that
 //                          lacks the system libraries headless Chromium needs.
 //   OMB_ARM64_LABEL        label of the arm64 agent that tries the arm64 image (default linux-arm64)
@@ -45,8 +45,9 @@
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
 // installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron: the
 // desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (the
-// Pester suite, on the Windows agent, every branch) → Windows end-to-end (the real macropad on the
-// desktop agent, every branch) → SonarQube analysis → quality gate → Desktop app (the installer and
+// Pester suite, on the Windows agent, every branch) → Windows integration tests (the Pester tests
+// tagged Integration, which need a real desktop, on the desktop agent, every branch) → Windows
+// end-to-end (the real macropad on the desktop agent, every branch) → SonarQube analysis → quality gate → Desktop app (the installer and
 // the portable exe, on the Windows agent, develop only) → Container images (linux/amd64 and
 // linux/arm64, both built here, the arm64 one tried on the arm64 agent, develop only) → Release
 // (develop only) → Cleanup. Nothing is deployed
@@ -269,6 +270,30 @@ node {
             unstable "the Windows tests did not run (no '${label}' agent)${releasing ? ': nothing is released' : ''}"
         }
         stopIfFailed('Windows tests')
+    }
+
+    stage('Windows Integration Tests') {
+        // The tests tagged Integration (powershell/tests): real windows, real key events, the real
+        // default playback device. The Windows Tests stage leaves them out, because they need a
+        // logged-in desktop. They run on every branch, on the desktop agent, one stage at a time
+        // with the end-to-end stage after this one: the desktop is shared and nothing else may use
+        // it meanwhile. Like the Windows Tests stage, it starts in a clean checkout and gives the
+        // wait for the agent and the run 45 minutes together.
+        def label = env.OMB_WINDOWS_DESKTOP_LABEL ?: 'windows-desktop'
+        if (!onAgent(label, 45) {
+            try {
+                checkoutIntoWorkspace()
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci -Integration'
+                }
+                junit testResults: 'results/pester/integration-results.xml', skipPublishingChecks: true, allowEmptyResults: true
+            } finally {
+                cleanWs(notFailBuild: true)
+            }
+        }) {
+            unstable "the Integration tests did not run (no '${label}' agent)${releasing ? ': nothing is released' : ''}"
+        }
+        stopIfFailed('Windows integration tests')
     }
 
     stage('Windows End-to-End') {

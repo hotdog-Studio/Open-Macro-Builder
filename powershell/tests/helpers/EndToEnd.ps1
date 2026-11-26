@@ -1519,9 +1519,31 @@ function Get-E2eMacropadWindows {
 # The macropad's visible windows in words, for a failure message: handle, title, class, and where on
 # the screen.
 function Get-E2eMacropadWindowsText {
-    $all = @(Get-E2eMacropadWindows)
+    $all = Get-E2eMacropadWindows
     if ($all.Count -eq 0) { return 'none' }
     (@($all | ForEach-Object { $r = [Macropad.WindowApi]::Rect($_); "$_ '$([Macropad.WindowApi]::Title($_))' $([Macropad.WindowApi]::ClassName($_)) at $($r[0]), $($r[1]) size $($r[2]) x $($r[3])" }) -join '; ')
+}
+
+# What the waits on the macropad's windows look at. Each gives nothing while the window is not there (the
+# wait goes on) and the window's handle once it is: Wait-E2eCondition takes an empty list for a look that
+# was met. The list comes from Get-E2eMacropadWindows as one object: it is used as it is.
+
+# The first tooltip of the macropad's that shows now.
+function Get-E2eTooltip {
+    $t = Get-E2eMacropadWindows -Tooltips
+    if ($t.Count -gt 0) { $t[0] }
+}
+
+# The overlay when exactly one window of the macropad's is one (two would be an overlay and something
+# else, and the wait goes on).
+function Get-E2eSoleOverlay {
+    $o = Get-E2eMacropadWindows -Overlay
+    if ($o.Count -eq 1) { $o[0] }
+}
+
+# Whether a tooltip of the macropad's shows now.
+function Test-E2eTooltipUp {
+    (Get-E2eMacropadWindows -Tooltips).Count -gt 0
 }
 
 # Selects a layer as a person does: hold Fn, press the layer's key, let Fn go. The overlay shows and
@@ -1566,7 +1588,7 @@ function Invoke-E2eMacroKey {
 function Get-E2eOverlayPoint {
     param([Parameter(Mandatory)][int]$Slot, [Parameter(Mandatory)][ValidateSet('Label', 'Icon')][string]$Part)
     if ($null -eq $script:E2eRun.Macropad) { throw 'No macropad under test runs: there is no overlay to point at.' }
-    $overlay = @(Get-E2eMacropadWindows -Overlay)
+    $overlay = Get-E2eMacropadWindows -Overlay
     if ($overlay.Count -ne 1) { throw "The overlay must show as one window to point at it; the macropad's visible windows: $(Get-E2eMacropadWindowsText)." }
     $controls = @(foreach ($c in [Macropad.WindowApi]::Children($overlay[0])) { , [Macropad.WindowApi]::Rect($c) })
     ConvertTo-E2eOverlayPoint (Get-E2eLayoutModel) $Slot $Part ([Macropad.WindowApi]::ClientRect($overlay[0])) $controls
@@ -1657,7 +1679,7 @@ function Invoke-E2eOverlayPointer {
         Move-E2ePointer ($e2eRest.X + [int]($e2eRest.Width / 2)) ($e2eRest.Y + 10)
         Wait-ScreenChange
         Send-E2eKey $script:E2eFnVk
-        $e2eOverlay = Wait-E2eCondition { $o = @(Get-E2eMacropadWindows -Overlay); if ($o.Count -eq 1) { $o[0] } } -TimeoutMs 3000
+        $e2eOverlay = Wait-E2eCondition { Get-E2eSoleOverlay } -TimeoutMs 3000
         if ($null -eq $e2eOverlay) { throw "The overlay did not show as one window within 3 s while Fn was held; the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
         & $Action $e2eOverlay
     } catch { $e2eFailure = $_ }
@@ -1677,7 +1699,7 @@ function Invoke-E2eOverlayPointer {
         Wait-ScreenChange -Observed
     }
     & $e2eStep {
-        $shown = @(Get-E2eMacropadWindows -Tooltips).Count -gt 0
+        $shown = Test-E2eTooltipUp
         if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)) { throw "a tooltip of the macropad's still showed 6 s after Fn was let go and the pointer put back; the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
         if ($shown) { Wait-ScreenChange -Observed }
     }

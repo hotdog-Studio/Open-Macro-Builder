@@ -313,11 +313,12 @@ Describe 'End-to-end layouts: the overlay is drawn as the example layout draws i
         @{ Count = 23; Layers = 3; Last = 1 }
     ) {
         $layout = Import-MacropadConfig (Write-TestLayout $Count)
-        $layers = @($layout.Layers)
-        $layers.Count | Should -Be $Layers
-        @($layers[-1].Macros).Count | Should -Be $Last
-        $layers[-1].Title | Should -Be "Test $Layers"
-        @($layers[0].Macros).Count | Should -Be ([math]::Min($Count, 11))
+        # Not named $layers: a variable's name is not case-sensitive, and it would replace the case's $Layers.
+        $found = @($layout.Layers)
+        $found.Count | Should -Be $Layers
+        @($found[-1].Macros).Count | Should -Be $Last
+        $found[-1].Title | Should -Be "Test $Layers"
+        @($found[0].Macros).Count | Should -Be ([math]::Min($Count, 11))
     }
 
     It 'finds the middle of the <Part> of key <Slot> at <X>, <Y> when the overlay is drawn at scale <Scale>' -ForEach @(
@@ -358,6 +359,121 @@ Describe 'End-to-end layouts: the overlay is drawn as the example layout draws i
     It 'says that the layout has no key <Slot>' -ForEach @(@{ Slot = 0 }, @{ Slot = 12 }) {
         $layout = Import-MacropadConfig (Write-TestLayout 3)
         { ConvertTo-E2eOverlayPoint $layout $Slot 'Icon' @(100, 200, 256, 330) (Get-TestControls $layout 1.0) } | Should -Throw -ExpectedMessage "The layout has no key $Slot; it has 11."
+    }
+}
+
+# Get-E2eMacropadWindows gives its list as one object (return , @(...)), so that a list of one window
+# stays a list and an empty one is not nothing. A caller uses the result as it is: wrapped again in @(...)
+# it is a list of one element, the real list, whatever the count. Each helper that asks for the windows is
+# called here against a mock that returns the list the way the real function does, with no window, one
+# and two. The handles are not windows: Windows answers a question about one with no title, no class, no
+# size and no children, so nothing of a desktop is touched (a test that needs a real overlay is an
+# end-to-end case).
+Describe 'End-to-end windows: the helpers use the macropad''s window list as Get-E2eMacropadWindows gives it' {
+    BeforeAll {
+        foreach ($f in 'Assets', 'Model', 'ConfigJson') { . "$root\powershell\lib\$f.ps1" }
+    }
+    BeforeEach {
+        # The handles are numbers no window has; $script:Handles is what the mock gives.
+        $script:First = [IntPtr]0x0BAD0001
+        $script:Second = [IntPtr]0x0BAD0002
+        Write-E2eLayoutFile @(@{ action = 'E2eCase0'; name = 'E2eCase0'; description = '' }) (Join-Path $TestDrive 'layout-ps-1.json')
+        $script:E2eRun = [pscustomobject]@{ Dir = $TestDrive; Macropad = [pscustomobject]@{ Lang = 'ps'; Chunk = 1 } }
+    }
+    AfterEach { $script:E2eRun = $null }
+
+    It 'is stood in for by a mock that gives <Count> windows as one list, as the real function does' -ForEach @(
+        @{ Count = 0 }, @{ Count = 1 }, @{ Count = 2 }
+    ) {
+        $script:Handles = @($script:First, $script:Second | Select-Object -First $Count)
+        Mock Get-E2eMacropadWindows { , @($script:Handles) }
+        $list = Get-E2eMacropadWindows
+        ($list -is [array]) | Should -BeTrue -Because 'an empty list is still a list, not nothing'
+        $list.Count | Should -Be $Count
+        @(Get-E2eMacropadWindows).Count | Should -Be 1 -Because 'the list is one object, so a wrap in @(...) holds the list and not its windows'
+    }
+
+    It 'gives an empty list, and not nothing, while no macropad runs' {
+        $script:E2eRun.Macropad = $null
+        $list = Get-E2eMacropadWindows
+        ($list -is [array]) | Should -BeTrue
+        $list.Count | Should -Be 0
+    }
+
+    Context 'Get-E2eOverlayPoint' {
+        It 'says the overlay must show as one window when <Count> windows show, and names them' -ForEach @(@{ Count = 0; Names = 'none' }, @{ Count = 2; Names = "*$(0x0BAD0001) ''*; $(0x0BAD0002) ''*" }) {
+            $script:Handles = @($script:First, $script:Second | Select-Object -First $Count)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) }
+            { Get-E2eOverlayPoint 1 Label } | Should -Throw -ExpectedMessage "The overlay must show as one window to point at it; the macropad's visible windows: $Names."
+        }
+
+        It 'goes on past the one-window check, to the overlay''s controls, when one window shows' {
+            $script:Handles = @($script:First)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) }
+            # The handle is no window, so it has no controls: the step after the one-window check says so
+            # (a handle taken for a list throws a conversion error before it).
+            { Get-E2eOverlayPoint 1 Label } | Should -Throw -ExpectedMessage "The overlay's 0 controls reach 0 x 0 px from its client origin (0, 0), which is not the layout's 256 x 330 px at one scale*"
+        }
+    }
+
+    Context 'Get-E2eMacropadWindowsText' {
+        It 'says none when no window shows' {
+            $script:Handles = @()
+            Mock Get-E2eMacropadWindows { , @($script:Handles) }
+            Get-E2eMacropadWindowsText | Should -BeExactly 'none'
+        }
+
+        It 'names a window with its handle, title, class and place' {
+            $script:Handles = @($script:First)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) }
+            Get-E2eMacropadWindowsText | Should -BeLike "$(0x0BAD0001) ''*at 0, 0 size 0 x 0"
+        }
+
+        It 'names two windows, one after the other' {
+            $script:Handles = @($script:First, $script:Second)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) }
+            Get-E2eMacropadWindowsText | Should -BeLike "$(0x0BAD0001) ''*at 0, 0 size 0 x 0; $(0x0BAD0002) ''*at 0, 0 size 0 x 0"
+        }
+    }
+
+    # What a wait looks at: nothing while the window is not there yet (the wait goes on), the window's
+    # handle once it is. Wait-E2eCondition takes an empty list for a look that was met.
+    Context 'the looks of the waits' {
+        It 'looks at no tooltip and gets nothing when none is up' {
+            $script:Handles = @()
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Tooltips }
+            $look = Get-E2eTooltip
+            ($null -eq $look) | Should -BeTrue
+        }
+
+        It 'looks at the first tooltip''s handle when <Count> are up' -ForEach @(@{ Count = 1 }, @{ Count = 2 }) {
+            $script:Handles = @($script:First, $script:Second | Select-Object -First $Count)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Tooltips }
+            $look = Get-E2eTooltip
+            $look | Should -BeOfType ([IntPtr])
+            $look | Should -Be $script:First
+        }
+
+        It 'looks at no overlay and gets nothing when <Count> windows show, so that the wait goes on' -ForEach @(@{ Count = 0 }, @{ Count = 2 }) {
+            $script:Handles = @($script:First, $script:Second | Select-Object -First $Count)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Overlay }
+            $look = Get-E2eSoleOverlay
+            ($null -eq $look) | Should -BeTrue
+        }
+
+        It 'looks at the overlay''s handle when one window shows' {
+            $script:Handles = @($script:First)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Overlay }
+            $look = Get-E2eSoleOverlay
+            $look | Should -BeOfType ([IntPtr])
+            $look | Should -Be $script:First
+        }
+
+        It 'says whether a tooltip is up when the macropad has <Count> of them' -ForEach @(@{ Count = 0; Want = $false }, @{ Count = 1; Want = $true }, @{ Count = 2; Want = $true }) {
+            $script:Handles = @($script:First, $script:Second | Select-Object -First $Count)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Tooltips }
+            Test-E2eTooltipUp | Should -Be $Want
+        }
     }
 }
 

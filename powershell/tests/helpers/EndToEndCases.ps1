@@ -525,7 +525,7 @@ function Get-E2eCases {
                     Wait-ScreenChange  # the pointer on the label brings up its tooltip
                     Move-E2ePointer $p.X $p.Y
                     Assert-E2eOnOverlay $p $overlay $what
-                    $tip = Wait-E2eCondition { @(Get-E2eMacropadWindows -Tooltips) | Select-Object -First 1 } -TimeoutMs 3000
+                    $tip = Wait-E2eCondition { Get-E2eTooltip } -TimeoutMs 3000
                     if (-not $tip) { throw "No tooltip of the macropad's showed within 3 s while the pointer rested at ($($p.X), $($p.Y)), $what (the layout's rectangle $($p.Rect) at scale $($p.Scale)); the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
                     Wait-ScreenChange -Observed
                     $bMark = Get-E2eStandinMark $b

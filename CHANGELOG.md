@@ -11,6 +11,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ### Fixed
 
+- PowerShell version: the steps in `powershell/README.md` for starting the macropad with Windows work in a folder the configurator set up as well as in a copy of the repository, and make the shortcut when there is none. They used to point into a `macropad_ahk` folder that neither has, and to take for granted a shortcut that nothing made.
 - PowerShell version: a key runs the command it names even when PowerShell has an alias of the same name. A command called `sleep`, `start`, `move`, `sort` or any other name PowerShell has an alias for used to run the cmdlet behind the alias (or fail with an error about its parameters), because PowerShell picks an alias before a function; it now runs your function. The macropad also says "The command '<name>' is not defined." when a key names a command that nothing defines.
 - Configurator: **Update** in the update dialog is off until the dialog has checked your layout against the new scripts, so it can no longer be pressed before the warning about commands the update takes away could show. It says "Checking your layout against the new scripts…" meanwhile, and when the new scripts cannot be read it says so, and to open the folder again to try again, and updates nothing, where it used to show the plan without the warning and without a word.
 - Configurator: the warning about commands the update takes away no longer sends you to the changelog to keep a command. It says to copy the command's text before you update and add it to a file of your own afterwards (**Commands** tab, **New file**), because until the update the shared file still defines the name and AutoHotkey stops on a name defined twice; after the update it says to write the commands into a file of your own, in place of "keep the commands in `local/`".
@@ -34,6 +35,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 ### Changed
 
 - Desktop app: the program, its installer, its window and its taskbar button show the project logo, the hotdog on a key, as the web page does. The tray icon of both macropad versions stays the hotdog, so a running macropad and the configurator are told apart.
+- Configurator: closing or reloading the window while an update of the scripts runs asks first, as with unsaved changes, because the update would stop part-way. The desktop app's question now says "You have unsaved changes, or the scripts are being updated." and "Leave anyway? Unsaved changes are lost, and an update stops part-way."
 
 ### Removed
 
@@ -50,7 +52,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ### Added
 
-- Configurator: a **Get started** tab for people new to AutoHotkey and PowerShell. It says what to install, how to set up the keypad, and how to start, try and autostart the macropad, with the steps for the version ticked under **I run**. The start screen shows the same guide, and a folder that was just set up opens on it.
+- Configurator: a **Get started** tab for people new to AutoHotkey and PowerShell. It says what to install, how to set up the keypad, and how to start, try and autostart the macropad, with the steps for the version ticked under **I run**. The start screen has a **Get started** button that shows the same guide, and a folder that was just set up opens on it.
 - PowerShell version: two helpers for your own commands. `ActivateOrOpenWindow` brings forward a window found by its title or class, such as a shell in Windows Terminal, steps through such windows on the next press, and starts the program when there is none; it never picks the macropad's own windows. `Show-MessageBox` shows a message box in front of the window you were using and waits until it is closed, like AutoHotkey's `MsgBox`.
 - Both versions: `ActivateOrOpenApp`, a helper for your own commands that open an app whose window Windows shows in its app frame, such as Settings or Calculator. Such a window belongs to `ApplicationFrameHost.exe`, not to the app's own program, and its title is translated, so the helper finds it by the app's application id, which is the same in every display language. It brings the window forward, steps through the app's windows on the next press, and starts the app when it has none. In the PowerShell version `Get-AppWindow` lists those windows, and `Get-StartApps`, which comes with Windows, lists the id of every installed app. A program that has a window of its own, such as Notepad or Terminal on Windows 11, is not found this way, although it has an id too: for those use `ActivateOrOpen`, or in the PowerShell version also `ActivateOrOpenWindow`.
 - Tests: an end-to-end test of both versions on a real desktop. `powershell\tests\run.ps1 -EndToEnd` starts the real macropad, the AutoHotkey version and then the PowerShell one, from a copy without your `local/`, presses the macro keys and checks what every command did. Each command is covered, conditional on something a PC may lack (such as a second monitor), or excluded with the reason (the power commands). `-Case` runs only some cases, `-Repeat` sets how often the Calculator series runs, and `-EndToEndCleanup` cleans up after a run that did not end itself. It needs AutoHotkey v2 and Python, and has the keyboard, the mouse and the screen for a few minutes ([docs/development.md](docs/development.md#the-end-to-end-test)).
@@ -122,7 +124,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ### Security
 
-- Build tools: `minimatch` is held at 11.0.8 or newer, which fixes a slow pattern match ([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)). Only linting and packaging used the affected versions; nothing in the app or the image did.
+- Build tools: `minimatch` from 7.0.0 up to 11.0.0 is held at 11.0.8 or newer, which fixes a slow pattern match ([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)). Only linting and packaging used the affected versions; nothing in the app or the image did. The older copies that some build tools bring with them (3.1.5 and 5.1.9) are not held; `npm audit` reported nothing for them on 2026-11-26.
 
 ## 1.0.0 - 2026-11-14
 

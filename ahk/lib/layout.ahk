@@ -154,7 +154,7 @@ class Layout {
             return
         }
         ; else set to layer icon
-        CreateImageButton(Button, 0, [this.layers[Index].icon.layer, , , 32], [this.layers[Index].icon.layer, , , 32])
+        CreateImageButton(Button, 0, [this.layers[Index].icon.Sized(this.keys[Index]).layer, , , 32], [this.layers[Index].icon.Sized(this.keys[Index]).layer, , , 32])
     }
 
     /**
@@ -171,21 +171,21 @@ class Layout {
     SetPreviousLayerIcon(PreviousIndex, NextIndex, Button) {
         if (this.macroIcons && PreviousIndex <= this.layers[NextIndex].macros.Length && this.layers[NextIndex].macros[PreviousIndex] && this.layers[NextIndex].macros[PreviousIndex].icon) {
             if (this.showMacroMarkers && !(PreviousIndex > this.layers[NextIndex].macros.Length || (PreviousIndex <= this.layers[NextIndex].macros.Length && !this.layers[NextIndex].macros[PreviousIndex]))) {
-                CreateImageButton(Button, 0, [this.layers[NextIndex].macros[PreviousIndex].icon.macro, , , 32], [this.layers[NextIndex].macros[PreviousIndex].icon.macro, , , 32])
+                CreateImageButton(Button, 0, [this.layers[NextIndex].macros[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).macro, , , 32], [this.layers[NextIndex].macros[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).macro, , , 32])
             } 
             ; else set to layer with macro icon
             else {
-                CreateImageButton(Button, 0, [this.layers[NextIndex].macros[PreviousIndex].icon.layer, , , 32], [this.layers[NextIndex].macros[PreviousIndex].icon.layer, , , 32])
+                CreateImageButton(Button, 0, [this.layers[NextIndex].macros[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).layer, , , 32], [this.layers[NextIndex].macros[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).layer, , , 32])
             }
             return
         }
         ; If previous layer Value has a no macro assigned in the new layer, set to layer icon
          if (this.showMacroMarkers && !(PreviousIndex > this.layers[NextIndex].macros.Length || (PreviousIndex <= this.layers[NextIndex].macros.Length && !this.layers[NextIndex].macros[PreviousIndex]))) {
-            CreateImageButton(Button, 0, [this.layers[PreviousIndex].icon.macro, , , 32], [this.layers[PreviousIndex].icon.macro, , , 32])
+            CreateImageButton(Button, 0, [this.layers[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).macro, , , 32], [this.layers[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).macro, , , 32])
          } 
          ; else set to layer with macro icon
          else {
-            CreateImageButton(Button, 0, [this.layers[PreviousIndex].icon.layer, , , 32], [this.layers[PreviousIndex].icon.layer, , , 32])
+            CreateImageButton(Button, 0, [this.layers[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).layer, , , 32], [this.layers[PreviousIndex].icon.Sized(this.keys[PreviousIndex]).layer, , , 32])
          }
     }
 
@@ -202,21 +202,21 @@ class Layout {
         if (this.macroIcons && Index <= this.layers[Index].macros.Length && this.layers[Index].macros[Index] && this.layers[Index].macros[Index].icon) {
             ; If next layer Value has macro assigned,set to selected layer with macro icon
             if (this.showMacroMarkers && Index <= this.layers[Index].macros.Length && this.layers[Index].macros[Index]) {
-                CreateImageButton(Button, 0, [this.layers[Index].macros[Index].icon.selectedMacro, , , 32], [this.layers[Index].macros[Index].icon.selectedMacro, , , 32])
+                CreateImageButton(Button, 0, [this.layers[Index].macros[Index].icon.Sized(this.keys[Index]).selectedMacro, , , 32], [this.layers[Index].macros[Index].icon.Sized(this.keys[Index]).selectedMacro, , , 32])
             } 
             ; else, set to selected layer icon
             else {
-                CreateImageButton(Button, 0, [this.layers[Index].macros[Index].icon.selected, , , 32], [this.layers[Index].macros[Index].icon.selected, , , 32])
+                CreateImageButton(Button, 0, [this.layers[Index].macros[Index].icon.Sized(this.keys[Index]).selected, , , 32], [this.layers[Index].macros[Index].icon.Sized(this.keys[Index]).selected, , , 32])
             }
             return
         }
         ; If next layer Value has macro assigned,set to selected layer with macro icon
         if (this.showMacroMarkers && Index <= this.layers[Index].macros.Length && this.layers[Index].macros[Index]) {
-            CreateImageButton(Button, 0, [this.layers[Index].icon.selectedMacro, , , 32], [this.layers[Index].icon.selectedMacro, , , 32])
+            CreateImageButton(Button, 0, [this.layers[Index].icon.Sized(this.keys[Index]).selectedMacro, , , 32], [this.layers[Index].icon.Sized(this.keys[Index]).selectedMacro, , , 32])
         } 
         ; else, set to selected layer icon
         else {
-            CreateImageButton(Button, 0, [this.layers[Index].icon.selected, , , 32], [this.layers[Index].icon.selected, , , 32])
+            CreateImageButton(Button, 0, [this.layers[Index].icon.Sized(this.keys[Index]).selected, , , 32], [this.layers[Index].icon.Sized(this.keys[Index]).selected, , , 32])
         }
     }
 
@@ -278,11 +278,11 @@ class Layout {
                 if (i != PreviousIndex && i != NextIndex && i <= this.layers[NextIndex].macros.Length && this.layers[NextIndex].macros[i] && this.layers[NextIndex].macros[i].icon) {
                     ; If next layer Value has macro assigned,set to selected layer with macro icon
                     if (this.showMacroMarkers && i <= this.layers[NextIndex].macros.Length && this.layers[NextIndex].macros[i]) {
-                        CreateImageButton(Button, 0, [this.layers[NextIndex].macros[i].icon.macro, , , 32], [this.layers[NextIndex].macros[i].icon.macro, , , 32])
+                        CreateImageButton(Button, 0, [this.layers[NextIndex].macros[i].icon.Sized(this.keys[i]).macro, , , 32], [this.layers[NextIndex].macros[i].icon.Sized(this.keys[i]).macro, , , 32])
                     } 
                     ; else, set to selected layer icon
                     else {
-                        CreateImageButton(Button, 0, [this.layers[NextIndex].macros[i].icon.layer, , , 32], [this.layers[NextIndex].macros[i].icon.layer, , , 32])
+                        CreateImageButton(Button, 0, [this.layers[NextIndex].macros[i].icon.Sized(this.keys[i]).layer, , , 32], [this.layers[NextIndex].macros[i].icon.Sized(this.keys[i]).layer, , , 32])
                     }
                     continue
                 }
@@ -318,11 +318,11 @@ class Layout {
             
             ; If layer[value].macros[i] has no macro assigned in the new layer, set to layer with macro icon
             if (this.showMacroMarkers && i <= this.layers[NextIndex].macros.Length && this.layers[NextIndex].macros[i]) {
-                CreateImageButton(button, 0, [this.layers[i].icon.macro, , , 32], [this.layers[i].icon.macro, , , 32])
+                CreateImageButton(button, 0, [this.layers[i].icon.Sized(this.keys[i]).macro, , , 32], [this.layers[i].icon.Sized(this.keys[i]).macro, , , 32])
             }
             ; else set to layer icon
             else {
-                CreateImageButton(button, 0, [this.layers[i].icon.layer, , , 32], [this.layers[i].icon.layer, , , 32])
+                CreateImageButton(button, 0, [this.layers[i].icon.Sized(this.keys[i]).layer, , , 32], [this.layers[i].icon.Sized(this.keys[i]).layer, , , 32])
             }
       }
     }

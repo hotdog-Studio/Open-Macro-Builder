@@ -36,7 +36,9 @@ class Key {
 }
 
 class IconSet {
-    [string]$Name; [string]$Layer; [string]$Macro; [string]$Selected; [string]$SelectedMacro
+    [string]$Name; [string]$Dir; [string]$Layer; [string]$Macro; [string]$Selected; [string]$SelectedMacro
+    # Images already looked up for a key size, by "<state> <w>x<h>".
+    [hashtable]$Sized = @{}
 }
 
 class Macro {
@@ -66,11 +68,24 @@ function Icon {
     param([string]$Name)
     $set = [IconSet]::new()
     $set.Name = $Name
-    $set.Layer = Get-AssetPath "$Name\layer.png"
-    $set.Macro = Get-AssetPath "$Name\macro.png"
-    $set.Selected = Get-AssetPath "$Name\selected.png"
-    $set.SelectedMacro = Get-AssetPath "$Name\selected_macro.png"
+    $set.Dir = Get-IconSetDir $Name
+    $set.Layer = Join-Path $set.Dir 'layer.png'
+    $set.Macro = Join-Path $set.Dir 'macro.png'
+    $set.Selected = Join-Path $set.Dir 'selected.png'
+    $set.SelectedMacro = Join-Path $set.Dir 'selected_macro.png'
     $set
+}
+
+# One state's image for a key: <state>_<w>x<h>.png when the set has it for the key's size, else <state>.png.
+function Get-IconImage {
+    param(
+        [Parameter(Mandatory)]$Set,
+        [Parameter(Mandatory)][ValidateSet('Layer', 'Macro', 'Selected', 'SelectedMacro')][string]$State,
+        [Parameter(Mandatory)]$Key
+    )
+    $id = "$State $($Key.Width)x$($Key.Height)"
+    if (-not $Set.Sized.ContainsKey($id)) { $Set.Sized[$id] = Get-SizedAssetPath $Set.$State $Key.Width $Key.Height }
+    $Set.Sized[$id]
 }
 
 function Macro {

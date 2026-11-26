@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renameKey } from '../core/config/ops'
 import { parseConfig } from '../core/config/parse'
 import { MemoryFolder } from '../core/folder/memory'
+import { STOCK_ICONS } from '../core/iconIndex'
 import { SETTINGS_PATH } from '../core/settings'
 import type { Platform } from '../platform/types'
 import { readRepoText } from '../../test/repo'
@@ -64,7 +65,7 @@ function editing(): StoredState {
   const configFile = { path: 'config.json', text: '', eol: '\n' as const, bom: false, version: 'v1' }
   return reducer(initialState, {
     type: 'loaded',
-    session: { folder, configFile, saved: ws, ws, catalog: [], commandFiles: [], iconSets: [], libraryFiles: [] },
+    session: { folder, configFile, saved: ws, ws, catalog: [], commandFiles: [], iconSets: [], icons: STOCK_ICONS, libraryFiles: [] },
     settings: { languages: ['ahk'] },
   })
 }

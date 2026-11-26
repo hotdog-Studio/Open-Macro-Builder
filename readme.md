@@ -149,7 +149,7 @@ Both versions load the file named by the `OMB_CONFIG` environment variable when 
 
 - `fn` is the key you hold to choose a layer. `keys` are the macro keys, placed on a grid by `row` and `col`, with `width` and `height` in keys (default 1).
 - Layers and macros are matched to keys by position: the first layer belongs to the first key, and so on. `null` leaves a slot empty. `"disabled": true` keeps a layer in the file without giving it a key.
-- `icon` names a folder in `img/` holding `layer.png`, `macro.png`, `selected.png` and `selected_macro.png`.
+- `icon` names an icon set: a folder holding `layer.png`, `macro.png`, `selected.png` and `selected_macro.png`, looked for in `local/img/` (your own sets) before `img/`. A set can also hold pictures drawn for one key size, such as `selected_1x2.png` for a key one wide and two high; a key of that size shows them, and any other size the plain ones. A key with a macro but no layer shows `img/empty_<w>x<h>.png` for its size when that file exists, else `img/empty.png`.
 - `action` names a command function. `name` is the label shown above the key, and `description` is its tooltip.
 - `default` is the layer selected at startup, counted from 1. `showFn` is the text above the Fn key. `showMacroMarkers` marks keys that have a macro on the selected layer, and `showLabels` shows the macro names. `useMacroIcons` and `iconAction` change what the overlay's icons show and do.
 - `hotkeys` and `hotstrings` add ordinary AutoHotkey-style hotkeys and hotstrings, such as `{ "hotkey": "^!e", "action": "OpenFileExplorer" }` and `{ "hotstring": "::btw", "replacement": "by the way" }`. powershell/README.md describes the options.

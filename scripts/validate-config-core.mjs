@@ -74,7 +74,7 @@ function checkLayer(layer, where, keyCount, ctx) {
   }
   if (typeof layer.title !== 'string') errors.push(`${where}: needs a "title"`);
   if (typeof layer.icon !== 'string' || layer.icon === '') errors.push(`${where}: needs an "icon"`);
-  else if (!iconExists(layer.icon)) errors.push(`${where}: icon folder "${layer.icon}" not found in img/`);
+  else if (!iconExists(layer.icon)) errors.push(`${where}: icon folder "${layer.icon}" not found in local/img/ or img/`);
   const macros = layer.macros ?? [];
   if (!Array.isArray(macros)) {
     errors.push(`${where}.macros: must be a list`);
@@ -92,7 +92,7 @@ function checkMacro(macro, where, layerDisabled, { errors, actions, iconExists }
     return;
   }
   if (macro.icon !== undefined && macro.icon !== '' && !iconExists(macro.icon)) {
-    errors.push(`${where}: icon folder "${macro.icon}" not found in img/`);
+    errors.push(`${where}: icon folder "${macro.icon}" not found in local/img/ or img/`);
   }
   if (!layerDisabled) actions.push([macro.action, where]);
 }

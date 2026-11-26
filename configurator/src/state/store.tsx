@@ -3,6 +3,7 @@ import type { Workspace } from '../core/config/model'
 import { writeConfig } from '../core/config/write'
 import type { TextFile } from '../core/folder/textFile'
 import type { FolderAccess } from '../core/folder/types'
+import type { IconIndex } from '../core/iconIndex'
 import type { CatalogEntry, CommandFile, LangId, LibraryFile } from '../core/languages'
 import type { Settings } from '../core/settings'
 import type { UpdateResult } from '../core/update/apply'
@@ -37,7 +38,10 @@ export interface Session {
   ws: Workspace
   catalog: CatalogEntry[]
   commandFiles: CommandFile[]
+  /** The names of the icon sets, sorted (the same sets as `icons`). */
   iconSets: string[]
+  /** Where each icon set lives and which pictures it has, and the empty key frames. */
+  icons: IconIndex
   /** The files of the library folder (powershell/lib), by name. */
   libraryFiles: LibraryFile[]
 }
@@ -181,7 +185,7 @@ export type Action =
   /** The check after opening found something new, the bar was answered, or the dialog moved on. */
   | { type: 'update'; update: UpdateOffer | null }
   /** The icon sets listed again (after an update of the scripts). */
-  | { type: 'icon-sets'; iconSets: string[] }
+  | { type: 'icon-sets'; iconSets: string[]; icons: IconIndex }
   | CommandAction
 
 export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
@@ -255,7 +259,7 @@ function editReducer(state: EditCore, action: Action): EditCore {
     case 'update':
       return { ...state, update: action.update }
     case 'icon-sets':
-      return { ...state, iconSets: action.iconSets }
+      return { ...state, iconSets: action.iconSets, icons: action.icons }
     case 'commands-show':
     case 'draft':
     case 'command-saved':

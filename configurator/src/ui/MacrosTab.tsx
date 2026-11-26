@@ -2,6 +2,7 @@ import { DragOverlay, useDndContext, useDraggable } from '@dnd-kit/core'
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
 import type { Layer, PadKey, Workspace } from '../core/config/model'
 import { findLayer, setMacro, updateMacro } from '../core/config/ops'
+import { iconImage } from '../core/iconIndex'
 import { definedNames, isCommand, LANG_IDS, LANGUAGES, type CatalogEntry, type LangId } from '../core/languages'
 import { useEditor } from '../state/store'
 import { LayerIcon, OVERLAY_STYLE } from './LayersTab'
@@ -282,7 +283,7 @@ function whereToOpen(
 
 function MacroDetails({ layer, keyId, keyName }: Readonly<{ layer: Layer; keyId: string; keyName: string }>) {
   const { state, dispatch } = useEditor()
-  const { ws, iconSets } = state
+  const { ws, iconSets, icons } = state
   const names = useDefinedNames()
   const ids = [useId(), useId(), useId(), useId()]
   const macro = layer.macros[keyId]
@@ -359,7 +360,7 @@ function MacroDetails({ layer, keyId, keyName }: Readonly<{ layer: Layer; keyId:
             key={set}
             name={set}
             label={set}
-            path={`img/${set}/macro.png`}
+            path={iconImage(icons, set, 'macro', 1, 1)}
             chosen={macro.icon === set}
             onChoose={() => edit(updateMacro(ws, layer.id, keyId, { icon: set }))}
           />

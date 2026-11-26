@@ -11,6 +11,22 @@ BeforeAll {
 }
 Describe 'Get-EmptyIconPath' {
     It 'picks by size' { Get-EmptyIconPath (Key 'x' 1 1 1 2) | Should -Be (P 'empty_1x2.png'); Get-EmptyIconPath (Key 'x' 1 1 3 1) | Should -Be (P 'empty.png') }
+    It 'takes empty_<w>x<h>.png for any size that has one' {
+        Mock Get-AssetRoot { $TestDrive }
+        New-Item -ItemType Directory "$TestDrive\img" -Force | Out-Null
+        Set-Content "$TestDrive\img\empty_3x1.png" 'x'
+        Get-EmptyIconPath (Key 'x' 1 1 3 1) | Should -Be (Join-Path $TestDrive 'img\empty_3x1.png')
+    }
+}
+Describe 'Get-ButtonState sized icons' {
+    It 'shows the image the set has for the key''s size' {
+        Mock Get-AssetRoot { $TestDrive }
+        New-Item -ItemType Directory "$TestDrive\img\high" -Force | Out-Null
+        'layer.png', 'selected.png', 'selected_1x2.png' | ForEach-Object { Set-Content "$TestDrive\img\high\$_" 'x' }
+        $l = Layout (Key 'ScrollLock' 3 1) @((Key 'F13' 1 1 1 2), (Key 'F14' 1 2)) @((Layer 'T' (Icon 'high')), (Layer 'U' (Icon 'high'))) 1 $false $false $true
+        (Get-ButtonState $l 0 0).Image | Should -Be (Join-Path $TestDrive 'img\high\selected_1x2.png')
+        (Get-ButtonState $l 1 1).Image | Should -Be (Join-Path $TestDrive 'img\high\selected.png')
+    }
 }
 Describe 'Get-ButtonState images with markers and labels' {
     BeforeAll { $l = New-Fixture }

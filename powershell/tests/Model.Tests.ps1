@@ -18,6 +18,25 @@ Describe 'Icon' {
         $i = Icon 'chrome'
         $i.Layer | Should -Be (Get-AssetPath 'chrome\layer.png'); $i.SelectedMacro | Should -Be (Get-AssetPath 'chrome\selected_macro.png')
     }
+    Context 'in a folder of its own' {
+        BeforeEach {
+            Mock Get-AssetRoot { $TestDrive }
+            New-Item -ItemType Directory "$TestDrive\img\cat", "$TestDrive\local\img\cat" -Force | Out-Null
+            Set-Content "$TestDrive\img\cat\layer.png" 'x'
+        }
+        AfterEach { Remove-Item "$TestDrive\*" -Recurse -Force }
+        It 'reads a personal set from local\img' {
+            Set-Content "$TestDrive\local\img\cat\layer.png" 'x'
+            (Icon 'cat').Macro | Should -Be (Join-Path $TestDrive 'local\img\cat\macro.png')
+        }
+        It 'gives a key the image drawn for its size, else the 1x1 one' {
+            Set-Content "$TestDrive\img\cat\selected_1x2.png" 'x'
+            $i = Icon 'cat'
+            Get-IconImage $i 'Selected' (Key 'F13' 1 1 1 2) | Should -Be (Join-Path $TestDrive 'img\cat\selected_1x2.png')
+            Get-IconImage $i 'Selected' (Key 'F13' 1 1 2 1) | Should -Be (Join-Path $TestDrive 'img\cat\selected.png')
+            Get-IconImage $i 'Layer' (Key 'F13' 1 1 1 2) | Should -Be (Join-Path $TestDrive 'img\cat\layer.png')
+        }
+    }
 }
 Describe 'Layer and Macro' {
     It 'stores blanks as null' { (Layer 'X' (Icon 'chrome') @('', (Macro 'A' 'a'))).Macros[0] | Should -BeNullOrEmpty }

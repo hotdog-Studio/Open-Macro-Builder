@@ -152,16 +152,8 @@ class LayerSelectGui {
     * The file path of the empty icon.
     */
    static GetEmptyIcon(Key) {
-      if (Key.width == 1 && Key.height == 1) {
-         return Assets.Path("empty_1x1.png")
-      } else if (Key.width == 1 && Key.height == 2) {
-         return Assets.Path("empty_1x2.png")
-      } else if (Key.width == 2 && Key.height == 1) {
-         return Assets.Path("empty_2x1.png")
-      } else if (Key.width == 2 && Key.height == 2) {
-         return Assets.Path("empty_2x2.png")
-      }
-      return Assets.Path("empty.png")
+      sized := Assets.Path("empty_" Key.width "x" Key.height ".png")
+      return FileExist(sized) ? sized : Assets.Path("empty.png")
    }
 
    static GetBlankIcon() {

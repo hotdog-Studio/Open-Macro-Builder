@@ -23,7 +23,8 @@ import {
   type LibraryFile,
 } from '../core/languages'
 import { messageOf, withoutFullStop } from '../core/message'
-import { copyExampleConfig, inspectFolder, listIconSets } from '../core/repo'
+import { iconSetNames, scanIcons, type IconIndex } from '../core/iconIndex'
+import { copyExampleConfig, inspectFolder } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
 import { NOT_EMPTY, StarterError, writeStarter, type StarterFile } from '../core/starter'
 import type { UpdatePicks } from '../core/update/apply'
@@ -154,6 +155,11 @@ export interface AppActions {
    * cannot be loaded.
    */
   appCommandFiles(): Promise<CommandFile[] | null>
+  /**
+   * Reads the icon sets and empty key frames again (after the Icons tab wrote some, or an update).
+   * False when they could not be read or another folder opened meanwhile; the lists are then unchanged.
+   */
+  rescanIcons(): Promise<boolean>
 }
 
 /** The config file as the app last read or wrote it, with its folder. */
@@ -210,7 +216,7 @@ async function readSession(folder: FolderAccess, configPath: string, library: Li
   const commandFiles = await scanCommands(folder)
   // A command file that is not UTF-8 is listed but never edited; the load notices say so.
   const ws = { ...parsed, notices: [...parsed.notices, ...commandFileNotices(commandFiles)] }
-  const iconSets = await listIconSets(folder)
+  const icons = await scanIcons(folder)
   // A library file that cannot be read (locked, no permission) never stops the folder from
   // opening: the session keeps the library it held (none on opening), and the next recheck of the
   // command files reads it.
@@ -222,9 +228,16 @@ async function readSession(folder: FolderAccess, configPath: string, library: Li
     ws,
     catalog: commandCatalog(commandFiles),
     commandFiles,
-    iconSets,
+    iconSets: iconSetNames(icons),
+    icons,
     libraryFiles,
   }
+}
+
+/** Every set's folder and files and every empty frame, to tell whether a new reading changed anything. */
+function iconSignature(icons: IconIndex): string {
+  const sets = [...icons.sets.values()].map((s) => `${s.name}>${s.dir}:${[...s.files].sort().join(',')}`)
+  return [...sets.sort(), ...[...icons.empties].sort()].join('\n')
 }
 
 /**
@@ -298,17 +311,28 @@ export function createActions(
     if (!folder) return false
     const landed = await actions.recheckCommands()
     if (held?.folder !== folder) return false
-    let iconSets: string[]
+    // Icons unreadable for now: the next opening lists them. The command lists landed or not all the same.
+    await rescanIcons()
+    if (held?.folder !== folder || getState().screen !== 'edit') return false
+    return landed
+  }
+
+  /** The icon sets and empty frames read again, taken up when they changed. */
+  async function rescanIcons(): Promise<boolean> {
+    const folder = held?.folder
+    if (!folder) return false
+    let icons: IconIndex
     try {
-      iconSets = await listIconSets(folder)
+      icons = await scanIcons(folder)
     } catch {
-      // Unreadable for now; the next opening lists them. The command lists landed or not all the same.
-      return landed
+      return false
     }
     const state = getState()
     if (held?.folder !== folder || state.screen !== 'edit') return false
-    if (iconSets.join('\n') !== state.iconSets.join('\n')) dispatch({ type: 'icon-sets', iconSets })
-    return landed
+    if (iconSignature(icons) !== iconSignature(state.icons)) {
+      dispatch({ type: 'icon-sets', iconSets: iconSetNames(icons), icons })
+    }
+    return true
   }
   /** Stops the platform's watch of the held config file and command files. */
   let stopWatch: (() => void) | null = null
@@ -762,6 +786,7 @@ export function createActions(
     applyUpdate: update.applyUpdate,
     reloadMacropadAfterUpdate: update.reloadMacropadAfterUpdate,
     appCommandFiles: update.appCommandFiles,
+    rescanIcons: () => rescanIcons(),
 
     async recheck() {
       await saveDone()

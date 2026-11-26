@@ -1,6 +1,8 @@
 import type { PadKey, Workspace } from './config/model'
 import { size } from './config/model'
 import { layerOnKey } from './config/ops'
+import type { IconIndex, IconState } from './iconIndex'
+import { STOCK_ICONS, emptyImage, iconImage } from './iconIndex'
 
 export interface Rect {
   x: number
@@ -33,18 +35,14 @@ export function keyRect(k: PadKey, labels: boolean): { label: Rect | null; key: 
 }
 
 /** The blank image the runtimes use for a key of this size. */
-export function emptyIconPath(k: PadKey): string {
+export function emptyIconPath(k: PadKey, icons: IconIndex = STOCK_ICONS): string {
   const { w, h } = size(k)
-  const stock = [
-    [1, 1],
-    [1, 2],
-    [2, 1],
-    [2, 2],
-  ]
-  return stock.some(([sw, sh]) => sw === w && sh === h) ? `img/empty_${w}x${h}.png` : 'img/empty.png'
+  return emptyImage(icons, w, h)
 }
 
-function keyImage(ws: Workspace, selected: string, k: PadKey): string {
+function keyImage(ws: Workspace, selected: string, k: PadKey, icons: IconIndex): string {
+  const { w, h } = size(k)
+  const image = (set: string, state: IconState) => iconImage(icons, set, state, w, h)
   const markers = ws.options.showMacroMarkers ?? false
   const selectedLayer = layerOnKey(ws, selected)
   const macro = selectedLayer?.macros[k.id]
@@ -53,18 +51,19 @@ function keyImage(ws: Workspace, selected: string, k: PadKey): string {
   const marked = markers && macro !== undefined
   if (k.id === selected && selectedLayer) {
     // A macro's own icon is marked whenever markers are on; the layer's icon only on a key with a macro.
-    if (macroIcon) return `img/${macroIcon}/${markers ? 'selected_macro' : 'selected'}.png`
-    return `img/${selectedLayer.icon}/${marked ? 'selected_macro' : 'selected'}.png`
+    if (macroIcon) return image(macroIcon, markers ? 'selected_macro' : 'selected')
+    return image(selectedLayer.icon, marked ? 'selected_macro' : 'selected')
   }
-  if (macroIcon) return `img/${macroIcon}/${markers ? 'macro' : 'layer'}.png`
-  return unselectedImage(ws, k, marked)
+  if (macroIcon) return image(macroIcon, markers ? 'macro' : 'layer')
+  return unselectedImage(ws, k, marked, icons)
 }
 
 /** The picture on a key that is not the selected one and shows no macro icon. */
-function unselectedImage(ws: Workspace, k: PadKey, marked: boolean): string {
+function unselectedImage(ws: Workspace, k: PadKey, marked: boolean, icons: IconIndex): string {
   const layer = layerOnKey(ws, k.id)
-  if (!layer) return marked ? emptyIconPath(k) : 'img/blank.png'
-  return `img/${layer.icon}/${marked ? 'macro' : 'layer'}.png`
+  if (!layer) return marked ? emptyIconPath(k, icons) : 'img/blank.png'
+  const { w, h } = size(k)
+  return iconImage(icons, layer.icon, marked ? 'macro' : 'layer', w, h)
 }
 
 function keyLabel(ws: Workspace, selected: string, k: PadKey): { text: string; filled: boolean } {
@@ -76,15 +75,18 @@ function keyLabel(ws: Workspace, selected: string, k: PadKey): { text: string; f
   return macro ? { text: macro.name, filled: true } : { text: '', filled: false }
 }
 
-/** The cells of the overlay while the layer on `selected` is selected: macro keys in order, then Fn when shown. */
-export function overlayCells(ws: Workspace, selected: string): OverlayCell[] {
+/**
+ * The cells of the overlay while the layer on `selected` is selected: macro keys in order, then Fn when shown.
+ * `icons` says which pictures the folder has (sized pictures, sets of your own); without it, the stock ones.
+ */
+export function overlayCells(ws: Workspace, selected: string, icons: IconIndex = STOCK_ICONS): OverlayCell[] {
   const labels = ws.options.showLabels ?? false
   const cells: OverlayCell[] = ws.keys.map((k) => {
     const rect = keyRect(k, labels)
     return {
       keyId: k.id,
       key: rect.key,
-      image: keyImage(ws, selected, k),
+      image: keyImage(ws, selected, k, icons),
       label: rect.label && { rect: rect.label, ...keyLabel(ws, selected, k) },
     }
   })
@@ -96,7 +98,7 @@ export function overlayCells(ws: Workspace, selected: string): OverlayCell[] {
     cells.push({
       keyId: ws.fn.id,
       key: rect.key,
-      image: emptyIconPath(ws.fn),
+      image: emptyIconPath(ws.fn, icons),
       label: rect.label && { rect: rect.label, text, filled: text !== ' ' },
     })
   }

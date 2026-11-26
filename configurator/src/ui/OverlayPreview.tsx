@@ -85,7 +85,7 @@ export function OverlayPreview() {
     body = <p className="text-[11px] text-zinc-300">{NO_LAYER}</p>
   } else if (shown) {
     const { w, h } = overlaySize(ws)
-    const cells = overlayCells(ws, key as string)
+    const cells = overlayCells(ws, key as string, state.icons)
     body = (
       <div className="overflow-auto">
         <div style={{ position: 'relative', width: w, height: h }}>

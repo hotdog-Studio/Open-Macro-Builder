@@ -3,6 +3,7 @@ import { readRepoText } from '../../test/repo'
 import type { Workspace } from './config/model'
 import { setOptions } from './config/ops'
 import { parseConfig } from './config/parse'
+import type { IconIndex } from './iconIndex'
 import { emptyIconPath, keyRect, overlayCells, overlaySize } from './overlay'
 
 const example = (): Workspace => parseConfig(readRepoText('config.json'), 'config.json')
@@ -49,6 +50,20 @@ describe('emptyIconPath', () => {
 })
 
 describe('overlayCells', () => {
+  it("shows the folder's own pictures: a personal set, a picture sized for the key, any empty frame", () => {
+    const icons: IconIndex = {
+      sets: new Map([
+        ['programs', { name: 'programs', dir: 'local/img/programs', files: new Set(['layer.png', 'selected_macro_1x1.png']) }],
+      ]),
+      empties: new Set(['empty_1x1.png']),
+    }
+    const cells = overlayCells(example(), 'k2', icons)
+    const image = (id: string) => cells.find((c) => c.keyId === id)?.image
+    expect(image('k2')).toBe('local/img/programs/selected_macro_1x1.png')
+    expect(image('k4')).toBe('img/empty_1x1.png')
+    expect(image('fn')).toBe('img/empty.png')
+  })
+
   it('lists the macro keys in order, then Fn', () => {
     const ws = example()
     expect(overlayCells(ws, 'k2').map((c) => c.keyId)).toEqual([...ws.keys.map((k) => k.id), 'fn'])

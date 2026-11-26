@@ -46,6 +46,21 @@ test('counts your own commands in local/ as defined', () => {
   }
 });
 
+test('finds icon sets in local/img as well as img', () => {
+  const dir = tempRoot({
+    'img/shared/layer.png': 'x',
+    'local/img/mine/layer.png': 'x',
+    'local/img/nolayer/macro.png': 'x',
+  });
+  try {
+    const { iconExists } = repoChecks(dir);
+    assert.ok(iconExists('shared') && iconExists('mine'));
+    assert.ok(!iconExists('nolayer') && !iconExists('missing'));
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 function layout(overrides = {}) {
@@ -162,7 +177,7 @@ test('reports each kind of layout problem', () => {
     'layers[0]: must be an object or null',
     'layers[1].macros: must be a list',
     'layers[2].macros[0]: needs "action" and "name"',
-    'layers[2].macros[1]: icon folder "missing" not found in img/',
+    'layers[2].macros[1]: icon folder "missing" not found in local/img/ or img/',
     'hotkeys[0]: needs "hotkey" and "action"',
     'hotstrings[0]: needs a "hotstring" such as "::btw"',
     'hotstrings[1]: needs a "replacement"',

@@ -46,7 +46,7 @@ function namesIn(dirs, ext) {
  */
 export function repoChecks(root) {
   return {
-    iconExists: (name) => existsSync(join(root, 'img', name, 'layer.png')),
+    iconExists: (name) => ['local/img', 'img'].some((dir) => existsSync(join(root, dir, name, 'layer.png'))),
     ahkActions: namesIn([join(root, 'ahk', 'commands'), join(root, 'local', 'ahk')], '.ahk'),
     psActions: namesIn([join(root, 'powershell', 'commands'), join(root, 'local', 'powershell', 'commands')], '.ps1'),
   };

@@ -2,6 +2,7 @@ import { DragOverlay, useDndContext, useDraggable, useDroppable } from '@dnd-kit
 import { useId, type KeyboardEvent } from 'react'
 import type { Layer, PadKey } from '../core/config/model'
 import { addLayer, layerOnKey, parkLayer, setDefaultLayer, updateLayer } from '../core/config/ops'
+import { iconImage } from '../core/iconIndex'
 import { useEditor } from '../state/store'
 import { PadDnd, PadGrid, usePadActions } from './PadGrid'
 import { CentrePanel, LeftPanel, RightPanel, STYLE } from './Panels'
@@ -9,7 +10,8 @@ import { useAsset } from './useAsset'
 
 /** A layer's picture: the layer.png of its icon set. */
 export function LayerIcon({ icon, title, className }: Readonly<{ icon: string; title: string; className: string }>) {
-  const src = useAsset(`img/${icon}/layer.png`)
+  const { state } = useEditor()
+  const src = useAsset(iconImage(state.icons, icon, 'layer', 1, 1))
   // Until it loads, or when the set has no layer.png, keep the room so nothing jumps.
   return src ? (
     <img src={src} alt={title} draggable={false} className={`pointer-events-none object-contain ${className}`} />

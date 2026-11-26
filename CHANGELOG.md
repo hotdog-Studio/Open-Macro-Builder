@@ -4,6 +4,11 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ## Unreleased
 
+### Added
+
+- Both versions: icon sets of your own. A set in `local/img/<name>/` is used before `img/<name>/`, so it is kept apart from the shared files an update replaces. The configurator lists these sets with the others, and `scripts/validate-config.mjs` finds them.
+- Both versions: pictures sized for a key. A key `w` keys wide and `h` high shows `<state>_<w>x<h>.png` from its icon set when the set has that file (for example `selected_1x2.png`), else `<state>.png` as before; the same goes for per-macro icons. The empty frame on a key with a macro but no layer is `img/empty_<w>x<h>.png` for any size that has one, where only the four sizes 1x1, 1x2, 2x1 and 2x2 had their own before. The configurator's overlay preview shows the same pictures. Existing sets are unchanged.
+
 ## 1.0.7 - 2026-11-26
 
 ### Removed

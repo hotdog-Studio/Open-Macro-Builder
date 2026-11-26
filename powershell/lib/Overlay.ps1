@@ -2,9 +2,7 @@
 
 function Get-EmptyIconPath {
     param($Key)
-    $size = "$($Key.Width)x$($Key.Height)"
-    if (@('1x1', '1x2', '2x1', '2x2') -contains $size) { return Get-AssetPath "empty_$size.png" }
-    Get-AssetPath 'empty.png'
+    Get-SizedAssetPath (Get-AssetPath 'empty.png') $Key.Width $Key.Height
 }
 
 function Get-MacroText {
@@ -35,10 +33,11 @@ function Get-ButtonState {
         $set = $layer.Icon
         if ($Layout.UseMacroIcons -and $null -ne $macro -and $null -ne $macro.Icon) { $set = $macro.Icon }
         if ($Index -eq $Selected) {
-            if ($marker) { $image = $set.SelectedMacro } else { $image = $set.Selected }
+            if ($marker) { $state = 'SelectedMacro' } else { $state = 'Selected' }
         } else {
-            if ($marker) { $image = $set.Macro } else { $image = $set.Layer }
+            if ($marker) { $state = 'Macro' } else { $state = 'Layer' }
         }
+        $image = Get-IconImage $set $state @($Layout.Keys)[$Index]
     }
 
     $layerTitle = ''

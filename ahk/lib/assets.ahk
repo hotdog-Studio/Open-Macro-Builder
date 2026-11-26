@@ -11,9 +11,15 @@
 class Assets {
     /**
      * @description
+     * Absolute path of the folder that holds ahk, img and local.
+     */
+    static Root := Assets.__ResolveRoot()
+
+    /**
+     * @description
      * Absolute path of the img folder.
      */
-    static Dir := Assets.__ResolveDir()
+    static Dir := Assets.Root "\img"
 
     /**
      * @description
@@ -26,8 +32,23 @@ class Assets {
         return Assets.Dir "\" StrReplace(Relative, "/", "\")
     }
 
-    static __ResolveDir() {
+    /**
+     * @description
+     * The folder of an icon set: `local\img\<name>` when it holds a `layer.png`, else `img\<name>`.
+     * @param {(String)} Name
+     * The icon set's name.
+     * @returns {(String)} The absolute path to the folder.
+     */
+    static IconSetDir(Name) {
+        personal := Assets.Root "\local\img\" Name
+        if (FileExist(personal "\layer.png")) {
+            return personal
+        }
+        return Assets.Dir "\" Name
+    }
+
+    static __ResolveRoot() {
         SplitPath(A_ScriptDir, , &parent)
-        return parent "\img"
+        return parent
     }
 }

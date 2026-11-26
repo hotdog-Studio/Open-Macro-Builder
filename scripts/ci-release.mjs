@@ -74,17 +74,17 @@ export function changelogProblem(text, version) {
   // The changelog is newest first, so every entry between its first `## ` heading and the version's
   // is unreleased, whatever that heading is called; one placed lower is found by its name, whatever
   // its case, brackets or the words after it.
-  const counts = new Map();
+  const sectionOfEach = []; // the heading of each unreleased entry
   let section = null;
   for (const [index, line] of lines.entries()) {
     if (SECTION.test(line)) section = index < at || UNRELEASED_SECTION.test(line) ? line.trimEnd() : null;
-    else if (section !== null && ENTRY.test(line)) counts.set(section, (counts.get(section) ?? 0) + 1);
+    else if (section !== null && ENTRY.test(line)) sectionOfEach.push(section);
   }
-  if (counts.size === 0) return null;
-  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
-  const where = [...counts.keys()].map((name) => `'${name}'`).join(', ');
-  const entries = total === 1 ? '1 entry' : `${total} entries`;
-  return `CHANGELOG.md still has ${entries} under Unreleased (${where}): move ${total === 1 ? 'it' : 'them'} under '## ${version} - YYYY-MM-DD'`;
+  if (sectionOfEach.length === 0) return null;
+  const where = [...new Set(sectionOfEach)].map((name) => `'${name}'`).join(', ');
+  const one = sectionOfEach.length === 1;
+  const entries = one ? '1 entry' : `${sectionOfEach.length} entries`;
+  return `CHANGELOG.md still has ${entries} under Unreleased (${where}): move ${one ? 'it' : 'them'} under '## ${version} - YYYY-MM-DD'`;
 }
 
 /** Checks CHANGELOG.md against VERSION: exit 0, or 5 with the reason (2 without a version). */

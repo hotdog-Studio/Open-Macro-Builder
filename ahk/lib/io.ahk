@@ -26,6 +26,11 @@ ToggleLayerSelection(Keyname)
    KeyWait(Keyname, "L")
    mode := 0
    selectionGui.Hide()
+   ; The overlay's tooltip (ToolTip 1, OnMouseEvent) is a window of its own, so hiding the overlay
+   ; leaves it on the screen. OnMouseEvent takes it away on WM_MOUSELEAVE, which comes when the pointer
+   ; leaves the overlay; whether it also comes when the overlay hides under a still pointer is not
+   ; documented. So it goes here, with the overlay, as the PowerShell version's goes in Hide-Overlay.
+   ToolTip( , 0, 0, 1)
 }
 
 /**

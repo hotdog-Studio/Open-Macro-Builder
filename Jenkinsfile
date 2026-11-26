@@ -371,6 +371,12 @@ node {
         // the suite itself, also when a case fails; an abort or a timeout ends the processes of the
         // build, and the clean-up after the suites stops whatever still runs from the workspace
         // (Electron) or from Playwright's browser folder (Chromium), whatever happened.
+        // An abort or the stage's timeout during the install or a suite is not caught by its
+        // catchError (catchInterruptions: false, set because the plugin's default has changed between
+        // its versions; it rethrows only those interruptions, so a failed suite is still caught and
+        // the next one runs): the suites after it do not start, the clean-up in `finally` runs (after
+        // a timeout, Jenkins gives the stage's body 60 s more before it ends it by force; the clean-up
+        // takes seconds), and the build ends as Jenkins ends an aborted or timed-out build.
         def label = env.OMB_WINDOWS_DESKTOP_LABEL ?: 'windows-desktop'
         def junits = 'results/configurator/windows-junit.xml,results/configurator/windows-browser-junit.xml,results/configurator/electron-junit.xml'
         def vitestRun = { String config, String report ->
@@ -380,7 +386,7 @@ node {
             try {
                 checkoutIntoWorkspace()
                 def installed = false
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the install of the configurator on the Windows agent failed') {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false, message: 'the install of the configurator on the Windows agent failed') {
                     bat 'if not exist results\\configurator mkdir results\\configurator'
                     dir('configurator') {
                         // npm ci does not fetch the Electron binary: the electron package has no install
@@ -403,13 +409,13 @@ node {
                 }
                 if (installed) {
                     dir('configurator') {
-                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the configurator unit tests failed on Windows') {
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false, message: 'the configurator unit tests failed on Windows') {
                             bat vitestRun('', 'windows-junit.xml')
                         }
-                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the configurator browser tests failed on Windows') {
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false, message: 'the configurator browser tests failed on Windows') {
                             bat vitestRun('--config vitest.browser.config.ts ', 'windows-browser-junit.xml')
                         }
-                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the configurator desktop-app tests failed') {
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false, message: 'the configurator desktop-app tests failed') {
                             withEnv(['OMB_REQUIRE_ELECTRON=1']) {
                                 bat vitestRun('--config vitest.electron.config.ts ', 'electron-junit.xml')
                             }

@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config'
 
-// Launches the built desktop app with Playwright. Run by hand or by its own CI stage:
+// Launches the built desktop app with Playwright. Run by hand or by the Jenkins stage 'Windows
+// Configurator Tests' (the desktop agent, every branch; it sets OMB_REQUIRE_ELECTRON=1, so a missing
+// Electron binary or display fails the run instead of skipping it):
 //   npx vitest run --config vitest.electron.config.ts
 // `npm test` (vite.config.ts) must not pick these up: its exclude list needs '**/*.e2e.test.*'.
 export default defineConfig({

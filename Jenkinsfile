@@ -12,8 +12,10 @@
 //                          Windows PowerShell 5.1, Pester 5.5+ installed for all users, AutoHotkey
 //                          v2, Node and Git.
 //   OMB_WINDOWS_DESKTOP_LABEL  label of the Windows agent with a real, logged-in desktop that runs
-//                          the Integration tests and the end-to-end test (default windows-desktop), on
-//                          every branch. It needs what OMB_WINDOWS_LABEL needs, plus Python on PATH.
+//                          the Integration tests, the end-to-end test and the configurator's tests, the
+//                          desktop-app suite among them (default windows-desktop), on every branch. It
+//                          needs what OMB_WINDOWS_LABEL needs, plus Python on PATH, and it must reach
+//                          the npm registry, the Electron download and Playwright's Chromium download.
 //   OMB_SKIP_BROWSER_TESTS set to anything to skip 'Configurator Browser Test', for an agent that
 //                          lacks the system libraries headless Chromium needs.
 //   OMB_ARM64_LABEL        label of the arm64 agent that tries the arm64 image (default linux-arm64)
@@ -43,11 +45,14 @@
 // the version: scripts/ci-release.mjs changelog) → Validate config (scripts/validate-config.mjs:
 // config.json's structure, icons, and every action defined in both versions) → Script tests (node:test,
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
-// installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron: the
-// desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (the
+// installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because this agent never starts Electron: the
+// desktop-app tests in configurator/e2e skip themselves without the binary, and the Windows
+// configurator stage below runs them) → Windows tests (the
 // Pester suite, on the Windows agent, every branch) → Windows integration tests (the Pester tests
 // tagged Integration, which need a real desktop, on the desktop agent, every branch) → Windows
-// end-to-end (the real macropad on the desktop agent, every branch) → SonarQube analysis → quality gate → Desktop app (the installer and
+// end-to-end (the real macropad on the desktop agent, every branch) → Windows configurator tests
+// (the unit, browser and desktop-app suites with the Electron binary, on the desktop agent, every
+// branch) → SonarQube analysis → quality gate → Desktop app (the installer and
 // the portable exe, on the Windows agent, develop only) → Container images (linux/amd64 and
 // linux/arm64, both built here, the arm64 one tried on the arm64 agent, develop only) → Release
 // (develop only) → Cleanup. Nothing is deployed
@@ -334,6 +339,80 @@ node {
             unstable "the end-to-end test did not run (no '${label}' agent)${releasing ? ': nothing is released' : ''}"
         }
         stopIfFailed('Windows end-to-end test')
+    }
+
+    stage('Windows Configurator Tests') {
+        // The configurator's three Vitest suites, on the desktop agent, every branch: the unit tests
+        // (also their Windows-only cases, such as the real process list), the browser tests (headless
+        // Chromium, so no window) and the desktop-app tests (configurator/e2e), which start the real
+        // Electron app and drive its window, so they need the logged-in desktop. The Linux stages
+        // above skip those and the Windows-only cases. No coverage here: SonarQube keeps the Linux
+        // figures. The suites run one after the other, each under its own catchError, so that a red
+        // one does not hide the next; OMB_REQUIRE_ELECTRON=1 makes the desktop-app suite fail in place
+        // of skipping itself when the agent has no Electron binary or no display.
+        // Downloads: npm ci puts node_modules in the workspace (cleanWs removes it), and the Electron
+        // binary and Playwright's Chromium go to the agent user's own caches (%LOCALAPPDATA%\electron,
+        // %LOCALAPPDATA%\ms-playwright), where the next build finds them.
+        // What the suites listen on stays on loopback (Vite's server for the browser tests, the
+        // inspector and debugging ports of Playwright's Electron launch). Every window is closed by
+        // the suite itself, also when a case fails; an abort or a timeout ends the processes of the
+        // build, and the clean-up after the suites stops whatever still runs from the workspace
+        // (Electron) or from Playwright's browser folder (Chromium), whatever happened.
+        def label = env.OMB_WINDOWS_DESKTOP_LABEL ?: 'windows-desktop'
+        def junits = 'results/configurator/windows-junit.xml,results/configurator/windows-browser-junit.xml,results/configurator/electron-junit.xml'
+        def vitestRun = { String config, String report ->
+            "call npx vitest run ${config}--reporter=default --reporter=junit --outputFile.junit=../results/configurator/${report}"
+        }
+        if (!onAgent(label, 60) {
+            try {
+                checkoutIntoWorkspace()
+                def installed = false
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the install of the configurator on the Windows agent failed') {
+                    bat 'if not exist results\\configurator mkdir results\\configurator'
+                    dir('configurator') {
+                        // The Electron binary is downloaded here (no ELECTRON_SKIP_BINARY_DOWNLOAD).
+                        bat '''
+                            call npm ci || exit /b 1
+                            call npx playwright install chromium || exit /b 1
+                        '''
+                    }
+                    installed = true
+                }
+                if (installed) {
+                    dir('configurator') {
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the configurator unit tests failed on Windows') {
+                            bat vitestRun('', 'windows-junit.xml')
+                        }
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the configurator browser tests failed on Windows') {
+                            bat vitestRun('--config vitest.browser.config.ts ', 'windows-browser-junit.xml')
+                        }
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the configurator desktop-app tests failed') {
+                            withEnv(['OMB_REQUIRE_ELECTRON=1']) {
+                                bat vitestRun('--config vitest.electron.config.ts ', 'electron-junit.xml')
+                            }
+                        }
+                    }
+                }
+                junit testResults: junits, skipPublishingChecks: true, allowEmptyResults: true
+            } finally {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the clean-up after the configurator tests failed') {
+                    powershell '''
+                        $root = $env:WORKSPACE.TrimEnd([char]92) + [char]92
+                        $left = @(Get-CimInstance Win32_Process | Where-Object {
+                            $_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $_.ExecutablePath -like '*ms-playwright*')
+                        })
+                        foreach ($p in $left) {
+                            Write-Output "stopping $($p.Name) ($($p.ProcessId)), left by the configurator tests: $($p.ExecutablePath)"
+                            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+                        }
+                    '''
+                }
+                cleanWs(notFailBuild: true)
+            }
+        }) {
+            unstable "the configurator tests did not run on Windows (no '${label}' agent)${releasing ? ': nothing is released' : ''}"
+        }
+        stopIfFailed('Windows configurator tests')
     }
 
     stage('SonarQube Analysis') {

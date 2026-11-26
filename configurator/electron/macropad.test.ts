@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +7,7 @@ import {
   autoHotkeyInstalled,
   findAutoHotkey,
   findMacropad,
+  listProcesses,
   parseProcessList,
   PROCESS_QUERY,
   relaunch,
@@ -123,6 +125,28 @@ describe('findMacropad', () => {
     const real: ProcInfo = { ...ahk('D:\\omb'), exe: realExe, commandLine: `"${realExe}" "D:\\omb\\ahk\\main.ahk"` }
     expect(findMacropad([checker, real], 'D:\\omb')).toEqual({ lang: 'ahk', exe: realExe })
   })
+})
+
+describe('listProcesses', () => {
+  // The only test that runs the real query: Get-CimInstance through Windows PowerShell, then the parse.
+  it.skipIf(process.platform !== 'win32')(
+    'lists a PowerShell process that runs now, with its command line',
+    async () => {
+      const child = spawn('powershell.exe', ['-NoProfile', '-Command', 'Start-Sleep 30 # omb-list-test'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      })
+      try {
+        await expect
+          .poll(async () => (await listProcesses()).find((p) => p.pid === child.pid)?.commandLine ?? '', { timeout: 20_000 })
+          .toContain('omb-list-test')
+      } finally {
+        child.kill()
+      }
+    },
+    // The poll may need its 20 s (a slow agent), and a test limit of the same 20 s would cut it off first.
+    40_000,
+  )
 })
 
 describe('relaunchCommand', () => {

@@ -253,6 +253,13 @@ const OLDER_FILE = 'ahk/lib/json.ahk'
 
 const manifestIn = async (folder: string) => JSON.parse(await readFile(join(folder, MANIFEST_PATH), 'utf8')) as Manifest
 
+// The suite below skips itself without the binary or a display, which turns a broken agent into a green
+// build. The Jenkins stage sets OMB_REQUIRE_ELECTRON=1, and then this test fails in place of the skip.
+it.runIf(process.env.OMB_REQUIRE_ELECTRON === '1')('has the Electron binary and a display, so the suite below runs', () => {
+  expect(binary).not.toBeNull()
+  expect(hasDisplay).toBe(true)
+})
+
 describe.skipIf(!binary || !hasDisplay)('the desktop app', () => {
   beforeAll(buildIfNeeded)
 

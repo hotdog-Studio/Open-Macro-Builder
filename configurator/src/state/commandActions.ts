@@ -483,15 +483,19 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
    * New file, in each chosen language (see AppActions.createCommandFiles). A language whose file exists
    * is left as it is (its text, an open draft), unless a first try made it and could not list it: then
    * only its include line is made. A name is refused when every chosen language has its file, listed.
+   * When a chosen language holds the file under another spelling of the name, the missing ones are made
+   * with that spelling, so that the files pair.
    */
   async function createFiles({ group, name, langs }: Parameters<AppActions['createCommandFiles']>[0]): Promise<string | null> {
     const folder = deps.folder()
     const needsList = (f: CommandFile) => unlisted.get(f.file.path) === folder
     const why = checkNewFile(files.get().filter((f) => !needsList(f)), name, group, langs)
     if (why) return why
+    const spelt = langs.map((lang) => heldAt(newFilePath(lang, group, name))).find((f) => f !== undefined)
+    const pathOf = (lang: LangId) => (spelt ? commandFilePath(lang, group, spelt.pair) : newFilePath(lang, group, name))
     let error: string | null = null
     const create = async (lang: LangId): Promise<void> => {
-      const path = newFilePath(lang, group, name)
+      const path = pathOf(lang)
       const held = heldAt(path)
       let failed: string | null = null
       if (!held) failed = await createFile(path)
@@ -500,7 +504,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     }
     // One language at a time; a failed one does not stop the next.
     await langs.reduce((before, lang) => before.then(() => create(lang)), Promise.resolve())
-    const shown = langs.flatMap((lang) => heldAt(newFilePath(lang, group, name)) ?? [])
+    const shown = langs.flatMap((lang) => heldAt(pathOf(lang)) ?? [])
     if (shown.length > 0) {
       const at = commandFileAt(shown[0].file.path)!
       const state = deps.getState()

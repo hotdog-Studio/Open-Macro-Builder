@@ -1720,15 +1720,53 @@ describe('new and deleted files', () => {
       expect(folder.text(HUB)).toBe(hub)
     })
 
-    it('finds the file that exists whatever the case of the name typed', async () => {
+    /** The spellings of the pairs the Commands tab lists under the name `name`, whatever its case. */
+    const pairsNamed = (name: string) =>
+      [...new Set(editor().commandFiles.filter((f) => f.pair.toLowerCase() === name.toLowerCase()).map((f) => f.pair))]
+
+    it('finds the file that exists whatever the case of the name typed, and spells the new one as it', async () => {
       const HAND = 'X(Macro)\n{\n}\n'
       const { user, folder } = await start({ files: { ...MINE, 'local/ahk/x.ahk': HAND } })
       await create(user, 'X')
-      // No "already exists" for the AutoHotkey file: only the PowerShell file is made.
+      // No "already exists" for the AutoHotkey file: only the PowerShell file is made, spelt as the other.
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-      expect(folder.text('local/powershell/commands/X.ps1')).toBe(PS_STARTER('X'))
+      expect(folder.text('local/powershell/commands/x.ps1')).toBe(PS_STARTER('x'))
+      expect(await folder.readBytes('local/powershell/commands/X.ps1')).toBeNull()
       expect(folder.text('local/ahk/x.ahk')).toBe(HAND)
       expect(await folder.readBytes(HUB)).toBeNull()
+      expect(pairsNamed('x')).toEqual(['x'])
+      expect(pairButton('x').getAttribute('aria-current')).toBe('true')
+      expect(pairButton('x').textContent).toContain('AHK 1 · PS 0')
+    })
+
+    it('spells the AutoHotkey file as the PowerShell one that exists, include line and all', async () => {
+      const { user, folder } = await start({ files: { ...MINE, 'local/powershell/commands/x.ps1': PS_STARTER('x') } })
+      await create(user, 'X')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(folder.text('local/ahk/x.ahk')).toBe(AHK_STARTER('x'))
+      expect(await folder.readBytes('local/ahk/X.ahk')).toBeNull()
+      expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include x.ahk\n`)
+      expect(pairsNamed('x')).toEqual(['x'])
+    })
+
+    it('names the file it could not make with the spelling of the one that exists', async () => {
+      const { user, folder } = await start({ files: { ...MINE, 'local/ahk/x.ahk': 'X(Macro)\n{\n}\n' } })
+      lock(folder, ['local/powershell/commands/x.ps1'])
+      const dialog = await create(user, 'X')
+      expect(await within(dialog).findByText('local/powershell/commands/x.ps1 was not created: the disk is full')).toBeTruthy()
+    })
+
+    it('writes nothing when both files exist under other spellings than the one typed', async () => {
+      // As before this change: the name is refused, with the path as typed.
+      const AHK = 'X(Macro)\n{\n}\n'
+      const PS = PS_STARTER('x')
+      const { user, folder } = await start({ files: { ...MINE, 'local/ahk/x.ahk': AHK, 'local/powershell/commands/x.ps1': PS } })
+      const dialog = await create(user, 'X')
+      expect(within(dialog).getByText('local/ahk/X.ahk already exists.')).toBeTruthy()
+      expect(folder.text('local/ahk/x.ahk')).toBe(AHK)
+      expect(folder.text('local/powershell/commands/x.ps1')).toBe(PS)
+      expect(await folder.readBytes(HUB)).toBeNull()
+      expect(pairsNamed('x')).toEqual(['x'])
     })
   })
 

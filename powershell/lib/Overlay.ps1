@@ -226,7 +226,15 @@ function Show-Overlay {
     $Overlay.Form.Show()
 }
 
+# Hides the overlay, and the tooltip that shows over it. The tooltip is a window of its own (a tooltip
+# control, not a child of the form), so hiding the form leaves a tip that is showing on the screen until
+# its own AutoPopDelay (5 s) runs out. Switching a ToolTip off (Active = $false) sends its control
+# TTM_ACTIVATE with 0, which takes a tip that shows away on the spot; it is switched on again at once, in
+# the finally, so the next time the overlay shows its tooltips work as before (its texts stay in the
+# tool table: Active neither removes nor changes them). The form is hidden first, so that no mouse
+# message reaches the tooltip between its being switched off and on again.
 function Hide-Overlay {
     param($Overlay)
     $Overlay.Form.Hide()
+    try { $Overlay.ToolTip.Active = $false } finally { $Overlay.ToolTip.Active = $true }
 }

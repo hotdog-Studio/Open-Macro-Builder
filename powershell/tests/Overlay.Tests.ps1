@@ -73,3 +73,31 @@ Describe 'New-Overlay / Select-Layer' {
         $o2.FnButton | Should -Not -BeNullOrEmpty; $o2.FnLabel.Text | Should -Be ' '; $o2.Form.ClientSize.Height | Should -Be 164
     }
 }
+# Hide-Overlay puts the overlay's tooltip away with the overlay: the tooltip is a window of its own (the
+# common control Windows Forms makes for System.Windows.Forms.ToolTip), not a child of the form, so hiding
+# the form leaves a tip that is showing on the screen until its own five seconds run out. Whether a tip
+# that shows goes is seen on a screen, in the end-to-end test (Invoke-E2eOverlayPointer, which waits for
+# it); what these check needs no window, the form never being shown: that hiding the overlay is safe at
+# any time and leaves the tooltip ready for the next time it shows, with its texts and switched on.
+Describe 'Hide-Overlay' {
+    BeforeAll { $o = New-Overlay (New-Fixture) }
+    It 'leaves the tooltip switched on, with every text it had, after hiding an overlay that was never shown' {
+        Select-Layer $o 0 | Should -BeTrue
+        Hide-Overlay $o
+        $o.ToolTip.Active | Should -BeTrue
+        $o.Form.Visible | Should -BeFalse
+        $o.ToolTip.GetToolTip($o.Labels[0]) | Should -Be "M0`nd0"
+        $o.ToolTip.GetToolTip($o.Buttons[0]) | Should -Be 'A'
+    }
+    It 'leaves the tooltip switched on when it hides the overlay again, and again' {
+        1..3 | ForEach-Object { Hide-Overlay $o }
+        $o.ToolTip.Active | Should -BeTrue
+    }
+    It 'gives the tooltip the texts of a layer selected after it hid' {
+        Hide-Overlay $o
+        Select-Layer $o 2 | Should -BeTrue
+        Hide-Overlay $o
+        $o.ToolTip.Active | Should -BeTrue
+        $o.ToolTip.GetToolTip($o.Labels[1]) | Should -Be "M1b`nd1b"
+    }
+}

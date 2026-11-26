@@ -333,6 +333,12 @@ describe('in the browser, on a real folder', () => {
   it('what the configurator saves passes the validator the macropad is checked with, after edits of the macros of a new layer', async () => {
     await openEditor()
     await validatorRefusesABrokenConfig()
+
+    // Shape: a new key. The validator holds a layer's macros to the number of keys, so the config saved
+    // has a new key and the macros of a new layer together.
+    await click(screen.getByRole('button', { name: '+ Add key' }))
+    await waitFor(() => expect(ws().keys).toHaveLength(13))
+
     await openTab('Layers')
     await newLayerOnF16()
 
@@ -348,6 +354,7 @@ describe('in the browser, on a real folder', () => {
     await waitFor(() => expect(ws().slots.k4.macros.k2?.action).toBe('Lock'))
 
     const config = await savedPassingTheValidator()
+    expect(config.keys).toHaveLength(13)
     expect(config.layers[3]).toMatchObject({ title: 'New layer' })
     expect(config.layers[3]!.macros[1]).toMatchObject({ action: 'Lock' })
     expect(config.layers[3]!.macros[9]).toMatchObject({ action: 'Hibernate' })

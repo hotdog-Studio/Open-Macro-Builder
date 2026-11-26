@@ -27,6 +27,11 @@ export function readRepoText(rel: string): string {
   return readFileSync(repoRoot + parts.join('/'), 'utf8').replaceAll('\r\n', '\n')
 }
 
+/** Reads a file of the repository as raw bytes (path relative to the repo root). Never reads anything under `local/`. */
+export function readRepoBytes(rel: string): Uint8Array {
+  return new Uint8Array(readFileSync(repoRoot + repoParts(rel, 'readRepoBytes').join('/')))
+}
+
 function collectRepoFiles(parts: string[], into: Record<string, Uint8Array>): void {
   const abs = repoRoot + parts.join('/')
   if (statSync(abs).isDirectory()) {

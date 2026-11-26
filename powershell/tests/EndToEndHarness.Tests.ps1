@@ -1000,6 +1000,32 @@ Describe 'End-to-end waits: one that was met close to its limit is noted for the
     }
 }
 
+# How the clean-up ends a process it found (Stop-E2eCleanupProcess): it says "ended" only of one that is
+# gone, so a process still running after the wait must make it throw, and the clean-up then lists it as
+# not done. Stop-Process and Get-Process stand in for Windows here: no process is ended.
+Describe 'End-to-end clean-up: a process is ended only when it is gone' {
+    BeforeAll { $script:FakeId = 2147480001 }
+    BeforeEach { Mock Stop-Process { } }
+
+    It 'ends it, and throws nothing, when it is gone after the end' {
+        Mock Get-Process { } -ParameterFilter { $Id -contains $script:FakeId }
+        { Stop-E2eCleanupProcess $script:FakeId -TimeoutMs 30 } | Should -Not -Throw
+        Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -contains $script:FakeId -and $Force }
+    }
+
+    It 'throws when it still runs at the limit, so the clean-up does not say it ended' {
+        Mock Get-Process { [pscustomobject]@{ Id = $script:FakeId } } -ParameterFilter { $Id -contains $script:FakeId }
+        { Stop-E2eCleanupProcess $script:FakeId -TimeoutMs 30 } | Should -Throw 'it was still running 30 ms after it was told to end'
+    }
+
+    It 'throws Windows'' refusal, without waiting' {
+        Mock Stop-Process { throw 'Access is denied' }
+        Mock Get-Process { }
+        { Stop-E2eCleanupProcess $script:FakeId -TimeoutMs 30 } | Should -Throw '*Access is denied*'
+        Should -Invoke Get-Process -Times 0 -Exactly
+    }
+}
+
 # What a failed case says of the keyboard (Get-E2eFailureState): the key watch's record as one line, and
 # how a NextWindow press's Alt+Tab went out. The record here is made up, in the key watch's own form
 # (KeyWatch.Timed): a PowerShell NextWindow press at 2000.0 ms that left the task switcher in front, after

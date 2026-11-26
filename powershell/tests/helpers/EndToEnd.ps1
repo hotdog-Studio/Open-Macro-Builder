@@ -2722,10 +2722,20 @@ function Clear-E2eWorkspace {
         try {
             Show-E2eCleanupBanner
             Wait-ScreenChange
-            Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
-            [void](Wait-E2eCondition { -not (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) } -TimeoutMs 5000)
+            Stop-E2eCleanupProcess $p.ProcessId
             $Done.Add("ended what was left in the workspace before this clean-up started: $what")
         } catch { $Problems.Add("it was left in the workspace before this clean-up started, and it could not be ended ($($_.Exception.Message)): $what") }
+    }
+}
+
+# Ends the process Id by force and waits up to TimeoutMs for it to be gone. Throws when Windows refuses
+# the end, and when the process still runs at the limit: a clean-up says "ended" only of what is gone,
+# and lists anything else as not done.
+function Stop-E2eCleanupProcess {
+    param([Parameter(Mandatory)][int]$Id, [int]$TimeoutMs = 5000)
+    Stop-Process -Id $Id -Force -ErrorAction Stop
+    if (-not (Wait-E2eCondition { -not (Get-Process -Id $Id -ErrorAction SilentlyContinue) } -TimeoutMs $TimeoutMs)) {
+        throw "it was still running $TimeoutMs ms after it was told to end"
     }
 }
 
@@ -2808,8 +2818,7 @@ function Clear-E2eFolder {
             if (& $match $Id $Start) {
                 Show-E2eCleanupBanner
                 Wait-ScreenChange
-                Stop-Process -Id $Id -Force -ErrorAction Stop
-                [void](Wait-E2eCondition { -not (Get-Process -Id $Id -ErrorAction SilentlyContinue) } -TimeoutMs 5000)
+                Stop-E2eCleanupProcess $Id
                 $Done.Add("ended $What $Id")
             }
         }
@@ -2824,11 +2833,17 @@ function Clear-E2eFolder {
     $testStart = [long]::MaxValue
     if ($sameBoot) { foreach ($line in $header) { if ($line -match '^test \d+ (\d+)') { $testStart = [long]$Matches[1] } } }
     $ours = { @(Get-E2eRunProcesses $Dir -OrWorkingIn | Where-Object { $_.StartTicks -gt $testStart }) }
+    # Each is told to end, then all are waited for at once. Only one that is gone then is "ended"; one
+    # that still runs is listed as not done by the check at the end of this function ("still running
+    # after it was ended"), which also keeps the folder.
+    $stopped = [System.Collections.Generic.List[object]]::new()
     foreach ($p in (& $ours)) {
         $what = Get-E2eProcessText $p
-        & $try '' "ending $what" { Show-E2eCleanupBanner; Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $Done.Add("ended $what") }
+        & $try '' "ending $what" { Show-E2eCleanupBanner; Wait-ScreenChange; Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $stopped.Add([pscustomobject]@{ Id = $p.ProcessId; What = $what }) }
     }
     [void](Wait-E2eCondition { (& $ours).Count -eq 0 } -TimeoutMs 5000)
+    $running = @((& $ours) | ForEach-Object { $_.ProcessId })
+    foreach ($s in $stopped) { if ($running -notcontains $s.Id) { $Done.Add("ended $($s.What)") } }
     foreach ($line in $lines) {
         if ($line -match '^window (\d+) (\d+) (\d+) (.+)$') {
             $h = [IntPtr][long]$Matches[1]; $id = [int]$Matches[2]; $start = [long]$Matches[3]; $class = $Matches[4]

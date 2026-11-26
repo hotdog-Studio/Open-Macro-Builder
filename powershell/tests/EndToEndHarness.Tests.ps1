@@ -918,6 +918,18 @@ Describe 'End-to-end windows: what is a tooltip, an overlay and a form of the ma
     }
 }
 
+# The line the run prints for how long an overlay's tooltip took to go once the overlay was seen hidden.
+Describe 'End-to-end overlay tooltip timing: the line the run prints' {
+    It 'says <Why>' -ForEach @(
+        @{ Why = 'a tooltip was showing and went'; Showing = $true; Ms = 1123; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, gone after 1123 ms (limit 2500 ms)' }
+        @{ Why = 'a tooltip went at the first look'; Showing = $true; Ms = 0; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, gone after 0 ms (limit 2500 ms)' }
+        @{ Why = 'none was showing'; Showing = $false; Ms = 3; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none was showing when the overlay hid' }
+        @{ Why = 'a tooltip was still showing at the limit'; Showing = $true; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, still showing at the limit (2500 ms)' }
+    ) {
+        Format-E2eOverlayTooltipTime 'ahk E2eOverlayIcon' $Showing $Ms 2500 | Should -BeExactly $Want
+    }
+}
+
 Describe 'End-to-end waits: the limit is time spent waiting, not the time a look takes' {
     BeforeEach { $script:Looks = 0 }
 

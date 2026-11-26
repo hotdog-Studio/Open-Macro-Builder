@@ -1902,6 +1902,17 @@ function Assert-E2eOnOverlay {
     }
 }
 
+# The line the end-to-end run prints for the wait that follows an overlay (Invoke-E2eOverlayPointer): the
+# case (the macropad and the case's name), whether a tooltip was showing when the overlay was seen hidden,
+# and how many milliseconds after that it was gone, counted from the start of the wait (GoneAfterMs; $null
+# when it was still there at the limit, LimitMs). The same clock and limit as the wait's own.
+function Format-E2eOverlayTooltipTime {
+    param([string]$Case, [bool]$Showing, $GoneAfterMs, [int]$LimitMs)
+    if (-not $Showing -and $null -ne $GoneAfterMs) { return "Overlay tooltip, ${Case}: none was showing when the overlay hid" }
+    if ($null -eq $GoneAfterMs) { return "Overlay tooltip, ${Case}: showing when the overlay hid, still showing at the limit ($LimitMs ms)" }
+    "Overlay tooltip, ${Case}: showing when the overlay hid, gone after $GoneAfterMs ms (limit $LimitMs ms)"
+}
+
 # Holds Fn until the overlay shows and gives Action the overlay's window; then, however Action ended,
 # lets Fn go and puts the pointer back where it was, and waits for the overlay to hide and for every
 # tooltip of the macropad's to be gone, within $script:E2eTooltipGoneMs of the overlay being seen hidden (a
@@ -1942,7 +1953,11 @@ function Invoke-E2eOverlayPointer {
     }
     & $e2eStep {
         $shown = Test-E2eTooltipUp
-        if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs $script:E2eTooltipGoneMs)) { throw "a tooltip of the macropad's still showed $($script:E2eTooltipGoneMs) ms after the overlay was seen hidden, Fn let go and the pointer put back (the tooltip must go with the overlay); the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
+        $clock = [System.Diagnostics.Stopwatch]::StartNew()
+        $gone = Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs $script:E2eTooltipGoneMs
+        # Said whether the case passes or fails, as the NextWindow cases say theirs: how long a tooltip took to go.
+        Write-Host (Format-E2eOverlayTooltipTime $script:E2eRun.Case $shown $(if ($gone) { $clock.ElapsedMilliseconds }) $script:E2eTooltipGoneMs)
+        if (-not $gone) { throw "a tooltip of the macropad's still showed $($script:E2eTooltipGoneMs) ms after the overlay was seen hidden, Fn let go and the pointer put back (the tooltip must go with the overlay); the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
         if ($shown) { Wait-ScreenChange -Observed }
     }
     if ($e2eFailure) {

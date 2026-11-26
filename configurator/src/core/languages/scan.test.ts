@@ -110,14 +110,17 @@ describe('shared library', () => {
   const load = () => scanCommands(memoryFolderFromRepo(['ahk/commands', 'powershell/commands']))
 
   it('has every command in both languages', async () => {
-    const catalog = commandCatalog(await load())
+    const files = await load()
+    const catalog = commandCatalog(files)
     expect(catalog.length).toBeGreaterThan(100)
     const missing = catalog.filter((e) => !e.in.ahk || !e.in.ps).map((e) => e.name)
     expect(missing).toEqual([])
     expect(catalog.every((e) => e.group === 'shared')).toBe(true)
-    expect(catalog.find((e) => e.name === 'ChromeNewTab')?.description).toBe(
-      'Opens a new tab in Google Chrome.',
-    )
+    // The description is the one the AutoHotkey file gives, as its parser reads it.
+    const chrome = files.find((f) => f.file.path === 'ahk/commands/custom/chrome.ahk')!
+    const description = LANGUAGES.ahk.findFunctions(chrome.file.text).find((f) => f.name === 'ChromeNewTab')!.description
+    expect(description).not.toBe('')
+    expect(catalog.find((e) => e.name === 'ChromeNewTab')?.description).toBe(description)
   })
 
   it('counts helpers like the validator', async () => {

@@ -269,7 +269,10 @@ describe('Macros tab', () => {
     const macro = ws().slots.k1.macros.k5
     expect(macro.action).toBe('OpenYoutube')
     expect(macro.name).toBe('Youtube')
-    expect(macro.description).toBe('Opens YouTube in Google Chrome.')
+    // The description chrome.ahk gives the command, as the app's parser reads the file.
+    const description = LANGUAGES.ahk.findFunctions(readRepoText('ahk/commands/custom/chrome.ahk')).find((f) => f.name === 'OpenYoutube')!.description
+    expect(description).not.toBe('')
+    expect(macro.description).toBe(description)
     expect(grid().getByText('Youtube')).toBeTruthy()
   })
 })

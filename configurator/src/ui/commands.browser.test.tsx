@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { at as pointOn, carry, checked, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, rest, startApp, strip, viewport, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
+import { LANGUAGES } from '../core/languages'
 import { HOVER_TIME } from './code/hoverDocs'
 import { GAP, GRACE } from './DocHover'
 
@@ -704,13 +705,39 @@ const NO_CARD = 2 * HOVER_TIME + 100
 /** How long to rest to show that the list's card stays: past the grace after which a card left behind goes. */
 const CARD_STAYS = 2 * GRACE + 100
 
+/**
+ * The lines of a tool `name` whose docs the test writes: `summary` and thirty examples. An example is a
+ * label and a box with padding around its line, 55 px of the card with the fonts of the PC this was
+ * written on, where the docs come to some 2,000 px: more than six times the short windows of these tests
+ * (300 px and less), so other fonts leave them far taller still than the window, and expectTall fails out
+ * loud below twice. No docs that ship are in it, so no help text decides a test that needs a tall card.
+ */
+const tallTool = (name: string, summary: string) => [
+  '/**',
+  ` * ${summary}`,
+  ...Array.from({ length: 30 }, (_, i) => ` * @example ${name}(${i})`),
+  ' */',
+  `${name}(A)`,
+  '{',
+  '}',
+]
+
+/** Fails out loud when what `scroller` holds, the docs of a card of tallTool, is not at least twice the window's height. */
+function expectTall(scroller: HTMLElement): void {
+  expect(scroller.scrollHeight, 'the written card is no longer far taller than the window').toBeGreaterThanOrEqual(2 * window.innerHeight)
+}
+
 describe('Commands tab: docs on hover', () => {
   it('shows the docs of an AutoHotkey helper under the pointer', async () => {
     await start()
     await openFile('windows')
     await hover(await wordPoint('ActivateOrOpen'))
     await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen(Window, Program, Args := "")'))
-    expect(card()!.textContent).toContain("Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows.")
+    // The summary helper.ahk gives it, as the app's parser reads the file.
+    const helper = new TextDecoder().decode((await repoFiles())['ahk/commands/helper.ahk'])
+    const summary = LANGUAGES.ahk.findFunctions(helper).find((f) => f.name === 'ActivateOrOpen')!.doc.summary
+    expect(summary).not.toBe('')
+    expect(card()!.textContent).toContain(summary)
     expect(card()!.textContent).toContain('ahk/commands/helper.ahk · line')
   })
 
@@ -844,11 +871,15 @@ describe('Commands tab: docs on hover', () => {
     await viewport(1280, 250)
     await start()
     await openFile('windows')
-    await hover(await wordPoint('ActivateOrOpen'))
-    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen('))
+    // A tool whose docs the test writes, called from a command: its card, of thirty examples, is taller
+    // than the window in any font.
+    replaceAll([...tallTool('Tall', 'A tall tool.'), 'Caller(Macro)', '{', '    Tall(1)', '}', ''].join('\n'))
+    await hover(await pointAt(text().lastIndexOf('Tall(') + 2))
+    await waitFor(() => expect(card()?.textContent).toContain('A tall tool.'))
     const box = card()!
     // CodeMirror sizes the box once React has drawn the card in it.
     await waitFor(() => expect(box.scrollHeight).toBeGreaterThan(box.clientHeight))
+    expectTall(box)
     expect(box.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
     expect(getComputedStyle(box).overflowY).toBe('auto')
     box.scrollTop = box.scrollHeight
@@ -918,13 +949,30 @@ describe('Commands tab: docs on hover', () => {
     expect(Math.abs(tip.getBoundingClientRect().bottom - (document.documentElement.clientHeight - GAP))).toBeLessThanOrEqual(1)
   })
 
-  it('keeps a long card of the list inside a short window, and lets it be scrolled', async () => {
+  /**
+   * In a 300 px window, a shown file of two tools whose docs the test writes (tallTool), the two rows of its
+   * group in the list, next to each other: `Tall` and `Second`, each with a card taller than the window. `row`
+   * is Tall's, scrolled to the middle of the panel. Both cards are tall, so that the card going from one
+   * row to the other changes neither whether it is tall nor whether there is more below: a change of
+   * either would draw the card once more, and that look at where the pointer is would end a grace that a
+   * test of the pointer's path must see run out.
+   */
+  async function tallRows(): Promise<{ row: HTMLElement; other: HTMLElement }> {
     await viewport(1280, 300)
-    const other = await powerShellList()
-    const row = within(other).getByRole('button', { name: /^Set-ControlText\b/ })
+    await start()
+    await openFile('windows')
+    replaceAll([...tallTool('Tall', 'The first tool.'), ...tallTool('Second', 'The second tool.'), ''].join('\n'))
+    const list = screen.getByRole('region', { name: 'Other commands available' })
+    const row = within(list).getByRole('button', { name: /^Tall\b/ })
     row.scrollIntoView({ block: 'center' })
+    return { row, other: within(list).getByRole('button', { name: /^Second\b/ }) }
+  }
+
+  it('keeps a long card of the list inside a short window, and lets it be scrolled', async () => {
+    const { row } = await tallRows()
     await hover(row)
     const tip = await screen.findByRole('tooltip')
+    expectTall(tip.firstElementChild as HTMLElement)
     expect(tip.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
     expect(within(tip).getByText('More below. Scroll the card, or click the row.')).toBeTruthy()
     // The pointer can go from the row onto the card, and the card stays to be scrolled.
@@ -1043,20 +1091,16 @@ describe('Commands tab: docs on hover', () => {
     type Card = 'row' | 'other row' | 'none'
 
     /**
-     * Set-ControlText's card in a 300 px window, taller than the window so that it takes the pointer,
-     * up for its row with the pointer on the row; then the pointer is put on `from`. `tip` is the card
-     * then up: none from elsewhere.
+     * Tall's card (tallRows) in a 300 px window, taller than the window so that it takes the pointer, up
+     * for its row with the pointer on the row; then the pointer is put on `from`. The other row is
+     * Second's, next to it. `tip` is the card then up: none from elsewhere.
      */
     async function startFrom(from: From) {
-      await viewport(1280, 300)
-      const list = await powerShellList()
-      const row = within(list).getByRole('button', { name: /^Set-ControlText\b/ })
-      row.scrollIntoView({ block: 'center' })
-      const item = row.closest('li')!
-      const other = (item.nextElementSibling ?? item.previousElementSibling)!.querySelector('button')!
+      const { row, other } = await tallRows()
       await hover(nav())
       await hover(row)
       const tip = await screen.findByRole('tooltip')
+      expectTall(tip.firstElementChild as HTMLElement)
       await waitFor(() => expect(getComputedStyle(tip).pointerEvents).toBe('auto'))
       const box = tip.getBoundingClientRect()
       const spots: Record<Spot, Point> = {
@@ -1070,7 +1114,7 @@ describe('Commands tab: docs on hover', () => {
         elsewhere: pointOn(nav()),
         'outside the window': { x: -40, y: pointOn(row).y },
       }
-      const names: Record<Exclude<Card, 'none'>, string> = { row: 'Set-ControlText', 'other row': other.querySelector('span')!.textContent! }
+      const names: Record<Exclude<Card, 'none'>, string> = { row: 'The first tool.', 'other row': 'The second tool.' }
       if (from === 'card') await hover(spots.card)
       if (from === 'elsewhere') {
         await hover(spots.elsewhere)
@@ -1186,7 +1230,7 @@ describe('Commands tab: docs on hover', () => {
     })
 
     it('row → the panel scrolls under the resting pointer: the card is never the row\'s that slid away', async () => {
-      const { row, spot } = await startFrom('row')
+      const { row, spot, names } = await startFrom('row')
       const rest = spot('row')
       row.closest('aside')!.scrollBy(0, 3 * row.getBoundingClientRect().height)
       // The row slides up, away from under the resting pointer.
@@ -1195,7 +1239,7 @@ describe('Commands tab: docs on hover', () => {
       // What lies under the pointer now: a row of the list shows its own card, anything else none.
       const under = document.elementFromPoint(rest.x, rest.y)?.closest<HTMLElement>('li > button[aria-expanded]')
       const now = screen.queryByRole('tooltip')
-      expect(now?.textContent ?? '').not.toContain('Set-ControlText')
+      expect(now?.textContent ?? '').not.toContain(names.row)
       if (now) expect(under && now.textContent).toContain(under!.querySelector('span')!.textContent)
     })
 

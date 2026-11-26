@@ -3,7 +3,9 @@ import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { langButton, pairButton, startCommands } from '../../test/commandsTab'
+import { readRepoText } from '../../test/repo'
 import { REFERENCE_GROUPS } from '../core/commands/reference'
+import { LANGUAGES } from '../core/languages'
 
 afterEach(cleanup)
 
@@ -23,7 +25,10 @@ describe('Other commands available', () => {
     // helper.ahk has both documented functions and commands: its group is in each list, open under the first only.
     const helpers = within(other()).getAllByRole('button', { name: /^helper/ })
     expect(helpers.map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
-    expect(within(row('ActivateOrOpen')).getByText("Activates the Window, or opens the Program when no such Window exists. When a matching window is already active, the bottom one comes forward instead, so pressing the key again steps through the program's windows. After starting the Program it waits up to 5 seconds for the Window to appear and activates it; if none appears in that time, nothing is activated.")).toBeTruthy()
+    // Its row shows the summary helper.ahk gives it, as the app's parser reads the file.
+    const summary = LANGUAGES.ahk.findFunctions(readRepoText('ahk/commands/helper.ahk')).find((f) => f.name === 'ActivateOrOpen')!.doc.summary
+    expect(summary).not.toBe('')
+    expect(within(row('ActivateOrOpen')).getByText(summary)).toBeTruthy()
     expect(other().lastElementChild!.textContent).toBe(
       "Everything else AutoHotkey has, such as its A_ variables and directives like #Include, is described at https://www.autohotkey.com/docs/v2/",
     )

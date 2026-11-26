@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { replaceAll, typeAt } from '../../test/codeEditor'
 import { langButton, pairButton, startCommands } from '../../test/commandsTab'
@@ -335,6 +335,62 @@ describe('the floating card, by keyboard and click', () => {
     expect(screen.getByRole('dialog', { name: 'New command file' })).toBeTruthy()
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog', { name: 'New command file' })).toBeNull()
+  })
+
+  it('hides the card for Escape pressed the moment the pointer has brought it up', async () => {
+    // The pointer brings the card up in a render of a pointer move's priority, whose effects React runs in a
+    // later task; a key pressed in between reaches the document at once. So the card must listen for Escape
+    // from the commit that shows it.
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    let pressed = false
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[role="tooltip"]') && !pressed) {
+        pressed = true
+        fireEvent.keyDown(document, { key: 'Escape' })
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      // The pointer comes onto the row as the browser sends it, outside act(): from a timer that runs during
+      // the wait below, as the grace's timer does in the tests above.
+      setTimeout(() => row('ActivateOrOpen').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      await waitFor(() => expect(pressed).toBe(true))
+    } finally {
+      observer.disconnect()
+    }
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('follows its row for a scroll that comes the moment the pointer has brought the card up', async () => {
+    // As above: a scroll in the task between the card's commit and that render's effects (the browser
+    // scrolls when it paints, and React yields for the paint) must move the card with its row.
+    const { user } = await startCommands()
+    await user.click(pairButton('windows'))
+    const target = row('ActivateOrOpen')
+    // jsdom lays nothing out: a window 600 px tall, the panel at its left edge (so the card goes under the
+    // row) and the row 20 px tall at `top`, 100 px down until the list scrolls by 60 px.
+    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(600)
+    let top = 100
+    vi.spyOn(target, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, top, 100, 20))
+    let scrolled = false
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[role="tooltip"]') && !scrolled) {
+        scrolled = true
+        top = 40
+        other().dispatchEvent(new Event('scroll'))
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      setTimeout(() => target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      await waitFor(() => expect(scrolled).toBe(true))
+    } finally {
+      observer.disconnect()
+    }
+    // The card's frame was asked for at the scroll, so it has run by the time this one does.
+    await new Promise((done) => requestAnimationFrame(done))
+    expect(screen.getByRole('tooltip').style.top).toBe('60px')
   })
 
   it('ties only the row whose card shows to the card', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 
 export interface Choice {
   label: string
@@ -65,7 +65,10 @@ export function ConfirmDialog({
     if (focusDialog) dialog.current?.focus()
   }, [focusDialog])
 
-  useEffect(() => {
+  // Escape and the backdrop are listened for from the commit that shows the dialog (layout effects): a
+  // dialog shown outside any event (an update's outcome) has its passive effects run in a later task, and a
+  // key or press in between reaches the window at once.
+  useLayoutEffect(() => {
     if (!onEscape) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onEscape()
@@ -76,7 +79,7 @@ export function ConfirmDialog({
 
   // On the press, not the click: a click that starts in the dialog and ends on the backdrop (a text
   // selection dragged out of it) is the backdrop's too.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!onDismiss) return
     const onPress = (e: PointerEvent) => {
       if (e.target === backdrop.current) onDismiss()

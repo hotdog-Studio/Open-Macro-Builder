@@ -74,9 +74,13 @@ function withoutGoneRows(hover: Hover): Hover {
   return pointer === hover.pointer && focus === hover.focus ? hover : { pointer, focus }
 }
 
-/** Hides every card on Escape while one is up. */
+/**
+ * Hides every card on Escape while one is up, listening from the commit that shows the card (a layout
+ * effect): the pointer brings it up in a render whose passive effects React runs in a later task, and a key
+ * pressed in between reaches the document at once.
+ */
 function useEscape(up: boolean, hide: () => void): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!up) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') hide()
@@ -159,9 +163,13 @@ function place(box: HTMLElement, row: HTMLElement): void {
   box.style.top = `${Math.max(GAP, Math.min(beside ? rect.top : rect.bottom, room))}px`
 }
 
-/** Calls `update` on the next frame after any scroll in the page (the panel's included) or a resize of the window. */
+/**
+ * Calls `update` on the next frame after any scroll in the page (the panel's included) or a resize of the
+ * window, from the commit that shows the card (a layout effect): React yields for the paint before that
+ * render's passive effects, and the paint is where the browser scrolls and resizes.
+ */
 function useFollow(update: () => void): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     let frame = 0
     const soon = () => {
       cancelAnimationFrame(frame)

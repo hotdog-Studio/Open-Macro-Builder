@@ -1180,13 +1180,37 @@ describe('updating', () => {
 
     release()
     await waitFor(() => expect(editor().update?.result?.ok).toBe(true))
-    // Once it has ended, Escape closes what the dialog says, as Close does. The outcome's dialog listens for
-    // Escape from an effect of the render that shows it, in a task of its own that can come after the look
-    // that finds the outcome: an Escape before then does nothing, so the press is part of the wait.
-    await waitFor(() => {
-      fireEvent.keyDown(window, { key: 'Escape' })
-      expect(editor().update).toBeNull()
+    // Once it has ended, Escape closes what the dialog says, as Close does.
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(editor().update).toBeNull()
+  })
+
+  it.each<[string, (close: HTMLElement) => void]>([
+    ['Escape', () => fireEvent.keyDown(window, { key: 'Escape' })],
+    ['a press on the backdrop', (close) => fireEvent.pointerDown(close.closest('dialog')!.parentElement!)],
+  ])('closes the outcome for %s the moment it shows', async (_, dismiss) => {
+    // The outcome is shown when the update ends: outside any event, so React shows it in one task and runs
+    // that render's effects in a later one. A key or a press in between reaches the window's listeners at
+    // once, so the dialog must be listening from the commit that shows it.
+    const { user, dialog } = await reviewed(WORKED)
+    let pressed = false
+    const close = () => [...document.querySelectorAll('button')].find((b) => b.textContent === 'Close')
+    const observer = new MutationObserver(() => {
+      const button = close()
+      if (button && !pressed) {
+        pressed = true
+        dismiss(button)
+      }
     })
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      await user.click(await updateButton(dialog))
+      await waitFor(() => expect(pressed).toBe(true))
+    } finally {
+      observer.disconnect()
+    }
+    expect(editor().update).toBeNull()
+    expect(screen.queryByRole('dialog', DIALOG)).toBeNull()
   })
 
   it('lets no folder open until the outcome is shown, the running macropad looked for', async () => {

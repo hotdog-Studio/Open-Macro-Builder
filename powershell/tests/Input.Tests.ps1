@@ -194,22 +194,79 @@ Describe 'ConvertTo-KeyEvent' {
     }
     It 'keeps the key name on each event' { (ConvertTo-KeyEvent 'LWin+Left')[1].Name | Should -Be 'Left' }
 }
+# Send-Chord hands Windows all the key events of one chord in one injection call (Invoke-KeyInjection, one
+# SendInput), as the AutoHotkey version's Send does: no other input can land among them. Every test here
+# stands in for that call, so nothing is sent to the desktop.
 Describe 'Send-Chord' {
-    It 'sends one event per entry in order' {
-        Mock Send-KeyEvent {}
-        Send-Chord 'LWin+Left'
-        Should -Invoke Send-KeyEvent -Times 4 -Exactly
+    BeforeAll {
+        # A chord's events as they go to the injection: key (hex), down v or up ^, the scan code, and x
+        # for the extended flag.
+        function Format-ChordInput($Inputs) { (@($Inputs) | ForEach-Object { '{0:X2}{1} {2:X2}{3}' -f $_.Vk, ('v', '^')[[int]$_.Up], $_.Scan, ('', 'x')[[int]$_.Extended] }) -join ', ' }
+    }
+    BeforeEach {
+        # The active window has layout 0x111, on which each key's scan code is its key code + 0x100; any
+        # other layout would give 0. Windows takes every event it is given, unless a test says otherwise.
+        $script:Calls = [System.Collections.Generic.List[string]]::new()
+        Mock Get-ForegroundKeyboardLayout { [IntPtr]0x111 }
+        Mock Get-LayoutScanCode { if ($Layout -eq [IntPtr]0x111) { $Vk + 0x100 } else { 0 } }
+        Mock Invoke-KeyInjection { $script:Calls.Add((Format-ChordInput $Inputs)); @($Inputs).Count }
+    }
+    It 'hands Windows every event of a chord in one call: modifiers down in order, the key down and up, modifiers up in reverse' {
+        Send-Chord 'Ctrl+Shift+t'
+        $script:Calls.Count | Should -Be 1
+        $script:Calls[0] | Should -Be '11v 111, 10v 110, 54v 154, 54^ 154, 10^ 110, 11^ 111'
+    }
+    It 'hands Windows a key alone as one call of its down and up' {
+        Send-Chord 'Enter'
+        $script:Calls.Count | Should -Be 1
+        $script:Calls[0] | Should -Be '0Dv 10D, 0D^ 10D'
+    }
+    It 'hands Windows a chord of several modifiers in one call' {
+        Send-Chord 'Ctrl+Shift+LAlt+F5'
+        $script:Calls.Count | Should -Be 1
+        $script:Calls[0] | Should -Be '11v 111, 10v 110, A4v 1A4, 74v 174, 74^ 174, A4^ 1A4, 10^ 110, 11^ 111'
+    }
+    It 'gives the extended flag to the keys that need it, down and up, and to no other' {
+        Send-Chord 'Ctrl+LWin+Left'
+        $script:Calls[0] | Should -Be '11v 111, 5Bv 15Bx, 25v 125x, 25^ 125x, 5B^ 15Bx, 11^ 111'
+        Send-Chord 'Media_Play_Pause'
+        $script:Calls[1] | Should -Be 'B3v 1B3x, B3^ 1B3x'
+    }
+    It 'reads the keyboard layout of the active window once, before anything is sent' {
+        Send-Chord 'Ctrl+Shift+t'
+        Should -Invoke Get-ForegroundKeyboardLayout -Times 1 -Exactly
+    }
+    It 'makes as many calls as chords: two chords are never one call' {
+        Send-Chord 'Ctrl+k'
+        Send-Chord 'z'
+        $script:Calls.Count | Should -Be 2
+        $script:Calls[0] | Should -Be '11v 111, 4Bv 14B, 4B^ 14B, 11^ 111'
+        $script:Calls[1] | Should -Be '5Av 15A, 5A^ 15A'
+    }
+    It 'sends nothing when a key name is unknown' {
+        { Send-Chord 'Ctrl+Bogus' } | Should -Throw "Unknown key name 'Bogus'"
+        Should -Invoke Invoke-KeyInjection -Times 0 -Exactly
+    }
+    It 'fails, naming the chord and both counts, when Windows takes <Taken> of its events' -ForEach @(
+        @{ Taken = 2 }
+        @{ Taken = 0 }
+    ) {
+        $script:TakenCount = $Taken
+        Mock Invoke-KeyInjection { $script:TakenCount }
+        { Send-Chord 'Alt+Tab' } | Should -Throw "Windows took $Taken of the 4 key events of the chord 'Alt+Tab'*"
     }
 }
-Describe 'Send-KeyEvent' {
-    It 'sends the scan code the key has on the keyboard layout of the active window' {
-        # The same layout the key names are read from (Get-ForegroundKeyboardLayout), so vk and scan agree.
+Describe 'Send-Chord: what one call hands Windows' {
+    It 'is each event with the flags and the MPAD tag it had when each event went in a call of its own' {
         Mock Get-ForegroundKeyboardLayout { [IntPtr]0x111 }
-        Mock Get-LayoutScanCode { 0x29 } -ParameterFilter { $Vk -eq 0xDF -and $Layout -eq [IntPtr]0x111 }
-        Mock Get-LayoutScanCode { 0 } -ParameterFilter { -not ($Vk -eq 0xDF -and $Layout -eq [IntPtr]0x111) }
-        Mock Invoke-KeyInjection {}
-        Send-KeyEvent ([pscustomobject]@{ Vk = 0xDF; Up = $true })
-        Should -Invoke Invoke-KeyInjection -Times 1 -Exactly -ParameterFilter { $Vk -eq 0xDF -and $Scan -eq 0x29 -and $Up -and -not $Extended }
+        Mock Get-LayoutScanCode { if ($Layout -eq [IntPtr]0x111) { $Vk + 0x100 } else { 0 } }
+        $inputs = ConvertTo-ChordInput (ConvertTo-KeyEvent 'Ctrl+LWin+Left')
+        # Inject.Describe gives the records Inject.Send hands SendInput (key, scan code, flags, tag), and
+        # sends nothing. One record per event, as the one-event calls of before (Inject.Key) gave them.
+        $together = @([Macropad.Inject]::Describe($inputs))
+        $alone = @(foreach ($k in $inputs) { [Macropad.Inject]::Describe([Macropad.KeyInput[]]@($k)) })
+        ($together -join ' | ') | Should -Be ($alone -join ' | ')
+        ($together -join ' | ') | Should -Be '11 111 0 4D504144 | 5B 15B 1 4D504144 | 25 125 1 4D504144 | 25 125 3 4D504144 | 5B 15B 3 4D504144 | 11 111 2 4D504144'
     }
 }
 Describe 'Get-LayoutScanCode on this PC' {
@@ -219,5 +276,5 @@ Describe 'Get-LayoutScanCode on this PC' {
     }
 }
 Describe 'Send-Click' {
-    It 'rejects unknown buttons' { Mock Send-KeyEvent {}; { Send-Click 1 1 'Nope' } | Should -Throw }
+    It 'rejects unknown buttons' { { Send-Click 1 1 'Nope' } | Should -Throw "Unknown mouse button 'Nope'" }
 }

@@ -115,24 +115,36 @@ function Get-LayoutScanCode {
     try { [int][Macropad.Native]::ScanCode($Vk, $Layout) } catch { -1 }
 }
 
-# A seam for tests: one tagged SendInput (lib/cs/Inject.cs), so the macropad's own hooks ignore it.
-function Invoke-KeyInjection {
-    param([int]$Vk, [int]$Scan, [bool]$Up, [bool]$Extended)
-    [Macropad.Inject]::Key($Vk, $Scan, $Up, $Extended)
+# The key events of a chord (ConvertTo-KeyEvent) as the injection takes them (Macropad.KeyInput, in
+# lib/cs/Inject.cs): each with the extended flag its key needs and its scan code on the keyboard layout
+# of the active window, the one the key names were read from. That layout is read once, before anything
+# is sent.
+function ConvertTo-ChordInput {
+    param([Parameter(Mandatory)][object[]]$Events)
+    $layout = Get-ForegroundKeyboardLayout
+    $inputs = foreach ($e in $Events) {
+        $k = [Macropad.KeyInput]::new()
+        $k.Vk = [int]$e.Vk
+        $k.Scan = Get-LayoutScanCode $e.Vk $layout
+        $k.Up = [bool]$e.Up
+        $k.Extended = Test-ExtendedKey $e.Vk
+        $k
+    }
+    , [Macropad.KeyInput[]]@($inputs)
 }
 
-function Send-KeyEvent {
-    param([Parameter(Mandatory)]$Event)
-    # The scan code comes from the active window's layout, the one the key names were read from.
-    $scan = Get-LayoutScanCode $Event.Vk (Get-ForegroundKeyboardLayout)
-    Invoke-KeyInjection ([int]$Event.Vk) $scan ([bool]$Event.Up) (Test-ExtendedKey $Event.Vk)
+# A seam for tests: one SendInput call with all the events given, each tagged (lib/cs/Inject.cs) so the
+# macropad's own hooks let it through. Returns how many of them Windows took.
+function Invoke-KeyInjection {
+    param([Macropad.KeyInput[]]$Inputs)
+    [Macropad.Inject]::Send($Inputs)
 }
 
 <#
 .SYNOPSIS
 Presses a key combination such as Ctrl+Shift+T.
 .DESCRIPTION
-Holds every key but the last, taps the last, then lets the held keys go in reverse order. One key name alone works too. Every name is checked before anything is pressed, so an unknown name raises an error and sends nothing.
+Holds every key but the last, taps the last, then lets the held keys go in reverse order. One key name alone works too. Every name is checked before anything is pressed, so an unknown name raises an error and sends nothing. All the key presses and releases of the chord go to Windows in one piece, so no other key can come between them. If Windows does not take them all, an error says how many it took.
 .PARAMETER Chord
 Key names joined by '+', for example 'Ctrl+Shift+t' or 'LWin+Left'. Case does not matter, and Shift is pressed only when you name it. The key names are: Ctrl, LCtrl, RCtrl, Alt, LAlt, RAlt, Shift, LShift, RShift, Win, LWin, RWin; Left, Up, Right, Down, Home, End, PgUp, PgDn; Insert, Delete, Tab, Enter, Escape, Space, Backspace; PrintScreen, ScrollLock, CapsLock, NumLock, Pause; Media_Play_Pause, Media_Next, Media_Prev, Media_Stop, Volume_Up, Volume_Down, Volume_Mute; the letters a to z, the digits 0 to 9 and F1 to F24; and the symbol keys \ ' ; = , - . / ` [ ]. A symbol names the key that types that character, without Shift or AltGr, on the keyboard layout of the active window, so on a UK keyboard ' is the key marked ' and @, and ` the key left of 1. When the layout has no such key, or types the character only with Shift or AltGr (as a German keyboard types =), the key a US keyboard has for it is pressed. Any other single character, such as # on a UK keyboard, names the key that types it without Shift or AltGr on that layout; where no key does, the name is unknown. The plus key has no name, because '+' separates the names. Send-Chord sends keyboard keys only and does not click: to click a mouse button, use Send-Click. The button names LButton, RButton, MButton, XButton1 and XButton2 are there for Test-KeyPressed.
 .EXAMPLE
@@ -142,7 +154,14 @@ Send-Chord 'Ctrl+Shift+t'
 #>
 function Send-Chord {
     param([Parameter(Mandatory)][string]$Chord)
-    foreach ($e in (ConvertTo-KeyEvent $Chord)) { Send-KeyEvent $e }
+    # One call with every event, as AutoHotkey's Send makes. With a call for each event and work between
+    # them, a modifier was held for a tenth to a fifth of a second, and a key the person pressed, or any
+    # other input, could land inside the chord.
+    $inputs = ConvertTo-ChordInput (ConvertTo-KeyEvent $Chord)
+    $taken = Invoke-KeyInjection $inputs
+    if ($taken -ne $inputs.Count) {
+        throw "Windows took $taken of the $($inputs.Count) key events of the chord '$Chord', so the chord was not sent whole."
+    }
 }
 
 <#

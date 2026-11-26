@@ -90,17 +90,16 @@ namespace Macropad
             return input;
         }
 
-        // Sends all events in one SendInput call; returns the number of events inserted.
-        public static int Send(KeyInput[] inputs)
+        // The INPUT records for these events, in their order: one per key event, two for a character
+        // beyond the BMP (a surrogate pair).
+        private static INPUT[] Records(KeyInput[] inputs)
         {
-            if (inputs == null || inputs.Length == 0) return 0;
             List<INPUT> list = new List<INPUT>();
             foreach (KeyInput k in inputs)
             {
                 uint up = k.Up ? KEYEVENTF_KEYUP : 0;
                 if (k.Char != 0)
                 {
-                    // Characters beyond the BMP go as a surrogate pair.
                     string text = char.ConvertFromUtf32(k.Char);
                     foreach (char c in text) list.Add(KeyEvent(0, c, KEYEVENTF_UNICODE | up));
                 }
@@ -111,24 +110,47 @@ namespace Macropad
                     list.Add(KeyEvent((ushort)k.Vk, scan, flags));
                 }
             }
-            INPUT[] array = list.ToArray();
+            return list.ToArray();
+        }
+
+        // Sends all events in one SendInput call, so no other input can come between them; returns the
+        // number of records Windows inserted, fewer than given when it did not take them all (0 when the
+        // input was blocked).
+        public static int Send(KeyInput[] inputs)
+        {
+            if (inputs == null || inputs.Length == 0) return 0;
+            INPUT[] array = Records(inputs);
             return (int)SendInput((uint)array.Length, array, Marshal.SizeOf(typeof(INPUT)));
         }
 
-        public static void Key(int vk, bool up, bool extended)
+        // What Send hands SendInput for these events, one line per record: the key, the scan code, the
+        // flags and the tag (dwExtraInfo), in hex. It sends nothing: for tests.
+        public static string[] Describe(KeyInput[] inputs)
         {
-            Key(vk, -1, up, extended);
+            if (inputs == null) return new string[0];
+            List<string> lines = new List<string>();
+            foreach (INPUT r in Records(inputs))
+            {
+                lines.Add(string.Format("{0:X2} {1:X2} {2:X} {3:X}", r.u.ki.wVk, r.u.ki.wScan, r.u.ki.dwFlags, r.u.ki.dwExtraInfo.ToInt64()));
+            }
+            return lines.ToArray();
+        }
+
+        // One key event in a call of its own; returns 1 when Windows took it, 0 when not.
+        public static int Key(int vk, bool up, bool extended)
+        {
+            return Key(vk, -1, up, extended);
         }
 
         // scan: the key's scan code on the target window's layout; -1 for this thread's layout.
-        public static void Key(int vk, int scan, bool up, bool extended)
+        public static int Key(int vk, int scan, bool up, bool extended)
         {
             KeyInput k = new KeyInput();
             k.Vk = vk;
             k.Scan = scan;
             k.Up = up;
             k.Extended = extended;
-            Send(new KeyInput[] { k });
+            return Send(new KeyInput[] { k });
         }
 
         // One tagged mouse event at the current cursor position.

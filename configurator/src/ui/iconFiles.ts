@@ -27,15 +27,16 @@ async function readPicture(folder: FolderAccess, path: string): Promise<Rgba | n
 
 /** The user's templates in img/template for the sizes, as a lookup (a size or state without one is null). */
 export async function loadTemplates(folder: FolderAccess, sizes: readonly string[]): Promise<TemplateLookup> {
-  const found = new Map<string, Rgba>()
-  for (const name of sizes) {
+  const wanted = sizes.flatMap((name) => {
     const size = parseSize(name)
-    if (!size) continue
-    for (const state of STATES) {
-      const picture = await readPicture(folder, `img/template/${stateFile(state, size.w, size.h)}`)
-      if (picture) found.set(`${state}:${name}`, picture)
-    }
-  }
+    return size ? STATES.map((state) => ({ key: `${state}:${name}`, path: `img/template/${stateFile(state, size.w, size.h)}` })) : []
+  })
+  const pictures = await Promise.all(wanted.map((t) => readPicture(folder, t.path)))
+  const found = new Map<string, Rgba>()
+  wanted.forEach((t, i) => {
+    const picture = pictures[i]
+    if (picture) found.set(t.key, picture)
+  })
   return (state, w, h) => found.get(`${state}:${w}x${h}`) ?? null
 }
 
@@ -74,8 +75,18 @@ export interface PlannedFile {
   replaces: boolean
 }
 
-async function planned(folder: FolderAccess, path: string, bytes: Uint8Array): Promise<PlannedFile> {
-  return { path, bytes, replaces: (await readOrNull(folder, path)) !== null }
+/** Whether a file is there; one that cannot be read counts as there, so it is never replaced without asking. */
+async function exists(folder: FolderAccess, path: string): Promise<boolean> {
+  try {
+    return (await folder.readBytes(path)) !== null
+  } catch {
+    return true
+  }
+}
+
+async function planned(folder: FolderAccess, path: string, bytes: Uint8Array | Promise<Uint8Array>): Promise<PlannedFile> {
+  const [data, replaces] = await Promise.all([bytes, exists(folder, path)])
+  return { path, bytes: data, replaces }
 }
 
 /** Encodes the pictures (and text) to write under `dir` and checks which files are already there. */
@@ -85,16 +96,20 @@ export async function planFiles(
   pictures: ReadonlyMap<string, Rgba>,
   extra: { source: Rgba | null; recipe: IconRecipe } | null,
 ): Promise<PlannedFile[]> {
-  const files: PlannedFile[] = []
-  for (const [name, image] of pictures) files.push(await planned(folder, `${dir}/${name}`, await encodePng(image)))
-  if (extra?.source) files.push(await planned(folder, `${dir}/source.png`, await encodePng(extra.source)))
-  if (extra) files.push(await planned(folder, `${dir}/icon.json`, new TextEncoder().encode(writeRecipe(extra.recipe))))
-  return files
+  const files = [...pictures].map(([name, image]) => planned(folder, `${dir}/${name}`, encodePng(image)))
+  if (extra?.source) files.push(planned(folder, `${dir}/source.png`, encodePng(extra.source)))
+  if (extra) files.push(planned(folder, `${dir}/icon.json`, new TextEncoder().encode(writeRecipe(extra.recipe))))
+  return Promise.all(files)
 }
 
-/** Writes the planned files, one after the other. */
+/**
+ * Writes the planned files. A set's layer.png goes last: it is what makes a folder an icon set, so a write that fails
+ * part way never leaves a set the macropads would load with pictures missing.
+ */
 export async function writePlanned(folder: FolderAccess, files: readonly PlannedFile[]): Promise<void> {
-  for (const f of files) await folder.writeBytes(f.path, f.bytes)
+  const isLayer = (f: PlannedFile) => f.path.endsWith('/layer.png')
+  await Promise.all(files.filter((f) => !isLayer(f)).map((f) => folder.writeBytes(f.path, f.bytes)))
+  await Promise.all(files.filter(isLayer).map((f) => folder.writeBytes(f.path, f.bytes)))
 }
 
 /** The text of a file of the folder, or null. */

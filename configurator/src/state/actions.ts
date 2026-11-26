@@ -23,6 +23,7 @@ import {
   type LibraryFile,
 } from '../core/languages'
 import { messageOf, withoutFullStop } from '../core/message'
+import { compareText } from '../core/folder/path'
 import { iconSetNames, scanIcons, type IconIndex } from '../core/iconIndex'
 import { copyExampleConfig, inspectFolder } from '../core/repo'
 import { loadSettings, saveSettings, type Settings } from '../core/settings'
@@ -49,7 +50,7 @@ export interface AppActions {
   /** The Reopen <name> button; must run straight from the click (browsers want a user gesture). */
   reopen(): Promise<void>
   /**
-   * inspectFolder → readTextFile → parseConfig → scanCommands → listIconSets → loadSettings. An empty
+   * inspectFolder → readTextFile → parseConfig → scanCommands → scanIcons → loadSettings. An empty
    * folder offers to set up a fresh copy instead.
    */
   load(folder: FolderAccess): Promise<void>
@@ -236,8 +237,8 @@ async function readSession(folder: FolderAccess, configPath: string, library: Li
 
 /** Every set's folder and files and every empty frame, to tell whether a new reading changed anything. */
 function iconSignature(icons: IconIndex): string {
-  const sets = [...icons.sets.values()].map((s) => `${s.name}>${s.dir}:${[...s.files].sort().join(',')}`)
-  return [...sets.sort(), ...[...icons.empties].sort()].join('\n')
+  const sets = [...icons.sets.values()].map((s) => `${s.name}>${s.dir}:${[...s.files].toSorted(compareText).join(',')}`)
+  return [...sets.toSorted(compareText), ...[...icons.empties].toSorted(compareText)].join('\n')
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { FolderAccess } from '../core/folder/types'
-import type { IconSetEntry } from '../core/iconIndex'
-import { renderSet, type TemplateLookup } from '../core/icons/generate'
+import type { IconIndex, IconSetEntry } from '../core/iconIndex'
+import { renderSet } from '../core/icons/generate'
 import {
   DEFAULT_RECIPE,
   iconSetNameError,
@@ -10,7 +10,7 @@ import {
   type IconRecipe,
 } from '../core/icons/recipe'
 import type { Rgba } from '../core/icons/rgba'
-import { setUsage } from '../core/icons/usage'
+import { padSizes, setUsage } from '../core/icons/usage'
 import { useEditor } from '../state/store'
 import {
   BACKGROUND_SWATCHES,
@@ -25,7 +25,7 @@ import { SizePreview } from './IconPreviews'
 import { decodePicture } from './iconCodec'
 import { loadTemplates, planFiles, readSetDraft, startRecipe } from './iconFiles'
 import { STYLE } from './Panels'
-import { useImageUrls } from './useDiskImage'
+import { useImageUrls, useTemplates } from './useDiskImage'
 import { useIconWrite } from './useIconWrite'
 
 /** The picture the set is drawn from, and whether it is new (so source.png is written). */
@@ -41,23 +41,6 @@ type Where = 'local' | 'shared'
 const NOTHING: ReadonlyMap<string, Rgba> = new Map()
 
 /** The templates of img/template for these sizes, or null until they are read. */
-function useTemplates(folder: FolderAccess, sizes: readonly string[]): TemplateLookup | null {
-  const [loaded, setLoaded] = useState<{ key: string; lookup: TemplateLookup } | null>(null)
-  const key = sizes.join(',')
-  useEffect(() => {
-    let live = true
-    loadTemplates(folder, key.split(',').filter(Boolean))
-      .then((lookup) => {
-        if (live) setLoaded({ key, lookup })
-      })
-      .catch(() => undefined)
-    return () => {
-      live = false
-    }
-  }, [folder, key])
-  return loaded?.key === key ? loaded.lookup : null
-}
-
 /** What an existing set's editor starts from, once its folder is read. */
 type Apply = (picture: Chosen | null, recipe: IconRecipe) => void
 
@@ -135,11 +118,15 @@ function WhereField({ where, onChange }: Readonly<{ where: Where; onChange: (w: 
       <legend className="mb-1 text-[11px] text-zinc-400">Where it goes</legend>
       <label className="flex items-center gap-2 text-zinc-200">
         <input type="radio" name={name} className="accent-sky-500" checked={where === 'local'} onChange={() => onChange('local')} />
-        Yours <code className="font-mono text-[11px] text-zinc-500">local/img</code>
+        <span>
+          Yours <code className="font-mono text-[11px] text-zinc-500">local/img</code>
+        </span>
       </label>
       <label className="mt-1 flex items-center gap-2 text-zinc-200">
         <input type="radio" name={name} className="accent-sky-500" checked={where === 'shared'} onChange={() => onChange('shared')} />
-        Shared <code className="font-mono text-[11px] text-zinc-500">img</code>
+        <span>
+          Shared <code className="font-mono text-[11px] text-zinc-500">img</code>
+        </span>
       </label>
     </fieldset>
   )
@@ -222,6 +209,26 @@ interface EditorProps {
   onSaved: (name: string) => void
 }
 
+/**
+ * Why a new set cannot have this name, or null. A name already used in local/img or img is refused: a set of the
+ * same name in the other folder would hide one of them from the macropads without a word.
+ */
+function newSetNameError(name: string, icons: IconIndex): string | null {
+  const error = iconSetNameError(name)
+  if (error) return error
+  const existing = icons.sets.get(name)
+  return existing ? `There is already an icon set called ${name} in ${existing.dir}; choose it on the left to change it.` : null
+}
+
+/** Tells the store which set has unsaved changes (null: none), and that none has once the editor goes. */
+function useDraftFlag(draft: string | null): void {
+  const { dispatch } = useEditor()
+  useEffect(() => {
+    dispatch({ type: 'icon-draft', draft })
+  }, [dispatch, draft])
+  useEffect(() => () => dispatch({ type: 'icon-draft', draft: null }), [dispatch])
+}
+
 /** The folder a set is written to. */
 function setDir(set: IconSetEntry | null, where: Where, name: string): string {
   if (set) return set.dir
@@ -235,14 +242,21 @@ export function IconSetEditor({ set, version, onSaved }: Readonly<EditorProps>) 
   const [name, setName] = useState(set?.name ?? '')
   const [where, setWhere] = useState<Where>('local')
   const [picture, setPicture] = useState<Chosen | null>(null)
-  const [recipe, setRecipe] = useState<IconRecipe>(DEFAULT_RECIPE)
+  // A new set starts with the key sizes of the pad ticked; an existing one with its own and those where it is used.
+  const [recipe, setRecipe] = useState<IconRecipe>(() => (set ? DEFAULT_RECIPE : { ...DEFAULT_RECIPE, sizes: padSizes(ws) }))
+  // What the recipe was when the set was read (or the editor opened), and whether a picture was chosen since:
+  // a change to either is unsaved work.
+  const [base, setBase] = useState<IconRecipe>(recipe)
+  const [picked, setPicked] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const write = useIconWrite()
 
-  const used = useMemo(() => (set ? setUsage(ws, set.name).sizes : []), [ws, set])
+  const used = useMemo(() => (set ? setUsage(ws, set.name).sizes : padSizes(ws)), [ws, set])
   useStart(folder, set?.dir ?? null, version, used, (p, r) => {
     setPicture(p)
     setRecipe(r)
+    setBase(r)
+    setPicked(false)
   })
 
   const sizes = useMemo(() => normalizeSizes(['1x1', ...recipe.sizes]), [recipe.sizes])
@@ -252,14 +266,18 @@ export function IconSetEditor({ set, version, onSaved }: Readonly<EditorProps>) 
     [picture, recipe, templates],
   )
   const urls = useImageUrls(files)
-  const nameError = set ? null : iconSetNameError(name)
+  const nameError = set ? null : newSetNameError(name, state.icons)
   const dir = setDir(set, where, name)
+  useDraftFlag(picked || JSON.stringify(recipe) !== JSON.stringify(base) ? dir : null)
   const patch = (change: Partial<IconRecipe>) => setRecipe((r) => ({ ...r, ...change }))
 
   const pick = (file: File) => {
     setProblem(null)
     decodePicture(file)
-      .then((image) => setPicture({ image, write: true, label: file.name }))
+      .then((image) => {
+        setPicture({ image, write: true, label: file.name })
+        setPicked(true)
+      })
       .catch((e: unknown) => setProblem(e instanceof Error ? e.message : 'The picture could not be read.'))
   }
 

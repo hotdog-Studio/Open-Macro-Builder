@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { memoryFolderFromRepo, readRepoText } from '../../../test/repo'
 import { definedNames, scanCommands } from '../languages'
 import type { LangId } from '../languages'
-import { listIconSets } from '../repo'
+import { iconSetNames, scanIcons } from '../iconIndex'
 import type { Workspace } from './model'
 import { renameKey, updateLayer } from './ops'
 import { parseConfig } from './parse'
@@ -14,7 +14,7 @@ async function repoContext(languages: LangId[]) {
   const folder = memoryFolderFromRepo(['img', 'ahk/commands', 'powershell/commands'])
   const files = await scanCommands(folder)
   return {
-    iconSets: new Set(await listIconSets(folder)),
+    iconSets: new Set(iconSetNames(await scanIcons(folder))),
     defined: { ahk: definedNames(files, 'ahk'), ps: definedNames(files, 'ps') },
     languages,
   }

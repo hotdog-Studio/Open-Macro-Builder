@@ -1,7 +1,31 @@
 import { useEffect, useState } from 'react'
+import type { FolderAccess } from '../core/folder/types'
+import type { TemplateLookup } from '../core/icons/generate'
+import type { Rgba } from '../core/icons/rgba'
 import { useApp } from '../state/store'
 import { encodePng } from './iconCodec'
-import type { Rgba } from '../core/icons/rgba'
+import { loadTemplates } from './iconFiles'
+
+/**
+ * The folder's own templates (img/template) for the sizes, once read; null while they are being read. The preview
+ * and the written files both draw with them, so what is shown is what is written.
+ */
+export function useTemplates(folder: FolderAccess, sizes: readonly string[]): TemplateLookup | null {
+  const [loaded, setLoaded] = useState<{ key: string; lookup: TemplateLookup } | null>(null)
+  const key = sizes.join(',')
+  useEffect(() => {
+    let live = true
+    loadTemplates(folder, key.split(',').filter(Boolean))
+      .then((lookup) => {
+        if (live) setLoaded({ key, lookup })
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [folder, key])
+  return loaded?.key === key ? loaded.lookup : null
+}
 
 /**
  * A picture of the opened folder as an object URL, read again whenever `version` changes (after the tab wrote

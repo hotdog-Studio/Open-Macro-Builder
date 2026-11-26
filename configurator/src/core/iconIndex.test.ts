@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { memoryFolderFromRepo } from '../../test/repo'
 import { MemoryFolder } from './folder/memory'
 import { emptyImage, iconImage, iconSetNames, scanIcons, STOCK_ICONS } from './iconIndex'
 
@@ -28,6 +29,12 @@ describe('scanIcons', () => {
 
   it('reads the empty key frames of img', async () => {
     expect([...(await scanIcons(folder())).empties].sort()).toEqual(['empty_1x1.png', 'empty_3x1.png'])
+  })
+
+  it('finds the repository icon sets', async () => {
+    const sets = iconSetNames(await scanIcons(memoryFolderFromRepo(['img'])))
+    expect(sets).toContain('media')
+    expect(sets).not.toContain('template')
   })
 
   it('reads a folder with no local/img', async () => {

@@ -1,9 +1,12 @@
 import { useState } from 'react'
+import type { FolderAccess } from '../core/folder/types'
 import { useEditor } from '../state/store'
 import { writePlanned, type PlannedFile } from './iconFiles'
 
 /** Files waiting for an answer to "Replace existing files?". */
 interface Pending {
+  /** The folder the files were planned for. */
+  folder: FolderAccess
   files: PlannedFile[]
   /** Where they go, for the message after. */
   where: string
@@ -43,10 +46,21 @@ export function useIconWrite(): IconWrite {
   }
 
   const commit = async (p: Pending) => {
-    await writePlanned(state.folder, p.files)
-    await actions.rescanIcons()
-    dispatch({ type: 'banner', banner: { text: `Wrote ${p.files.length} files to ${p.where}.`, kind: 'info' } })
     setPending(null)
+    // Another folder opened while the question was up: these files were planned for the one before.
+    if (p.folder !== state.folder) return
+    let listed: boolean
+    try {
+      await writePlanned(p.folder, p.files)
+    } finally {
+      // Read again even after a failure part way, so the lists show what did land.
+      listed = await actions.rescanIcons()
+    }
+    if (!listed) {
+      dispatch({ type: 'banner', banner: { text: `Wrote ${p.files.length} files to ${p.where}, but the icon sets could not be read again; open the folder again to see them.`, kind: 'error' } })
+      return
+    }
+    dispatch({ type: 'banner', banner: { text: `Wrote ${p.files.length} files to ${p.where}.`, kind: 'info' } })
     p.done()
   }
 
@@ -56,7 +70,7 @@ export function useIconWrite(): IconWrite {
     start: (what, where, build, done) =>
       guarded(what, async () => {
         const files = await build()
-        const next = { files, where, done }
+        const next = { folder: state.folder, files, where, done }
         if (files.some((f) => f.replaces)) setPending(next)
         else await commit(next)
       }),

@@ -85,13 +85,20 @@ function pass(src: Float32Array, w: number, h: number, size: number, horizontal:
   const tapsOf = Array.from({ length: size }, (_, i) => taps(i, horizontal ? w : h, size))
   for (let y = 0; y < outH; y++) {
     for (let x = 0; x < outW; x++) {
-      for (const t of tapsOf[horizontal ? x : y]) {
-        const from = (horizontal ? y * w + t.index : t.index * w + x) * 4
-        for (let c = 0; c < 4; c++) out[(y * outW + x) * 4 + c] += src[from + c] * t.weight
-      }
+      // The source pixels on the line through (x, y): along the row when horizontal, else down the column.
+      const from = horizontal ? (index: number) => y * w + index : (index: number) => index * w + x
+      accumulate(out, (y * outW + x) * 4, src, tapsOf[horizontal ? x : y], from)
     }
   }
   return out
+}
+
+/** Adds the weighted source pixels of `list` into the output pixel at `at`. */
+function accumulate(out: Float32Array, at: number, src: Float32Array, list: readonly Tap[], from: (index: number) => number): void {
+  for (const t of list) {
+    const base = from(t.index) * 4
+    for (let c = 0; c < 4; c++) out[at + c] += src[base + c] * t.weight
+  }
 }
 
 function premultiplied(src: Rgba): Float32Array {

@@ -8,7 +8,7 @@ import { ColourField, OUTLINE_SWATCHES, ReplaceDialog, SizePicker } from './Icon
 import { FramePreview } from './IconPreviews'
 import { loadTemplates, planFiles } from './iconFiles'
 import { STYLE } from './Panels'
-import { useImageUrls } from './useDiskImage'
+import { useImageUrls, useTemplates } from './useDiskImage'
 import { useIconWrite } from './useIconWrite'
 
 function framesOf(sizes: readonly string[], outline: string, templates?: TemplateLookup): Map<string, Rgba> {
@@ -30,7 +30,8 @@ export function IconEmptyFrames({ version, onSaved }: Readonly<{ version: number
   const write = useIconWrite()
 
   const chosen = useMemo(() => normalizeSizes(sizes), [sizes])
-  const frames = useMemo(() => framesOf(chosen, outline), [chosen, outline])
+  const templates = useTemplates(folder, chosen)
+  const frames = useMemo(() => framesOf(chosen, outline, templates ?? undefined), [chosen, outline, templates])
   const urls = useImageUrls(frames)
 
   const save = () => {

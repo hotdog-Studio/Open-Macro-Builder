@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { memoryFolderFromRepo } from '../../test/repo'
 import { MemoryFolder } from './folder/memory'
-import { copyExampleConfig, inspectFolder, listIconSets } from './repo'
+import { copyExampleConfig, inspectFolder } from './repo'
 
 describe('inspectFolder', () => {
   it('uses config.json when there is no local copy', async () => {
@@ -62,22 +61,3 @@ describe('copyExampleConfig', () => {
   })
 })
 
-describe('listIconSets', () => {
-  it('lists folders with a layer.png, sorted, without template', async () => {
-    const folder = new MemoryFolder('r', {
-      'img/media/layer.png': 'x',
-      'img/chrome/layer.png': 'x',
-      'img/template/macro.png': 'x',
-      'img/template/layer.png': 'x',
-      'img/empty_1x1.png': 'x',
-      'img/nolayer/macro.png': 'x',
-    })
-    expect(await listIconSets(folder)).toEqual(['chrome', 'media'])
-  })
-
-  it('finds the repository icon sets', async () => {
-    const sets = await listIconSets(memoryFolderFromRepo(['img']))
-    expect(sets).toContain('media')
-    expect(sets).not.toContain('template')
-  })
-})

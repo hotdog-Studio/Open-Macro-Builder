@@ -55,7 +55,7 @@ export function normalizeSizes(sizes: readonly string[]): string[] {
     seen.add(sizeName(size.w, size.h))
     parsed.push(size)
   }
-  return parsed.sort((a, b) => a.h * 100 + a.w - (b.h * 100 + b.w)).map((s) => sizeName(s.w, s.h))
+  return parsed.toSorted((a, b) => a.h * 100 + a.w - (b.h * 100 + b.w)).map((s) => sizeName(s.w, s.h))
 }
 
 /** `#rrggbb` (any case) as a colour, or null. */

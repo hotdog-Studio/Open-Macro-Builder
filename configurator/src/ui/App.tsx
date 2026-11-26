@@ -57,7 +57,8 @@ export function App() {
   const { state, actions } = useApp()
   // An update under way asks too: it stops part-way when the window goes.
   useUnsavedGuard(
-    state.screen === 'edit' && (state.dirty || Object.keys(state.commands.drafts).length > 0 || state.update?.busy === true),
+    state.screen === 'edit' &&
+      (state.dirty || Object.keys(state.commands.drafts).length > 0 || state.iconDraft !== null || state.update?.busy === true),
   )
   // On start: reopen the folder remembered from last time, if any.
   useEffect(() => {

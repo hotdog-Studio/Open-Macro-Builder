@@ -82,7 +82,8 @@ describe('the Icons tab', () => {
       padding: 8,
       background: '#8e8cd8',
       outline: '#000000',
-      sizes: ['1x1'],
+      // A new set starts with the key sizes of the pad ticked (the example has 2x1 Fn and a 1x2 key).
+      sizes: ['1x1', '2x1', '1x2'],
     })
     // The rest of the app sees the set at once.
     const list = await screen.findByRole('list', { name: 'Icon sets' })
@@ -94,14 +95,23 @@ describe('the Icons tab', () => {
     const { user, folder } = await openIcons()
     await startNew(user, 'tall')
     await user.click(screen.getByRole('radio', { name: /Shared/ }))
-    await user.click(screen.getByRole('checkbox', { name: /1×2/ }))
+    await user.click(screen.getByRole('checkbox', { name: /2×1/ }))
     await user.click(create())
     await waitFor(async () => expect(await folder.readBytes('img/tall/icon.json')).not.toBeNull())
     for (const f of ['layer_1x2.png', 'macro_1x2.png', 'selected_1x2.png', 'selected_macro_1x2.png', ...FOUR]) {
       expect(await folder.readBytes(`img/tall/${f}`), f).not.toBeNull()
     }
     expect(await folder.readBytes('local/img/tall/layer.png')).toBeNull()
+    expect(await folder.readBytes('img/tall/layer_2x1.png')).toBeNull()
     expect(JSON.parse(folder.text('img/tall/icon.json') ?? '').sizes).toEqual(['1x1', '1x2'])
+  })
+
+  it('refuses the name of a set that already exists, in img or in local/img', async () => {
+    const { user, folder } = await openIcons()
+    await startNew(user, 'chrome')
+    expect(screen.getByText('There is already an icon set called chrome in img/chrome; choose it on the left to change it.')).toBeTruthy()
+    expect((create() as HTMLButtonElement).disabled).toBe(true)
+    expect(await folder.readBytes('local/img/chrome/layer.png')).toBeNull()
   })
 
   it('refuses a name with anything but a to z, 0 to 9 and _', async () => {
@@ -158,6 +168,28 @@ describe('the Icons tab', () => {
     expect(JSON.parse(folder.text('img/chrome/icon.json') ?? '')).toMatchObject({ padding: 0, sizes: expect.arrayContaining(['1x1']) })
     // The recipe is now shown in the right panel, read again after the write.
     expect(await screen.findByText(/"padding": 0/)).toBeTruthy()
+  })
+
+  it('asks before an unsaved icon set is left, for another set or another tab', async () => {
+    const { user } = await openIcons()
+    await startNew(user, 'draft')
+    // Opening a set and looking at it is not unsaved work; a chosen picture is.
+    await user.click(screen.getByRole('button', { name: /^chrome/ }))
+    let dialog = await screen.findByRole('dialog', { name: 'Leave the icon set unsaved?' })
+    expect(within(dialog).getByText('local/img/draft/')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('heading', { name: 'New icon set' })).toBeTruthy()
+
+    await user.click(screen.getByRole('tab', { name: 'Layers' }))
+    dialog = await screen.findByRole('dialog', { name: 'Leave the icon set unsaved?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Leave without saving' }))
+    expect(screen.getByRole('tab', { name: 'Layers' }).getAttribute('aria-selected')).toBe('true')
+
+    // Back on the tab nothing is unsaved: a set opens without a question.
+    await user.click(screen.getByRole('tab', { name: 'Icons' }))
+    await user.click(screen.getByRole('button', { name: /^chrome/ }))
+    expect(await screen.findByRole('heading', { name: 'chrome' })).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('writes empty key frames of the chosen sizes to img', async () => {

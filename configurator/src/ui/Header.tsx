@@ -3,6 +3,7 @@ import { LANG_IDS, LANGUAGES, type LangId } from '../core/languages'
 import { useEditor, type Tab } from '../state/store'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DownloadLink } from './DownloadLink'
+import { LeaveIconSetDialog } from './IconControls'
 
 const TABS: [Tab, string][] = [
   ['start', 'Get started'],
@@ -17,11 +18,25 @@ export function Header() {
   const { state, dispatch, actions, platform } = useEditor()
   const running = state.settings.languages
   const [confirmOpen, setConfirmOpen] = useState(false)
-  // config.json first, then each command file with unsaved edits, in list order.
+  // A tab to go to once the unsaved icon set is given up; null when nothing asks.
+  const [leaveTo, setLeaveTo] = useState<Tab | null>(null)
+  // config.json first, then each command file with unsaved edits, in list order, then the icon set being drawn.
   const unsaved = [
     ...(state.dirty ? [state.configFile.path] : []),
     ...state.commandFiles.map((f) => f.file.path).filter((path) => path in state.commands.drafts),
+    ...(state.iconDraft === null ? [] : [`${state.iconDraft}/`]),
   ]
+
+  // The Icons tab keeps an icon set being drawn only while it is shown: leaving it asks first.
+  const goTo = (tab: Tab) => {
+    if (state.tab === 'icons' && tab !== 'icons' && state.iconDraft !== null) setLeaveTo(tab)
+    else dispatch({ type: 'tab', tab })
+  }
+  const leave = (tab: Tab) => {
+    setLeaveTo(null)
+    dispatch({ type: 'icon-draft', draft: null })
+    dispatch({ type: 'tab', tab })
+  }
 
   // Runs straight from a click: the browser's folder picker needs a user gesture.
   const openFolder = () => {
@@ -49,7 +64,7 @@ export function Header() {
             className={`rounded-md px-3 py-1.5 ${
               state.tab === tab ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-200'
             }`}
-            onClick={() => dispatch({ type: 'tab', tab })}
+            onClick={() => goTo(tab)}
           >
             {label}
           </button>
@@ -95,6 +110,9 @@ export function Header() {
         {state.dirty && <span data-dot aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-300" />}
         Save config.json
       </button>
+      {leaveTo !== null && state.iconDraft !== null && (
+        <LeaveIconSetDialog dir={state.iconDraft} onCancel={() => setLeaveTo(null)} onLeave={() => leave(leaveTo)} />
+      )}
       {confirmOpen && (
         <ConfirmDialog
           title="Discard unsaved changes?"

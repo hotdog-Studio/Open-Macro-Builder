@@ -1,5 +1,4 @@
 import type { FolderAccess } from './folder/types'
-import { iconSetNames, scanIcons } from './iconIndex'
 
 export type RepoInfo = { ok: true; configPath: 'local/config.json' | 'config.json' } | { ok: false; empty: boolean; reason: string }
 
@@ -30,9 +29,4 @@ export async function copyExampleConfig(folder: FolderAccess): Promise<void> {
   const example = await folder.readBytes(EXAMPLE_CONFIG)
   if (example === null) throw new Error(`${EXAMPLE_CONFIG} is missing.`)
   await folder.writeBytes(PERSONAL_CONFIG, example)
-}
-
-/** The icon sets a layer can use: local/img/<name> and img/<name> folders with a layer.png, sorted, without the template. */
-export async function listIconSets(folder: FolderAccess): Promise<string[]> {
-  return iconSetNames(await scanIcons(folder))
 }

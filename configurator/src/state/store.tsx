@@ -138,6 +138,8 @@ export interface EditCore extends Session {
   commands: CommandsView
   /** The update the bar offers; null when there is nothing new, or after Not now or Close until the folder opens again. */
   update: UpdateOffer | null
+  /** The folder of the icon set the Icons tab has unsaved changes to (`local/img/<name>` or `img/<name>`); null when none. */
+  iconDraft: string | null
 }
 
 /** The editor as components see it. */
@@ -186,6 +188,8 @@ export type Action =
   | { type: 'update'; update: UpdateOffer | null }
   /** The icon sets listed again (after an update of the scripts). */
   | { type: 'icon-sets'; iconSets: string[]; icons: IconIndex }
+  /** The Icons tab's editor has unsaved changes to the set in this folder, or none (null). */
+  | { type: 'icon-draft'; draft: string | null }
   | CommandAction
 
 export const initialState: StoredState = { screen: 'open', message: null, reopen: null }
@@ -204,6 +208,7 @@ function loadedState(session: Session, settings: Settings, tab: Tab = 'shape'): 
     outsideChange: null,
     commands: initialCommands(settings),
     update: null,
+    iconDraft: null,
   }
 }
 
@@ -260,6 +265,8 @@ function editReducer(state: EditCore, action: Action): EditCore {
       return { ...state, update: action.update }
     case 'icon-sets':
       return { ...state, iconSets: action.iconSets, icons: action.icons }
+    case 'icon-draft':
+      return state.iconDraft === action.draft ? state : { ...state, iconDraft: action.draft }
     case 'commands-show':
     case 'draft':
     case 'command-saved':

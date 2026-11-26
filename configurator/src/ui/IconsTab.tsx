@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { IconSetEntry } from '../core/iconIndex'
 import { setUsage, type SetUsage } from '../core/icons/usage'
 import { useEditor } from '../state/store'
+import { LeaveIconSetDialog } from './IconControls'
 import { IconEmptyFrames } from './IconEmptyFrames'
 import { IconSetEditor } from './IconSetEditor'
 import { readText } from './iconFiles'
@@ -136,7 +137,16 @@ function Details({ sel, entry, version }: Readonly<{ sel: Selection; entry: Icon
 /** The Icons tab: icon sets drawn from one picture for any key size, and the empty key frames. */
 export function IconsTab() {
   const { state } = useEditor()
+  const { dispatch } = useEditor()
   const [sel, setSel] = useState<Selection>({ kind: 'none' })
+  // A choice in the list that waits for an answer about the unsaved icon set; null when nothing asks.
+  const [asking, setAsking] = useState<Selection | null>(null)
+  const select = (next: Selection) => (state.iconDraft === null ? setSel(next) : setAsking(next))
+  const leave = (next: Selection) => {
+    setAsking(null)
+    dispatch({ type: 'icon-draft', draft: null })
+    setSel(next)
+  }
   // Bumped after every write: what the tab shows from the disk is then read again.
   const [version, setVersion] = useState(0)
   const entry = sel.kind === 'set' ? state.icons.sets.get(sel.name) : undefined
@@ -147,7 +157,7 @@ export function IconsTab() {
   return (
     <>
       <LeftPanel>
-        <SetList sel={sel} version={version} onSelect={setSel} />
+        <SetList sel={sel} version={version} onSelect={select} />
       </LeftPanel>
       <CentrePanel>
         {sel.kind === 'none' && <p className="text-zinc-400">Choose an icon set to redraw it, or make a new one.</p>}
@@ -158,6 +168,9 @@ export function IconsTab() {
       <RightPanel preview={false}>
         <Details sel={sel} entry={entry} version={version} />
       </RightPanel>
+      {asking !== null && state.iconDraft !== null && (
+        <LeaveIconSetDialog dir={state.iconDraft} onCancel={() => setAsking(null)} onLeave={() => leave(asking)} />
+      )}
     </>
   )
 }

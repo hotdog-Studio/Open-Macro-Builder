@@ -173,6 +173,17 @@ export function SizePicker({
 }
 
 /** Asks before files that are already there are replaced. */
+/** Asks before the icon set being drawn is given up: its changes are not written anywhere until it is saved. */
+export function LeaveIconSetDialog({ dir, onCancel, onLeave }: Readonly<{ dir: string; onCancel: () => void; onLeave: () => void }>) {
+  return (
+    <ConfirmDialog title="Leave the icon set unsaved?" onCancel={onCancel} choices={[{ label: 'Leave without saving', danger: true, onChoose: onLeave }]}>
+      <p>
+        Your changes to <code className="font-mono">{dir}/</code> are not saved, and are lost if you leave.
+      </p>
+    </ConfirmDialog>
+  )
+}
+
 export function ReplaceDialog({
   files,
   onCancel,

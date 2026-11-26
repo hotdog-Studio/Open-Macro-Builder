@@ -45,12 +45,27 @@ describe('checkNewFile', () => {
   })
 
   it('refuses a file that already exists, ignoring case', () => {
-    expect(checkNewFile(files, 'Mine', 'yours', ['ps', 'ahk'])).toBe('local/ahk/Mine.ahk already exists.')
-    expect(checkNewFile(files, 'chrome', 'shared', ['ahk', 'ps'])).toBe('powershell/commands/custom/chrome.ps1 already exists.')
+    expect(checkNewFile(files, 'Mine', 'yours', ['ahk'])).toBe('local/ahk/Mine.ahk already exists.')
+    expect(checkNewFile(files, 'chrome', 'shared', ['ps'])).toBe('powershell/commands/custom/chrome.ps1 already exists.')
+  })
+
+  it('lets a name through when only some of the chosen languages have the file', () => {
+    const half = [held('local/ahk/x.ahk')]
+    expect(checkNewFile(half, 'x', 'yours', ['ahk', 'ps'])).toBeNull()
+    expect(checkNewFile(half, 'x', 'yours', ['ps', 'ahk'])).toBeNull()
+    expect(checkNewFile(files, 'Mine', 'yours', ['ps', 'ahk'])).toBeNull()
+  })
+
+  it('still refuses a name every chosen language has', () => {
+    const both = [held('local/ahk/x.ahk'), held('local/powershell/commands/x.ps1')]
+    expect(checkNewFile(both, 'x', 'yours', ['ahk', 'ps'])).toBe('local/ahk/x.ahk already exists.')
+    expect(checkNewFile(both, 'X', 'yours', ['ps', 'ahk'])).toBe('local/powershell/commands/X.ps1 already exists.')
   })
 
   it('refuses the name of the include hub', () => {
     expect(checkNewFile(files, 'commands', 'yours', ['ahk'])).toBe('local/ahk/commands.ahk already exists.')
     expect(checkNewFile(files, 'commands', 'yours', ['ps'])).toBeNull()
+    // Not a half-made pair either: the hub is refused whatever else is chosen.
+    expect(checkNewFile(files, 'commands', 'yours', ['ahk', 'ps'])).toBe('local/ahk/commands.ahk already exists.')
   })
 })

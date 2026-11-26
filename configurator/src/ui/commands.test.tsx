@@ -1573,6 +1573,90 @@ describe('new and deleted files', () => {
     expect(editor().commandFiles.some((f) => f.file.path === 'local/ahk/new.ahk')).toBe(true)
   })
 
+  describe('New file tried again after a language failed', () => {
+    const NEW_AHK = 'local/ahk/new.ahk'
+    const NEW_PS = 'local/powershell/commands/new.ps1'
+
+    /** Makes writing the listed paths fail while `locked` holds them. */
+    function lock(folder: MemoryFolder, paths: string[]) {
+      const write = folder.writeBytes.bind(folder)
+      const state = { locked: true }
+      folder.writeBytes = async (path, data) => {
+        if (state.locked && paths.includes(path)) throw new Error('the disk is full')
+        return write(path, data)
+      }
+      return state
+    }
+
+    async function create(user: User, name: string) {
+      const dialog = await newFile(user, name)
+      await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+      return dialog
+    }
+
+    it('makes only the missing file when New file is tried again', async () => {
+      const { user, folder } = await start({ files: MINE })
+      const disk = lock(folder, [NEW_PS])
+      const first = await create(user, 'new')
+      expect(await within(first).findByText(`${NEW_PS} was not created: the disk is full`)).toBeTruthy()
+      expect(folder.text(NEW_AHK)).toBe(AHK_STARTER('new'))
+      expect(await folder.readBytes(NEW_PS)).toBeNull()
+      await user.click(within(first).getByRole('button', { name: 'Cancel' }))
+
+      // The person goes on with the file that was made: an unsaved draft is theirs.
+      typeAt(docEnd(), 'New(Macro)\n{\n}\n')
+      const draft = `${AHK_STARTER('new')}New(Macro)\n{\n}\n`
+      disk.locked = false
+      await create(user, 'new')
+      // The dialog closes, which it does only when nothing failed.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(folder.text(NEW_PS)).toBe(PS_STARTER('new'))
+      expect(folder.text(NEW_AHK)).toBe(AHK_STARTER('new'))
+      expect(editor().commands.drafts[NEW_AHK]).toBe(draft)
+      expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
+
+      // Both files are there now: the name is refused.
+      const third = await newFile(user, 'new')
+      await user.click(within(third).getByRole('button', { name: 'Create' }))
+      expect(within(third).getByText(`${NEW_AHK} already exists.`)).toBeTruthy()
+    })
+
+    it('makes the AutoHotkey file when only the PowerShell one exists', async () => {
+      const { user, folder } = await start({ files: MINE })
+      const disk = lock(folder, [NEW_AHK])
+      const first = await create(user, 'new')
+      expect(await within(first).findByText(`${NEW_AHK} was not created: the disk is full`)).toBeTruthy()
+      expect(folder.text(NEW_PS)).toBe(PS_STARTER('new'))
+      expect(await folder.readBytes(NEW_AHK)).toBeNull()
+      await user.click(within(first).getByRole('button', { name: 'Cancel' }))
+
+      disk.locked = false
+      await create(user, 'new')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(folder.text(NEW_AHK)).toBe(AHK_STARTER('new'))
+      expect(folder.text(NEW_PS)).toBe(PS_STARTER('new'))
+      expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
+      expect(pairButton('new').textContent).toContain('AHK 0 · PS 0')
+    })
+
+    it('adds the include line a file made before was left without', async () => {
+      const { user, folder } = await start({ files: MINE })
+      const disk = lock(folder, [HUB, NEW_PS])
+      const first = await create(user, 'new')
+      expect(await within(first).findByText(`${NEW_AHK} was created, but ${HUB} was not updated: the disk is full`)).toBeTruthy()
+      expect(await folder.readBytes(HUB)).toBeNull()
+      await user.click(within(first).getByRole('button', { name: 'Cancel' }))
+
+      disk.locked = false
+      await create(user, 'new')
+      // The dialog closes, which it does only when nothing failed.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(folder.text(NEW_AHK)).toBe(AHK_STARTER('new'))
+      expect(folder.text(NEW_PS)).toBe(PS_STARTER('new'))
+      expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
+    })
+  })
+
   it('refuses a name that already exists', async () => {
     const { user, folder } = await start({ files: MINE })
     let dialog = await newFile(user, '')

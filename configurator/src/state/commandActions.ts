@@ -448,6 +448,22 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     return error
   }
 
+  /**
+   * Makes sure the include file loads the command file at `path`, which exists: a first try of New
+   * file may have made the file and failed on this. Nothing is written when the line is there. Resolves
+   * to null when done, else why not.
+   */
+  async function ensureListed(path: string): Promise<string | null> {
+    const folder = deps.folder()
+    const at = commandFileAt(path)
+    const listPath = at && LANGUAGES[at.lang].listedIn(path)
+    if (!folder || !at || !listPath) return null
+    return addInclude(folder, LANGUAGES[at.lang], listPath, path).then(
+      () => null,
+      (e: unknown) => `${path} exists, but ${listPath} was not updated: ${messageOf(e)}`,
+    )
+  }
+
   /** New file, in each chosen language (see AppActions.createCommandFiles). */
   async function createFiles({ group, name, langs }: Parameters<AppActions['createCommandFiles']>[0]): Promise<string | null> {
     const why = checkNewFile(files.get(), name, group, langs)
@@ -456,7 +472,8 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const made: LangId[] = []
     const create = async (lang: LangId): Promise<void> => {
       const path = newFilePath(lang, group, name)
-      const failed = await createFile(path)
+      // A file a first try made stays as it is (its text, an open draft): only its include line is made sure of.
+      const failed = entry(path) ? await ensureListed(path) : await createFile(path)
       error ??= failed
       if (entry(path)) made.push(lang)
     }

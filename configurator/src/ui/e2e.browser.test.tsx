@@ -4,7 +4,7 @@ import { SETTINGS_PATH } from '../core/settings'
 import { idbHandleStore } from '../platform/browser'
 import { detectPlatform } from '../platform/detect'
 import type { Platform } from '../platform/types'
-import { banner, cell, click, dirty, drag, editableFiles, mount, offset, openTab, padKey, repoFiles, unmount, validatorProblems, ws } from '../../test/browser/harness'
+import { banner, cell, cleanUp, click, dirty, drag, editableFiles, mount, offset, openTab, padKey, repoFiles, unmount, validatorProblems, ws } from '../../test/browser/harness'
 
 // End to end in the browser: the real platform code (platform/browser.ts) over a real folder
 // handle, the folder remembered in the real IndexedDB, and edits made by dragging. The folder is
@@ -122,7 +122,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  unmount()
+  await cleanUp()
   vi.restoreAllMocks()
   if (realPicker) Object.defineProperty(window, 'showDirectoryPicker', realPicker)
   else delete (window as PickerWindow).showDirectoryPicker

@@ -92,6 +92,7 @@ export const dirty = (): boolean => editor().dirty
  * part-way through a test.
  */
 export function mount(platform: Platform, updateSource: UpdateSource | null = null): void {
+  inputOpen = true
   const root = document.createElement('div')
   root.id = 'root'
   document.body.append(root)
@@ -104,17 +105,62 @@ export function mount(platform: Platform, updateSource: UpdateSource | null = nu
   )
 }
 
-/** Takes the app away after a test. */
+/** Takes the app away. Between tests, cleanUp does it once the test's input has ended. */
 export function unmount(): void {
   cleanup()
   seen = undefined
   document.getElementById('root')?.remove()
 }
 
+// ---------------------------------------------------------------- input in flight
+
+/**
+ * The commands that type, click or move the pointer, from when they are sent until they end. Each runs
+ * in the Node side of Vitest, key by key and move by move, and nothing stops it when its test ends
+ * first (a timeout, a failed assertion): its keys would land in the next test's editor. On the
+ * Windows build agent a test once timed out with hundreds of keys still to type, and the four tests
+ * after it failed on them.
+ */
+const inFlight = new Set<Promise<unknown>>()
+
+/**
+ * Whether input may be sent: not from a test's clean-up until the next app is mounted. A test that
+ * timed out goes on running once what it awaited ends, and its next key would otherwise go out too.
+ */
+let inputOpen = true
+
+/** Sends a command that types, clicks or moves the pointer, and keeps it in inFlight until it ends. */
+function input<T>(send: () => PromiseLike<T>): Promise<T> {
+  if (!inputOpen) return Promise.reject(new Error('input sent after its test had ended'))
+  const sent = Promise.resolve(send())
+  inFlight.add(sent)
+  const forget = () => inFlight.delete(sent)
+  void sent.then(forget, forget)
+  return sent
+}
+
+/**
+ * Takes the app away after a test, once every command it sent has ended, whatever way the test
+ * ended: the input of one test never reaches the next. The wait is bounded by the hook's own time
+ * limit (Vitest's 10 s), which no test's input comes near: the longest is 33 keys, under 3 s on the
+ * Windows build agent at the some 80 ms a key in the editor it took there.
+ */
+export async function cleanUp(): Promise<void> {
+  inputOpen = false
+  await Promise.allSettled(inFlight)
+  unmount()
+}
+
 export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
 
-/** A real click, through the browser. */
-export const click = (el: Element) => userEvent.click(el)
+/** A real click, through the browser: in the middle of the element, or where `options` say. */
+export const click = (el: Element, options?: Parameters<typeof userEvent.click>[1]) => input(() => userEvent.click(el, options))
+
+/** Real typing, through the browser, in the syntax of userEvent.keyboard. */
+export const keyboard = (text: string) => input(() => userEvent.keyboard(text))
+
+/** Puts `text` in a field at once, through the browser, as pasting does. */
+export const fill = (el: Element, text: string) => input(() => userEvent.fill(el, text))
 
 /** How startApp opens the app, beyond the tab and the layout. */
 export interface StartHow {
@@ -179,13 +225,15 @@ export const offset = (p: Element | Point, dx: number, dy: number): Point => {
 }
 
 function path(points: Point[], press: boolean, release: boolean, steps: number): Promise<void> {
-  return commands.pointerPath({
-    points,
-    press,
-    release,
-    steps,
-    viewport: { width: window.innerWidth, height: window.innerHeight },
-  })
+  return input(() =>
+    commands.pointerPath({
+      points,
+      press,
+      release,
+      steps,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    }),
+  )
 }
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
@@ -247,11 +295,13 @@ export function carryOn(to: Element | Point, steps = 10): Promise<void> {
 
 /** A drag with one finger on a touch screen: down on `from`, across to `to`, and up. */
 export async function touchDrag(from: Element | Point, to: Element | Point, steps = 10): Promise<void> {
-  await commands.touchPath({
-    points: [point(from), point(to)],
-    steps,
-    viewport: { width: window.innerWidth, height: window.innerHeight },
-  })
+  await input(() =>
+    commands.touchPath({
+      points: [point(from), point(to)],
+      steps,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    }),
+  )
   await afterDrop()
 }
 

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { server } from 'vitest/browser'
-import { carry, cell, click, drag, drop, padKey, startApp, unmount } from '../../test/browser/harness'
+import { carry, cell, cleanUp, click, drag, drop, padKey, startApp } from '../../test/browser/harness'
 
 // Pictures of the pad compared with reference pictures kept beside this file (__screenshots__/):
 // a change in how the grid looks fails here even when every behaviour test still passes.
@@ -12,7 +12,7 @@ import { carry, cell, click, drag, drop, padKey, startApp, unmount } from '../..
 //   npx vitest run --config vitest.browser.config.ts src/ui/visual.browser.test.tsx --update
 const here = describe.skipIf(server.platform !== 'win32')
 
-afterEach(unmount)
+afterEach(cleanUp)
 
 /** The framed grid, once every icon in it has loaded. */
 async function pad(): Promise<HTMLElement> {

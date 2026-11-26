@@ -1,12 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { userEvent } from 'vitest/browser'
-import { at, carried, carry, carryOn, click, dirty, drag, dragNoWait, drop, offset, padKey, startApp, unmount, ws } from '../../test/browser/harness'
+import { at, carried, carry, carryOn, cleanUp, click, dirty, drag, dragNoWait, drop, keyboard, offset, padKey, startApp, ws } from '../../test/browser/harness'
 
 // The example pad on the Layers tab: Media (the start layer) on F13, Programs on F14, Chrome on
 // F15, VS Code on F17, and so on. F16, F21 and F24 have no layer, and nothing is parked.
 
-afterEach(unmount)
+afterEach(cleanUp)
 
 const keys = () => screen.getByRole('list', { name: 'Keys' })
 /** A key by the title of the layer on it. A key with no layer is padKey('F16'). */
@@ -124,7 +123,7 @@ describe('Layers tab: dragging a layer between keys', () => {
   it('Escape during a drag cancels it', async () => {
     await start()
     await carry(layerKey('Programs'), layerKey('Chrome'))
-    await userEvent.keyboard('{Escape}')
+    await keyboard('{Escape}')
     await drop()
     await waitFor(() => expect(layerKey('Programs').style.transform).toBe(''))
     await settle()

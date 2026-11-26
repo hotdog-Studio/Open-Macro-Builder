@@ -1,18 +1,18 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { page } from 'vitest/browser'
 import type { MemoryFolder } from '../core/folder/memory'
 import { fingerprint } from '../core/update/fingerprint'
 import type { KnownReleases } from '../core/update/history'
 import type { UpdateSource } from '../state/updateActions'
-import { click, repoFiles, showMessage, startApp, unmount, type StartHow } from '../../test/browser/harness'
+import { cleanUp, click, keyboard, repoFiles, showMessage, startApp, type StartHow } from '../../test/browser/harness'
 
 // The update's bar and dialog as the page lays them out, in the 1280×900 window of the other suites: a
 // folder of an older release, with thirty icons to replace, two command files the person changed and
 // one they deleted.
 
 afterEach(async () => {
-  unmount()
+  await cleanUp()
   await page.viewport(1280, 900)
 })
 
@@ -151,7 +151,7 @@ describe('the update, at 1280 × 900', () => {
 
   it('closes on Escape as Not now does: the dialog and the bar go', async () => {
     await opened(true)
-    await userEvent.keyboard('{Escape}')
+    await keyboard('{Escape}')
     expect(screen.queryByRole('dialog', DIALOG)).toBeNull()
     expect(screen.queryByRole('button', REVIEW)).toBeNull()
   })
@@ -162,7 +162,7 @@ describe('the update, at 1280 × 900', () => {
     expect(document.activeElement).toBe(dialog)
     const reached = focusesOf()
     // More presses than the dialog has controls (six): the seventh and later would leave it if anything let them.
-    await userEvent.keyboard('{Tab}'.repeat(9))
+    await keyboard('{Tab}'.repeat(9))
     const controls = [
       within(dialog).getByRole('button', REPLACED),
       ...CHANGED.map((path) => within(dialog).getByRole('checkbox', { name: path })),
@@ -181,7 +181,7 @@ describe('the update, at 1280 × 900', () => {
     // An unsaved edit of a command file of your own, which does not keep Update off.
     await click(within(screen.getByRole('navigation', { name: 'Command files' })).getByRole('button', { name: /^mine\b/ }))
     await click(editorEl())
-    await userEvent.keyboard('x')
+    await keyboard('x')
     const dialog = await review(true)
     if (!dialog) throw new Error('no dialog')
     const update = within(dialog).getByRole('button', { name: 'Update' })
@@ -191,7 +191,7 @@ describe('the update, at 1280 × 900', () => {
     expect(within(busy).getByText('Updating the scripts…')).toBeTruthy()
     expect(document.activeElement).toBe(busy)
     const reached = focusesOf()
-    await userEvent.keyboard('{Tab}{Tab}{Tab}{Control>}s{/Control}')
+    await keyboard('{Tab}{Tab}{Tab}{Control>}s{/Control}')
     expect(reached.stop().filter((el) => !busy.contains(el))).toEqual([])
     expect(folder.text(MINE)).toBe(MINE_TEXT)
     release()
@@ -349,7 +349,7 @@ async function clickReaches({ x, y, under }: Spot): Promise<boolean> {
   under.addEventListener('click', note)
   const r = under.getBoundingClientRect()
   // Through the browser, which refuses when another element would take the click at that point.
-  await userEvent.click(under, { position: { x: x - r.left, y: y - r.top } })
+  await click(under, { position: { x: x - r.left, y: y - r.top } })
   under.removeEventListener('click', note)
   return reached
 }

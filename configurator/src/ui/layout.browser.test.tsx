@@ -2,14 +2,14 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, server } from 'vitest/browser'
 import { size } from '../core/config/model'
-import { banner, carry, cell, click, dirty, drag, drop, offset, padKey, repoFiles, startApp, startOpenScreen, unmount, ws } from '../../test/browser/harness'
+import { banner, carry, cell, cleanUp, click, dirty, drag, drop, offset, padKey, repoFiles, startApp, startOpenScreen, ws } from '../../test/browser/harness'
 
 // Dragging when the layout is not the comfortable 1280×900 of the other suites: a small window
 // where the pad has to be scrolled to, a zoomed-in browser, a pad much bigger than the example, and
 // a window that changes size in the middle of a drag.
 
 afterEach(async () => {
-  unmount()
+  await cleanUp()
   await page.viewport(1280, 900)
 })
 

@@ -1,13 +1,12 @@
 import { screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { userEvent } from 'vitest/browser'
 import type { PadKey } from '../core/config/model'
-import { at, banner, carry, carryOn, cell, click, dirty, drag, drop, offset, padKey, startApp, unmount, ws } from '../../test/browser/harness'
+import { at, banner, carry, carryOn, cell, cleanUp, click, dirty, drag, drop, keyboard, offset, padKey, startApp, ws } from '../../test/browser/harness'
 
 // The example pad: F13 to F21 fill rows 1 to 3 of columns 1 to 3, F22 and F23 are 1×2 in column 4,
 // Fn (ScrollLock, 2×1) and F24 are on row 4. The Pad shape tab adds a free row 5 and column 5.
 
-afterEach(unmount)
+afterEach(cleanUp)
 
 /** One column of the grid, and one row with label strips (the example has them on) and without. */
 const COL = 80
@@ -124,7 +123,7 @@ describe('Pad shape tab: moving a key', () => {
   it('Escape during a drag cancels it', async () => {
     await startApp()
     await carry(padKey('F24'), cell(5, 1))
-    await userEvent.keyboard('{Escape}')
+    await keyboard('{Escape}')
     await drop()
     await waitFor(() => expect(padKey('F24').style.transform).toBe(''))
     expect(place('F24')).toMatchObject({ row: 4, col: 3 })

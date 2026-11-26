@@ -1,18 +1,17 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { userEvent } from 'vitest/browser'
-import { banner, click, dirty, drag, padKey, startApp, strip, unmount, ws } from '../../test/browser/harness'
+import { banner, cleanUp, click, dirty, drag, fill, keyboard, padKey, startApp, strip, ws } from '../../test/browser/harness'
 
 // Everything the mouse can drag, done from the keyboard with real key presses: Alt + an arrow key
 // moves or swaps the focused key, Shift + Alt + an arrow key resizes it, and Enter on a command or
 // a parked layer puts it on the selected key.
 
-afterEach(unmount)
+afterEach(cleanUp)
 
 const settle = () => new Promise((done) => setTimeout(done, 150))
-const alt = (arrow: 'Up' | 'Down' | 'Left' | 'Right') => userEvent.keyboard(`{Alt>}{Arrow${arrow}}{/Alt}`)
+const alt = (arrow: 'Up' | 'Down' | 'Left' | 'Right') => keyboard(`{Alt>}{Arrow${arrow}}{/Alt}`)
 const shiftAlt = (arrow: 'Up' | 'Down' | 'Left' | 'Right') =>
-  userEvent.keyboard(`{Shift>}{Alt>}{Arrow${arrow}}{/Alt}{/Shift}`)
+  keyboard(`{Shift>}{Alt>}{Arrow${arrow}}{/Alt}{/Shift}`)
 const focused = () => document.activeElement
 
 const keyOf = (name: string) => {
@@ -95,8 +94,8 @@ describe('Pad shape tab, from the keyboard', () => {
   it('arrow keys without Alt move nothing, and Enter selects the focused key', async () => {
     await startApp()
     padKey('F18').focus()
-    await userEvent.keyboard('{ArrowDown}{ArrowRight}')
-    await userEvent.keyboard('{Enter}')
+    await keyboard('{ArrowDown}{ArrowRight}')
+    await keyboard('{Enter}')
     await waitFor(() => expect(screen.getByRole('heading', { level: 3, name: 'Macro key 6 of 12' })).toBeTruthy())
     expect(keyOf('F18')).toMatchObject({ row: 2, col: 3 })
     expect(dirty()).toBe(false)
@@ -105,10 +104,10 @@ describe('Pad shape tab, from the keyboard', () => {
   it('every key can be reached with Tab', async () => {
     await startApp()
     padKey('ScrollLock').focus()
-    await userEvent.keyboard('{Tab}')
+    await keyboard('{Tab}')
     // After the Fn key comes its resize corner, then the first macro key.
     expect(focused()).toBe(screen.getByRole('button', { name: 'Resize ScrollLock' }))
-    await userEvent.keyboard('{Tab}')
+    await keyboard('{Tab}')
     expect(focused()).toBe(padKey('F13'))
   })
 })
@@ -175,7 +174,7 @@ describe('Layers tab, from the keyboard', () => {
 
     await click(padKey('F16'))
     chip('Chrome').focus()
-    await userEvent.keyboard('{Enter}')
+    await keyboard('{Enter}')
     await waitFor(() => expect(on('k4')).toBe('Chrome'))
     expect(ws().parked).toEqual([])
   })
@@ -186,7 +185,7 @@ describe('Layers tab, from the keyboard', () => {
     await waitFor(() => expect(ws().parked.map((l) => l.title)).toEqual(['Chrome']))
     await click(layerKey('Programs'))
     chip('Chrome').focus()
-    await userEvent.keyboard(' ')
+    await keyboard(' ')
     await waitFor(() => expect(on('k2')).toBe('Chrome'))
     expect(ws().parked.map((l) => l.title)).toEqual(['Programs'])
   })
@@ -196,7 +195,7 @@ describe('Layers tab, from the keyboard', () => {
     await click(screen.getByRole('button', { name: '+ New layer' }))
     await waitFor(() => expect(ws().parked).toHaveLength(1))
     chip('New layer').focus()
-    await userEvent.keyboard('{Enter}')
+    await keyboard('{Enter}')
     await waitFor(() => expect(banner()).toBe('Select a key first, then press Enter on the parked layer to put it there.'))
     expect(ws().parked).toHaveLength(1)
   })
@@ -231,7 +230,7 @@ describe('Macros tab, from the keyboard', () => {
     await startApp('Macros')
     await click(padKey('F16'))
     command('Lock').focus()
-    await userEvent.keyboard('{Enter}')
+    await keyboard('{Enter}')
     await waitFor(() => expect(media().k4).toMatchObject({ action: 'Lock', name: 'Lock' }))
     expect(media().k4?.description).toBe(command('Lock').getAttribute('title'))
     expect(strip('F16')).toBe('Lock')
@@ -243,7 +242,7 @@ describe('Macros tab, from the keyboard', () => {
     await startApp('Macros')
     await click(padKey('F13'))
     command('Hibernate').focus()
-    await userEvent.keyboard(' ')
+    await keyboard(' ')
     await waitFor(() => expect(media().k1?.action).toBe('Hibernate'))
   })
 
@@ -251,13 +250,13 @@ describe('Macros tab, from the keyboard', () => {
     await startApp('Macros')
     const before = media()
     command('Lock').focus()
-    await userEvent.keyboard('{Enter}')
+    await keyboard('{Enter}')
     await waitFor(() => expect(banner()).toBe('Select a key first, then press Enter on a command to put it there.'))
     await click(screen.getByRole('button', { name: 'Dismiss' }))
 
     await click(padKey('ScrollLock'))
     command('Lock').focus()
-    await userEvent.keyboard('{Enter}')
+    await keyboard('{Enter}')
     await waitFor(() => expect(banner()).toBe('Select a key first, then press Enter on a command to put it there.'))
     expect(media()).toEqual(before)
     expect(dirty()).toBe(false)
@@ -267,8 +266,8 @@ describe('Macros tab, from the keyboard', () => {
     await startApp('Macros')
     await click(padKey('F16'))
     const before = media()
-    await userEvent.fill(screen.getByRole('searchbox', { name: 'Search commands' }), 'lock screen ')
-    await userEvent.keyboard('{Enter}')
+    await fill(screen.getByRole('searchbox', { name: 'Search commands' }), 'lock screen ')
+    await keyboard('{Enter}')
     await settle()
     expect(media()).toEqual(before)
   })

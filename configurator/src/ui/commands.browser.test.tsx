@@ -1,8 +1,8 @@
 import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
-import { at as pointOn, carry, click, dirty, drag, drop, hover, hoverPath, openTab, padKey, repoFiles, startApp, strip, unmount, type Point } from '../../test/browser/harness'
+import { page } from 'vitest/browser'
+import { at as pointOn, carry, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, startApp, strip, unmount, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { HOVER_TIME } from './code/hoverDocs'
 import { GRACE } from './DocHover'
@@ -11,7 +11,7 @@ import { GRACE } from './DocHover'
 // takes focus. The example repository has no files of "yours", so every pair is shared. The first
 // pair listed is custom/automation.
 
-afterEach(unmount)
+afterEach(cleanUp)
 
 const MEDIA = 'ahk/commands/media.ahk'
 const POWER = 'ahk/commands/power.ahk'
@@ -27,7 +27,7 @@ const toolbar = () => screen.getByRole('toolbar', { name: 'Command file' })
 const toolbarButton = (name: string) => within(toolbar()).getByRole('button', { name })
 const unsavedMark = (name: string) => within(pairButton(name)).queryByTitle('unsaved changes')
 const outline = () => screen.getByRole('region', { name: 'Commands in this file' })
-const key = (combo: string) => userEvent.keyboard(combo)
+const key = keyboard
 
 /** Shows a pair in AutoHotkey, then puts the caret in the editor. */
 async function openFile(pair: string): Promise<void> {
@@ -1260,7 +1260,7 @@ describe('Commands tab: docs on hover', () => {
         await hoverPath([spot('gap'), spot('card'), spot('elsewhere'), spot('outside the window')])
         await pause(CARD_STAYS)
         expect(screen.getByRole('tooltip')).toBe(tip)
-        await userEvent.keyboard('{Escape}')
+        await keyboard('{Escape}')
         await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
         row.blur()
         row.focus()

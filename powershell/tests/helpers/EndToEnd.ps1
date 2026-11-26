@@ -1688,20 +1688,42 @@ function Stop-E2eMacropad {
     $script:E2eRun.Macropad = $null
 }
 
-# The macropad's visible windows (its overlay while Fn is held, a tooltip of the overlay, a form, a
-# message box).
-function Get-E2eMacropadWindows {
-    param([switch]$Overlay, [switch]$Others, [switch]$Tooltips)
+# What a window of the macropad's is, from its title and its class: 'Tooltip', 'Overlay' or 'Titled'.
+# A tooltip is the common control both macropads show over the overlay, and it has no title, as the
+# overlay has none. AutoHotkey's ToolTip has the control's own class, tooltips_class32; Windows Forms
+# registers its own class for each control, WindowsForms10.<the control's class>.app.<...>, so its ToolTip
+# is WindowsForms10.tooltips_class32.app.0.2d8c349_r8_ad1 as the first run on the agent printed it (what
+# follows .app. is the application's and the build's, so it is matched as any text). The class is read
+# whole: a Windows Forms overlay is WindowsForms10.Window.8.app.<...>, and a class that only contains
+# the word is none of these. The overlay is the one window without a title that is not a tooltip; a
+# form or a message box has a title.
+function Get-E2eWindowKind {
+    param([string]$Title, [string]$Class)
+    if ($Class -match '^(tooltips_class32|WindowsForms10\.tooltips_class32\.app\..+)$') { return 'Tooltip' }
+    if ($Title -eq '') { return 'Overlay' }
+    'Titled'
+}
+
+# The visible windows of the macropad under test, each as its handle, title and class.
+function Get-E2eMacropadWindowInfo {
     $m = $script:E2eRun.Macropad
     if ($null -eq $m) { return , @() }
-    $all = @([Macropad.Native]::GetProcessWindows([int[]]@($m.Process.Id)))
-    # The overlay is the one without a title that is not a tooltip; forms and message boxes have a
-    # title. A tooltip (the common control both macropads show over the overlay: AutoHotkey's ToolTip,
-    # WinForms' ToolTip) has no title either, and may stay up a moment after the overlay hid.
-    if ($Overlay) { return , @($all | Where-Object { [Macropad.WindowApi]::Title($_) -eq '' -and [Macropad.WindowApi]::ClassName($_) -ne 'tooltips_class32' }) }
-    if ($Tooltips) { return , @($all | Where-Object { [Macropad.WindowApi]::ClassName($_) -eq 'tooltips_class32' }) }
-    if ($Others) { return , @($all | Where-Object { [Macropad.WindowApi]::Title($_) -ne '' }) }
-    , $all
+    , @([Macropad.Native]::GetProcessWindows([int[]]@($m.Process.Id)) | ForEach-Object {
+            [pscustomobject]@{ Hwnd = $_; Title = [Macropad.WindowApi]::Title($_); Class = [Macropad.WindowApi]::ClassName($_) }
+        })
+}
+
+# The macropad's visible windows (its overlay while Fn is held, a tooltip of the overlay, a form, a
+# message box), as handles in one list (return , @(...): an empty list is not nothing, and a list of one is
+# still a list). -Overlay: the overlay (not a tooltip); -Tooltips: its tooltips, of either version, which
+# may stay up a moment after the overlay hid; -Others: the windows that have a title.
+function Get-E2eMacropadWindows {
+    param([switch]$Overlay, [switch]$Others, [switch]$Tooltips)
+    $info = Get-E2eMacropadWindowInfo
+    if ($Overlay) { return , @($info | Where-Object { (Get-E2eWindowKind $_.Title $_.Class) -eq 'Overlay' } | ForEach-Object { $_.Hwnd }) }
+    if ($Tooltips) { return , @($info | Where-Object { (Get-E2eWindowKind $_.Title $_.Class) -eq 'Tooltip' } | ForEach-Object { $_.Hwnd }) }
+    if ($Others) { return , @($info | Where-Object { $_.Title -ne '' } | ForEach-Object { $_.Hwnd }) }
+    , @($info | ForEach-Object { $_.Hwnd })
 }
 
 # The macropad's visible windows in words, for a failure message: handle, title, class, and where on

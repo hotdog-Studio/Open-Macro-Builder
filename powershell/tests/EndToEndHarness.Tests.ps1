@@ -813,6 +813,108 @@ Describe 'End-to-end hotkeys and hotstrings: a layout of their own, and the text
     }
 }
 
+# A tooltip of the macropad's is a window of the class tooltips_class32 in AutoHotkey, and of the class
+# WindowsForms10.tooltips_class32.app.<...> in the PowerShell macropad, whose overlay is a Windows Forms
+# form (WindowsForms10.Window.8.app.<...>). The first end-to-end run took the second for no tooltip, and a
+# tooltip that showed for a case that waits for one was not seen. The classes below are as that run's
+# message printed them.
+Describe 'End-to-end windows: what is a tooltip, an overlay and a form of the macropad''s, in either version' {
+    BeforeAll {
+        $script:AhkTooltip = 'tooltips_class32'
+        $script:FormsTooltip = 'WindowsForms10.tooltips_class32.app.0.2d8c349_r8_ad1'
+        $script:FormsOverlay = 'WindowsForms10.Window.8.app.0.2d8c349_r8_ad1'
+    }
+    BeforeEach { $script:E2eRun = [pscustomobject]@{ Macropad = [pscustomobject]@{ Lang = 'ps'; Chunk = 1; Process = [pscustomobject]@{ Id = 1 } } } }
+    AfterEach { $script:E2eRun = $null }
+
+    It 'takes a window of the class <Class> with the title ''<Title>'' for a <Kind>' -ForEach @(
+        @{ Class = 'tooltips_class32'; Title = ''; Kind = 'Tooltip' }
+        @{ Class = 'WindowsForms10.tooltips_class32.app.0.2d8c349_r8_ad1'; Title = ''; Kind = 'Tooltip' }
+        @{ Class = 'WindowsForms10.Window.8.app.0.2d8c349_r8_ad1'; Title = ''; Kind = 'Overlay' }
+        @{ Class = 'AutoHotkeyGUI'; Title = ''; Kind = 'Overlay' }
+        @{ Class = 'WindowsForms10.Window.8.app.0.2d8c349_r8_ad1'; Title = 'Some form'; Kind = 'Titled' }
+        @{ Class = '#32770'; Title = 'Message'; Kind = 'Titled' }
+        @{ Class = 'MyTooltips_class32'; Title = ''; Kind = 'Overlay' }
+        @{ Class = 'WindowsForms10.tooltips_class32'; Title = ''; Kind = 'Overlay' }
+        @{ Class = 'WindowsForms10.Window.8.app.0.tooltips_class32'; Title = ''; Kind = 'Overlay' }
+    ) {
+        Get-E2eWindowKind $Title $Class | Should -BeExactly $Kind
+    }
+
+    # The windows of a macropad that shows its overlay with a tooltip over it and a message box: the
+    # handles are numbers no window has. Get-E2eMacropadWindowInfo is the one place that asks Windows.
+    Context 'Get-E2eMacropadWindows' {
+        BeforeEach {
+            $script:Windows = @{
+                AhkTooltip = [IntPtr]101; AhkOverlay = [IntPtr]102; FormsTooltip = [IntPtr]201; FormsOverlay = [IntPtr]202; Message = [IntPtr]301
+            }
+            $script:Set = @{
+                ahk   = @(
+                    [pscustomobject]@{ Hwnd = $script:Windows.AhkOverlay; Title = ''; Class = 'AutoHotkeyGUI' }
+                    [pscustomobject]@{ Hwnd = $script:Windows.AhkTooltip; Title = ''; Class = $script:AhkTooltip }
+                    [pscustomobject]@{ Hwnd = $script:Windows.Message; Title = 'Message'; Class = '#32770' })
+                forms = @(
+                    [pscustomobject]@{ Hwnd = $script:Windows.FormsOverlay; Title = ''; Class = $script:FormsOverlay }
+                    [pscustomobject]@{ Hwnd = $script:Windows.FormsTooltip; Title = ''; Class = $script:FormsTooltip }
+                    [pscustomobject]@{ Hwnd = $script:Windows.Message; Title = 'Message'; Class = '#32770' })
+            }
+        }
+
+        It 'gives, in the <Version> macropad, the windows <Want> for <Switch>' -ForEach @(
+            @{ Version = 'AutoHotkey'; Set = 'ahk'; Switch = '-Tooltips'; Want = 'AhkTooltip' }
+            @{ Version = 'AutoHotkey'; Set = 'ahk'; Switch = '-Overlay'; Want = 'AhkOverlay' }
+            @{ Version = 'AutoHotkey'; Set = 'ahk'; Switch = '-Others'; Want = 'Message' }
+            @{ Version = 'AutoHotkey'; Set = 'ahk'; Switch = 'no switch'; Want = 'AhkOverlay,AhkTooltip,Message' }
+            @{ Version = 'PowerShell'; Set = 'forms'; Switch = '-Tooltips'; Want = 'FormsTooltip' }
+            @{ Version = 'PowerShell'; Set = 'forms'; Switch = '-Overlay'; Want = 'FormsOverlay' }
+            @{ Version = 'PowerShell'; Set = 'forms'; Switch = '-Others'; Want = 'Message' }
+            @{ Version = 'PowerShell'; Set = 'forms'; Switch = 'no switch'; Want = 'FormsOverlay,FormsTooltip,Message' }
+        ) {
+            $script:Shows = $script:Set[$Set]
+            Mock Get-E2eMacropadWindowInfo { , @($script:Shows) }
+            $got = switch ($Switch) {
+                '-Tooltips' { Get-E2eMacropadWindows -Tooltips }
+                '-Overlay' { Get-E2eMacropadWindows -Overlay }
+                '-Others' { Get-E2eMacropadWindows -Others }
+                default { Get-E2eMacropadWindows }
+            }
+            ($got -is [array]) | Should -BeTrue -Because 'the list comes as one object'
+            ($got -join ',') | Should -BeExactly (($Want -split ',' | ForEach-Object { [string]$script:Windows[$_] }) -join ',')
+        }
+
+        It 'gives no tooltip, and one overlay, while no tooltip shows in the <Version> macropad' -ForEach @(
+            @{ Version = 'AutoHotkey'; Set = 'ahk' }, @{ Version = 'PowerShell'; Set = 'forms' }
+        ) {
+            $script:Shows = @($script:Set[$Set] | Where-Object { $_.Hwnd -notin $script:Windows.AhkTooltip, $script:Windows.FormsTooltip })
+            Mock Get-E2eMacropadWindowInfo { , @($script:Shows) }
+            (Get-E2eMacropadWindows -Tooltips).Count | Should -Be 0
+            (Get-E2eMacropadWindows -Overlay).Count | Should -Be 1
+            Get-E2eTooltip | Should -BeNullOrEmpty
+            Test-E2eTooltipUp | Should -BeFalse
+            ($null -ne (Get-E2eSoleOverlay)) | Should -BeTrue
+        }
+
+        It 'sees the tooltip and still one overlay while a tooltip shows in the <Version> macropad' -ForEach @(
+            @{ Version = 'AutoHotkey'; Set = 'ahk'; Tip = 101 }, @{ Version = 'PowerShell'; Set = 'forms'; Tip = 201 }
+        ) {
+            $script:Shows = $script:Set[$Set]
+            Mock Get-E2eMacropadWindowInfo { , @($script:Shows) }
+            Get-E2eTooltip | Should -Be ([IntPtr]$Tip)
+            Test-E2eTooltipUp | Should -BeTrue
+            (Get-E2eMacropadWindows -Overlay).Count | Should -Be 1 -Because 'a tooltip is not a second overlay'
+        }
+
+        It 'gives empty lists while no macropad runs' {
+            $script:E2eRun.Macropad = $null
+            foreach ($switch in @{}, @{ Tooltips = $true }, @{ Overlay = $true }, @{ Others = $true }) {
+                $list = Get-E2eMacropadWindows @switch
+                ($list -is [array]) | Should -BeTrue
+                $list.Count | Should -Be 0
+            }
+        }
+    }
+}
+
 Describe 'End-to-end waits: the limit is time spent waiting, not the time a look takes' {
     BeforeEach { $script:Looks = 0 }
 

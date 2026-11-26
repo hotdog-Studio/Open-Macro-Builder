@@ -257,6 +257,11 @@ node {
         // WinForms and AutoHotkey, so it needs a Windows agent. -Ci writes JUnit XML and leaves out
         // the Integration-tagged tests, which open windows and send real keys. It runs on every
         // branch, so a branch's tests prove themselves on the agent before it is merged.
+        // The same run measures how much of the PowerShell version's code the suite executes
+        // (powershell/lib, powershell/commands, config.ps1): the console shows a line "Covered N% /
+        // 75%. ... analyzed commands in ... files." (75 is Pester's target; nothing fails on it), and
+        // the JaCoCo file results/pester/coverage.xml is archived. A run that stops early writes no
+        // such file, hence allowEmptyArchive.
         // The agent is a desktop PC that may be off, hence the long wait. Like the end-to-end stage,
         // it can start in a workspace that an earlier build still holds (checkoutIntoWorkspace);
         // what that build left working there is ended by the end-to-end stage's first clean-up.
@@ -268,6 +273,7 @@ node {
                     bat 'powershell -NoProfile -ExecutionPolicy Bypass -File powershell\\tests\\run.ps1 -Ci'
                 }
                 junit testResults: 'results/pester/test-results.xml', skipPublishingChecks: true, allowEmptyResults: true
+                archiveArtifacts artifacts: 'results/pester/coverage.xml', allowEmptyArchive: true
             } finally {
                 cleanWs(notFailBuild: true)
             }

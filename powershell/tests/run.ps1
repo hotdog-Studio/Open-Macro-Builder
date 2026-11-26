@@ -1,7 +1,9 @@
 # Runs the Pester suite, plus the tests for your own commands in local\powershell\tests when that
 # folder exists (git ignores it). -Ci (the Jenkins Windows stage) writes JUnit XML to
 # results/pester/test-results.xml at the repo root and leaves out the Integration tests, which
-# open windows and send real keys. -Integration runs those tests (tag Integration) alone, the
+# open windows and send real keys. -Ci alone also measures code coverage of powershell\lib,
+# powershell\commands (custom ones included) and powershell\config.ps1: Pester prints the figure and
+# writes JaCoCo XML to results/pester/coverage.xml; nothing fails on it. -Integration runs those tests (tag Integration) alone, the
 # end-to-end test still left out: with -Ci its JUnit XML goes to results/pester/integration-results.xml.
 # Like -EndToEnd it takes the screen and the keyboard, and it prints the same photosensitivity
 # warning. -Integration with -EndToEnd is refused: run them apart. The end-to-end test (tag EndToEnd)
@@ -81,6 +83,18 @@ if ($Ci) {
     $c.TestResult.Enabled = $true
     $c.TestResult.OutputFormat = 'JUnitXml'
     $c.TestResult.OutputPath = Join-Path $results $resultFile
+    if (-not $EndToEnd -and -not $Integration) {
+        # The plain -Ci run is the one that measures which of the PowerShell version's code the suite
+        # executes: lib, commands (the built-in and the example custom ones) and config.ps1, not the
+        # tests, their helpers, the C# shim, main.ps1 or tools. The figure goes to the console, the
+        # JaCoCo file to results/pester/coverage.xml (the Jenkins stage archives it). Nothing fails on
+        # it: the run's exit code is the count of failed tests.
+        $c.CodeCoverage.Enabled = $true
+        $c.CodeCoverage.Path = @(@('powershell\lib\*.ps1', 'powershell\commands\*.ps1', 'powershell\commands\custom\*.ps1', 'powershell\config.ps1') | ForEach-Object { Join-Path $root $_ })
+        $c.CodeCoverage.OutputFormat = 'JaCoCo'
+        $c.CodeCoverage.OutputPath = Join-Path $results 'coverage.xml'
+        $c.CodeCoverage.ReportRoot = $root
+    }
 }
 $c.Filter.ExcludeTag = $ExcludeTag
 Invoke-Pester -Configuration $c

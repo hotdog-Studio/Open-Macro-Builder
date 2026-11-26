@@ -136,7 +136,7 @@ Jenkins runs the `Jenkinsfile`:
 2. Installs, lints and unit-tests the configurator on the Linux agent, without the Electron binary.
 3. Runs the browser tests in headless Chromium. The agent needs Chromium's system libraries (`npx playwright install-deps chromium`, once, as root); set the `OMB_SKIP_BROWSER_TESTS` global to skip the stage on an agent without them.
 4. Builds the configurator.
-5. On every branch: runs the Pester suite (`run.ps1 -Ci`) on the Windows agent (`windows-x64`).
+5. On every branch: runs the Pester suite (`run.ps1 -Ci`) on the Windows agent (`windows-x64`). That run also measures how much of the PowerShell version's code (`powershell\lib`, `powershell\commands`, `powershell\config.ps1`) the suite executes: the build's console shows a line `Covered N% / 75%. ... analyzed commands in ... files.` (75 is Pester's default target; nothing fails on it), and the JaCoCo file `results/pester/coverage.xml` is archived with the build. SonarQube cannot read PowerShell, so this figure is not part of its gate.
 6. On every branch: runs the end-to-end test on the Windows agent with a real desktop (`windows-desktop`).
 7. Sends everything to SonarQube, with the coverage of the unit and the browser tests, and waits for the quality gate.
 8. On `develop` only: packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).

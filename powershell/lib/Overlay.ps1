@@ -236,7 +236,10 @@ function Show-Overlay {
 # (TOOLTIPS_Activate in Wine's dlls/comctl32/tooltips.c, as read there; Windows' own control was not
 # read). Whether it takes the tip off a real desktop is what the end-to-end case E2eOverlayIcon checks:
 # it lets Fn go with a tip seen up and the pointer left still, and wants the tip gone within 2.5 s of the
-# overlay being seen hidden, where a tip left to its own 5 s cannot be; it prints which it was. That case
+# overlay being seen hidden, where a tip left to its own 5 s cannot be (the case fails as proving
+# nothing when too much of the 5 s may have passed). That is a proof when the tip came up after the click
+# with the pointer still, as in build #4, where the tip outlived the overlay before this change; when it
+# came only after the case moved the pointer a pixel, it is evidence only. Its line says which. That case
 # sees its tip after the overlay has been hidden before, so it also shows that the switch-on leaves the
 # tooltips working. E2eOverlayLabel does not show it: by build #4's times its click already put the
 # tip away. The switch-on is in the finally, so that however the off ends, the next time the overlay

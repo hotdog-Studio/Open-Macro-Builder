@@ -425,14 +425,27 @@ node {
                 junit testResults: junits, skipPublishingChecks: true, allowEmptyResults: true
             } finally {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the clean-up after the configurator tests failed') {
+                    // What it could not stop is listed again after a moment and fails the step, so that
+                    // this catchError marks the build failed (docs/releasing.md).
                     powershell '''
                         $root = $env:WORKSPACE.TrimEnd([char]92) + [char]92
-                        $left = @(Get-CimInstance Win32_Process | Where-Object {
-                            $_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $_.ExecutablePath -like '*ms-playwright*')
-                        })
+                        $leftBehind = {
+                            @(Get-CimInstance Win32_Process | Where-Object {
+                                $_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $_.ExecutablePath -like '*ms-playwright*')
+                            })
+                        }
+                        $left = @(& $leftBehind)
                         foreach ($p in $left) {
                             Write-Output "stopping $($p.Name) ($($p.ProcessId)), left by the configurator tests: $($p.ExecutablePath)"
                             Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+                        }
+                        if ($left.Count -gt 0) {
+                            Start-Sleep -Seconds 2
+                            $still = @(& $leftBehind)
+                            foreach ($p in $still) {
+                                Write-Output "could not stop $($p.Name) ($($p.ProcessId)), left by the configurator tests: $($p.ExecutablePath)"
+                            }
+                            if ($still.Count -gt 0) { exit 1 }
                         }
                     '''
                 }

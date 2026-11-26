@@ -127,7 +127,11 @@ function cutShort(error: ExecException | null, tooSlow: string): string | null {
 function powershellReason(stderr: string): string {
   const first = stderr.split(/\r?\n/).find((line) => line.trim() !== '')
   if (first === undefined) return 'powershell.exe ended with an error'
-  return first.trim().replace(/\.+$/, '')
+  // Not `.replace(/\.+$/, '')`: that backtracks quadratically on a long run of dots that does not end the line.
+  const reason = first.trim()
+  let end = reason.length
+  while (end > 0 && reason[end - 1] === '.') end--
+  return reason.slice(0, end)
 }
 
 async function checkAhk(root: string, exe: string, exec: Exec, env: NodeJS.ProcessEnv): Promise<SyntaxReport> {

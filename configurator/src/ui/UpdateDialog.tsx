@@ -273,9 +273,7 @@ function PlanView({ plan, picks, app, onTick, onUpdate }: Readonly<PlanViewProps
       )}
       <Unset heading={WOULD_BE_UNSET} commands={lost} languages={state.settings.languages} />
       {app.state === 'loading' && (
-        <p role="status" className="mt-3 text-zinc-400">
-          {CHECKING}
-        </p>
+        <output className="mt-3 block text-zinc-400">{CHECKING}</output>
       )}
       {app.state === 'failed' && <p className="mt-3 text-amber-300">{NOT_READ}</p>}
       {blockers.map((blocker) => (

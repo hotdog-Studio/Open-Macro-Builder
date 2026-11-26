@@ -18,6 +18,10 @@
 # How a wait counts its limit (Wait-E2eCondition), and which waits a run lists at its end as having
 # come close to theirs (Add-E2eSlowWait).
 #
+# What a failed case says of the keyboard and the desktop (Get-E2eFailureState): the key watch's record
+# as one line, on a record made up in the key watch's own form, and how a NextWindow press's Alt+Tab went
+# out (Get-E2eChordTimes).
+#
 # How the test writes its layouts (the example layout's display options, and a second layer for a layout
 # that fills one), and where on the screen it finds a key's label or icon on an overlay drawn from one
 # (ConvertTo-E2eOverlayPoint, handed the rectangles a drawn overlay would have).
@@ -867,5 +871,118 @@ Describe 'End-to-end waits: one that was met close to its limit is noted for the
         Mock Add-E2eSlowWait { }
         Wait-E2eCondition { $false } -TimeoutMs 30 -EveryMs 1 | Should -BeNullOrEmpty
         Should -Invoke Add-E2eSlowWait -Times 0 -Exactly
+    }
+}
+
+# What a failed case says of the keyboard (Get-E2eFailureState): the key watch's record as one line, and
+# how a NextWindow press's Alt+Tab went out. The record here is made up, in the key watch's own form
+# (KeyWatch.Timed): a PowerShell NextWindow press at 2000.0 ms that left the task switcher in front, after
+# the arrange made B and then A active (the activation tapped Alt, tagged MPAD, before the press).
+Describe 'End-to-end account of a failed case: the key watch''s record and the timing of Alt+Tab' {
+    BeforeAll {
+        $T = "`t"
+        $script:Record = @(
+            "front${T}1000.0${T}11${T}AutoHotkeyGUI${T}OMB e2e stand-in: A"
+            "key${T}1500.2${T}down${T}A4${T}4D504144"
+            "key${T}1500.9${T}up${T}A4${T}4D504144"
+            "front${T}1600.0${T}22${T}AutoHotkeyGUI${T}OMB e2e stand-in: B"
+            "front${T}1990.0${T}11${T}AutoHotkeyGUI${T}OMB e2e stand-in: A"
+            "key${T}2000.4${T}down${T}84${T}0"
+            "key${T}2041.0${T}up${T}84${T}0"
+            "key${T}2212.4${T}down${T}A4${T}4D504144"
+            "key${T}2219.8${T}down${T}09${T}4D504144"
+            "key${T}2224.0${T}up${T}09${T}4D504144"
+            "key${T}2228.3${T}up${T}A4${T}4D504144"
+            "front${T}2231.0${T}33${T}XamlExplorerHostIslandWindow${T}Task Switching"
+        )
+        $script:Exes = @{ 11 = 'chrome.exe'; 22 = 'e2eapp.exe' }
+        $script:SincePress = "+0.4 down F21 untagged, +41.0 up F21 untagged, +212.4 down LAlt MPAD, +219.8 down Tab MPAD, +224.0 up Tab MPAD, +228.3 up LAlt MPAD, +231.0 front 'Task Switching' (pid 33, XamlExplorerHostIslandWindow)"
+    }
+
+    It 'gives the keys and the windows that came in front in one line, in the record''s order, in ms from the press' {
+        Format-E2eRecord $script:Record 2000.0 $script:Exes | Should -BeExactly (
+            "-1000.0 front 'OMB e2e stand-in: A' (chrome.exe, AutoHotkeyGUI), -499.8 down LAlt MPAD, -499.1 up LAlt MPAD, " +
+            "-400.0 front 'OMB e2e stand-in: B' (e2eapp.exe, AutoHotkeyGUI), -10.0 front 'OMB e2e stand-in: A' (chrome.exe, AutoHotkeyGUI), $script:SincePress")
+    }
+
+    It 'says what a time means, and counts from the press' {
+        $line = Format-E2eAccountRecord $script:Record 2000.0 $true $true $script:Exes
+        $line | Should -BeLike "  the key watch's record, in the order it got them (ms after the key went down; a key: when the key watch saw it; a window that came in front: when the key watch was told of it, an upper bound): -1000.0 front *"
+        $line | Should -BeLike "*, $script:SincePress"
+    }
+
+    It 'counts from the record''s first line when no key went down (a press time of $null)' {
+        Format-E2eAccountRecord $script:Record $null $true $true $script:Exes |
+            Should -BeLike "  the key watch's record, in the order it got them (ms after the record began, as no key went down; *): +0.0 front 'OMB e2e stand-in: A' (chrome.exe, AutoHotkeyGUI), +500.2 down LAlt MPAD, *, +1231.0 front 'Task Switching' (pid 33, XamlExplorerHostIslandWindow)"
+    }
+
+    It 'says nothing was recorded, with <What>' -ForEach @(
+        @{ What = 'an empty record'; Lines = @(); Press = 2000.0 }
+        @{ What = 'no record at all'; Lines = $null; Press = 2000.0 }
+        @{ What = 'an empty record and no press'; Lines = @(); Press = $null }
+    ) {
+        Format-E2eAccountRecord $Lines $Press $true $false | Should -BeLike "  the key watch's record, in the order it got them (*): nothing"
+    }
+
+    It 'says why no window that came in front is recorded: <Why>' -ForEach @(
+        @{ Why = 'the case does not turn the hook on'; Timed = $false; Says = "*; a key: when the key watch saw it; the only window is the one in front when the record began, as the foreground hook runs only during the cases of NextWindow): -1000.0 front *" }
+        @{ Why = 'the case turns it on and that failed'; Timed = $true; Says = "*; a key: when the key watch saw it; the only window is the one in front when the record began, as the foreground hook, which this case turns on, could not be turned on (said before the case's lines)): -1000.0 front *" }
+    ) {
+        Format-E2eAccountRecord $script:Record 2000.0 $false $Timed $script:Exes | Should -BeLike $Says
+    }
+
+    It 'cuts a long record in the middle, keeping its first ten and its last thirty entries' {
+        $T = "`t"
+        $long = @(foreach ($n in 1..50) { "key${T}$n.0${T}down${T}41${T}0" })
+        $items = @((Format-E2eRecord $long 0.0 -Max 40) -split ', ')
+        $items.Count | Should -Be 41
+        $items[9] | Should -BeExactly '+10.0 down vk41 untagged'
+        $items[10] | Should -BeExactly '... 10 more ...'
+        $items[11] | Should -BeExactly '+21.0 down vk41 untagged'
+        $items[40] | Should -BeExactly '+50.0 down vk41 untagged'
+    }
+
+    It 'names a key with AutoHotkey''s tag by that tag' {
+        ConvertTo-E2eRecordKeyText @('key', '1.0', 'down', '12', 'FFFFFFFFFFFFFFF0') | Should -BeExactly 'down Alt tag FFFFFFFFFFFFFFF0'
+    }
+
+    It 'reads the line the key watch itself writes' {
+        # KeyWatch.Clear writes the window in front as the record's first line; nothing is hooked for it.
+        [OmbE2e.KeyWatch]::Clear()
+        $lines = @([OmbE2e.KeyWatch]::Timed())
+        $lines.Count | Should -Be 1
+        ($lines[0] -split "`t").Count | Should -Be 5
+        Format-E2eRecord $lines ([OmbE2e.KeyWatch]::Now()) | Should -Match "^[+-]\d+\.\d front '.*' \(pid \d+, .*\)$"
+        [OmbE2e.KeyWatch]::WatchFront($true) | Should -BeFalse -Because 'the hook can be turned on only on a key watch that runs'
+    }
+
+    It 'times the command''s Alt+Tab after the press, leaving out the activation''s Alt tap before it' {
+        $times = Get-E2eChordTimes $script:Record 2000.0
+        "$($times.AltDown) $($times.TabDown) $($times.TabUp) $($times.AltUp) $($times.KeyUp)" | Should -BeExactly '212.4 219.8 224 228.3 41'
+        Format-E2eChordTimes $times | Should -BeExactly 'Alt down +212.4, Tab down +219.8, Tab up +224, Alt up +228.3 ms after the key went down (the key went up +41); Alt down to Tab down 7.4, Tab held 4.2, Tab up to Alt up 4.3, Alt held 15.9 ms'
+    }
+
+    It 'says what of the Alt+Tab it did not see' {
+        Format-E2eChordTimes (Get-E2eChordTimes @($script:Record | Select-Object -First 10) 2000.0) |
+            Should -BeExactly 'Alt down +212.4, Tab down +219.8, Tab up +224, Alt up not seen ms after the key went down (the key went up +41); Alt down to Tab down 7.4, Tab held 4.2, Tab up to Alt up -, Alt held - ms'
+        Format-E2eChordTimes (Get-E2eChordTimes @() 2000.0) | Should -BeExactly 'the key watch saw no Alt down of the command after the key went down'
+    }
+
+    It 'reads the case''s own key and Fn with Alt, Ctrl, Shift, Win and Tab' {
+        (@(Get-E2eAccountKeys 9) | ForEach-Object { $_.Name }) -join ', ' | Should -BeExactly "LAlt, RAlt, LCtrl, RCtrl, LShift, RShift, LWin, RWin, Tab, F21 (the case's key), F24 (Fn)"
+        @(Get-E2eAccountKeys 9)[9].Vk | Should -Be 0x84
+    }
+
+    It 'gives the account''s lines, reading only, for a case that pressed nothing' {
+        $ctx = @{ Case = @{ Command = 'E2eStep'; Slot = 3 }; Pressed = $false }
+        $state = Get-E2eFailureState $ctx
+        $lines = @($state -split "`n")
+        $lines[0] | Should -BeExactly 'The state at the failure, read before the clean-up let go of any key:'
+        $lines[1] | Should -BeLike '  keys down, as Windows has them now (GetAsyncKeyState): *'
+        $lines[3] | Should -BeLike '  window in front: now * (no key went down)'
+        $lines[4] | Should -BeLike "  the key watch's record, in the order it got them (ms after the record began, as no key went down; *"
+        $lines[5] | Should -BeLike '  pointer: *,*, over *'
+        $lines[6] | Should -BeLike '  visible windows, top first: *'
+        Get-E2eFailureState $ctx -AfterCleanUp | Should -BeLike '  after the clean-up: in front *; keys down: *'
     }
 }

@@ -8,6 +8,11 @@
 # The keys go through SendInput untagged, as a keyboard's would: not through [Macropad.Inject], whose
 # tag the PowerShell macropad ignores, and not from an AutoHotkey script, whose input AutoHotkey's hook
 # hotkeys ignore.
+#
+# A case that fails also says what the keyboard and the desktop were, read before its clean-up lets go
+# of any key (Get-E2eFailureState): the keys Windows has down, the key watch's record of injected keys
+# (and, in the NextWindow cases, of the windows that came in front), the pointer and the visible windows.
+# The NextWindow cases also print, passed or failed, when their Alt+Tab went out (Get-E2eChordTimes).
 
 if (-not ('OmbE2e.Input' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -80,9 +85,19 @@ namespace OmbE2e
     // them (Win key chords, Print Screen, media keys). It records only injected keys (sent by a
     // program), never what a person types, and while Swallow is on it stops injected keys other than
     // F13 to F24 from reaching Windows, so a chord is seen without being carried out.
+    // For the account of a failed case (Get-E2eFailureState) and the timing of NextWindow
+    // (Get-E2eChordTimes) it also keeps a timed record since the last Clear: every injected key, the
+    // macro keys among them, with its tag; and, while WatchFront is on, every change of the window in
+    // front, from a WinEvent hook on the same thread. Each line has the time on the high-resolution
+    // clock that Now() reads, taken in this thread's callback: for a key, when this hook saw it, before
+    // Windows went on with it; for a window, when this thread was told of it. Windows tells an
+    // out-of-context WinEvent hook later than the change, so that time is an upper bound: the window
+    // came in front then or earlier. Both are taken on this one thread, so the record's order is the
+    // order of those times. Nothing here attaches to another thread's input.
     public static class KeyWatch
     {
         private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
+        private delegate void WinEventProc(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT { public uint vkCode; public uint scanCode; public uint flags; public uint time; public IntPtr dwExtraInfo; }
         [StructLayout(LayoutKind.Sequential)]
@@ -101,12 +116,33 @@ namespace OmbE2e
         private static extern uint GetCurrentThreadId();
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandle(string name);
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventProc proc, uint pid, uint thread, uint flags);
+        [DllImport("user32.dll")]
+        private static extern bool UnhookWinEvent(IntPtr hook);
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int size);
+        // The title as Windows keeps it, without asking the window (GetWindowText would send a window of
+        // this process a message, and this thread must never wait on another).
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int InternalGetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int size);
 
         private static readonly HookProc proc = Callback;
+        private static readonly WinEventProc frontProc = OnFront;
         private static IntPtr hook = IntPtr.Zero;
+        private static volatile IntPtr frontHook = IntPtr.Zero;
         private static uint threadId;
         private static System.Threading.Thread thread;
         private static readonly System.Collections.Generic.List<string> events = new System.Collections.Generic.List<string>();
+        private static readonly System.Collections.Generic.List<string> timed = new System.Collections.Generic.List<string>();
+        private const int TimedMax = 2000;
+        // WM_APP + 9, posted to this thread: wParam 1 sets the WinEvent hook, 0 removes it.
+        private const uint WM_WATCHFRONT = 0x8009;
+        private static readonly System.Threading.AutoResetEvent frontDone = new System.Threading.AutoResetEvent(false);
         public static volatile bool Swallow;
 
         public static bool Start()
@@ -123,7 +159,17 @@ namespace OmbE2e
                     ready.Set();
                     if (!ok) return;
                     MSG msg;
-                    while (GetMessage(out msg, IntPtr.Zero, 0, 0) > 0) { }
+                    while (GetMessage(out msg, IntPtr.Zero, 0, 0) > 0)
+                    {
+                        if (msg.message != WM_WATCHFRONT) continue;
+                        // EVENT_SYSTEM_FOREGROUND, out of context: called on this thread, between its
+                        // messages, so it is set and removed here.
+                        if (msg.wParam != IntPtr.Zero && frontHook == IntPtr.Zero) frontHook = SetWinEventHook(3, 3, IntPtr.Zero, frontProc, 0, 0, 0);
+                        else if (msg.wParam == IntPtr.Zero && frontHook != IntPtr.Zero) { UnhookWinEvent(frontHook); frontHook = IntPtr.Zero; }
+                        frontDone.Set();
+                    }
+                    if (frontHook != IntPtr.Zero) UnhookWinEvent(frontHook);
+                    frontHook = IntPtr.Zero;
                     UnhookWindowsHookEx(hook);
                     hook = IntPtr.Zero;
                 });
@@ -145,7 +191,75 @@ namespace OmbE2e
 
         // The events recorded since the last Clear, as "down|up <vk hex>".
         public static string[] Events() { lock (events) return events.ToArray(); }
-        public static void Clear() { lock (events) events.Clear(); }
+
+        // The timed record since the last Clear, in the order this thread got its lines, one
+        // tab-separated line each (ms: on the clock Now() reads, one decimal):
+        //   key    <ms> <down|up> <vk hex> <dwExtraInfo hex>  an injected key, the macro keys too
+        //   front  <ms> <pid> <class> <title>                 the window in front changed; the first
+        //                                                     line: the one in front at Clear
+        // Neither a class nor a title holds a tab. At most the last TimedMax lines are kept.
+        public static string[] Timed() { lock (events) return timed.ToArray(); }
+
+        // True while the record has the changes of the window in front.
+        public static bool WatchesFront { get { return frontHook != IntPtr.Zero; } }
+
+        // Sets (on) or removes the WinEvent hook that records the changes of the window in front, on the
+        // hook's own thread; true when it is as asked within 2 s. Off by default: the run turns it on
+        // only during the cases of the commands it times (E2eTimedCommands).
+        public static bool WatchFront(bool on)
+        {
+            if (thread == null || hook == IntPtr.Zero) return false;
+            frontDone.Reset();
+            if (!PostThreadMessage(threadId, WM_WATCHFRONT, new IntPtr(on ? 1 : 0), IntPtr.Zero)) return false;
+            if (!frontDone.WaitOne(2000)) return false;
+            return (frontHook != IntPtr.Zero) == on;
+        }
+
+        // The high-resolution clock now, in ms: the clock of the record's times.
+        public static double Now() { return System.Diagnostics.Stopwatch.GetTimestamp() * 1000.0 / System.Diagnostics.Stopwatch.Frequency; }
+
+        public static void Clear()
+        {
+            lock (events)
+            {
+                events.Clear();
+                timed.Clear();
+                AddTimed(FrontLine(GetForegroundWindow(), Now()));
+            }
+        }
+
+        // Under the lock of events.
+        private static void AddTimed(string line)
+        {
+            if (timed.Count >= TimedMax) timed.RemoveAt(0);
+            timed.Add(line);
+        }
+
+        private static string Ms(double ms) { return ms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture); }
+
+        private static string FrontLine(IntPtr hwnd, double seen)
+        {
+            uint pid = 0;
+            System.Text.StringBuilder name = new System.Text.StringBuilder(256);
+            System.Text.StringBuilder title = new System.Text.StringBuilder(256);
+            if (hwnd != IntPtr.Zero)
+            {
+                GetWindowThreadProcessId(hwnd, out pid);
+                GetClassName(hwnd, name, name.Capacity);
+                InternalGetWindowText(hwnd, title, title.Capacity);
+            }
+            return "front\t" + Ms(seen) + "\t" + pid + "\t" + Plain(name.ToString()) + "\t" + Plain(title.ToString());
+        }
+
+        private static string Plain(string text) { return text.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' '); }
+
+        private static void OnFront(IntPtr winEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint eventThread, uint time)
+        {
+            // The clock first: the time this thread was told, before the window is read.
+            double seen = Now();
+            string line = FrontLine(hwnd, seen);
+            lock (events) AddTimed(line);
+        }
 
         private static IntPtr Callback(int nCode, IntPtr wParam, IntPtr lParam)
         {
@@ -155,6 +269,11 @@ namespace OmbE2e
                 bool injected = (k.flags & 0x10) != 0;
                 bool up = (k.flags & 0x80) != 0;
                 bool macroKey = k.vkCode >= 0x7C && k.vkCode <= 0x87;
+                if (injected)
+                {
+                    string line = "key\t" + Ms(Now()) + "\t" + (up ? "up" : "down") + "\t" + k.vkCode.ToString("X2") + "\t" + k.dwExtraInfo.ToInt64().ToString("X");
+                    lock (events) AddTimed(line);
+                }
                 if (injected && !macroKey)
                 {
                     lock (events) events.Add((up ? "up " : "down ") + k.vkCode.ToString("X2"));
@@ -530,6 +649,10 @@ function Invoke-E2eCaseKey {
     }
     if ($why) { throw $why }
     $ctx.Pressed = $true
+    # For the account of a failure (Get-E2eFailureState) and the timing of NextWindow (Get-E2eChordTimes):
+    # the window in front when the key went down, and when, on the key watch's clock.
+    $ctx.PressFront = [Macropad.WindowApi]::Foreground()
+    $ctx.PressMs = [OmbE2e.KeyWatch]::Now()
     Invoke-E2eMacroKey $Slot
 }
 
@@ -2032,13 +2155,209 @@ function Get-E2eSkipReason {
     $null
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The account of a failed case: what the keyboard and the desktop were when it failed, read before the
+# case's clean-up lets go of any key (Clear-E2eHeldKeys) or closes anything, and printed with the
+# failure. A failure says what was wrong; this says what state the machine was in, which a failure that
+# happens only now and then cannot be asked again. It only reads, and it attaches to no other thread's
+# input: an attach resets the key state that thread reads, the very state a task switcher left in front
+# may be waiting on.
+
+# The commands whose cases run with the key watch's foreground hook on, and print, passed or failed, how
+# their Alt+Tab went out (Get-E2eChordTimes). Every other case runs without that hook.
+$script:E2eTimedCommands = @('NextWindow')
+
+# The keys the account reads: Alt, Ctrl, Shift and Win on each side, Tab, the case's own macro key (Slot)
+# and Fn. Pure.
+function Get-E2eAccountKeys {
+    param([int]$Slot)
+    $keys = @(
+        @{ Name = 'LAlt'; Vk = 0xA4 }, @{ Name = 'RAlt'; Vk = 0xA5 }, @{ Name = 'LCtrl'; Vk = 0xA2 }, @{ Name = 'RCtrl'; Vk = 0xA3 },
+        @{ Name = 'LShift'; Vk = 0xA0 }, @{ Name = 'RShift'; Vk = 0xA1 }, @{ Name = 'LWin'; Vk = 0x5B }, @{ Name = 'RWin'; Vk = 0x5C }, @{ Name = 'Tab'; Vk = 0x09 })
+    if ($Slot -gt 0) { $keys += @{ Name = "F$(12 + $Slot) (the case's key)"; Vk = $script:E2eFirstKeyVk + $Slot - 1 } }
+    $keys + @(@{ Name = 'F24 (Fn)'; Vk = $script:E2eFnVk })
+}
+
+# The account's keys that Windows has down now (GetAsyncKeyState), in words: their names, or 'none'.
+function Get-E2eKeysDownText {
+    param([int]$Slot)
+    $down = @(Get-E2eAccountKeys $Slot | Where-Object { ([Macropad.Native]::GetAsyncKeyState($_.Vk) -band 0x8000) -ne 0 } | ForEach-Object { $_.Name })
+    if ($down.Count -gt 0) { $down -join ', ' } else { 'none' }
+}
+
+# One key line of the key watch's record (its fields, split at the tabs) in words: down or up, the key's
+# name and its tag (untagged: the test's own keys, as a keyboard's; MPAD: the PowerShell macropad's, or
+# the harness's activation, which taps Alt with the same tag; another tag: AutoHotkey's own). Pure.
+function ConvertTo-E2eRecordKeyText {
+    param([string[]]$Fields)
+    $names = @{ 0x09 = 'Tab'; 0x0D = 'Enter'; 0x10 = 'Shift'; 0x11 = 'Ctrl'; 0x12 = 'Alt'; 0x1B = 'Escape'; 0x5B = 'LWin'; 0x5C = 'RWin'; 0xA0 = 'LShift'; 0xA1 = 'RShift'; 0xA2 = 'LCtrl'; 0xA3 = 'RCtrl'; 0xA4 = 'LAlt'; 0xA5 = 'RAlt' }
+    $vk = [Convert]::ToInt32($Fields[3], 16)
+    $name = if ($names.ContainsKey($vk)) { $names[$vk] } elseif ($vk -ge 0x7C -and $vk -le 0x87) { "F$($vk - 0x7C + 13)" } else { 'vk{0:X2}' -f $vk }
+    $tag = [Convert]::ToInt64($Fields[4], 16)
+    $who = if ($tag -eq 0) { 'untagged' } elseif ($tag -eq 0x4D504144) { 'MPAD' } else { 'tag {0:X}' -f $tag }
+    "$($Fields[2]) $name $who"
+}
+
+# The key watch's timed record (KeyWatch.Timed lines) as one run of text: every injected key and every
+# window that came in front, in the record's order, each with its time in ms from RefMs on the record's
+# clock (+ after it, - before it). A key: down or up, its name and its tag (ConvertTo-E2eRecordKeyText).
+# A window: its title, its program (Exes: program by process id) and its class. More than Max entries are
+# cut in the middle; 'nothing' when there is none. Pure.
+function Format-E2eRecord {
+    param([string[]]$Lines = @(), [double]$RefMs, [hashtable]$Exes = @{}, [int]$Max = 40)
+    $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    $all = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in @($Lines)) {
+        $f = "$line" -split "`t"
+        if ($f.Count -lt 5 -or $f[0] -notin 'key', 'front') { continue }
+        $at = [math]::Round([double]::Parse($f[1], $culture) - $RefMs, 1)
+        $time = $(if ($at -ge 0) { '+' } else { '-' }) + [math]::Abs($at).ToString('0.0', $culture)
+        if ($f[0] -eq 'key') { $all.Add("$time $(ConvertTo-E2eRecordKeyText $f)"); continue }
+        $exe = $Exes[[int]$f[2]]
+        if (-not $exe) { $exe = "pid $($f[2])" }
+        $all.Add("$time front '$($f[4])' ($exe, $($f[3]))")
+    }
+    $shown = $all.ToArray()
+    if ($shown.Count -gt $Max) {
+        # The first ten (the case's start) and the last ones (up to the failure).
+        $shown = @($shown[0..9]) + @("... $($shown.Count - $Max) more ...") + @($shown[($shown.Count - $Max + 10)..($shown.Count - 1)])
+    }
+    if ($shown.Count -gt 0) { $shown -join ', ' } else { 'nothing' }
+}
+
+# The account's line of the key watch's record (Format-E2eRecord): its times count from the key going down
+# (PressMs), or, when no key went down, from the record's first line. It says what a time means and,
+# unless Watched (the foreground hook was on), why the record has no window that came in front after the
+# one in front when it began: Timed, the case is one that turns the hook on, so turning it on failed.
+# Pure.
+function Format-E2eAccountRecord {
+    param([string[]]$Lines = @(), $PressMs, [bool]$Watched, [bool]$Timed, [hashtable]$Exes = @{})
+    $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    if ($null -ne $PressMs) {
+        $from = 'ms after the key went down'
+        $ref = [double]$PressMs
+    } else {
+        $from = 'ms after the record began, as no key went down'
+        $first = @(@($Lines) | Where-Object { "$_" -match "^(key|front)`t" } | Select-Object -First 1)
+        $ref = if ($first.Count -gt 0) { [double]::Parse(("$($first[0])" -split "`t")[1], $culture) } else { 0 }
+    }
+    $fronts = if ($Watched) { 'a window that came in front: when the key watch was told of it, an upper bound' }
+    elseif ($Timed) { 'the only window is the one in front when the record began, as the foreground hook, which this case turns on, could not be turned on (said before the case''s lines)' }
+    else { "the only window is the one in front when the record began, as the foreground hook runs only during the cases of $($script:E2eTimedCommands -join ', ')" }
+    "  the key watch's record, in the order it got them ($from; a key: when the key watch saw it; $fronts): $(Format-E2eRecord $Lines $ref $Exes)"
+}
+
+# The program of each process id that the record's front lines name, for Format-E2eRecord.
+function Get-E2eRecordExes {
+    param([string[]]$Lines)
+    $exes = @{}
+    foreach ($line in @($Lines)) {
+        $f = "$line" -split "`t"
+        if ($f[0] -eq 'front' -and $f.Count -ge 5 -and -not $exes.ContainsKey([int]$f[2])) { $exes[[int]$f[2]] = [System.IO.Path]::GetFileName([Macropad.WindowApi]::ProcessPath([int]$f[2])) }
+    }
+    $exes
+}
+
+# When a command's Alt+Tab went out, as the key watch saw it (KeyWatch.Timed lines): its Alt down, Tab
+# down, Tab up and Alt up, in ms after PressMs (the key's press, on the record's clock), the three gaps
+# between them, and how long Alt was down. The command's keys are told from the others by tag and time:
+# the test's own keys (the macro key, Escape, a key let go) go untagged; a macropad tags what it sends
+# (MPAD, or AutoHotkey's own value); the harness's activation also taps Alt tagged MPAD, but only while it
+# makes a window active, before the press. So: the first tagged Alt down after the press, then the first
+# tagged Tab down after that, the Tab up after that, the Alt up after that. Also when the test let go of
+# the macro key (its first untagged F13 to F23 up after the press), which may fall among the command's
+# keys when the command is slow to start; the AutoHotkey macropad's hook takes that key before the key
+# watch sees it. What was not seen is $null. Pure.
+function Get-E2eChordTimes {
+    param([string[]]$Lines, [double]$PressMs)
+    $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    $seen = @{ AltDown = $null; TabDown = $null; TabUp = $null; AltUp = $null; KeyUp = $null }
+    foreach ($line in @($Lines)) {
+        $f = "$line" -split "`t"
+        if ($f[0] -ne 'key' -or $f.Count -lt 5) { continue }
+        $at = [double]::Parse($f[1], $culture) - $PressMs
+        if ($at -lt 0) { continue }
+        $vk = [Convert]::ToInt32($f[3], 16)
+        $down = $f[2] -eq 'down'
+        if ([Convert]::ToInt64($f[4], 16) -eq 0) {
+            if ($null -eq $seen.KeyUp -and $vk -ge 0x7C -and $vk -le 0x86 -and -not $down) { $seen.KeyUp = $at }
+            continue
+        }
+        $alt = $vk -eq 0x12 -or $vk -eq 0xA4 -or $vk -eq 0xA5
+        if ($null -eq $seen.AltDown) { if ($alt -and $down) { $seen.AltDown = $at } }
+        elseif ($null -eq $seen.TabDown) { if ($vk -eq 0x09 -and $down) { $seen.TabDown = $at } }
+        elseif ($null -eq $seen.TabUp) { if ($vk -eq 0x09 -and -not $down) { $seen.TabUp = $at } }
+        elseif ($null -eq $seen.AltUp) { if ($alt -and -not $down) { $seen.AltUp = $at } }
+    }
+    $span = { param($from, $to) if ($null -ne $from -and $null -ne $to) { [math]::Round($to - $from, 1) } }
+    $round = { param($v) if ($null -ne $v) { [math]::Round($v, 1) } }
+    [pscustomobject]@{
+        AltDown = & $round $seen.AltDown; TabDown = & $round $seen.TabDown; TabUp = & $round $seen.TabUp; AltUp = & $round $seen.AltUp; KeyUp = & $round $seen.KeyUp
+        AltToTab = & $span $seen.AltDown $seen.TabDown; TabHeld = & $span $seen.TabDown $seen.TabUp; TabToAltUp = & $span $seen.TabUp $seen.AltUp; AltHeld = & $span $seen.AltDown $seen.AltUp
+    }
+}
+
+# One press's Alt+Tab (Get-E2eChordTimes) in words, for one line of the log. Pure.
+function Format-E2eChordTimes {
+    param($Times)
+    if ($null -eq $Times -or $null -eq $Times.AltDown) { return 'the key watch saw no Alt down of the command after the key went down' }
+    $v = { param($x) if ($null -ne $x) { "$x" } else { '-' } }
+    $at = { param($x) if ($null -ne $x) { "+$x" } else { 'not seen' } }
+    "Alt down $(& $at $Times.AltDown), Tab down $(& $at $Times.TabDown), Tab up $(& $at $Times.TabUp), Alt up $(& $at $Times.AltUp) ms after the key went down (the key went up $(& $at $Times.KeyUp)); Alt down to Tab down $(& $v $Times.AltToTab), Tab held $(& $v $Times.TabHeld), Tab up to Alt up $(& $v $Times.TabToAltUp), Alt held $(& $v $Times.AltHeld) ms"
+}
+
+# The account of a failed case, as labelled lines for the console: the keys Windows has down, the window
+# in front at the press and now, the key watch's record (Format-E2eAccountRecord), the pointer and the
+# visible top-level windows. With -AfterCleanUp, one line: the window in front and the keys down once the
+# case's clean-up has run. It only reads. Never throws: a part that cannot be read says so.
+function Get-E2eFailureState {
+    param($ctx, [switch]$AfterCleanUp)
+    $slot = [int]$ctx.Case.Slot
+    $read = { param([scriptblock]$Do) try { & $Do } catch { "could not be read ($($_.Exception.Message))" } }
+    $describe = {
+        param([IntPtr]$Hwnd)
+        if ($Hwnd -eq [IntPtr]::Zero) { return 'no window' }
+        if (-not [Macropad.WindowApi]::Exists($Hwnd)) { return "a window that no longer exists ($Hwnd)" }
+        Get-E2eWindowText $Hwnd
+    }
+    if ($AfterCleanUp) {
+        return "  after the clean-up: in front $(& $read { & $describe ([Macropad.WindowApi]::Foreground()) }); keys down: $(& $read { Get-E2eKeysDownText $slot })"
+    }
+    $down = & $read { Get-E2eKeysDownText $slot }
+    $frontNow = & $read { & $describe ([Macropad.WindowApi]::Foreground()) }
+    $fronts = if ($null -ne $ctx.PressFront) { "when the key went down $(& $read { & $describe $ctx.PressFront }); now $frontNow" } else { "now $frontNow (no key went down)" }
+    $record = & $read {
+        $lines = @([OmbE2e.KeyWatch]::Timed())
+        Format-E2eAccountRecord $lines $ctx.PressMs ([OmbE2e.KeyWatch]::WatchesFront) ($script:E2eTimedCommands -contains $ctx.Case.Command) (Get-E2eRecordExes $lines)
+    }
+    if ($record -like 'could not be read*') { $record = "  the key watch's record $record" }
+    $pointer = & $read { $m = [OmbE2e.Input]::MousePosition(); "$($m[0]),$($m[1]), over $(& $describe ([OmbE2e.Input]::TopWindowAt($m[0], $m[1])))" }
+    $windows = & $read {
+        $shown = @(foreach ($h in [Macropad.WindowApi]::TopLevel()) { if ([Macropad.WindowApi]::Visible($h) -and -not [OmbE2e.Dwm]::Cloaked($h)) { $h } })
+        $text = @($shown | Select-Object -First 12 | ForEach-Object { & $describe $_ }) -join '; '
+        if ($shown.Count -gt 12) { $text += "; and $($shown.Count - 12) more" }
+        $text
+    }
+    @(
+        'The state at the failure, read before the clean-up let go of any key:'
+        "  keys down, as Windows has them now (GetAsyncKeyState): $down"
+        "  (keys read: Alt, Ctrl, Shift and Win on each side, Tab, the case's own key, F24 (Fn))"
+        "  window in front: $fronts"
+        $record
+        "  pointer: $pointer"
+        "  visible windows, top first: $windows"
+    ) -join "`n"
+}
+
 # Runs one case against the macropad under test. Returns $null when it ran, or the reason it did not
 # (the run lists those at its end): one known before it starts (Get-E2eSkipReason), or one that only
 # running it can show, which its Assert leaves in $ctx.NotRun (a condition of the machine that the
 # case measures as it runs). Before the macro key is pressed, the window the case named must
 # still be in front; when it is not, nothing is pressed and the case fails. Under -Ci only, a failure
 # after the press is tried once more when a window the run did not open had taken the focus; the
-# second try checks the front again before it presses.
+# second try checks the front again before it presses. A failure also says what the keyboard and the
+# desktop were (Get-E2eFailureState). A case of a timed command (E2eTimedCommands) runs with the key
+# watch's foreground hook on and prints how its command's Alt+Tab went out, passed or failed.
 function Invoke-E2eCase {
     param([Parameter(Mandatory)]$Case, [Parameter(Mandatory)][string]$Lang)
     Assert-E2eTime
@@ -2050,11 +2369,14 @@ function Invoke-E2eCase {
     if ($Case.Assert) { $assert = $Case.Assert }
     $script:E2eRun.Case = "$Lang $($Case.Name)"  # for the list of waits that came close to their limit
     [void](Use-E2eMacropad $Lang $Case.Chunk)
+    $timed = $script:E2eTimedCommands -contains $Case.Command
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         $ctx = @{ Case = $Case; Lang = $Lang; Run = $script:E2eRun; Pressed = $false }
         $failure = $null
         $failureText = $null
         $foreign = $null
+        $state = $null
+        $record = $null
         # What the clean-up after the case could not do: every step of it runs whatever the one before
         # did, and a step that fails is reported beside the case's own failure, never in its place.
         $problems = [System.Collections.Generic.List[string]]::new()
@@ -2062,6 +2384,9 @@ function Invoke-E2eCase {
             Select-E2eLayer $Case.Layer
             $errorsBefore = @(Get-E2eErrorLines).Count
             [OmbE2e.KeyWatch]::Clear()
+            if ($timed -and -not [OmbE2e.KeyWatch]::WatchFront($true)) {
+                Write-Host "End-to-end $($Case.Command), $Lang, the case '$($Case.Name)': the foreground hook could not be turned on, so this case's record has no window that came in front."
+            }
             $script:E2eRun.LastActivated = [IntPtr]::Zero
             & $arrange $ctx
             # The key goes into the window the case named: one its Arrange set as Front, or the last
@@ -2072,14 +2397,20 @@ function Invoke-E2eCase {
             $ctx.Commands = Get-E2eCommandMark
             Invoke-E2eCaseKey $ctx -FrontDesktop:([bool]$ctx.FrontDesktop)
             & $assert $ctx
+            # The record the timing line reads, before the clean-up adds keys of its own.
+            if ($timed) { $record = @([OmbE2e.KeyWatch]::Timed()) }
             Assert-E2eCaseLogs $ctx $errorsBefore
         } catch {
             $failure = $_
-            # Read now, before the clean-up: what the macropad's command log says at the failure.
+            if ($timed -and $null -eq $record) { $record = @([OmbE2e.KeyWatch]::Timed()) }
+            # Read now, before the clean-up below lets go of any key or closes anything: what the
+            # keyboard and the desktop were, and what the macropad's command log says at the failure.
+            $state = try { Get-E2eFailureState $ctx } catch { "The state at the failure could not be read: $($_.Exception.Message)" }
             $failureText = Get-E2eFailureText $failure.Exception.Message $ctx
             $foreign = Get-E2eForeignForeground $Case
         } finally {
             [OmbE2e.KeyWatch]::Swallow = $false
+            if ($timed) { [void][OmbE2e.KeyWatch]::WatchFront($false) }
             $step = { param([scriptblock]$Do) try { & $Do } catch { $problems.Add($_.Exception.Message) } }
             & $step { Clear-E2eHeldKeys }
             & $step { if ($Case.CleanUp) { & $Case.CleanUp $ctx } }
@@ -2089,25 +2420,31 @@ function Invoke-E2eCase {
             if ($left.Count -gt 0 -and -not $failure) { $problems.Add("the macropad still showed $($left.Count) window(s): $(($left | ForEach-Object { "'$([Macropad.WindowApi]::Title($_))'" }) -join ', ')") }
             foreach ($w in $left) { & $step { Close-E2eWindow $w } }
         }
+        if ($failure) { $state = "$state`n$(try { Get-E2eFailureState $ctx -AfterCleanUp } catch { "  after the clean-up: could not be read ($($_.Exception.Message))" })" }
+        # How the command's Alt+Tab went out, passed or failed, from the record read before the clean-up.
+        if ($timed -and $ctx.Pressed -and $null -ne $ctx.PressMs) {
+            $outcome = if ($failure) { 'failed' } else { 'passed' }
+            Write-Host "End-to-end $($Case.Command) timing, $Lang, the case '$($Case.Name)' ($outcome): $(try { Format-E2eChordTimes (Get-E2eChordTimes $record $ctx.PressMs) } catch { "could not be read ($($_.Exception.Message))" })"
+        }
         # Only under -Ci, where nobody is at the desktop, is a case tried again after another window
         # took the focus; on a developer's desktop the case fails, saying what was in front.
         if ($failure -and $problems.Count -eq 0 -and $attempt -eq 1 -and $env:OMB_E2E_CI -eq '1' -and $ctx.Pressed -and $foreign -and $failure.Exception.Message -notlike 'Not pressed:*') {
-            Write-Host "End-to-end: $($Case.Name) failed while $foreign had the focus, a window the test did not open; trying once more. The failure was: $($failure.Exception.Message)"
+            Write-Host "End-to-end: $($Case.Name) failed while $foreign had the focus, a window the test did not open; trying once more. The failure was: $($failure.Exception.Message)`n$state"
             continue
         }
         # A failure after the press says what the macropad's command log says of the case's command:
-        # never started, not finished, finished (so what is missing is its effect), or failed.
+        # never started, not finished, finished (so what is missing is its effect), or failed. Every
+        # failure says what the keyboard and the desktop were (Get-E2eFailureState).
         if ($problems.Count -eq 0) {
             if ($failure) {
-                if ($failureText -eq $failure.Exception.Message) { throw $failure }
                 # A text thrown here would point at this line: it says where the case failed.
-                throw "$failureText`n$($failure.InvocationInfo.PositionMessage)"
+                throw "$failureText`n$state`n$($failure.InvocationInfo.PositionMessage)"
             }
             if ($ctx.NotRun) { $script:E2eRun.NotRun.Add("$Lang $($Case.Name): $($ctx.NotRun)") }
             return $ctx.NotRun
         }
         $text = "The clean-up after $($Case.Name) had problems: $($problems -join '; ')"
-        if ($failure) { $text = "$failureText`n$text" }
+        if ($failure) { $text = "$failureText`n$state`n$text" }
         throw $text
     }
 }

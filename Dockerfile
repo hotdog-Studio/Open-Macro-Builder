@@ -11,8 +11,8 @@
 # The page is the same on every architecture, so it is built once, on the machine doing the build.
 FROM --platform=$BUILDPLATFORM node:24-alpine AS build
 WORKDIR /repo
-# The build never starts Electron or a test browser.
-ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# The build never starts Electron or a test browser. npm ci fetches no Electron binary (no install script).
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY configurator/package.json configurator/package-lock.json configurator/
 RUN cd configurator && npm ci
 # The configurator shares its config checks with the repository's validator.

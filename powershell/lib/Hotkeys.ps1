@@ -82,13 +82,14 @@ function Get-ForegroundInfo {
     Get-WindowInfo $fg
 }
 
-# Like Test-LayoutActions: every string action must name a function.
+# Like Test-LayoutActions: every string action must name a function, found as the key finds it
+# (Get-MacroFunction).
 function Test-HotkeyActions {
     param([object[]]$Definitions)
     $missing = [System.Collections.Generic.List[string]]::new()
     foreach ($d in @($Definitions)) {
         if ($null -eq $d.Macro -or $d.Macro.Action -isnot [string]) { continue }
-        if (-not (Get-Command -Name $d.Macro.Action -CommandType Function -ErrorAction SilentlyContinue)) {
+        if ($null -eq (Get-MacroFunction $d.Macro.Action)) {
             $missing.Add("$($d.Macro.Action) ($($d.Spec))")
         }
     }

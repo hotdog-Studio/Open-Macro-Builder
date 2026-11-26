@@ -60,4 +60,28 @@ Describe 'Test-LayoutActions' {
         $l = Layout (Key 'S') (New-Keys12) @((Layer 'A' (Icon 'chrome') @((Macro 'Defined-Action' 'Two'))))
         { Test-LayoutActions $l } | Should -Not -Throw
     }
+    # The key looks a name up as it is written (Invoke-Macro), so a name that Get-Command would read as a
+    # wildcard runs nothing at the key: the start must already say so. Functions that the pattern would
+    # match exist here (Get-InitialLayerIndex, Do1), so a lookup that took the pattern would find one.
+    It 'lists <Written> as undefined, though a function matches it as a pattern' -ForEach @(
+        @{ Written = 'Get-*' }, @{ Written = '*' }, @{ Written = 'Do[1]' }
+    ) {
+        function Do1 { param($m) }
+        $l = Layout (Key 'S') (New-Keys12) @((Layer 'A' (Icon 'chrome') @((Macro $Written 'Patterned'))))
+        { Test-LayoutActions $l } | Should -Throw ([WildcardPattern]::Escape("Undefined macro action(s): $Written (Patterned)"))
+    }
+    It 'passes a function named like an alias, which the key runs (sleep)' {
+        function global:sleep { param($Macro) }
+        try {
+            $l = Layout (Key 'S') (New-Keys12) @((Layer 'A' (Icon 'chrome') @((Macro 'sleep' 'Mine'))))
+            { Test-LayoutActions $l } | Should -Not -Throw
+        } finally { Remove-Item function:global:sleep }
+    }
+    It 'passes a function that a module exports' {
+        $module = New-Module -Name OmbTestActions -ScriptBlock { function OmbModuleAction { param($Macro) } } | Import-Module -PassThru
+        try {
+            $l = Layout (Key 'S') (New-Keys12) @((Layer 'A' (Icon 'chrome') @((Macro 'OmbModuleAction' 'From a module'))))
+            { Test-LayoutActions $l } | Should -Not -Throw
+        } finally { Remove-Module $module }
+    }
 }

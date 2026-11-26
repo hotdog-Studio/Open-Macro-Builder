@@ -115,6 +115,7 @@ Describe 'End-to-end stand-in log: what reached a stand-in window' {
 
 Describe 'End-to-end command log: what the macropad says of the commands its keys ran' {
     BeforeAll {
+        . "$root\powershell\lib\Model.ps1"   # Get-MacroFunction, the lookup Invoke-Macro makes
         . "$root\powershell\lib\Engine.ps1"
         function E2eHarnessAct { param($m) }
     }

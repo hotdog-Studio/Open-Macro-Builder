@@ -138,6 +138,22 @@ Describe 'Invoke-Macro' {
     It 'says which command is not defined' {
         { Invoke-Macro ([pscustomobject]@{ Action = 'NoSuchCommandHere'; Name = 'x' }) } | Should -Throw "*The command 'NoSuchCommandHere' is not defined.*"
     }
+    It 'takes <Written> as a name, not as a pattern that functions here match' -ForEach @(
+        @{ Written = 'Get-*' }, @{ Written = '*' }, @{ Written = 'Do[1]' }
+    ) {
+        function Do1 { param($Macro) $script:ranPattern = $true }
+        $script:ranPattern = $false
+        { Invoke-Macro ([pscustomobject]@{ Action = $Written; Name = 'x' }) } | Should -Throw "*$([WildcardPattern]::Escape("The command '$Written' is not defined."))*"
+        $script:ranPattern | Should -BeFalse
+    }
+    It 'runs a function that a module exports' {
+        $module = New-Module -Name OmbTestActions -ScriptBlock { function OmbModuleAction { param($Macro) $global:OmbModuleRan = $Macro.Name } } | Import-Module -PassThru
+        try {
+            $global:OmbModuleRan = $null
+            Invoke-Macro ([pscustomobject]@{ Action = 'OmbModuleAction'; Name = 'from a module' })
+            $global:OmbModuleRan | Should -Be 'from a module'
+        } finally { Remove-Module $module; Remove-Variable OmbModuleRan -Scope Global -ErrorAction SilentlyContinue }
+    }
 }
 # The end-to-end test's command log (docs\development.md): a macropad the test started writes a line
 # when a command starts, and one when it has finished or failed, as the AutoHotkey version does.

@@ -165,6 +165,19 @@ function Get-InitialLayerIndex {
     -1
 }
 
+# The function an action names, found the one way a key runs it (Invoke-Macro) and the start-up checks
+# (Test-LayoutActions, Test-HotkeyActions) look for it, so that the three cannot disagree; $null when
+# there is none. Only a function counts (a filter is one too): an alias of the same name does not hide
+# it, and a name that carries a module (Module\Cmdlet) finds that cmdlet, which is not one. The name is
+# taken as it is written, never as a wildcard: Get-Command would find a function for Get-*, * or Do[1],
+# and the key none. The lookup runs from the caller's scope, so it sees the commands main.ps1 dot-sourced.
+function Get-MacroFunction {
+    param([string]$Name)
+    if ([string]::IsNullOrEmpty($Name)) { return $null }
+    $found = $ExecutionContext.InvokeCommand.GetCommand($Name, [System.Management.Automation.CommandTypes]::Function)
+    if ($found -is [System.Management.Automation.FunctionInfo]) { $found } else { $null }
+}
+
 function Test-LayoutActions {
     param($Layout)
     $missing = [System.Collections.Generic.List[string]]::new()
@@ -172,7 +185,7 @@ function Test-LayoutActions {
         if ($null -eq $layer) { continue }
         foreach ($m in @($layer.Macros)) {
             if ($null -eq $m -or $m.Action -isnot [string]) { continue }
-            if (-not (Get-Command -Name $m.Action -CommandType Function -ErrorAction SilentlyContinue)) {
+            if ($null -eq (Get-MacroFunction $m.Action)) {
                 $missing.Add("$($m.Action) ($($m.Name))")
             }
         }

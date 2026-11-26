@@ -30,6 +30,18 @@ Describe 'Hotkey' {
 }
 Describe 'Test-HotkeyActions' {
     It 'lists undefined actions' { { Test-HotkeyActions @((Hotkey '^t' 'NoSuchFn'), (Hotkey '^y' 'Act')) } | Should -Throw 'Undefined hotkey action(s): NoSuchFn (^t)' }
+    # As the key runs it (Invoke-Macro): the name as it is written, never as a wildcard. Functions the
+    # pattern would match exist here (Get-ForegroundInfo, Do1).
+    It 'lists <Written> as undefined, though a function matches it as a pattern' -ForEach @(
+        @{ Written = 'Get-*' }, @{ Written = '*' }, @{ Written = 'Do[1]' }
+    ) {
+        function Do1 { param($m) }
+        { Test-HotkeyActions @((Hotkey '^t' $Written)) } | Should -Throw ([WildcardPattern]::Escape("Undefined hotkey action(s): $Written (^t)"))
+    }
+    It 'passes a function named like an alias, which the key runs (sleep)' {
+        function global:sleep { param($Macro) }
+        try { { Test-HotkeyActions @((Hotkey '^t' 'sleep')) } | Should -Not -Throw } finally { Remove-Item function:global:sleep }
+    }
 }
 Describe 'New-InputHook' {
     BeforeEach {

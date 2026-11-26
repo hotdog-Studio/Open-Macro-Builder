@@ -27,6 +27,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 - Configurator: the code editor colours `#Include`, `#HotIf` and the other directives of an AutoHotkey file, and no longer colours the Windows key of a hotkey (`#e::`, `^#a::`, `#Space::`) as one.
 - Configurator: the keyboard can leave the code editor, and the editor says how. Tab indents there, so a line under its text, shown while the cursor is in the editor and always there for a screen reader, says "Tab indents. To leave the editor with the keyboard, press Esc and then Tab." Press Esc, then Tab (or Shift+Tab), and the focus moves on to the next (or previous) control, however long after the Esc, also when the Esc only collapsed a selection; any other key after the Esc, a click in the text, or leaving the editor, and Tab indents again. Esc then Tab used to work only for two seconds, and nothing said so.
 - Configurator: a button pressed the instant it appears after something the app finished on its own (such as **Reload macropad** after a save, or **Review the update** when the bar comes up) does what it says. In a moment of a few milliseconds after it appeared, the app still went by what the screen had shown before, and such a press could do nothing.
+- PowerShell version: the tooltip that shows over the overlay while you rest the pointer on a key goes away when you let go of Fn. It used to stay alone on the screen for up to 5 seconds after the overlay had hidden.
 
 ## 1.0.6 - 2026-11-25
 

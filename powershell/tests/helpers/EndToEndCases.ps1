@@ -580,9 +580,11 @@ function Get-E2eCases {
         # lets Fn go with the pointer left where it is, and puts it back once the overlay and its tooltip
         # are gone (Invoke-E2eOverlayPointer). Their own key runs E2eNothing, which does nothing: what
         # they prove is what the pointer does. In E2eOverlayLabel the click does not touch the AutoHotkey
-        # tip (only WM_MOUSELEAVE takes it away) and, by build #4's times, put the PowerShell one away, so
-        # its line is expected to say that a tip showed at Fn's release in AutoHotkey only; it does not
-        # fail on either. E2eOverlayIcon lets Fn go with a tip seen up in both versions, and fails without.
+        # tip (only the hide, or WM_MOUSELEAVE, takes it away) and, by build #4's times, put the
+        # PowerShell one away, so its line is expected to say that a tip showed at Fn's release in
+        # AutoHotkey only; it does not fail on either. E2eOverlayIcon lets Fn go with a tip seen up in
+        # both versions, and fails without. In both versions the macropad's own code takes the tip away
+        # at the hide (Hide-Overlay; ToggleLayerSelection in ahk/lib/io.ahk).
         # A name short enough for the label's 64 px, so that what the label reads is the whole name.
         @{ Command = 'E2eNothing'; Name = 'E2eOverlayLabel'; File = 'e2e'; Kind = 'Custom'; Macro = @{ name = 'label' }
             Covers  = 'while Fn is held, a key''s label on the overlay reads the name of the key''s command on the selected layer, the pointer resting on it brings up a tooltip of the macropad''s within 3 s, and a click on it runs that command, as the example layout''s display options have it (labels shown, macro icons off); the click takes neither the keyboard nor the foreground from the window in front (B). Not run: what the tooltip says (another program cannot read it), a label of a key without a command, and the layouts with macro icons, where a click on a label selects a layer'

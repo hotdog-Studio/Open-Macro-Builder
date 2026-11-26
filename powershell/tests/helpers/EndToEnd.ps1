@@ -433,15 +433,16 @@ $script:E2eFloorMs = 350
 $script:E2eFrontMs = 3000
 # How long a tooltip of the macropad's may still show once its overlay is seen hidden, Fn let go with the
 # pointer left where the case put it (Invoke-E2eOverlayPointer): in both versions the tooltip goes with
-# the overlay, each by its own mechanism. The PowerShell macropad switches its ToolTip off and on again in
-# Hide-Overlay, in the handler that hides the form; the Active setter of System.Windows.Forms 4.8 (read by
-# reflection) sends the tooltip control TTM_ACTIVATE. AutoHotkey's goes in OnMouseEvent (ahk/lib/io.ahk)
-# on WM_MOUSELEAVE, which Windows posts to the overlay's window after TrackMouseEvent (TME_LEAVE) once the
-# pointer is no longer over it; whether that comes when the window hides under a pointer that does not
-# move is in no documentation read for this, and no timer of the script takes the tip away. So the
-# pointer stays still until this wait is over, and the line each case prints (Format-E2eOverlayTooltipTime)
-# says how long the tip took. Build #4's case times did not measure it (E2eOverlayLabel took 4.46 s in
-# AutoHotkey and 3.38 s in PowerShell, E2eOverlayIcon 4.89 s and 8.6 s, 4.8 s of the last this wait).
+# the overlay, each by its own code at the hide. The PowerShell macropad switches its ToolTip off and on
+# again in Hide-Overlay, in the handler that hides the form; the Active setter of System.Windows.Forms
+# 4.8 (read by reflection) sends the tooltip control TTM_ACTIVATE. The AutoHotkey macropad removes its
+# tooltip (ToolTip 1) right after it hides the overlay (ToggleLayerSelection, ahk/lib/io.ahk), and
+# also on WM_MOUSELEAVE (OnMouseEvent) when the pointer leaves an overlay that shows; whether Windows
+# sends that message when the overlay hides under a pointer that does not move is not documented, so
+# the macropad does not count on it. The pointer stays still until this wait is over, so that only the
+# hide can take a tip away, and the line each case prints (Format-E2eOverlayTooltipTime) says how long
+# it took. Build #4's case times did not measure it (E2eOverlayLabel took 4.46 s in AutoHotkey and
+# 3.38 s in PowerShell, E2eOverlayIcon 4.89 s and 8.6 s, 4.8 s of the last this wait).
 # The limit is what separates the PowerShell tip of before 1.0.7, which ran out its own 5 s (AutoPopDelay)
 # from when it showed, from one that goes with the overlay. E2eOverlayIcon lets Fn go with a tip that it
 # saw up at its last step, within one look (50 ms) of its showing; then come the pacing floor (350 ms at
@@ -1937,7 +1938,8 @@ function Format-E2eOverlayTooltipTime {
 # $script:E2eTooltipGoneMs of the overlay being seen hidden (a tooltip goes with its overlay in both
 # versions, also under a pointer that does not move), prints what it saw (Format-E2eOverlayTooltipTime),
 # and only then puts the pointer back where it was: a pointer put back while the overlay still shows could
-# raise a tooltip of the harness's own, and one that moves would take an AutoHotkey tip away by itself. A
+# raise a tooltip of the harness's own, and one that leaves the overlay would take an AutoHotkey tip away
+# by WM_MOUSELEAVE, so that the hide would not be what is checked. A
 # tooltip has no title, as the overlay has none, and one left on the screen would stand over the next
 # case. With -TooltipAtRelease the case has seen a tooltip up at its last step, and this fails unless the
 # look before Fn's release saw one too and the wait for the tooltip began within

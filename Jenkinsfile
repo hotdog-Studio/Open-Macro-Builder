@@ -388,9 +388,14 @@ node {
                         // which would be inside the first desktop-app test's time limit. install-electron
                         // (the package's own bin) downloads it here instead, or finds it in place and does
                         // nothing; a failed download ends the install with its own line.
+                        // npm.cmd and npx.cmd turn the batch's echo off, so each later line turns it on again
+                        // to show in the console; the binary's own line says whether it is in place.
                         bat '''
                             call npm ci || exit /b 1
+                            @echo on
                             call npx --no install-electron || (echo the Electron binary could not be downloaded & exit /b 1)
+                            if exist node_modules\\electron\\dist\\electron.exe (echo the Electron binary is in place) else (echo the Electron binary is missing after install-electron & exit /b 1)
+                            @echo on
                             call npx playwright install chromium || exit /b 1
                         '''
                     }

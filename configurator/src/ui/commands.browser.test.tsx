@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import { at as pointOn, carry, click, dirty, drag, drop, hover, hoverPath, openTab, padKey, startApp, strip, unmount, type Point } from '../../test/browser/harness'
+import { at as pointOn, carry, click, dirty, drag, drop, hover, hoverPath, openTab, padKey, repoFiles, startApp, strip, unmount, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { HOVER_TIME } from './code/hoverDocs'
 import { GRACE } from './DocHover'
@@ -104,10 +104,17 @@ describe('Commands tab: reading a command file', () => {
   })
 
   it('does not make the page scroll sideways at 1280 px, even with a very long line in the file', async () => {
-    await start()
+    // The line is in the file, not typed: 601 keys took this test past its time limit on the Windows
+    // build agent, at some 80 ms a key, and the test is about the layout, not about typing.
+    const long = 'x' + '0123456789'.repeat(60)
+    const media = new TextDecoder().decode((await repoFiles())[MEDIA])
+    // The file has no line break at its end; the new line breaks as the checkout breaks the others.
+    const eol = media.includes('\r\n') ? '\r\n' : '\n'
+    const withLong = `${media}${eol}${long}${eol}`
+    await startApp('Commands', undefined, { files: { [MEDIA]: new TextEncoder().encode(withLong) } })
     await openFile('media')
     await key('{Control>}{End}{/Control}')
-    await key('{Enter}x' + '0123456789'.repeat(60))
+    expect(text()).toContain(`\n${long}\n`)
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
     expect(document.body.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
     // The editor scrolls inside itself instead.

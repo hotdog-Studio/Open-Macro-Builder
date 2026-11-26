@@ -46,13 +46,14 @@
 // the version: scripts/ci-release.mjs changelog) → Validate config (scripts/validate-config.mjs:
 // config.json's structure, icons, and every action defined in both versions) → Script tests (node:test,
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
-// installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because this agent never starts Electron: the
-// desktop-app tests in configurator/e2e skip themselves without the binary, and the Windows
-// configurator stage below runs them) → Windows tests (the Pester suite, on the Windows agent, every
+// without the Electron binary, which nothing on this agent fetches: npm ci does not, and the
+// desktop-app tests in configurator/e2e, which would, run only in the Windows configurator stage
+// below) → Windows tests (the Pester suite, on the Windows agent, every
 // branch) → Windows integration tests (the Pester tests tagged Integration, which need a real
 // desktop, on the desktop agent, every branch) → Windows end-to-end (the real macropad on the
 // desktop agent, every branch) → Windows configurator tests (the unit, browser and desktop-app
-// suites with the Electron binary, on the desktop agent, every branch) → SonarQube analysis →
+// suites with the Electron binary, which the stage downloads with install-electron right after npm ci,
+// on the desktop agent, every branch) → SonarQube analysis →
 // quality gate → Desktop app (the installer and the portable exe, on the Windows agent, develop
 // only) → Container images (linux/amd64 and linux/arm64, both built here, the arm64 one tried on
 // the arm64 agent, develop only) → Release (develop only) → Cleanup. Nothing is deployed
@@ -212,9 +213,12 @@ node {
     }
 
     stage('Configurator Install') {
-        // The Linux agent never starts Electron, so skip its binary download; test, lint and build
-        // work without it.
-        runGated('cd configurator && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci')
+        // The Linux agent never starts Electron, and nothing here downloads its binary: npm ci does not
+        // (the electron package has no install script), and the binary is fetched only when something
+        // requires the electron module (its index.js) or runs install-electron. Here nothing does: the
+        // unit tests mock the module, and the desktop-app suite, which requires it, runs only in the
+        // Windows configurator stage. Test, lint and build work without it.
+        runGated('cd configurator && npm ci')
         stopIfFailed('Configurator install')
     }
 
@@ -358,9 +362,10 @@ node {
         // figures. The suites run one after the other, each under its own catchError, so that a red
         // one does not hide the next; OMB_REQUIRE_ELECTRON=1 makes the desktop-app suite fail in place
         // of skipping itself when the agent has no Electron binary or no display.
-        // Downloads: npm ci puts node_modules in the workspace (cleanWs removes it), and the Electron
-        // binary and Playwright's Chromium go to the agent user's own caches (%LOCALAPPDATA%\electron,
-        // %LOCALAPPDATA%\ms-playwright), where the next build finds them.
+        // Downloads: npm ci puts node_modules in the workspace (cleanWs removes it); install-electron
+        // puts the Electron binary in node_modules\electron\dist from the zip it keeps in the agent
+        // user's own cache (%LOCALAPPDATA%\electron\Cache), and Playwright's Chromium goes to
+        // %LOCALAPPDATA%\ms-playwright: the next build finds both caches.
         // What the suites listen on stays on loopback (Vite's server for the browser tests, the
         // inspector and debugging ports of Playwright's Electron launch). Every window is closed by
         // the suite itself, also when a case fails; an abort or a timeout ends the processes of the
@@ -378,9 +383,14 @@ node {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', message: 'the install of the configurator on the Windows agent failed') {
                     bat 'if not exist results\\configurator mkdir results\\configurator'
                     dir('configurator') {
-                        // The Electron binary is downloaded here (no ELECTRON_SKIP_BINARY_DOWNLOAD).
+                        // npm ci does not fetch the Electron binary: the electron package has no install
+                        // script, and its index.js downloads the binary the first time anything requires it,
+                        // which would be inside the first desktop-app test's time limit. install-electron
+                        // (the package's own bin) downloads it here instead, or finds it in place and does
+                        // nothing; a failed download ends the install with its own line.
                         bat '''
                             call npm ci || exit /b 1
+                            call npx --no install-electron || (echo the Electron binary could not be downloaded & exit /b 1)
                             call npx playwright install chromium || exit /b 1
                         '''
                     }
@@ -456,15 +466,14 @@ node {
             try {
                 deleteDir()
                 checkout scm
-                // electron-builder fetches the Electron it packs by itself; npm need not.
-                withEnv(['ELECTRON_SKIP_BINARY_DOWNLOAD=1']) {
-                    bat '''
-                        cd configurator
-                        call npm ci || exit /b 1
-                        call npm version %APP_VERSION% --no-git-tag-version --allow-same-version || exit /b 1
-                        call npm run dist || exit /b 1
-                    '''
-                }
+                // electron-builder fetches the Electron it packs by itself; npm ci fetches none (the
+                // electron package has no install script).
+                bat '''
+                    cd configurator
+                    call npm ci || exit /b 1
+                    call npm version %APP_VERSION% --no-git-tag-version --allow-same-version || exit /b 1
+                    call npm run dist || exit /b 1
+                '''
                 stash name: 'desktop', includes: 'configurator/release/*.exe'
             } finally {
                 cleanWs(notFailBuild: true)

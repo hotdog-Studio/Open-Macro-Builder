@@ -23,7 +23,11 @@ import { MANIFEST_PATH, type Manifest } from '../src/core/update/manifest'
 const configurator = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = resolve(configurator, '..')
 
-/** The Electron binary's path, or null when it was not downloaded (ELECTRON_SKIP_BINARY_DOWNLOAD=1). */
+/**
+ * The Electron binary's path. Requiring the electron module downloads the binary when it is missing
+ * (the package's index.js; Jenkins downloads it before, with install-electron); null when that fails,
+ * as it does with no way out to the download.
+ */
 function electronBinary(): string | null {
   try {
     const path = createRequire(import.meta.url)('electron') as unknown

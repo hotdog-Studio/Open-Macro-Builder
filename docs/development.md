@@ -13,7 +13,7 @@ How to set the project up, where things are, and how to run every test. For how 
 | The browser tests | Chromium for Playwright: `npx playwright install chromium` in `configurator/` |
 | The Docker images | Docker with buildx |
 
-The macropad itself only runs on Windows. The configurator, the validator and their tests also run on Linux and macOS, except the desktop-app tests, which need the Electron binary and, on Linux, a display (they skip themselves without the binary, and on Linux without a display), and the tests that need Windows, which skip themselves elsewhere: the pictures of the pad and the header tests among the browser tests ([below](#the-pictures-of-the-pad)), and a few unit tests in `configurator/electron` that need Windows paths, the real process list or the real PowerShell (in `ipc.test.ts`, `macropad.test.ts` and `syntax.test.ts`).
+The macropad itself only runs on Windows. The configurator, the validator and their tests also run on Linux and macOS, except the desktop-app tests, which need the Electron binary and, on Linux, a display (requiring the `electron` module downloads the binary the first time, as `npm ci` does not; they skip themselves when it cannot be had, and on Linux without a display), and the tests that need Windows, which skip themselves elsewhere: the pictures of the pad and the header tests among the browser tests ([below](#the-pictures-of-the-pad)), and a few unit tests in `configurator/electron` that need Windows paths, the real process list or the real PowerShell (in `ipc.test.ts`, `macropad.test.ts` and `syntax.test.ts`).
 
 ## Repository layout
 
@@ -141,13 +141,13 @@ Jenkins runs the `Jenkinsfile`, one stage after the other:
 
 1. Gives the build its version (`scripts/ci-version.mjs`). On `develop` it also checks that `CHANGELOG.md` has the heading of that version and nothing under **Unreleased** ([releasing.md](releasing.md#the-changelog)).
 2. Validates `config.json` and runs the script tests.
-3. Installs, lints and unit-tests the configurator on the Linux agent, without the Electron binary.
+3. Installs, lints and unit-tests the configurator on the Linux agent, without the Electron binary: `npm ci` does not fetch it (the `electron` package has no install script), and nothing there requires the `electron` module, which would.
 4. Runs the browser tests in headless Chromium. The agent needs Chromium's system libraries (`npx playwright install-deps chromium`, once, as root); set the `OMB_SKIP_BROWSER_TESTS` global to skip the stage on an agent without them.
 5. Builds the configurator.
 6. On every branch: runs the Pester suite (`run.ps1 -Ci`) on the Windows agent (`windows-x64`), without its Integration tests, which `-Ci` leaves out. That run also measures how much of the PowerShell version's code (`powershell\lib`, `powershell\commands`, `powershell\config.ps1`) the suite executes: the build's console shows a line `Covered N% / 75%. ... analyzed commands in ... files.` (75 is Pester's default target; nothing fails on it), and the JaCoCo file `results/pester/coverage.xml` is archived with the build. SonarQube cannot read PowerShell, so this figure is not part of its gate.
 7. On every branch: runs the Integration tests (`run.ps1 -Ci -Integration`) on the Windows agent with a real desktop (`windows-desktop`).
 8. On every branch: runs the end-to-end test (`run.ps1 -Ci -EndToEnd`) on that agent, with its clean-up before and after.
-9. On every branch: runs the configurator's unit, browser and desktop-app tests on that agent, with the Electron binary, so the cases that skip themselves off Windows run here, and with `OMB_REQUIRE_ELECTRON=1`, so the desktop-app tests fail rather than skip when the agent has no Electron binary or display. The agent downloads the Electron binary and Playwright's Chromium for it, into its own caches.
+9. On every branch: runs the configurator's unit, browser and desktop-app tests on that agent, with the Electron binary, so the cases that skip themselves off Windows run here, and with `OMB_REQUIRE_ELECTRON=1`, so the desktop-app tests fail rather than skip when the agent has no Electron binary or display. Right after `npm ci` the stage downloads the Electron binary (`npx --no install-electron`, the package's own command; a failed download stops the stage there with `the Electron binary could not be downloaded`) and Playwright's Chromium, through the agent user's own caches.
 10. Sends everything to SonarQube, with the coverage of the unit and the browser tests on Linux, and waits for the quality gate.
 11. On `develop` only: packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).
 12. On `develop` only: publishes all of it as a release. [releasing.md](releasing.md) has the version scheme and the order of the steps.

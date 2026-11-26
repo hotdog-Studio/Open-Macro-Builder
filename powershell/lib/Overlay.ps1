@@ -230,10 +230,11 @@ function Show-Overlay {
 # control, not a child of the form), so hiding the form alone leaves a tip that is showing on the screen
 # until the control's own AutoPopDelay (5 s) ends it. So the ToolTip is switched off and on again:
 # Active = $false sends the control TTM_ACTIVATE with 0 once its window exists (the Active setter of
-# dotnet/winforms ToolTip.cs, as read there), and a tooltip control that is deactivated hides the tip it
-# shows (TOOLTIPS_Activate in Wine's dlls/comctl32/tooltips.c, as read there; Windows' own control was not
-# read). That it takes the tip off a real desktop is proved by the end-to-end case E2eOverlayIcon (and
-# E2eOverlayLabel, whose click already puts the tip away), not by anything here. The switch-on is in
+# dotnet/winforms ToolTip.cs, as read there; the .NET Framework class that Windows PowerShell 5.1 runs
+# was not read), and a tooltip control that is deactivated hides the tip it shows (TOOLTIPS_Activate in
+# Wine's dlls/comctl32/tooltips.c, as read there; Windows' own control was not read). That it takes the
+# tip off a real desktop is proved by the end-to-end case E2eOverlayIcon, not by anything here;
+# E2eOverlayLabel does not prove it, since its click already puts the tip away. The switch-on is in
 # the finally, so that however the off ends, the next time the overlay shows its tooltips work as
 # before; Active leaves the registered texts as they are. The form is hidden first, so that no mouse
 # message reaches the tooltip between the two.

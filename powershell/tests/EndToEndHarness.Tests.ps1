@@ -919,16 +919,23 @@ Describe 'End-to-end windows: what is a tooltip, an overlay and a form of the ma
     }
 }
 
-# The line the run prints for how long an overlay's tooltip took to go once the overlay was seen hidden.
+# The line the run prints for an overlay's tooltip: whether one showed in the look just before Fn was let
+# go (AtFn: yes, no, or not known when the look failed), whether one showed in the wait that began once
+# the overlay was seen hidden (SeenAfter), and when that wait found none (Ms; $null at the limit). Every
+# combination the wait can give has its row: a wait that ran out saw a tooltip, so SeenAfter is $true there.
 Describe 'End-to-end overlay tooltip timing: the line the run prints' {
     It 'says <Why>' -ForEach @(
-        @{ Why = 'a tooltip was showing and went'; Showing = $true; Ms = 1123; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, gone after 1123 ms (limit 2500 ms)' }
-        @{ Why = 'a tooltip went at the first look'; Showing = $true; Ms = 0; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, gone after 0 ms (limit 2500 ms)' }
-        @{ Why = 'none was showing'; Showing = $false; Ms = 3; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none was showing when the overlay hid' }
-        @{ Why = 'none was showing, and one was at the limit'; Showing = $false; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none was showing when the overlay hid, one showing at the limit (2500 ms)' }
-        @{ Why = 'a tooltip was still showing at the limit'; Showing = $true; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, still showing at the limit (2500 ms)' }
+        @{ Why = 'one showing at Fn, seen after the hide, gone'; AtFn = $true; SeenAfter = $true; Ms = 1123; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when Fn was let go, gone 1123 ms after the overlay was seen hidden (limit 2500 ms)' }
+        @{ Why = 'one showing at Fn, gone before the hide was seen'; AtFn = $true; SeenAfter = $false; Ms = 12; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when Fn was let go, gone by the time the overlay was seen hidden (none at the first look after it; limit 2500 ms)' }
+        @{ Why = 'one showing at Fn, still there at the limit'; AtFn = $true; SeenAfter = $true; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when Fn was let go, still showing 2500 ms after the overlay was seen hidden' }
+        @{ Why = 'none at Fn, none after'; AtFn = $false; SeenAfter = $false; Ms = 3; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none showing when Fn was let go, and none after the overlay was seen hidden' }
+        @{ Why = 'none at Fn, one after the hide that went'; AtFn = $false; SeenAfter = $true; Ms = 800; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none showing when Fn was let go, but one showing after the overlay was seen hidden, gone 800 ms after it (limit 2500 ms)' }
+        @{ Why = 'none at Fn, one after the hide still there at the limit'; AtFn = $false; SeenAfter = $true; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none showing when Fn was let go, but one showing 2500 ms after the overlay was seen hidden' }
+        @{ Why = 'the look at Fn failed, none after'; AtFn = $null; SeenAfter = $false; Ms = 3; Want = 'Overlay tooltip, ahk E2eOverlayIcon: not known whether one showed when Fn was let go (the look failed), and none after the overlay was seen hidden' }
+        @{ Why = 'the look at Fn failed, one after that went'; AtFn = $null; SeenAfter = $true; Ms = 800; Want = 'Overlay tooltip, ahk E2eOverlayIcon: not known whether one showed when Fn was let go (the look failed), but one showing after the overlay was seen hidden, gone 800 ms after it (limit 2500 ms)' }
+        @{ Why = 'the look at Fn failed, one still there at the limit'; AtFn = $null; SeenAfter = $true; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: not known whether one showed when Fn was let go (the look failed), but one showing 2500 ms after the overlay was seen hidden' }
     ) {
-        Format-E2eOverlayTooltipTime 'ahk E2eOverlayIcon' $Showing $Ms 2500 | Should -BeExactly $Want
+        Format-E2eOverlayTooltipTime 'ahk E2eOverlayIcon' $AtFn $SeenAfter $Ms 2500 | Should -BeExactly $Want
     }
 }
 

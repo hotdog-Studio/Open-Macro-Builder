@@ -577,8 +577,12 @@ function Get-E2eCases {
         }
         # The overlay with the pointer. The test's layouts have the example layout's display options
         # (Write-E2eLayoutFile), and each case holds Fn, so that the overlay shows, uses the pointer on it,
-        # lets Fn go and puts the pointer back (Invoke-E2eOverlayPointer). Their own key runs E2eNothing,
-        # which does nothing: what they prove is what the pointer does.
+        # lets Fn go with the pointer left where it is, and puts it back once the overlay and its tooltip
+        # are gone (Invoke-E2eOverlayPointer). Their own key runs E2eNothing, which does nothing: what
+        # they prove is what the pointer does. In E2eOverlayLabel the click does not touch the AutoHotkey
+        # tip (only WM_MOUSELEAVE takes it away) and, by build #4's times, put the PowerShell one away, so
+        # its line is expected to say that a tip showed at Fn's release in AutoHotkey only; it does not
+        # fail on either. E2eOverlayIcon lets Fn go with a tip seen up in both versions, and fails without.
         # A name short enough for the label's 64 px, so that what the label reads is the whole name.
         @{ Command = 'E2eNothing'; Name = 'E2eOverlayLabel'; File = 'e2e'; Kind = 'Custom'; Macro = @{ name = 'label' }
             Covers  = 'while Fn is held, a key''s label on the overlay reads the name of the key''s command on the selected layer, the pointer resting on it brings up a tooltip of the macropad''s within 3 s, and a click on it runs that command, as the example layout''s display options have it (labels shown, macro icons off); the click takes neither the keyboard nor the foreground from the window in front (B). Not run: what the tooltip says (another program cannot read it), a label of a key without a command, and the layouts with macro icons, where a click on a label selects a layer'
@@ -620,7 +624,7 @@ function Get-E2eCases {
             }
         }
         @{ Command = 'E2eNothing'; Name = 'E2eOverlayIcon'; File = 'e2e'; Kind = 'Custom'
-            Covers  = 'while Fn is held, a click on the icon of key 1 selects layer 1 from another layer, as the example layout''s iconAction "Layer" has it (with labels shown and macro icons off): the label of key 1 then reads the name of layer 1''s first command, and once Fn is let go key 1 runs it, E2eMark; the click takes neither the keyboard nor the foreground from the window in front (B). Not run: iconAction "Macro" and the layouts without labels or with macro icons, where a click on an icon runs the key''s command instead, the icons'' tooltips, and the icon of a key that has no layer'
+            Covers  = 'while Fn is held, a click on the icon of key 1 selects layer 1 from another layer, as the example layout''s iconAction "Layer" has it (with labels shown and macro icons off): the label of key 1 then reads the name of layer 1''s first command, and once Fn is let go key 1 runs it, E2eMark; the click takes neither the keyboard nor the foreground from the window in front (B). After the click, the pointer moved one pixel inside the icon brings up a tooltip of the macropad''s within 3 s, in a macropad whose overlay has been hidden before; Fn is let go with that tooltip seen up and the pointer left on the icon, and the tooltip must be gone within 2.5 s of the overlay being seen hidden. Not run: iconAction "Macro" and the layouts without labels or with macro icons, where a click on an icon runs the key''s command instead, what the tooltip says (another program cannot read it), and the icon of a key that has no layer'
             Arrange = { param($ctx) Assert-E2eOverlayOptions -IconSelectsLayer; [void](Use-E2eStandin 'B') }
             Assert  = {
                 param($ctx)
@@ -633,7 +637,7 @@ function Get-E2eCases {
                 # layout that fills one layer has a second, empty one: Write-E2eLayoutFile).
                 $from = $ctx.Case.Layer
                 if ($from -eq 1) { $from = 2; Select-E2eLayer 2; $ctx.Run.Macropad.Layer = 0 }
-                Invoke-E2eOverlayPointer {
+                Invoke-E2eOverlayPointer -TooltipAtRelease {
                     param($overlay)
                     $p = Get-E2eOverlayPoint 1 Icon
                     $ctx.Clicked = "($($p.X), $($p.Y)), the middle of the icon of key 1 (the layout's rectangle $($p.Rect) at scale $($p.Scale))"
@@ -654,6 +658,16 @@ function Get-E2eCases {
                         throw "After a click at $($ctx.Clicked) with layer $from selected, the overlay must show layer 1, whose first key's label reads '$want'; the label of key 1 read '$before' before the click and reads '$(Get-E2eOverlayText $overlay $label)' 3 s after it. B's log since the click: $(if ($bLines.Count) { $bLines -join ' / ' } else { 'nothing' }); in front: $(Get-E2eForegroundText). Key 1 was not pressed."
                     }
                     [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "a click on the overlay takes neither the keyboard nor the foreground (in front: $(Get-E2eForegroundText))"
+                    # Fn is let go with a tooltip up (-TooltipAtRelease): the icon's, once the pointer moves
+                    # a pixel on it as a hand does (a tooltip control shows its tip for a move, and the click
+                    # has just set the overlay's texts again). The overlay has been hidden before in this
+                    # macropad (at the end of E2eOverlayLabel, and by Select-E2eLayer 2 above when the case's
+                    # own layer is 1), so this tooltip also shows that tooltips still come after a hide.
+                    Wait-ScreenChange  # the move on the icon brings up its tooltip
+                    Move-E2ePointer ($p.X + 1) $p.Y
+                    $tip = Wait-E2eCondition { Get-E2eTooltip } -TimeoutMs 3000
+                    if (-not $tip) { throw "No tooltip of the macropad's showed within 3 s of the pointer moving one pixel, to ($($p.X + 1), $($p.Y)), inside the icon of key 1, after the click had selected layer 1; the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
+                    Wait-ScreenChange -Observed
                 }
                 $commands = Get-E2eCommandMark
                 Invoke-E2eCaseKey $ctx -Front $b.Hwnd -Slot 1

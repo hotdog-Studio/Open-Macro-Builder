@@ -109,6 +109,24 @@ Describe 'Invoke-EngineMacro guard' {
         $calls | Should -Be @('run:Cancelled'); $e.Busy | Should -BeFalse
     }
 }
+Describe 'Invoke-Macro' {
+    It 'runs the function of that name where PowerShell has an alias of the same name' {
+        function global:sleep { param($Macro) $script:ranMine = $Macro.Name }
+        try {
+            $script:ranMine = $null
+            Invoke-Macro ([pscustomobject]@{ Action = 'sleep'; Name = 'mine' })
+            $script:ranMine | Should -Be 'mine' -Because 'the alias sleep is Start-Sleep, and the key must run the command'
+        } finally { Remove-Item function:global:sleep }
+    }
+    It 'still runs an action that is a script block' {
+        $script:ranBlock = $false
+        Invoke-Macro ([pscustomobject]@{ Action = { param($Macro) $script:ranBlock = $true }; Name = 'block' })
+        $script:ranBlock | Should -BeTrue
+    }
+    It 'says which command is not defined' {
+        { Invoke-Macro ([pscustomobject]@{ Action = 'NoSuchCommandHere'; Name = 'x' }) } | Should -Throw "*The command 'NoSuchCommandHere' is not defined.*"
+    }
+}
 # The end-to-end test's command log (docs\development.md): a macropad the test started writes a line
 # when a command starts, and one when it has finished or failed, as the AutoHotkey version does.
 Describe 'The command log of the end-to-end test' {

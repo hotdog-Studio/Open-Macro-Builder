@@ -49,7 +49,7 @@ async function bring(...els: Element[]): Promise<void> {
 describe('at 1280 wide', () => {
   it('the page itself never scrolls: only the panels do', async () => {
     await startApp()
-    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
+    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Icons', 'Commands'] as const) {
       await click(screen.getByRole('tab', { name: tab }))
       const root = document.documentElement
       expect(root.scrollWidth, tab).toBeLessThanOrEqual(root.clientWidth)
@@ -161,7 +161,7 @@ describe('in a small window', () => {
     await viewport(760, 420)
     await startApp()
     const root = document.documentElement
-    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
+    for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Icons', 'Commands'] as const) {
       await click(screen.getByRole('tab', { name: tab }))
       expect(root.scrollWidth, tab).toBeLessThanOrEqual(root.clientWidth)
       expect(root.scrollHeight, tab).toBeLessThanOrEqual(root.clientHeight)

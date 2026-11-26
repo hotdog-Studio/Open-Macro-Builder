@@ -12,7 +12,9 @@
 # must contain the call exactly once. Spaces inside a string stay, so "shutdown /r /t 1" and
 # "shutdown /r/t 1" are two calls. Case and the kind of quote are not normalised: a changed spelling
 # fails and is read by a person, where a changed number or program would never be told from a changed
-# spelling. The body must also make no other system call (a second Run, DllCall, SendMessage ...),
+# spelling. What AutoHotkey reads without regard to case is matched the same way here: the names of
+# functions, of the system calls counted below, of Sleep, SendMessage, GroupAdd and ActivateOrOpen, and
+# the name of a window group. Window titles are compared exactly. The body must also make no other system call (a second Run, DllCall, SendMessage ...),
 # whatever it is called with.
 BeforeAll {
     $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -20,6 +22,7 @@ BeforeAll {
     $script:powerAhk = Join-Path $root 'ahk\commands\power.ahk'
     $script:windowsAhk = Join-Path $root 'ahk\commands\windows.ahk'
     $script:windowsPs = Join-Path $root 'powershell\commands\windows.ps1'
+    $script:ahkDir = Join-Path $root 'ahk'
 
     # AHK code without the spaces and tabs outside quotes (-DropSpace), and/or with the text of its
     # strings emptied (-DropStrings). A backtick in a string escapes the next character.
@@ -42,8 +45,9 @@ BeforeAll {
         $out.ToString()
     }
 
-    # Calls that start a program, send to a window or key, or ask Windows to do something.
-    $script:systemCall = '(?<![\w.])(?:Run|RunWait|RunAs|DllCall|ComCall|ComObject|SendMessage|PostMessage|Send|SendInput|SendText|SendEvent|SendPlay|ControlSend|Shutdown|ProcessClose|WinClose|WinKill|Click|MouseMove|SoundPlay)(?!\w)(?!\s*(?::=|=|\.))'
+    # Calls that start a program, send to a window or key, or ask Windows to do something. AutoHotkey
+    # reads function names without regard to case, so run("calc") counts as Run.
+    $script:systemCall = '(?i)(?<![\w.])(?:Run|RunWait|RunAs|DllCall|ComCall|ComObject|SendMessage|PostMessage|Send|SendInput|SendText|SendEvent|SendPlay|ControlSend|Shutdown|ProcessClose|WinClose|WinKill|Click|MouseMove|SoundPlay)(?!\w)(?!\s*(?::=|=|\.))'
 
     # What is wrong with a function body for the call it should make: nothing (no output), or one line each.
     function Get-AhkCallProblem {
@@ -57,23 +61,68 @@ BeforeAll {
         if ($names.Count -ne 1) { "makes $($names.Count) system calls ($($names -join ', ')), not one" }
     }
 
-    # The body lines of one function of an AHK file, as the helper reads them.
+    # The body lines of one function of an AHK file, as the helper reads them (the lookup is case-
+    # insensitive, as AutoHotkey's). The lines come out one by one, so a caller that indexes or counts
+    # them wraps the call in @(...). A function without a statement stops the test with a message.
     function Get-AhkBody {
         param([string]$Path, [string]$Name)
         $functions = Get-AhkFunctionSource $Path
         if (-not $functions.Contains($Name)) { throw "$Name is not a function of $Path" }
-        @($functions[$Name].Body)
+        $lines = @($functions[$Name].Body)
+        if ($lines.Count -eq 0) { throw "$Name has no statements in $Path" }
+        $lines
+    }
+
+    # What is wrong with the wait of a function body that turns the monitors off: one 'Sleep 1000' line,
+    # one SendMessage line, the wait first.
+    function Get-AhkWaitProblem {
+        param([string[]]$Body)
+        $lines = @($Body)
+        $wait = @(for ($k = 0; $k -lt $lines.Count; $k++) { if ($lines[$k] -match '^Sleep\s*\(?\s*1000\s*\)?$') { $k } })
+        $send = @(for ($k = 0; $k -lt $lines.Count; $k++) { if ((Format-AhkCode $lines[$k] -DropSpace) -match 'SendMessage\(') { $k } })
+        if ($wait.Count -ne 1) { "has $($wait.Count) lines that wait 1000 milliseconds, not one" }
+        if ($send.Count -ne 1) { "has $($send.Count) SendMessage lines, not one" }
+        if ($wait.Count -eq 1 -and $send.Count -eq 1 -and $wait[0] -gt $send[0]) { 'sends the message before it waits' }
     }
 
     # The titles an AHK function adds to its window group with GroupAdd("Group", "Title"): objects with
-    # Group and Title. A GroupAdd line of another shape stops the test, so it cannot be skipped.
+    # Group and Title. A GroupAdd line of another shape, such as the command style GroupAdd "Group",
+    # "Title" that AutoHotkey also reads, stops the test, so it cannot be skipped.
     function Get-AhkGroupTitle {
         param([string]$Path, [string]$Name)
         foreach ($line in (Get-AhkBody $Path $Name)) {
-            if ($line -notmatch '^GroupAdd\s*\(') { continue }
+            if ($line -notmatch '^GroupAdd\b') { continue }
             if ($line -notmatch '^GroupAdd\(\s*("[^"]*")\s*,\s*("[^"]*")\s*\)$') { throw "$Name has a GroupAdd line that is not two string literals: $line" }
             [pscustomobject]@{ Group = ConvertFrom-AhkStringLiteral $Matches[1]; Title = ConvertFrom-AhkStringLiteral $Matches[2] }
         }
+    }
+
+    # Every code line under a folder's .ahk files that names GroupAdd, as 'file: line' (comment and doc-
+    # comment lines left out). A title added to a window group anywhere else, such as from a helper
+    # function, would not be seen by Get-AhkGroupTitle; counting these lines finds it.
+    function Get-AhkGroupAddLine {
+        param([string]$Directory)
+        foreach ($file in (Get-ChildItem -LiteralPath $Directory -Filter '*.ahk' -Recurse -File)) {
+            foreach ($line in (Get-Content -LiteralPath $file.FullName)) {
+                $code = Remove-AhkComment $line
+                if ($code -match '^(\*|/\*)') { continue }
+                if ($code -match '\bGroupAdd\b') { "$($file.Name): $code" }
+            }
+        }
+    }
+
+    # What is wrong with the window group a function activates: it adds its titles to one group, and
+    # activates that one with ActivateOrOpen("ahk_group Name", ...). Group names are read without
+    # regard to case, as AutoHotkey reads them.
+    function Get-AhkGroupProblem {
+        param([string]$Path, [string]$Name)
+        $groups = @(Get-AhkGroupTitle $Path $Name | ForEach-Object { $_.Group } | Sort-Object -Unique)
+        if ($groups.Count -ne 1) { "adds titles to $($groups.Count) groups, not one"; return }
+        $activated = @(foreach ($line in (Get-AhkBody $Path $Name)) {
+                if ($line -match '^ActivateOrOpen\(\s*"ahk_group (\w+)"') { $Matches[1] }
+            })
+        if ($activated.Count -ne 1) { "activates $($activated.Count) groups, not one"; return }
+        if ($activated[0] -ne $groups[0]) { "adds its titles to $($groups[0]) and activates $($activated[0])" }
     }
 
     # The titles a PowerShell function passes as -WinTitle to ActivateOrOpenWindow, read from the syntax
@@ -111,16 +160,11 @@ Describe 'The AutoHotkey power commands make the calls the PowerShell ones are t
         @{ Command = 'Hibernate'; Call = 'DllCall("PowrProf\SetSuspendState", "Int", 1, "Int", 0, "Int", 0, "UChar")' }
         @{ Command = 'TurnMonitorsOff'; Call = 'SendMessage(0x112,0xF170,2,,"Program Manager")' }
     ) {
-        $body = Get-AhkBody $script:powerAhk $Command
+        $body = @(Get-AhkBody $script:powerAhk $Command)
         @(Get-AhkCallProblem -Body $body -Expected $Call) | Should -BeNullOrEmpty
     }
     It 'waits a second before it turns the monitors off, as the PowerShell version does' {
-        $body = Get-AhkBody $script:powerAhk 'TurnMonitorsOff'
-        $wait = @(0..($body.Count - 1) | Where-Object { $body[$_] -match '^Sleep\s*\(?\s*1000\s*\)?$' })
-        $send = @(0..($body.Count - 1) | Where-Object { (Format-AhkCode $body[$_] -DropSpace).Contains('SendMessage(') })
-        $wait.Count | Should -Be 1
-        $send.Count | Should -Be 1
-        $wait[0] | Should -BeLessThan $send[0]
+        @(Get-AhkWaitProblem (Get-AhkBody $script:powerAhk 'TurnMonitorsOff')) | Should -BeNullOrEmpty
     }
 }
 
@@ -138,7 +182,7 @@ Describe 'The check of a call notices what a changed copy of power.ahk does' {
     }
     It 'accepts the real source and a copy that differs only in spaces outside the quotes' {
         $spaced = $script:powerText.Replace('Run("shutdown /r /t 1")', 'Run( "shutdown /r /t 1" )')
-        $spaced | Should -Not -Be $script:powerText
+        ($spaced -ceq $script:powerText) | Should -BeFalse
         @(Get-AhkCallProblem -Body (Get-CopyBody $spaced 'Restart') -Expected 'Run("shutdown /r /t 1")') | Should -BeNullOrEmpty
     }
     It 'fails when the call is missing' {
@@ -156,9 +200,12 @@ Describe 'The check of a call notices what a changed copy of power.ahk does' {
         @{ Added = 'DllCall("LockWorkStation")' }
         @{ Added = 'SendMessage(0x112,0xF170,2,,"Program Manager")' }
         @{ Added = 'Run "calc"' }
+        @{ Added = 'run("calc")' }
+        @{ Added = 'DLLCALL("LockWorkStation")' }
+        @{ Added = 'sendmessage(0x112,0xF170,2,,"Program Manager")' }
     ) {
-        $added = $script:powerText.Replace('Run("shutdown /r /t 1")', "Run(`"shutdown /r /t 1`")`n   $Added")
-        $problem = @(Get-AhkCallProblem -Body (Get-CopyBody $added 'Restart') -Expected 'Run("shutdown /r /t 1")')
+        $copyText = $script:powerText.Replace('Run("shutdown /r /t 1")', "Run(`"shutdown /r /t 1`")`n   $Added")
+        $problem = @(Get-AhkCallProblem -Body (Get-CopyBody $copyText 'Restart') -Expected 'Run("shutdown /r /t 1")')
         $problem -join '; ' | Should -BeLike '*2 system calls*'
     }
     It 'fails when <Was> becomes <Is>' -ForEach @(
@@ -167,11 +214,63 @@ Describe 'The check of a call notices what a changed copy of power.ahk does' {
         @{ Was = 'Run("shutdown /s /t 1")'; Is = 'Run("shutdown /s/t 1")' }
         @{ Was = 'DllCall("PowrProf\SetSuspendState", "Int", 1,'; Is = 'DllCall("PowrProf\SetSuspendState", "Int", 0,' }
     ) {
-        $changed = $script:powerText.Replace($Was, $Is)
-        $changed | Should -Not -Be $script:powerText
+        $copyText = $script:powerText.Replace($Was, $Is)
+        ($copyText -ceq $script:powerText) | Should -BeFalse
         $name = if ($Was -like 'Run*') { 'Shutdown' } else { 'Hibernate' }
         $expected = if ($Was -like 'Run*') { $Was } else { 'DllCall("PowrProf\SetSuspendState", "Int", 1, "Int", 0, "Int", 0, "UChar")' }
-        @(Get-AhkCallProblem -Body (Get-CopyBody $changed $name) -Expected $expected) | Should -Not -BeNullOrEmpty
+        @(Get-AhkCallProblem -Body (Get-CopyBody $copyText $name) -Expected $expected) | Should -Not -BeNullOrEmpty
+    }
+    It 'finds a function whose name is written in another case, as AutoHotkey does' {
+        $copyText = $script:powerText.Replace('Restart(Macro)', 'restart(Macro)')
+        ($copyText -ceq $script:powerText) | Should -BeFalse
+        @(Get-AhkCallProblem -Body (Get-CopyBody $copyText 'Restart') -Expected 'Run("shutdown /r /t 1")') | Should -BeNullOrEmpty
+    }
+    It 'stops with a message at a function that has no statement' {
+        $copyText = $script:powerText.Replace('   DllCall("LockWorkStation")', '   ; nothing')
+        ($copyText -ceq $script:powerText) | Should -BeFalse
+        { Get-CopyBody $copyText 'Lock' } | Should -Throw 'Lock has no statements*'
+    }
+    It 'reads the body of one line, as Shutdown has, as one line' {
+        $body = @(Get-CopyBody $script:powerText 'Shutdown')
+        $body.Count | Should -Be 1
+        @(Get-AhkCallProblem -Body $body -Expected 'Run("shutdown /s /t 1")') | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'The check of the wait notices what a changed copy of power.ahk does' {
+    BeforeAll {
+        $script:powerText = Get-Content -LiteralPath $script:powerAhk -Raw
+        $script:sendLine = 'SendMessage(0x112,0xF170,2,,"Program Manager")'
+        function Get-CopyBody {
+            param([string]$Text, [string]$Name)
+            $copy = Join-Path $TestDrive 'power-copy.ahk'
+            Set-Content -LiteralPath $copy -Value $Text
+            Get-AhkBody $copy $Name
+        }
+    }
+    It 'accepts the wait written in another case or as a call' {
+        $copyText = $script:powerText.Replace('Sleep 1000', 'sleep(1000)').Replace($script:sendLine, $script:sendLine.ToUpperInvariant())
+        ($copyText -ceq $script:powerText) | Should -BeFalse
+        @(Get-AhkWaitProblem (Get-CopyBody $copyText 'TurnMonitorsOff')) | Should -BeNullOrEmpty
+    }
+    It 'fails when the message is sent before the wait' {
+        $copyText = $script:powerText.Replace('Sleep 1000', '@@WAIT@@').Replace($script:sendLine, 'Sleep 1000').Replace('@@WAIT@@', $script:sendLine)
+        ($copyText -ceq $script:powerText) | Should -BeFalse
+        (@(Get-AhkWaitProblem (Get-CopyBody $copyText 'TurnMonitorsOff')) -join '; ') | Should -BeLike '*before it waits*'
+    }
+    It 'fails when the wait is another length or missing: <Is>' -ForEach @(
+        @{ Is = 'Sleep 100' }
+        @{ Is = 'Sleep 10000' }
+        @{ Is = '; no wait' }
+    ) {
+        $copyText = $script:powerText.Replace('Sleep 1000', $Is)
+        ($copyText -ceq $script:powerText) | Should -BeFalse
+        @(Get-AhkWaitProblem (Get-CopyBody $copyText 'TurnMonitorsOff')) | Should -Not -BeNullOrEmpty
+    }
+    It 'fails, without an error of its own, for a body of one line' {
+        $problem = @(Get-AhkWaitProblem $script:sendLine)
+        $problem.Count | Should -Be 1
+        $problem[0] | Should -BeLike '*0 lines that wait*'
     }
 }
 
@@ -182,7 +281,7 @@ Describe 'The two versions look for the same shell windows' {
     ) {
         # A copy of windows.ps1 in a string, read from the test drive: the real file is never edited.
         $text = (Get-Content -LiteralPath $script:windowsPs -Raw).Replace($Was, $Is)
-        $text | Should -Not -Be (Get-Content -LiteralPath $script:windowsPs -Raw)
+        ($text -ceq (Get-Content -LiteralPath $script:windowsPs -Raw)) | Should -BeFalse
         $copy = Join-Path $TestDrive 'windows-copy.ps1'
         Set-Content -LiteralPath $copy -Value $text
         $ahkTitles = @(Get-AhkGroupTitle $script:windowsAhk 'OpenCommandPrompt' | ForEach-Object { $_.Title })
@@ -195,12 +294,52 @@ Describe 'The two versions look for the same shell windows' {
         Join-Sorted $ahkTitles | Should -BeExactly (Join-Sorted $psTitles)
     }
     It 'activates the window group <Command> adds its titles to' -ForEach @(@{ Command = 'OpenPowershell' }, @{ Command = 'OpenCommandPrompt' }) {
-        $groups = @(Get-AhkGroupTitle $script:windowsAhk $Command | ForEach-Object { $_.Group } | Select-Object -Unique)
-        $groups.Count | Should -Be 1
-        $activate = @(foreach ($line in (Get-AhkBody $script:windowsAhk $Command)) {
-                if ($line -match '^ActivateOrOpen\(\s*"ahk_group (\w+)"') { $Matches[1] }
-            })
-        $activate.Count | Should -Be 1
-        $activate[0] | Should -BeExactly $groups[0]
+        @(Get-AhkGroupProblem $script:windowsAhk $Command) | Should -BeNullOrEmpty
+    }
+    It 'adds to a window group nowhere but in OpenPowershell and OpenCommandPrompt' {
+        $own = @('OpenPowershell', 'OpenCommandPrompt' | ForEach-Object { Get-AhkGroupTitle $script:windowsAhk $_ })
+        $all = @(Get-AhkGroupAddLine $script:ahkDir)
+        $all.Count | Should -Be $own.Count -Because "every GroupAdd under ahk\ must be one the two functions are read for, and found: $($all -join '; ')"
+    }
+}
+
+Describe 'The check of the shell windows notices what a changed copy of windows.ahk does' {
+    BeforeAll {
+        $script:windowsText = Get-Content -LiteralPath $script:windowsAhk -Raw
+        function Get-CopyFile {
+            param([string]$Text)
+            $copy = Join-Path $TestDrive 'windows-copy.ahk'
+            Set-Content -LiteralPath $copy -Value $Text
+            $copy
+        }
+    }
+    It 'stops at a GroupAdd in the command style, also in another case: <Line>' -ForEach @(
+        @{ Line = 'GroupAdd "MacropadPowerShell", "ahk_exe powershell.exe"' }
+        @{ Line = 'groupadd "MacropadPowerShell", "ahk_exe powershell.exe"' }
+    ) {
+        $copyText = $script:windowsText.Replace('GroupAdd("MacropadPowerShell", "ahk_exe powershell.exe")', $Line)
+        ($copyText -ceq $script:windowsText) | Should -BeFalse
+        { Get-AhkGroupTitle (Get-CopyFile $copyText) 'OpenPowershell' } | Should -Throw '*not two string literals*'
+    }
+    It 'counts a GroupAdd that another file of the folder makes: <Line>' -ForEach @(
+        @{ Line = 'GroupAdd("MacropadPowerShell", "ahk_exe pwsh.exe")' }
+        @{ Line = 'GroupAdd "MacropadPowerShell", "ahk_exe pwsh.exe"' }
+        @{ Line = 'groupadd(Name, "ahk_exe pwsh.exe")' }
+    ) {
+        $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $folder 'windows.ahk') -Value $script:windowsText
+        $own = @('OpenPowershell', 'OpenCommandPrompt' | ForEach-Object { Get-AhkGroupTitle (Join-Path $folder 'windows.ahk') $_ })
+        @(Get-AhkGroupAddLine $folder).Count | Should -Be $own.Count
+        Set-Content -LiteralPath (Join-Path $folder 'helper.ahk') -Value "AddShell() {`n    $Line`n}"
+        @(Get-AhkGroupAddLine $folder).Count | Should -Be ($own.Count + 1)
+    }
+    It 'reads the name of a window group without regard to case, and sees another group: <Is>' -ForEach @(
+        @{ Is = 'ahk_group macropadpowershell'; Fails = $false }
+        @{ Is = 'ahk_group MacropadCommandPrompt'; Fails = $true }
+    ) {
+        $copyText = $script:windowsText.Replace('ahk_group MacropadPowerShell', $Is)
+        ($copyText -ceq $script:windowsText) | Should -BeFalse
+        (@(Get-AhkGroupProblem (Get-CopyFile $copyText) 'OpenPowershell').Count -gt 0) | Should -Be $Fails
     }
 }

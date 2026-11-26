@@ -21,7 +21,9 @@ export const AHK_RESERVED_WORDS: readonly string[] = [
  * https://www.autohotkey.com/docs/v2/lib/index.htm and every class of
  * https://www.autohotkey.com/docs/v2/ObjList.htm (read 2026-11-26), sorted and in lower case.
  * The index row `HotIf / HotIfWin...` does not spell out the four `HotIfWin*` functions, so those
- * come from https://www.autohotkey.com/docs/v2/lib/HotIf.htm (read the same day).
+ * come from https://www.autohotkey.com/docs/v2/lib/HotIf.htm (read the same day). The index has no row
+ * for most of the `Is` functions (`IsInteger`, `IsNumber`, `IsAlpha` and the others), so those come from
+ * https://www.autohotkey.com/docs/v2/lib/Is.htm (read the same day); `IsSet` is a reserved word.
  * Directives, `A_` variables, control flow (see AHK_RESERVED_WORDS) and the names of a class's
  * members (`Gui.Button`) are left out. A command with one of these names hides the function for
  * every other command, or does not load.
@@ -49,9 +51,11 @@ export const AHK_BUILTINS: readonly string[] = [
   'groupactivate', 'groupadd', 'groupclose', 'groupdeactivate', 'gui', 'guictrlfromhwnd', 'guifromhwnd', 'hasbase',
   'hasmethod', 'hasprop', 'hotif', 'hotifwinactive', 'hotifwinexist', 'hotifwinnotactive', 'hotifwinnotexist',
   'hotkey', 'hotstring', 'il_add', 'il_create', 'il_destroy', 'imagesearch', 'indexerror', 'inidelete', 'iniread',
-  'iniwrite', 'inputbox', 'inputhook', 'installkeybdhook', 'installmousehook', 'instr', 'integer', 'islabel',
-  'isobject', 'issetref', 'keyhistory', 'keywait', 'listhotkeys', 'listlines', 'listvars', 'listviewgetcontent', 'ln',
-  'loadpicture', 'log', 'ltrim', 'map', 'max', 'membererror', 'memoryerror', 'menu', 'menubar', 'menufromhandle',
+  'iniwrite', 'inputbox', 'inputhook', 'installkeybdhook', 'installmousehook', 'instr', 'integer', 'isalnum',
+  'isalpha', 'isdigit', 'isfloat', 'isinteger', 'islabel', 'islower', 'isnumber', 'isobject', 'issetref', 'isspace',
+  'istime', 'isupper', 'isxdigit', 'keyhistory', 'keywait', 'listhotkeys', 'listlines', 'listvars',
+  'listviewgetcontent', 'ln', 'loadpicture', 'log', 'ltrim', 'map', 'max', 'membererror', 'memoryerror', 'menu',
+  'menubar', 'menufromhandle',
   'menuselect', 'methoderror', 'min', 'mod', 'monitorget', 'monitorgetcount', 'monitorgetname', 'monitorgetprimary',
   'monitorgetworkarea', 'mouseclick', 'mouseclickdrag', 'mousegetpos', 'mousemove', 'msgbox', 'number', 'numget',
   'numput', 'objaddref', 'objbindmethod', 'object', 'objfromptr', 'objfromptraddref', 'objgetbase', 'objgetcapacity',

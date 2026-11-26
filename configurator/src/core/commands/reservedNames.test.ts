@@ -7,7 +7,7 @@ describe('reservedAs', () => {
     expect(reservedAs(name)).toBe('word')
   })
 
-  it.each(['Send', 'run', 'Sleep', 'WinActivate', 'MsgBox', 'DllCall', 'Map', 'Array', 'Gui'])(
+  it.each(['Send', 'run', 'Sleep', 'WinActivate', 'MsgBox', 'DllCall', 'Map', 'Array', 'Gui', 'IsInteger', 'isnumber', 'IsXDigit'])(
     "%s is one of AutoHotkey's own",
     (name) => {
       expect(reservedAs(name)).toBe('builtin')
@@ -16,6 +16,13 @@ describe('reservedAs', () => {
 
   it.each(['OpenCalculator', 'MyCommand', '_x', 'Go', ''])('%s is free', (name) => {
     expect(reservedAs(name)).toBeNull()
+  })
+
+  it('knows every function of the Is page, which the index of functions mostly leaves out', () => {
+    // https://www.autohotkey.com/docs/v2/lib/Is.htm, read 2026-11-26.
+    const page = ['IsInteger', 'IsFloat', 'IsNumber', 'IsObject', 'IsLabel', 'IsSetRef', 'IsDigit', 'IsXDigit', 'IsAlpha', 'IsUpper', 'IsLower', 'IsAlnum', 'IsSpace', 'IsTime']
+    expect(page.filter((name) => reservedAs(name) !== 'builtin')).toEqual([])
+    expect(reservedAs('IsSet')).toBe('word')
   })
 
   it('knows every function the bundled reference describes', () => {

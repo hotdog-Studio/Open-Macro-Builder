@@ -986,3 +986,41 @@ Describe 'End-to-end account of a failed case: the key watch''s record and the t
         Get-E2eFailureState $ctx -AfterCleanUp | Should -BeLike '  after the clean-up: in front *; keys down: *'
     }
 }
+Describe 'End-to-end foreground hook: the answers of the key watch to the requests of WatchFront' {
+    # A late answer to an earlier request (the key watch's thread was busy past the 2 s wait) must not
+    # pass for the answer to the next one: a late "off" would otherwise make the next "on" report that
+    # the hook could not be turned on. The numbers are told apart in FrontReplies; no hook is set here.
+    It 'gives each request its number, counting from 1' {
+        $r = [OmbE2e.FrontReplies]::new()
+        $r.Ask() | Should -Be 1
+        $r.Ask() | Should -Be 2
+    }
+    It 'says no when the request is not answered within the time' {
+        $r = [OmbE2e.FrontReplies]::new()
+        $r.Wait($r.Ask(), 30) | Should -BeFalse
+    }
+    It 'says yes when the request was answered' {
+        $r = [OmbE2e.FrontReplies]::new()
+        $n = $r.Ask()
+        $r.Answer($n)
+        $r.Wait($n, 30) | Should -BeTrue
+    }
+    It 'does not take the late answer to an earlier request for the answer to the next one' {
+        $r = [OmbE2e.FrontReplies]::new()
+        $off = $r.Ask()
+        $r.Wait($off, 20) | Should -BeFalse
+        $on = $r.Ask()
+        $r.Answer($off)
+        $r.Wait($on, 30) | Should -BeFalse -Because 'only the answer to the first request has come'
+        $r.Answer($on)
+        $r.Wait($on, 30) | Should -BeTrue
+    }
+    It 'keeps a later answer when an earlier one comes after it' {
+        $r = [OmbE2e.FrontReplies]::new()
+        $first = $r.Ask()
+        $second = $r.Ask()
+        $r.Answer($second)
+        $r.Answer($first)
+        $r.Wait($second, 30) | Should -BeTrue
+    }
+}

@@ -81,6 +81,41 @@ namespace OmbE2e
         }
     }
 
+    // The requests WatchFront posts to the key watch's thread and that thread's answers, each answer told
+    // to its request by a number. An answer that comes late (the thread was busy past WatchFront's wait)
+    // then cannot be taken for the answer to the request after it.
+    public sealed class FrontReplies
+    {
+        private readonly object gate = new object();
+        private int asked;
+        private int answered;
+
+        // The number of a new request.
+        public int Ask() { lock (gate) return ++asked; }
+
+        // The thread has done request seq, and so every one before it.
+        public void Answer(int seq)
+        {
+            lock (gate) { if (seq > answered) answered = seq; System.Threading.Monitor.PulseAll(gate); }
+        }
+
+        // True when request seq or a later one has been answered within ms.
+        public bool Wait(int seq, int ms)
+        {
+            System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+            lock (gate)
+            {
+                while (answered < seq)
+                {
+                    long left = ms - clock.ElapsedMilliseconds;
+                    if (left <= 0) return false;
+                    System.Threading.Monitor.Wait(gate, (int)left);
+                }
+                return true;
+            }
+        }
+    }
+
     // A low-level keyboard hook on its own thread, for keys that Windows takes before any window gets
     // them (Win key chords, Print Screen, media keys). It records only injected keys (sent by a
     // program), never what a person types, and while Swallow is on it stops injected keys other than
@@ -140,9 +175,10 @@ namespace OmbE2e
         private static readonly System.Collections.Generic.List<string> events = new System.Collections.Generic.List<string>();
         private static readonly System.Collections.Generic.List<string> timed = new System.Collections.Generic.List<string>();
         private const int TimedMax = 2000;
-        // WM_APP + 9, posted to this thread: wParam 1 sets the WinEvent hook, 0 removes it.
+        // WM_APP + 9, posted to this thread: wParam 1 sets the WinEvent hook, 0 removes it; lParam is the
+        // number of the request (FrontReplies).
         private const uint WM_WATCHFRONT = 0x8009;
-        private static readonly System.Threading.AutoResetEvent frontDone = new System.Threading.AutoResetEvent(false);
+        private static readonly FrontReplies frontReplies = new FrontReplies();
         public static volatile bool Swallow;
 
         public static bool Start()
@@ -166,7 +202,7 @@ namespace OmbE2e
                         // messages, so it is set and removed here.
                         if (msg.wParam != IntPtr.Zero && frontHook == IntPtr.Zero) frontHook = SetWinEventHook(3, 3, IntPtr.Zero, frontProc, 0, 0, 0);
                         else if (msg.wParam == IntPtr.Zero && frontHook != IntPtr.Zero) { UnhookWinEvent(frontHook); frontHook = IntPtr.Zero; }
-                        frontDone.Set();
+                        frontReplies.Answer((int)msg.lParam);
                     }
                     if (frontHook != IntPtr.Zero) UnhookWinEvent(frontHook);
                     frontHook = IntPtr.Zero;
@@ -209,9 +245,9 @@ namespace OmbE2e
         public static bool WatchFront(bool on)
         {
             if (thread == null || hook == IntPtr.Zero) return false;
-            frontDone.Reset();
-            if (!PostThreadMessage(threadId, WM_WATCHFRONT, new IntPtr(on ? 1 : 0), IntPtr.Zero)) return false;
-            if (!frontDone.WaitOne(2000)) return false;
+            int seq = frontReplies.Ask();
+            if (!PostThreadMessage(threadId, WM_WATCHFRONT, new IntPtr(on ? 1 : 0), new IntPtr(seq))) return false;
+            if (!frontReplies.Wait(seq, 2000)) return false;
             return (frontHook != IntPtr.Zero) == on;
         }
 
@@ -2410,7 +2446,9 @@ function Invoke-E2eCase {
             $foreign = Get-E2eForeignForeground $Case
         } finally {
             [OmbE2e.KeyWatch]::Swallow = $false
-            if ($timed) { [void][OmbE2e.KeyWatch]::WatchFront($false) }
+            if ($timed -and -not [OmbE2e.KeyWatch]::WatchFront($false)) {
+                Write-Host "End-to-end $($Case.Command), $Lang, the case '$($Case.Name)': the foreground hook could not be turned off within 2 s; the key watch's thread was busy, and the hook goes off when it gets to the message."
+            }
             $step = { param([scriptblock]$Do) try { & $Do } catch { $problems.Add($_.Exception.Message) } }
             & $step { Clear-E2eHeldKeys }
             & $step { if ($Case.CleanUp) { & $Case.CleanUp $ctx } }

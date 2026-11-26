@@ -50,7 +50,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 - PowerShell version: writing to the macropad's log (`%TEMP%\LayeredMacropad.log`) no longer fails while another program has the file open, such as a log viewer. A line that still cannot be written is dropped and never stops the macropad.
 - AutoHotkey version: the overlay is shown without taking the focus, and a click on it does not take the focus either, as in the PowerShell version. The window you were typing in keeps the keyboard while the overlay is up, and is still the active window when the Fn key is let go.
-- Both versions: `ChromeNewTabInGroup` opens a new tab inside the tab group of the active tab, right after it, as **New tab to the right** in the tab's right-click menu does, with the address bar of the new tab ready to type in as after Ctrl+T. It used to press Shift+Alt+T, which moves the focus to Chrome's toolbar. Chrome has no shortcut for a new tab in a group, so the command presses no key: it hands Chrome its own command for that menu item. It needs no extension and no change to Chrome's settings, and works in any display language. When the active tab is in no group, the new tab opens right after it, in no group. Like the Chrome commands above, it brings Chrome forward first and does nothing when Chrome does not come forward. It also does nothing while a Chrome bubble or dialog has the keyboard, in an installed app's window, a DevTools window or a popup window, or in a Chrome run as administrator when the macropad is not; when the active tab is pinned, the new tab opens after the pinned tabs. The example layout gives it no key.
+- Both versions: `ChromeNewTabInGroup` is back, after 1.0.5 removed it. It opens a new tab inside the tab group of the active tab, right after it, as **New tab to the right** in the tab's right-click menu does, with the address bar of the new tab ready to type in as after Ctrl+T. Up to 1.0.4 it pressed Shift+Alt+T, which moves the focus to Chrome's toolbar. Chrome has no shortcut for a new tab in a group, so the command presses no key: it hands Chrome its own command for that menu item. It needs no extension and no change to Chrome's settings, and works in any display language. When the active tab is in no group, the new tab opens right after it, in no group. Like the Chrome commands above, it brings Chrome forward first and does nothing when Chrome does not come forward. It also does nothing while a Chrome bubble or dialog has the keyboard, in an installed app's window, a DevTools window or a popup window, or in a Chrome run as administrator when the macropad is not; when the active tab is pinned, the new tab opens after the pinned tabs. The example layout gives it no key.
 
 ## 1.0.5 - 2026-11-20
 
@@ -67,7 +67,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 ### Changed
 
 - Configurator: the right-hand panel on Pad shape, Layers and Macros grows to fit the overlay preview, so the preview shows whole without a sideways scrollbar of its own. The panel stops at half the window, and a preview wider than that scrolls as before.
-- Configurator: messages, the bar that says `config.json` changed on disk and the update's bar float over the top of the editor and no longer push it down. When more than one shows, they stack without covering each other, and a click beside them reaches the editor. Notices are blue and refused actions amber, and both leave by themselves after a few seconds. Failures are red and stay until dismissed, and so do the notices shown when a folder is opened.
+- Configurator: messages and the bar that says `config.json` changed on disk float over the top of the editor and no longer push it down. When more than one shows, they stack without covering each other, and a click beside them reaches the editor. Notices are blue and refused actions amber, and both leave by themselves after a few seconds. Failures are red and stay until dismissed, and so do the notices shown when a folder is opened.
 - Configurator: the New command file dialog and the `local/config.json` prompt no longer mention git, because a folder the configurator sets up is a plain copy and not a clone. The comment at the top of a new `local/ahk/commands.ahk` changed with them.
 - Desktop app: the two links in the Get started guide, to the AutoHotkey download page and to the contributing guide, open in the default browser. Every other address is still refused.
 - Configurator: in a window narrower than 1440 px the header leaves out the path of the layout file, so the five tabs and the buttons stay on one row at the desktop app's default size.
@@ -77,6 +77,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ### Removed
 
+- Both versions: `ChromeNewTabInGroup`. It pressed Shift+Alt+T, which moves the focus to Chrome's toolbar, and Chrome has no shortcut for a new tab in a group. A layout that still names it fails the config check.
 - AutoHotkey version: `EncodeInteger`, from `helper.ahk`. Nothing called it, and it cut a 64-bit address short.
 
 ### Fixed

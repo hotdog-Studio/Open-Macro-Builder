@@ -3,6 +3,7 @@ import { useApp, useEditor } from '../state/store'
 import { CommandsTab } from './CommandsTab'
 import { GetStarted } from './GetStarted'
 import { Header } from './Header'
+import { IconsTab } from './IconsTab'
 import { LayersTab } from './LayersTab'
 import { MacrosTab } from './MacrosTab'
 import { OpenScreen } from './OpenScreen'
@@ -42,6 +43,7 @@ function Editor() {
           {state.tab === 'shape' && <ShapeTab />}
           {state.tab === 'layers' && <LayersTab />}
           {state.tab === 'macros' && <MacrosTab />}
+          {state.tab === 'icons' && <IconsTab />}
           {state.tab === 'commands' && <CommandsTab />}
         </div>
       </div>

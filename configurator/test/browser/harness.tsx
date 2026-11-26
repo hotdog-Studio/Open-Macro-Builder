@@ -220,7 +220,7 @@ export async function cleanUp(): Promise<void> {
   if (await commands.releaseHeld()) await new Promise((done) => setTimeout(done, DND_KIT_CLICK_GUARD))
 }
 
-export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
+export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Icons' | 'Commands'
 
 /** A real click, through the browser: in the middle of the element, or where `options` say. */
 export const click = (el: Element, options?: Parameters<typeof userEvent.click>[1]) => input(1, () => userEvent.click(el, options))

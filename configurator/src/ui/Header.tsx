@@ -9,6 +9,7 @@ const TABS: [Tab, string][] = [
   ['shape', 'Pad shape'],
   ['layers', 'Layers'],
   ['macros', 'Macros'],
+  ['icons', 'Icons'],
   ['commands', 'Commands'],
 ]
 
@@ -57,7 +58,7 @@ export function Header() {
       <span className="flex-1" />
       <span className="mr-4 flex items-baseline gap-2 text-[12px]">
         <span className="text-zinc-200">{state.folder.name}</span>
-        {/* Left out below 1440 px: the five tabs and the buttons need the room to stay on one row at the desktop app's default size. */}
+        {/* Left out below 1440 px: the six tabs and the buttons need the room to stay on one row at the desktop app's default size. */}
         <span className="hidden font-mono text-[11px] text-zinc-500 min-[1440px]:inline">{state.configFile.path}</span>
       </span>
       <fieldset className="mr-3 flex items-center gap-3 text-[12px] text-zinc-400">

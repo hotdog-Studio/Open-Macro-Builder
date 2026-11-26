@@ -131,8 +131,8 @@ export function usePadActions(): PadActions {
   return pad
 }
 
-/** The tabs that have a pad. The guide has none, so nothing is ever dragged there. */
-type PadTab = Exclude<Tab, 'start'>
+/** The tabs that have a pad. The guide and the Icons tab have none, so nothing is ever dragged there. */
+type PadTab = Exclude<Tab, 'start' | 'icons'>
 
 /** For someone using a screen reader or the keyboard: what to press instead of dragging. */
 const INSTRUCTIONS: Record<PadTab, string> = {

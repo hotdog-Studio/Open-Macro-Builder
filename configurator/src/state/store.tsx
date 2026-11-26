@@ -14,7 +14,7 @@ import { createActions, type AppActions } from './actions'
 import { commandsReducer, initialCommands, type CommandAction, type CommandsView } from './commandsSlice'
 import { APP_SCRIPTS, type UpdateSource } from './updateActions'
 
-export type Tab = 'start' | 'shape' | 'layers' | 'macros' | 'commands'
+export type Tab = 'start' | 'shape' | 'layers' | 'macros' | 'icons' | 'commands'
 
 /**
  * The one message showing, as a floating toast: a notice (`info`), an action that was refused

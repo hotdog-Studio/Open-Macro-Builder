@@ -84,7 +84,7 @@ describe('the Get started tab', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Open folder' }))
     await screen.findByRole('list', { name: 'Keys' })
     const tabs = within(screen.getByRole('tablist', { name: 'Views' })).getAllByRole('tab')
-    expect(tabs.map((t) => t.textContent)).toEqual(['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'])
+    expect(tabs.map((t) => t.textContent)).toEqual(['Get started', 'Pad shape', 'Layers', 'Macros', 'Icons', 'Commands'])
     expect(screen.getByRole('tab', { name: 'Pad shape', selected: true })).toBeTruthy()
     expect(screen.queryByRole('article', { name: 'Get started' })).toBeNull()
   })

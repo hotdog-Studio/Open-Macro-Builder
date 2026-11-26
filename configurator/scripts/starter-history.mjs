@@ -27,8 +27,10 @@ export function compareVersions(a, b) {
 }
 
 function git(repoRoot, args, input) {
-  // `git` is found on PATH, as scripts/ci-version.mjs and scripts/ci-release.mjs do: a person runs this
-  // on their own clone, and whoever controls their PATH already controls what they run (hence NOSONAR).
+  // `git` is found on PATH, as scripts/ci-version.mjs and scripts/ci-release.mjs do. This runs on a person's
+  // own clone (`node scripts/starter-history.mjs`) and in the tests of starter-history.test.mjs, under
+  // Vitest, in a person's shell or in CI; wherever it runs, whoever controls PATH already controls the run
+  // (hence NOSONAR).
   const result = spawnSync('git', ['-C', repoRoot, ...args], { input, maxBuffer: 1 << 30 }) // NOSONAR S4036
   if (result.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${result.error?.message ?? result.stderr.toString('utf8')}`)

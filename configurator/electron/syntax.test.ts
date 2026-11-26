@@ -211,6 +211,21 @@ describe('checkSyntax', () => {
       })
     })
 
+    // The line says the reason and ends in one full stop of its own: PowerShell's trailing full stops go, the ones
+    // inside stay, and a reason that was only full stops is empty (the line then reads "could not run: .").
+    it.each([
+      ['gone.ps1.', 'gone.ps1'],
+      ['gone.ps1...', 'gone.ps1'],
+      ['a.b.', 'a.b'],
+      ['a.b', 'a.b'],
+      ['...', ''],
+      [`a${'.'.repeat(50_000)}b`, `a${'.'.repeat(50_000)}b`],
+    ])("takes the trailing full stops off PowerShell's reason (%#)", async (stderr, reason) => {
+      const failed = Object.assign(new Error('Command failed'), { code: 1 })
+      const exec = fakeExec({ error: failed, stderr: `${stderr}\r\n` })
+      expect(await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: exec as never })).toEqual({ skipped: `${REASON}${reason}.` })
+    })
+
     it('says so when PowerShell cannot be started', async () => {
       const exec = fakeExec({ error: Object.assign(new Error('spawn powershell.exe ENOENT'), { code: 'ENOENT' }) })
       expect(await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: exec as never })).toEqual({

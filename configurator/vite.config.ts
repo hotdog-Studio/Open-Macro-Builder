@@ -32,8 +32,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       // scripts/ holds the build scripts, starter.mjs among them (it decides which files go into every
-      // folder the app sets up). build-electron.mjs and make-icon.mjs only start tools and show as
-      // uncovered here; sonar.coverage.exclusions leaves them out of SonarQube's figure.
+      // folder the app sets up). build-electron.mjs (one call to esbuild) and make-icon.mjs (drives headless
+      // Chromium, and holds about 60 lines of .ico file-format code that no test reaches) have no test and
+      // show as uncovered here; sonar.coverage.exclusions leaves them out of SonarQube's figure.
       include: ['src/**', 'electron/**', 'scripts/**'],
       // A declaration file beside plain JavaScript (src/core/update/canonical.d.mts) holds no code, and the
       // provider would try to parse it as JavaScript. Test files are not code under test.

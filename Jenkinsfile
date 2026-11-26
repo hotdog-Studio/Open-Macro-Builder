@@ -37,9 +37,10 @@
 // v<version> FIRST, then the two Linux images and their shared tags, then the GitHub release with
 // the installer and the portable exe. Only develop builds the desktop app, the images and the
 // release: on any other branch the Desktop app, Container images and Release stages are skipped,
-// and the arm64 agent is not used. The Windows tests and the end-to-end test run on every branch,
-// so a branch proves itself on the Windows agents before it is merged; on develop either one that
-// fails, or that found no agent, stops the release.
+// and the arm64 agent is not used. The Windows tests, the Windows Integration tests, the end-to-end
+// test and the Windows configurator tests run on every branch, so a branch proves itself on the
+// Windows agents before it is merged; on develop any of them that fails, or that found no agent,
+// stops the release.
 //
 // STAGES, in order: Checkout → Version (on develop it also checks that CHANGELOG.md has the heading of
 // the version: scripts/ci-release.mjs changelog) → Validate config (scripts/validate-config.mjs:
@@ -47,15 +48,14 @@
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
 // installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because this agent never starts Electron: the
 // desktop-app tests in configurator/e2e skip themselves without the binary, and the Windows
-// configurator stage below runs them) → Windows tests (the
-// Pester suite, on the Windows agent, every branch) → Windows integration tests (the Pester tests
-// tagged Integration, which need a real desktop, on the desktop agent, every branch) → Windows
-// end-to-end (the real macropad on the desktop agent, every branch) → Windows configurator tests
-// (the unit, browser and desktop-app suites with the Electron binary, on the desktop agent, every
-// branch) → SonarQube analysis → quality gate → Desktop app (the installer and
-// the portable exe, on the Windows agent, develop only) → Container images (linux/amd64 and
-// linux/arm64, both built here, the arm64 one tried on the arm64 agent, develop only) → Release
-// (develop only) → Cleanup. Nothing is deployed
+// configurator stage below runs them) → Windows tests (the Pester suite, on the Windows agent, every
+// branch) → Windows integration tests (the Pester tests tagged Integration, which need a real
+// desktop, on the desktop agent, every branch) → Windows end-to-end (the real macropad on the
+// desktop agent, every branch) → Windows configurator tests (the unit, browser and desktop-app
+// suites with the Electron binary, on the desktop agent, every branch) → SonarQube analysis →
+// quality gate → Desktop app (the installer and the portable exe, on the Windows agent, develop
+// only) → Container images (linux/amd64 and linux/arm64, both built here, the arm64 one tried on
+// the arm64 agent, develop only) → Release (develop only) → Cleanup. Nothing is deployed
 // from here, the macropad runs on the desktop it drives.
 
 // Push the build outcome to the ntfy topic in OMB_NTFY_URL. Missing URL or credential → a log
@@ -122,8 +122,8 @@ def onAgent(String label, int minutes, Closure body) {
 // working in the workspace keeps Windows from removing the folder itself, though not what is in it:
 // the stage then checks out into the held folder, and removes what is not part of the checkout, so
 // that nothing left there (an old result file) passes for this build's. An abort or a timeout while
-// the folder is removed is thrown on. Both Windows labels are one machine, so the Windows tests and
-// the end-to-end test share the workspace.
+// the folder is removed is thrown on. Both Windows labels are one machine, so the four Windows
+// stages (tests, Integration tests, end-to-end, configurator tests) share the workspace.
 def checkoutIntoWorkspace() {
     try {
         deleteDir()

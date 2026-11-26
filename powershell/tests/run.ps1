@@ -3,10 +3,10 @@
 # results/pester/test-results.xml at the repo root and leaves out the Integration tests, which
 # open windows and send real keys. -Integration runs those tests (tag Integration) alone, the
 # end-to-end test still left out: with -Ci its JUnit XML goes to results/pester/integration-results.xml.
-# It takes the screen and the keyboard as -EndToEnd does, and prints the same photosensitivity warning.
-# -Integration with -EndToEnd is refused: run them apart.
-# The end-to-end test (tag EndToEnd) is left out of every run but
-# -EndToEnd, which runs it alone: it takes the keyboard, the mouse and the screen for a few minutes.
+# Like -EndToEnd it takes the screen and the keyboard, and it prints the same photosensitivity
+# warning. -Integration with -EndToEnd is refused: run them apart. The end-to-end test (tag EndToEnd)
+# is left out of every run but -EndToEnd, which runs it alone: it takes the keyboard, the mouse and
+# the screen for a few minutes.
 # -EndToEnd always runs it in a PowerShell process started here for it, never in the shell this script
 # was called from: the test's banner watches that process and cleans up when it has ended.
 # With -Ci -EndToEnd its JUnit XML goes to results/pester/end-to-end-results.xml, and a case that
@@ -62,19 +62,18 @@ $c.Run.Path = @($PSScriptRoot) + @(Join-Path $root 'local\powershell\tests' | Wh
 $c.Run.Exit = $true
 $c.Output.Verbosity = 'Detailed'
 $resultFile = 'test-results.xml'
+if ($EndToEnd -or $Integration) {
+    Write-Host 'Photosensitivity warning: this run opens, moves and closes windows. Look away if flashing affects you.'
+}
 if ($EndToEnd) {
-    Write-Host 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
     $c.Run.Path = @(Join-Path $PSScriptRoot 'EndToEnd.Tests.ps1')
     $c.Filter.Tag = @('EndToEnd')
     $resultFile = 'end-to-end-results.xml'
 } elseif ($Integration) {
-    Write-Host 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
     $c.Filter.Tag = @('Integration')
     $resultFile = 'integration-results.xml'
-    $ExcludeTag = @($ExcludeTag) + 'EndToEnd'
-} else {
-    $ExcludeTag = @($ExcludeTag) + 'EndToEnd'
 }
+if (-not $EndToEnd) { $ExcludeTag = @($ExcludeTag) + 'EndToEnd' }
 if ($Ci) {
     if (-not $EndToEnd -and -not $Integration) { $ExcludeTag = @($ExcludeTag) + 'Integration' }
     $results = Join-Path $root 'results\pester'

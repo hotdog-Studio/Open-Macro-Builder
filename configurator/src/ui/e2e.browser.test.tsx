@@ -4,12 +4,14 @@ import { SETTINGS_PATH } from '../core/settings'
 import { idbHandleStore } from '../platform/browser'
 import { detectPlatform } from '../platform/detect'
 import type { Platform } from '../platform/types'
-import { banner, cell, cleanUp, click, dirty, drag, editableFiles, mount, offset, openTab, padKey, repoFiles, rest, unmount, validatorProblems, ws, type Point } from '../../test/browser/harness'
+import { banner, cell, cleanUp, click, dirty, drag, editableFiles, inStorage, mount, offset, openTab, padKey, repoFiles, rest, unmount, validatorProblems, ws, type Point } from '../../test/browser/harness'
 
 // End to end in the browser: the real platform code (platform/browser.ts) over a real folder
 // handle, the folder remembered in the real IndexedDB, and edits made by dragging. The folder is
 // in the browser's private storage (OPFS), which hands out the same kind of handle as the folder
-// picker; only the picker itself, which a test cannot click, is replaced.
+// picker; only the picker itself, which a test cannot click, is replaced. A test's own work in that
+// storage goes through inStorage: the clean-up waits for it to end, and a test that ended meanwhile
+// stops there.
 
 const FOLDER = 'omb-e2e'
 const ROW = 103.75
@@ -18,8 +20,7 @@ type PickerWindow = Window & { showDirectoryPicker?: () => Promise<FileSystemDir
 const realPicker = Object.getOwnPropertyDescriptor(window, 'showDirectoryPicker')
 let folder: FileSystemDirectoryHandle
 
-/** A fresh folder in the browser's private storage holding `files`. */
-async function seed(files: Record<string, Uint8Array>): Promise<FileSystemDirectoryHandle> {
+async function seedFolder(files: Record<string, Uint8Array>): Promise<FileSystemDirectoryHandle> {
   const root = await navigator.storage.getDirectory()
   await root.removeEntry(FOLDER, { recursive: true }).catch(() => {})
   const dir = await root.getDirectoryHandle(FOLDER, { create: true })
@@ -37,8 +38,7 @@ async function write(dir: FileSystemDirectoryHandle, path: string, content: Uint
   await out.close()
 }
 
-/** A file of the folder as text, or null when it is not there. */
-async function read(path: string): Promise<string | null> {
+async function readFile(path: string): Promise<string | null> {
   const parts = path.split('/')
   const name = parts.pop()!
   try {
@@ -50,8 +50,7 @@ async function read(path: string): Promise<string | null> {
   }
 }
 
-/** The size in bytes of a file of the folder, or null when it is not there. */
-async function sizeOf(path: string): Promise<number | null> {
+async function fileSize(path: string): Promise<number | null> {
   const parts = path.split('/')
   const name = parts.pop()!
   try {
@@ -63,8 +62,7 @@ async function sizeOf(path: string): Promise<number | null> {
   }
 }
 
-/** True when the folder holds a directory at `path`. */
-async function hasDir(path: string): Promise<boolean> {
+async function dirExists(path: string): Promise<boolean> {
   try {
     let at = folder
     for (const part of path.split('/')) at = await at.getDirectoryHandle(part)
@@ -73,6 +71,19 @@ async function hasDir(path: string): Promise<boolean> {
     return false
   }
 }
+
+/** A fresh folder in the browser's private storage holding `files`. */
+const seed = (files: Record<string, Uint8Array>) => inStorage(() => seedFolder(files))
+/** Writes a file of the folder, as another program would. */
+const writeOnDisk = (path: string, content: string) => inStorage(() => write(folder, path, content))
+/** Deletes the folder, as another program would. */
+const deleteFolder = () => inStorage(async () => (await navigator.storage.getDirectory()).removeEntry(FOLDER, { recursive: true }))
+/** A file of the folder as text, or null when it is not there. */
+const read = (path: string) => inStorage(() => readFile(path))
+/** The size in bytes of a file of the folder, or null when it is not there. */
+const sizeOf = (path: string) => inStorage(() => fileSize(path))
+/** True when the folder holds a directory at `path`. */
+const hasDir = (path: string) => inStorage(() => dirExists(path))
 
 interface SavedConfig {
   fn: { key: string }
@@ -363,7 +374,7 @@ describe('in the browser, on a real folder', () => {
     await waitFor(() => expect(dirty()).toBe(true))
 
     const theirs = { ...(await saved()), fn: { key: 'Pause', row: 4, col: 1, width: 2 } }
-    await write(folder, 'local/config.json', JSON.stringify(theirs, null, 2) + '\n')
+    await writeOnDisk('local/config.json', JSON.stringify(theirs, null, 2) + '\n')
 
     await click(screen.getByRole('button', { name: 'Save config.json' }))
     await waitFor(() => expect(dialog().textContent).toContain('config.json changed on disk since you opened it.'))
@@ -383,7 +394,7 @@ describe('in the browser, on a real folder', () => {
     await waitFor(() => expect(dirty()).toBe(true))
 
     const theirs = JSON.stringify({ ...(await saved()), fn: { key: 'Pause', row: 4, col: 1, width: 2 } }, null, 2) + '\n'
-    await write(folder, 'local/config.json', theirs)
+    await writeOnDisk('local/config.json', theirs)
 
     await click(screen.getByRole('button', { name: 'Save config.json' }))
     await waitFor(() => expect(dialog().textContent).toContain('config.json changed on disk since you opened it.'))
@@ -401,7 +412,7 @@ describe('in the browser, on a real folder', () => {
   it('when another program changed the config: coming back to the window says so, and Reload from disk takes it', async () => {
     await openEditor()
     const theirs = { ...(await saved()), fn: { key: 'Pause', row: 4, col: 1, width: 2 } }
-    await write(folder, 'local/config.json', JSON.stringify(theirs, null, 2) + '\n')
+    await writeOnDisk('local/config.json', JSON.stringify(theirs, null, 2) + '\n')
 
     // The app looks again whenever its window gets the focus back.
     window.dispatchEvent(new Event('focus'))
@@ -516,14 +527,14 @@ describe('in the browser, when the remembered folder needs permission again or i
 
   it('says the folder is gone when it was deleted since last time, and forgets it', async () => {
     await rememberFolder()
-    await (await navigator.storage.getDirectory()).removeEntry(FOLDER, { recursive: true })
+    await deleteFolder()
     launch()
 
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toBe(`The folder ${FOLDER} is no longer available. Open it again.`),
     )
     expect(screen.queryByRole('button', { name: /^Reopen/ })).toBeNull()
-    expect(await idbHandleStore.get()).toBeUndefined()
+    expect(await inStorage(() => idbHandleStore.get())).toBeUndefined()
 
     // Starting again finds nothing remembered: the plain start screen.
     unmount()
@@ -535,7 +546,7 @@ describe('in the browser, when the remembered folder needs permission again or i
 
   it('says the folder is gone when it was deleted and permission is asked for', async () => {
     await rememberFolder()
-    await (await navigator.storage.getDirectory()).removeEntry(FOLDER, { recursive: true })
+    await deleteFolder()
     browserSays('prompt', 'granted')
     launch()
 
@@ -550,7 +561,7 @@ describe('in the browser, when the remembered folder needs permission again or i
     await openEditor()
     await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(dirty()).toBe(true))
-    await (await navigator.storage.getDirectory()).removeEntry(FOLDER, { recursive: true })
+    await deleteFolder()
 
     await click(screen.getByRole('button', { name: 'Save config.json' }))
     await waitFor(() => expect(banner() ?? screen.queryByRole('dialog')?.textContent ?? '').not.toBe(''))

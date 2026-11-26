@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { server } from 'vitest/browser'
-import { carry, cell, cleanUp, click, drag, drop, padKey, startApp } from '../../test/browser/harness'
+import { carry, cell, checked, cleanUp, click, drag, drop, padKey, startApp } from '../../test/browser/harness'
 
 // Pictures of the pad compared with reference pictures kept beside this file (__screenshots__/):
 // a change in how the grid looks fails here even when every behaviour test still passes.
@@ -28,30 +28,33 @@ async function pad(): Promise<HTMLElement> {
 // A few pixels of anti-aliasing may differ from run to run; a moved or recoloured key is thousands.
 const loose = { comparatorOptions: { allowedMismatchedPixelRatio: 0.01 } }
 
+/** Compares the pad with its reference picture `name`; a test that ended meanwhile stops here. */
+const padLooksLike = async (name: string) => checked(expect(await pad()).toMatchScreenshot(name, loose))
+
 here('how the pad looks', () => {
   it('Pad shape tab', async () => {
     await startApp()
-    await expect(await pad()).toMatchScreenshot('shape', loose)
+    await padLooksLike('shape')
   })
 
   it('Pad shape tab with a key selected and the label strips off', async () => {
     await startApp()
     await click(screen.getByRole('checkbox', { name: 'Show labels above keys' }))
     await click(padKey('F22'))
-    await expect(await pad()).toMatchScreenshot('shape-no-labels-selected', loose)
+    await padLooksLike('shape-no-labels-selected')
   })
 
   it('Pad shape tab while a key is carried over a free square', async () => {
     await startApp()
     await carry(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(cell(5, 1).className).toContain('border-sky-400'))
-    await expect(await pad()).toMatchScreenshot('shape-carrying', loose)
+    await padLooksLike('shape-carrying')
     await drop()
   })
 
   it('Layers tab', async () => {
     await startApp('Layers')
-    await expect(await pad()).toMatchScreenshot('layers', loose)
+    await padLooksLike('layers')
   })
 
   it('Layers tab after a layer is parked', async () => {
@@ -59,11 +62,11 @@ here('how the pad looks', () => {
     const chrome = within(screen.getByRole('list', { name: 'Keys' })).getByRole('button', { name: 'Chrome' })
     await drag(chrome, screen.getByRole('group', { name: 'Parked' }))
     await waitFor(() => expect(padKey('F15')).toBeTruthy())
-    await expect(await pad()).toMatchScreenshot('layers-parked', loose)
+    await padLooksLike('layers-parked')
   })
 
   it('Macros tab', async () => {
     await startApp('Macros')
-    await expect(await pad()).toMatchScreenshot('macros', loose)
+    await padLooksLike('macros')
   })
 })

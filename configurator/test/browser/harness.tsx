@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { useLayoutEffect } from 'react'
 import { vi } from 'vitest'
-import { commands, userEvent } from 'vitest/browser'
+import { commands, page, userEvent } from 'vitest/browser'
 import type { Workspace } from '../../src/core/config/model'
 import { MemoryFolder } from '../../src/core/folder/memory'
 import { SETTINGS_PATH } from '../../src/core/settings'
@@ -11,9 +11,9 @@ import { AppProvider, useApp, type Banner } from '../../src/state/store'
 import type { UpdateSource } from '../../src/state/updateActions'
 import { App } from '../../src/ui/App'
 import type { PointerPath, TouchPath } from './commands'
-import { endTest, rest } from './lifetime'
+import { checked, currentTest, endTest, rest, stillRunning } from './lifetime'
 
-export { rest } from './lifetime'
+export { checked, rest } from './lifetime'
 
 declare module 'vitest/browser' {
   interface BrowserCommands {
@@ -41,7 +41,10 @@ const urls = import.meta.glob<string>(
 
 let fetched: Promise<Record<string, Uint8Array>> | undefined
 
-/** The example repository's files by path ('config.json', 'img/media/layer.png'). Fetched once per test file. */
+/**
+ * The example repository's files by path ('config.json', 'img/media/layer.png'). Fetched once per test
+ * file; a test that ended while they were fetched stops here.
+ */
 export function repoFiles(): Promise<Record<string, Uint8Array>> {
   fetched ??= (async () => {
     const files: Record<string, Uint8Array> = {}
@@ -54,7 +57,7 @@ export function repoFiles(): Promise<Record<string, Uint8Array>> {
     )
     return files
   })()
-  return fetched
+  return checked(fetched)
 }
 
 /** The files a folder opens straight into the editor with: the repository, a personal config and settings. */
@@ -127,12 +130,17 @@ export function unmount(): void {
 // Windows build agent a test once timed out with hundreds of keys still to type, and the four tests
 // after it failed on them. So, between one test and the next:
 // - cleanUp closes input, ends the test for the waits (lifetime.ts), puts the real clock back, waits
-//   for the commands in flight and takes the app away;
+//   for the commands in flight (and the changes to the browser's storage, inStorage) and takes the app
+//   away;
 // - a command is never longer than one key or one pointer path, so that wait is short;
-// - a body that outlived its test stops at its next wait (waitFor, findBy*, rest) or its next input;
-// - the next test sends nothing and mounts nothing until every earlier command has ended.
+// - a body that outlived its test stops when the wait or command it was in ends: every await of a test
+//   that waits on the browser or on Node is checked (waitFor, findBy*, rest, input, viewport,
+//   validatorProblems, repoFiles, inStorage, checked);
+// - the next test sends nothing until every earlier command has ended. startApp also mounts only then;
+//   startOpenScreen and mount itself do not wait: a mount takes away any app still there, and the
+//   clean-up that ends after it leaves the new one alone.
 
-/** The commands that type, click or move the pointer, from when they are sent until they end. */
+/** The commands that type, click or move the pointer, and the test's changes to the browser's storage, from when they start until they end. */
 const inFlight = new Set<Promise<unknown>>()
 
 /** Whether input may be sent: not from a test's clean-up until the next app is mounted. */
@@ -148,25 +156,41 @@ const inputEnded = async (): Promise<void> => {
 
 const refused = () => new Error('input sent after its test had ended')
 
-/**
- * Sends a command that types, clicks or moves the pointer once every earlier one has ended, and keeps
- * it in inFlight until it ends.
- */
-function input<T>(send: () => PromiseLike<T>): Promise<T> {
-  if (!inputOpen) return Promise.reject(refused())
-  const sent = inputEnded().then(() => {
-    if (!inputOpen) throw refused()
-    return send()
-  })
-  inFlight.add(sent)
-  const forget = () => inFlight.delete(sent)
-  void sent.then(forget, forget)
-  return sent
+/** Keeps `work` in inFlight until it ends, so that cleanUp waits for it; a test that ended meanwhile stops when it ends. */
+function keptInFlight<T>(work: Promise<T>): Promise<T> {
+  inFlight.add(work)
+  const forget = () => inFlight.delete(work)
+  void work.then(forget, forget)
+  return checked(work)
 }
 
 /**
+ * Sends a command that types, clicks or moves the pointer once every earlier one has ended, and only
+ * while the test that sent it is running, and keeps it in inFlight until it ends.
+ */
+function input<T>(send: () => PromiseLike<T>): Promise<T> {
+  if (!inputOpen) return Promise.reject(refused())
+  const since = currentTest()
+  return keptInFlight(
+    inputEnded().then(() => {
+      if (!inputOpen) throw refused()
+      stillRunning(since)
+      return send()
+    }),
+  )
+}
+
+/**
+ * A change the test makes to the browser's storage outside the app (a folder of its private storage
+ * written or deleted, the remembered folder read): kept in inFlight like a command, so that cleanUp
+ * waits for it to end before the next test, and a test that ended meanwhile stops when it ends.
+ */
+export const inStorage = <T,>(change: () => Promise<T>): Promise<T> => keptInFlight(change())
+
+/**
  * Takes the app away after a test, whatever way the test ended, so that nothing of it reaches the
- * next: see the list above. The wait for the commands in flight is for one key or one pointer path
+ * next: see the list above. The wait for what is in flight is for one key, one pointer path or one
+ * change to the storage (the e2e tests' folder of the example: a second or two on the build agent)
  * at most, which keeps it far inside the hook's own limit (Vitest's 10 s).
  */
 export async function cleanUp(): Promise<void> {
@@ -234,7 +258,7 @@ export async function startApp(tab: TabName = 'Pad shape', layout?: string, how:
   const kept = Object.entries(files).filter((entry): entry is [string, Uint8Array] => entry[1] !== null)
   const folder = new MemoryFolder(how.folderName ?? 'repo', Object.fromEntries(kept))
   const platform: Platform = { kind: how.kind ?? 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
-  await inputEnded()
+  await checked(inputEnded())
   mount(platform, how.updateSource ?? null)
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
@@ -255,7 +279,10 @@ export async function openTab(tab: TabName): Promise<void> {
  * What the repository's validator (scripts/validate-config.mjs) says about a saved config: its
  * problems, none when both versions of the macropad would load it.
  */
-export const validatorProblems = (text: string): Promise<string[]> => commands.validateSavedConfig(text)
+export const validatorProblems = (text: string): Promise<string[]> => checked(commands.validateSavedConfig(text))
+
+/** Sets the size of the page's window, as page.viewport does; a test that ended meanwhile stops here. */
+export const viewport = (width: number, height: number): Promise<void> => checked(page.viewport(width, height))
 
 // ---------------------------------------------------------------- the mouse
 

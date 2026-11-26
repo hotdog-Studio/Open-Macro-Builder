@@ -1,8 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page, server } from 'vitest/browser'
+import { server } from 'vitest/browser'
 import { size } from '../core/config/model'
-import { banner, carry, cell, cleanUp, click, dirty, drag, drop, offset, padKey, repoFiles, rest, startApp, startOpenScreen, ws } from '../../test/browser/harness'
+import { banner, carry, cell, cleanUp, click, dirty, drag, drop, offset, padKey, repoFiles, rest, startApp, startOpenScreen, viewport, ws } from '../../test/browser/harness'
 
 // Dragging when the layout is not the comfortable 1280×900 of the other suites: a small window
 // where the pad has to be scrolled to, a zoomed-in browser, a pad much bigger than the example, and
@@ -10,7 +10,7 @@ import { banner, carry, cell, cleanUp, click, dirty, drag, drop, offset, padKey,
 
 afterEach(async () => {
   await cleanUp()
-  await page.viewport(1280, 900)
+  await viewport(1280, 900)
 })
 
 const settle = () => rest(150)
@@ -81,10 +81,10 @@ const shown = (el: Element) => el.getBoundingClientRect().width > 0
 
 describe('the header', () => {
   it('leaves out the path of the layout file in a window narrower than 1440 px, and shows it from there on', async () => {
-    await page.viewport(1439, 900)
+    await viewport(1439, 900)
     await startApp()
     expect(shown(layoutPath())).toBe(false)
-    await page.viewport(1440, 900)
+    await viewport(1440, 900)
     await waitFor(() => expect(shown(layoutPath())).toBe(true))
   })
 })
@@ -105,7 +105,7 @@ withWindowsFonts('the header, drawn with the fonts of Windows', () => {
 
   it('is one row in the desktop app at its default window width, with the folder name it gives a new folder', async () => {
     // 1264 px: the default 1280 px window less its frame.
-    await page.viewport(1264, 900)
+    await viewport(1264, 900)
     await startApp('Pad shape', undefined, { kind: 'electron', folderName: 'Open Macro Builder' })
     expect(screen.queryByRole('link', { name: /Download/ })).toBeNull()
     expect(oneRow()).toBe(true)
@@ -113,7 +113,7 @@ withWindowsFonts('the header, drawn with the fonts of Windows', () => {
   })
 
   it('is one row with the path of the layout file shown when the window is wide', async () => {
-    await page.viewport(1700, 900)
+    await viewport(1700, 900)
     await startApp('Pad shape', undefined, { folderName: 'Open Macro Builder' })
     expect(oneRow()).toBe(true)
     expect(shown(layoutPath())).toBe(true)
@@ -122,7 +122,7 @@ withWindowsFonts('the header, drawn with the fonts of Windows', () => {
 
 describe('in a small window', () => {
   it('the guide scrolls inside its own panel, not the page', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp('Get started')
     const guide = screen.getByRole('article', { name: 'Get started' }).parentElement!
     expect(guide.tagName).toBe('MAIN')
@@ -136,7 +136,7 @@ describe('in a small window', () => {
   })
 
   it('on the start screen the guide scrolls and the buttons stay reachable', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     startOpenScreen()
     await click(await screen.findByRole('button', { name: 'Get started' }))
     const main = screen.getByRole('main')
@@ -158,7 +158,7 @@ describe('in a small window', () => {
   })
 
   it('the page itself still never scrolls, and the header wraps to fit', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp()
     const root = document.documentElement
     for (const tab of ['Get started', 'Pad shape', 'Layers', 'Macros', 'Commands'] as const) {
@@ -175,7 +175,7 @@ describe('in a small window', () => {
   })
 
   it('every column of the pad can be scrolled to', async () => {
-    await page.viewport(853, 600)
+    await viewport(853, 600)
     await startApp()
     // The pad is wider than the middle column here.
     expect(centre().scrollWidth).toBeGreaterThan(centre().clientWidth)
@@ -190,7 +190,7 @@ describe('in a small window', () => {
   })
 
   it('a key scrolled to can be dragged to a square scrolled to', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp()
     // The bottom of the pad is out of sight until the middle column is scrolled.
     expect(inView(cell(5, 1))).toBe(false)
@@ -201,7 +201,7 @@ describe('in a small window', () => {
   })
 
   it('a drag lands on the right square when the pad is scrolled both ways', async () => {
-    await page.viewport(860, 420)
+    await viewport(860, 420)
     await startApp()
     await bring(padKey('F18'), cell(3, 5))
     expect(centre().scrollTop).toBeGreaterThan(0)
@@ -212,7 +212,7 @@ describe('in a small window', () => {
   })
 
   it('resizing by the corner still counts whole squares', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp()
     await bring(padKey('F24'), cell(5, 3))
     const corner = screen.getByRole('button', { name: 'Resize F24' })
@@ -221,7 +221,7 @@ describe('in a small window', () => {
   })
 
   it('layers swap and park', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp('Layers')
     await bring(layerKey('Media'), layerKey('Programs'))
     await drag(layerKey('Media'), layerKey('Programs'))
@@ -232,7 +232,7 @@ describe('in a small window', () => {
   })
 
   it('a command from the scrolled list lands on a key of the scrolled pad', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp('Macros')
     await bring(padKey('F24'))
     await drag(command('Hibernate'), padKey('F24'))
@@ -262,7 +262,7 @@ describe('messages', () => {
   })
 
   it('a message fits a small window', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp()
     await bring(padKey('F13'), padKey('F14'))
     await drag(padKey('F13'), padKey('F14'))
@@ -274,7 +274,7 @@ describe('messages', () => {
 // Zooming a browser in shrinks the window as the page measures it: 150 % of 1280×900 lays out as 853×600.
 describe('a pad scrolled under the side panels', () => {
   it('a layer dragged to the shelf is parked, not dropped on a key hidden behind the panel', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp('Layers')
     // Scrolled right: the first columns of the pad now lie behind the left panel, under the shelf.
     await bring(layerKey('Chrome'))
@@ -286,7 +286,7 @@ describe('a pad scrolled under the side panels', () => {
   })
 
   it('a key let go over a side panel does not land on a square hidden behind it', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp()
     await bring(padKey('F15'))
     const panel = screen.getByRole('checkbox', { name: 'Show labels above keys' }).closest('aside')!
@@ -298,7 +298,7 @@ describe('a pad scrolled under the side panels', () => {
   })
 
   it('a command dropped on the list side of the window does not land on a key hidden behind it', async () => {
-    await page.viewport(760, 420)
+    await viewport(760, 420)
     await startApp('Macros')
     await bring(padKey('F15'))
     const before = ws().slots.k1.macros
@@ -310,7 +310,7 @@ describe('a pad scrolled under the side panels', () => {
 
 describe('zoomed in to 150 %', () => {
   it('keys move, resize and swap as at 100 %', async () => {
-    await page.viewport(853, 600)
+    await viewport(853, 600)
     await startApp()
     await bring(padKey('F24'), cell(4, 5))
     await drag(padKey('F24'), cell(4, 5))
@@ -391,7 +391,7 @@ describe('the right panel', () => {
   })
 
   it('still shows it whole when the panel itself scrolls', async () => {
-    await page.viewport(1280, 420)
+    await viewport(1280, 420)
     await startApp()
     await click(padKey('F22'))
     expect(previewPanel().scrollHeight).toBeGreaterThan(previewPanel().clientHeight)
@@ -422,7 +422,7 @@ describe('when the window changes size during a drag', () => {
     await carry(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(cell(5, 1).className).toContain('border-sky-400'))
 
-    await page.viewport(1000, 700)
+    await viewport(1000, 700)
     await waitFor(() => expect(padKey('F24').style.transform).toBe(''))
     await drop()
     await settle()

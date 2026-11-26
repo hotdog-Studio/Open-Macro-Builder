@@ -1,8 +1,7 @@
 import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
-import { at as pointOn, carry, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, rest, startApp, strip, type Point } from '../../test/browser/harness'
+import { at as pointOn, carry, checked, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, rest, startApp, strip, viewport, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { HOVER_TIME } from './code/hoverDocs'
 import { GRACE } from './DocHover'
@@ -11,7 +10,12 @@ import { GRACE } from './DocHover'
 // takes focus. The example repository has no files of "yours", so every pair is shared. The first
 // pair listed is custom/automation.
 
-afterEach(cleanUp)
+// The window goes back to the size of the other suites after each test, not in the test's own finally,
+// which a test that ran past its limit would run late, in the middle of the next test.
+afterEach(async () => {
+  await cleanUp()
+  await viewport(1280, 900)
+})
 
 const MEDIA = 'ahk/commands/media.ahk'
 const POWER = 'ahk/commands/power.ahk'
@@ -837,23 +841,19 @@ describe('Commands tab: docs on hover', () => {
   })
 
   it('lets a card taller than the room for it scroll inside its box', async () => {
-    await page.viewport(1280, 250)
-    try {
-      await start()
-      await openFile('windows')
-      await hover(await wordPoint('ActivateOrOpen'))
-      await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen('))
-      const box = card()!
-      // CodeMirror sizes the box once React has drawn the card in it.
-      await waitFor(() => expect(box.scrollHeight).toBeGreaterThan(box.clientHeight))
-      expect(box.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
-      expect(getComputedStyle(box).overflowY).toBe('auto')
-      box.scrollTop = box.scrollHeight
-      const last = box.querySelector('p:last-child')!
-      expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(box.getBoundingClientRect().bottom + 1)
-    } finally {
-      await page.viewport(1280, 900)
-    }
+    await viewport(1280, 250)
+    await start()
+    await openFile('windows')
+    await hover(await wordPoint('ActivateOrOpen'))
+    await waitFor(() => expect(card()?.textContent).toContain('ActivateOrOpen('))
+    const box = card()!
+    // CodeMirror sizes the box once React has drawn the card in it.
+    await waitFor(() => expect(box.scrollHeight).toBeGreaterThan(box.clientHeight))
+    expect(box.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
+    expect(getComputedStyle(box).overflowY).toBe('auto')
+    box.scrollTop = box.scrollHeight
+    const last = box.querySelector('p:last-child')!
+    expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(box.getBoundingClientRect().bottom + 1)
   })
 
   /** The PowerShell list of windows, with the library: the rows of lib/WindowOps have long cards. */
@@ -881,37 +881,33 @@ describe('Commands tab: docs on hover', () => {
   })
 
   it('keeps a long card of the list inside a short window, and lets it be scrolled', async () => {
-    await page.viewport(1280, 300)
-    try {
-      const other = await powerShellList()
-      const row = within(other).getByRole('button', { name: /^Set-ControlText\b/ })
-      row.scrollIntoView({ block: 'center' })
-      await hover(row)
-      const tip = await screen.findByRole('tooltip')
-      expect(tip.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
-      expect(within(tip).getByText('More below. Scroll the card, or click the row.')).toBeTruthy()
-      // The pointer can go from the row onto the card, and the card stays to be scrolled.
-      await hover(tip)
-      await pause(CARD_STAYS)
-      expect(screen.getByRole('tooltip')).toBe(tip)
-      // At the end of the scroll there is nothing more below.
-      const scroller = tip.firstElementChild as HTMLElement
-      scroller.scrollTop = scroller.scrollHeight
-      await waitFor(() => expect(within(tip).queryByText('More below. Scroll the card, or click the row.')).toBeNull())
-      expect(screen.getByRole('tooltip')).toBe(tip)
-      // Back onto its row across the gap between them, as a hand moves: the same card stays, it does
-      // not go and come back.
-      const gap = { x: tip.getBoundingClientRect().right + 4, y: row.getBoundingClientRect().top + 4 }
-      await hover(gap)
-      expect(screen.getByRole('tooltip')).toBe(tip)
-      await hover(row)
-      await pause(CARD_STAYS)
-      expect(screen.getByRole('tooltip')).toBe(tip)
-      await hover(nav())
-      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-    } finally {
-      await page.viewport(1280, 900)
-    }
+    await viewport(1280, 300)
+    const other = await powerShellList()
+    const row = within(other).getByRole('button', { name: /^Set-ControlText\b/ })
+    row.scrollIntoView({ block: 'center' })
+    await hover(row)
+    const tip = await screen.findByRole('tooltip')
+    expect(tip.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight)
+    expect(within(tip).getByText('More below. Scroll the card, or click the row.')).toBeTruthy()
+    // The pointer can go from the row onto the card, and the card stays to be scrolled.
+    await hover(tip)
+    await pause(CARD_STAYS)
+    expect(screen.getByRole('tooltip')).toBe(tip)
+    // At the end of the scroll there is nothing more below.
+    const scroller = tip.firstElementChild as HTMLElement
+    scroller.scrollTop = scroller.scrollHeight
+    await waitFor(() => expect(within(tip).queryByText('More below. Scroll the card, or click the row.')).toBeNull())
+    expect(screen.getByRole('tooltip')).toBe(tip)
+    // Back onto its row across the gap between them, as a hand moves: the same card stays, it does
+    // not go and come back.
+    const gap = { x: tip.getBoundingClientRect().right + 4, y: row.getBoundingClientRect().top + 4 }
+    await hover(gap)
+    expect(screen.getByRole('tooltip')).toBe(tip)
+    await hover(row)
+    await pause(CARD_STAYS)
+    expect(screen.getByRole('tooltip')).toBe(tip)
+    await hover(nav())
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
   })
 
   /**
@@ -919,7 +915,7 @@ describe('Commands tab: docs on hover', () => {
    * so it takes the pointer. `shrink` replaces the docs with one line, which fits.
    */
   async function tallToolCard(): Promise<{ tip: HTMLElement; shrink: () => Promise<void> }> {
-    await page.viewport(1280, 300)
+    await viewport(1280, 300)
     await start()
     await openFile('windows')
     const examples = Array.from({ length: 30 }, (_, i) => ` * @example Tool(${i})`)
@@ -942,27 +938,23 @@ describe('Commands tab: docs on hover', () => {
   }
 
   it('keeps the pointer on a tall card of the list whose docs shrink under it, until it leaves', async () => {
-    try {
-      const { tip, shrink } = await tallToolCard()
-      // Near the bottom of the card, on its "More below" line, which the shrink takes away; the shrunk card still covers the point.
-      const tall = tip.getBoundingClientRect()
-      const rest = { x: tall.left + tall.width / 2, y: tall.bottom - 10 }
-      await hover(rest)
-      const line = document.elementFromPoint(rest.x, rest.y)!
-      expect(tip.contains(line)).toBe(true)
-      await shrink()
-      expect(line.isConnected).toBe(false)
-      // The card still lies under the resting pointer and takes it, past the grace a card left behind waits.
-      expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
-      await pause(CARD_STAYS)
-      expect(screen.getByRole('tooltip')).toBe(tip)
-      expect(getComputedStyle(tip).pointerEvents).toBe('auto')
-      // Straight off it, with nothing entering the card again: the card goes.
-      await hover(nav())
-      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-    } finally {
-      await page.viewport(1280, 900)
-    }
+    const { tip, shrink } = await tallToolCard()
+    // Near the bottom of the card, on its "More below" line, which the shrink takes away; the shrunk card still covers the point.
+    const tall = tip.getBoundingClientRect()
+    const rest = { x: tall.left + tall.width / 2, y: tall.bottom - 10 }
+    await hover(rest)
+    const line = document.elementFromPoint(rest.x, rest.y)!
+    expect(tip.contains(line)).toBe(true)
+    await shrink()
+    expect(line.isConnected).toBe(false)
+    // The card still lies under the resting pointer and takes it, past the grace a card left behind waits.
+    expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
+    await pause(CARD_STAYS)
+    expect(screen.getByRole('tooltip')).toBe(tip)
+    expect(getComputedStyle(tip).pointerEvents).toBe('auto')
+    // Straight off it, with nothing entering the card again: the card goes.
+    await hover(nav())
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
   })
 
   it('lets the card go when the pointer leaves right after the line under it was taken away, every time', async () => {
@@ -970,42 +962,36 @@ describe('Commands tab: docs on hover', () => {
     // has looked again at what lies under it, the browser's mouseout goes to that line, now off the page,
     // so React's own leave never comes; only the card's native mouseleave does. That race goes either way
     // from one try to the next, so the test makes several.
-    try {
-      const { tip } = await tallToolCard()
-      const row = () => within(screen.getByRole('region', { name: 'Other commands available' })).getByRole('button', { name: /^Tool\b/ })
-      let card = tip
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const tall = card.getBoundingClientRect()
-        await hover({ x: tall.left + tall.width / 2, y: tall.bottom - 10 })
-        replaceAll('/**\n * A tool.\n */\nTool(A)\n{\n}\n')
-        await hover(nav())
-        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-        // The tall card again, for the next try.
-        replaceAll(['/**', ' * A tool.', ...Array.from({ length: 30 }, (_, i) => ` * @example Tool(${i})`), ' */', 'Tool(A)', '{', '}', ''].join('\n'))
-        await hover(row())
-        card = await screen.findByRole('tooltip')
-        await waitFor(() => expect(getComputedStyle(card).pointerEvents).toBe('auto'))
-      }
-    } finally {
-      await page.viewport(1280, 900)
+    const { tip } = await tallToolCard()
+    const row = () => within(screen.getByRole('region', { name: 'Other commands available' })).getByRole('button', { name: /^Tool\b/ })
+    /** One try from the tall card `card`, which ends on the tall card again, for the next of `tries`. */
+    const tryOnce = async (card: HTMLElement, tries: number): Promise<void> => {
+      const tall = card.getBoundingClientRect()
+      await hover({ x: tall.left + tall.width / 2, y: tall.bottom - 10 })
+      replaceAll('/**\n * A tool.\n */\nTool(A)\n{\n}\n')
+      await hover(nav())
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      // The tall card again, for the next try.
+      replaceAll(['/**', ' * A tool.', ...Array.from({ length: 30 }, (_, i) => ` * @example Tool(${i})`), ' */', 'Tool(A)', '{', '}', ''].join('\n'))
+      await hover(row())
+      const again = await screen.findByRole('tooltip')
+      await waitFor(() => expect(getComputedStyle(again).pointerEvents).toBe('auto'))
+      if (tries > 1) await tryOnce(again, tries - 1)
     }
+    await tryOnce(tip, 8)
   })
 
   it('lets go of the pointer when the shrunk card is no longer under it', async () => {
-    try {
-      const { tip, shrink } = await tallToolCard()
-      // Near the top of the tall card, where the shrunk card, placed level with its row, no longer is.
-      const tall = tip.getBoundingClientRect()
-      const rest = { x: tall.left + tall.width / 2, y: tall.top + 10 }
-      await hover(rest)
-      expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
-      await shrink()
-      await waitFor(() => expect(tip.getBoundingClientRect().top).toBeGreaterThan(rest.y))
-      // The pointer has not moved: the card goes.
-      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-    } finally {
-      await page.viewport(1280, 900)
-    }
+    const { tip, shrink } = await tallToolCard()
+    // Near the top of the tall card, where the shrunk card, placed level with its row, no longer is.
+    const tall = tip.getBoundingClientRect()
+    const rest = { x: tall.left + tall.width / 2, y: tall.top + 10 }
+    await hover(rest)
+    expect(tip.contains(document.elementFromPoint(rest.x, rest.y))).toBe(true)
+    await shrink()
+    await waitFor(() => expect(tip.getBoundingClientRect().top).toBeGreaterThan(rest.y))
+    // The pointer has not moved: the card goes.
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
   })
 
   describe('the card of the list, by where the pointer comes from and where it goes', () => {
@@ -1024,7 +1010,7 @@ describe('Commands tab: docs on hover', () => {
      * then up: none from elsewhere.
      */
     async function startFrom(from: From) {
-      await page.viewport(1280, 300)
+      await viewport(1280, 300)
       const list = await powerShellList()
       const row = within(list).getByRole('button', { name: /^Set-ControlText\b/ })
       row.scrollIntoView({ block: 'center' })
@@ -1056,7 +1042,7 @@ describe('Commands tab: docs on hover', () => {
     }
 
     /** Two frames of the page: what a move set off (React's render, the card placed again) is on screen by then. */
-    const frames = () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
+    const frames = () => checked(new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))))
 
     /** Moves the pointer to each point in turn, and holds it there for its milliseconds of the timers' clock. */
     async function stops([[to, ms], ...others]: [Point, number][]): Promise<void> {
@@ -1153,55 +1139,39 @@ describe('Commands tab: docs on hover', () => {
     }
 
     it.each(PATHS)('%s', async (_name, from, path, card) => {
-      try {
-        await expectCard(card, await along(from, path))
-      } finally {
-        await page.viewport(1280, 900)
-      }
+      await expectCard(card, await along(from, path))
     })
 
     // The paths with a stop on the way once more, their moves sent back to back in one command.
     it.each(PATHS.filter(([, , path]) => path.length > 1))('%s, the stop as short as one command makes it', async (_name, from, path, card) => {
-      try {
-        await expectCard(card, await alongInOne(from, path))
-      } finally {
-        await page.viewport(1280, 900)
-      }
+      await expectCard(card, await alongInOne(from, path))
     })
 
     it('row → the panel scrolls under the resting pointer: the card is never the row\'s that slid away', async () => {
-      try {
-        const { row, spot } = await startFrom('row')
-        const rest = spot('row')
-        row.closest('aside')!.scrollBy(0, 3 * row.getBoundingClientRect().height)
-        // The row slides up, away from under the resting pointer.
-        await waitFor(() => expect(row.getBoundingClientRect().bottom).toBeLessThan(rest.y))
-        await pause(CARD_STAYS)
-        // What lies under the pointer now: a row of the list shows its own card, anything else none.
-        const under = document.elementFromPoint(rest.x, rest.y)?.closest<HTMLElement>('li > button[aria-expanded]')
-        const now = screen.queryByRole('tooltip')
-        expect(now?.textContent ?? '').not.toContain('Set-ControlText')
-        if (now) expect(under && now.textContent).toContain(under!.querySelector('span')!.textContent)
-      } finally {
-        await page.viewport(1280, 900)
-      }
+      const { row, spot } = await startFrom('row')
+      const rest = spot('row')
+      row.closest('aside')!.scrollBy(0, 3 * row.getBoundingClientRect().height)
+      // The row slides up, away from under the resting pointer.
+      await waitFor(() => expect(row.getBoundingClientRect().bottom).toBeLessThan(rest.y))
+      await pause(CARD_STAYS)
+      // What lies under the pointer now: a row of the list shows its own card, anything else none.
+      const under = document.elementFromPoint(rest.x, rest.y)?.closest<HTMLElement>('li > button[aria-expanded]')
+      const now = screen.queryByRole('tooltip')
+      expect(now?.textContent ?? '').not.toContain('Set-ControlText')
+      if (now) expect(under && now.textContent).toContain(under!.querySelector('span')!.textContent)
     })
 
     it('card → (button held, as when selecting text) → its row, rests, then released: the same card stays', async () => {
-      try {
-        const { spot, tip } = await startFrom('card')
-        // A guard, not a reproduction: with the button held, Chromium keeps :hover on what was pressed, so a
-        // hide that asked :hover would take the card away here. It passed before the hide asked the hit test too.
-        // Straight onto the row, no step in the gap: the row's enter comes before the card's leave.
-        await carry(spot('card'), spot('row'), 1)
-        await pause(CARD_STAYS)
-        expect(screen.getByRole('tooltip')).toBe(tip)
-        await drop()
-        await pause(CARD_STAYS)
-        expect(screen.getByRole('tooltip')).toBe(tip)
-      } finally {
-        await page.viewport(1280, 900)
-      }
+      const { spot, tip } = await startFrom('card')
+      // A guard, not a reproduction: with the button held, Chromium keeps :hover on what was pressed, so a
+      // hide that asked :hover would take the card away here. It passed before the hide asked the hit test too.
+      // Straight onto the row, no step in the gap: the row's enter comes before the card's leave.
+      await carry(spot('card'), spot('row'), 1)
+      await pause(CARD_STAYS)
+      expect(screen.getByRole('tooltip')).toBe(tip)
+      await drop()
+      await pause(CARD_STAYS)
+      expect(screen.getByRole('tooltip')).toBe(tip)
     })
 
     it('row → its summary line goes from under the resting pointer, which stays on the row, then leaves straight off: the card goes, every time', async () => {
@@ -1250,17 +1220,13 @@ describe('Commands tab: docs on hover', () => {
       // showing its card, and the pointer then rests. Nothing moves after that, so the card must go from what was
       // known when the row was left. The order of that leave and the card's showing goes either way from one try
       // to the next, so the test makes several.
-      try {
-        const { spot } = await startFrom('elsewhere')
-        const tryOnce = async (tries: number): Promise<void> => {
-          await hoverPath([spot('row'), spot('gap')])
-          await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-          if (tries > 1) await tryOnce(tries - 1)
-        }
-        await tryOnce(8)
-      } finally {
-        await page.viewport(1280, 900)
+      const { spot } = await startFrom('elsewhere')
+      const tryOnce = async (tries: number): Promise<void> => {
+        await hoverPath([spot('row'), spot('gap')])
+        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+        if (tries > 1) await tryOnce(tries - 1)
       }
+      await tryOnce(8)
     })
 
     it('card → (stop on the other row) → (stop in the gap) → back to the other row: the same card all along', async () => {
@@ -1269,20 +1235,16 @@ describe('Commands tab: docs on hover', () => {
       // out in the gap, and the card would go and come back. The stops are set on the timers' clock: two thirds
       // of the grace on the row, half of it in the gap, so the gap alone stays under the grace and the row and
       // the gap together do not.
-      try {
-        const { spot, tip } = await startFrom('card')
-        await onClock(() =>
-          stops([
-            [spot('other row'), STOP],
-            [spot('gap'), Math.round(GRACE / 2)],
-            [spot('other row'), CARD_STAYS],
-          ]),
-        )
-        await pause(CARD_STAYS)
-        expect(screen.getByRole('tooltip')).toBe(tip)
-      } finally {
-        await page.viewport(1280, 900)
-      }
+      const { spot, tip } = await startFrom('card')
+      await onClock(() =>
+        stops([
+          [spot('other row'), STOP],
+          [spot('gap'), Math.round(GRACE / 2)],
+          [spot('other row'), CARD_STAYS],
+        ]),
+      )
+      await pause(CARD_STAYS)
+      expect(screen.getByRole('tooltip')).toBe(tip)
     })
 
     it.each<[string, From]>([
@@ -1292,38 +1254,30 @@ describe('Commands tab: docs on hover', () => {
       // Dispatched: a real move out of the window gives its events the outside point, so it cannot show a
       // browser that reports the leave at the last point inside. These are the events of leaving the window,
       // in the browser's order: a mouseout to nothing (relatedTarget null), then the left element's mouseleave.
-      try {
-        const { spot, tip } = await startFrom(from)
-        const at = spot(from)
-        const under = document.elementFromPoint(at.x, at.y)!
-        const left = from === 'row' ? under.closest('button')! : tip!
-        const init = { clientX: at.x, clientY: at.y, relatedTarget: null }
-        under.dispatchEvent(new MouseEvent('mouseout', { ...init, bubbles: true }))
-        left.dispatchEvent(new MouseEvent('mouseleave', init))
-        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-      } finally {
-        await page.viewport(1280, 900)
-      }
+      const { spot, tip } = await startFrom(from)
+      const at = spot(from)
+      const under = document.elementFromPoint(at.x, at.y)!
+      const left = from === 'row' ? under.closest('button')! : tip!
+      const init = { clientX: at.x, clientY: at.y, relatedTarget: null }
+      under.dispatchEvent(new MouseEvent('mouseout', { ...init, bubbles: true }))
+      left.dispatchEvent(new MouseEvent('mouseleave', init))
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
     })
 
     it('a card shown by the keyboard stays wherever the pointer goes, until the row loses the focus or Escape', async () => {
-      try {
-        const { row, spot } = await startFrom('elsewhere')
-        row.focus()
-        const tip = await screen.findByRole('tooltip')
-        await hoverPath([spot('gap'), spot('card'), spot('elsewhere'), spot('outside the window')])
-        await pause(CARD_STAYS)
-        expect(screen.getByRole('tooltip')).toBe(tip)
-        await keyboard('{Escape}')
-        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-        row.blur()
-        row.focus()
-        await screen.findByRole('tooltip')
-        row.blur()
-        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-      } finally {
-        await page.viewport(1280, 900)
-      }
+      const { row, spot } = await startFrom('elsewhere')
+      row.focus()
+      const tip = await screen.findByRole('tooltip')
+      await hoverPath([spot('gap'), spot('card'), spot('elsewhere'), spot('outside the window')])
+      await pause(CARD_STAYS)
+      expect(screen.getByRole('tooltip')).toBe(tip)
+      await keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      row.blur()
+      row.focus()
+      await screen.findByRole('tooltip')
+      row.blur()
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
     })
   })
 
@@ -1345,21 +1299,20 @@ describe('Commands tab: docs on hover', () => {
   it('keeps the card of the list inside a narrow window', async () => {
     const other = await powerShellList()
     const row = within(other).getByRole('button', { name: /^Set-ControlText\b/ })
-    try {
-      // 700: room beside the panel for a narrower card; 440: too little, so the card goes over the panel.
-      for (const width of [700, 440]) {
-        await page.viewport(width, 900)
-        row.scrollIntoView({ block: 'center' })
-        await hover(row)
-        const tip = await screen.findByRole('tooltip')
-        await waitFor(() => expect(tip.getBoundingClientRect().left).toBeGreaterThanOrEqual(0))
-        expect(tip.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth)
-        await hover(nav())
-        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-      }
-    } finally {
-      await page.viewport(1280, 900)
+    /** The card inside the window at each of the widths in turn. */
+    const insideAt = async ([width, ...others]: number[]): Promise<void> => {
+      await viewport(width, 900)
+      row.scrollIntoView({ block: 'center' })
+      await hover(row)
+      const tip = await screen.findByRole('tooltip')
+      await waitFor(() => expect(tip.getBoundingClientRect().left).toBeGreaterThanOrEqual(0))
+      expect(tip.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth)
+      await hover(nav())
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      if (others.length > 0) await insideAt(others)
     }
+    // 700: room beside the panel for a narrower card; 440: too little, so the card goes over the panel.
+    await insideAt([700, 440])
   })
 
   it('shows the written docs of a library function, in the editor and in the list', async () => {

@@ -1,11 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page } from 'vitest/browser'
 import type { MemoryFolder } from '../core/folder/memory'
 import { fingerprint } from '../core/update/fingerprint'
 import type { KnownReleases } from '../core/update/history'
 import type { UpdateSource } from '../state/updateActions'
-import { cleanUp, click, keyboard, repoFiles, showMessage, startApp, type StartHow } from '../../test/browser/harness'
+import { checked, cleanUp, click, keyboard, repoFiles, showMessage, startApp, viewport, type StartHow } from '../../test/browser/harness'
 
 // The update's bar and dialog as the page lays them out, in the 1280×900 window of the other suites: a
 // folder of an older release, with thirty icons to replace, two command files the person changed and
@@ -13,7 +12,7 @@ import { cleanUp, click, keyboard, repoFiles, showMessage, startApp, type StartH
 
 afterEach(async () => {
   await cleanUp()
-  await page.viewport(1280, 900)
+  await viewport(1280, 900)
 })
 
 const DIALOG = { name: 'Update the scripts in this folder' }
@@ -31,9 +30,9 @@ function older(data: Uint8Array): Uint8Array {
   return copy
 }
 
-/** Each file's fingerprint. */
+/** Each file's fingerprint; a test that ended meanwhile stops here. */
 async function printsOf(files: [string, Uint8Array][]): Promise<Record<string, string>> {
-  return Object.fromEntries(await Promise.all(files.map(async ([path, data]) => [path, await fingerprint(path, data)])))
+  return Object.fromEntries(await checked(Promise.all(files.map(async ([path, data]) => [path, await fingerprint(path, data)]))))
 }
 
 /**
@@ -242,7 +241,7 @@ describe('the warning of a command the update takes away', () => {
     [1280, 900],
     [760, 420],
   ])('at %i × %i, reads as text and fits the dialog', async (width, height) => {
-    await page.viewport(width, height)
+    await viewport(width, height)
     const { how, layout } = await takenAway()
     await startApp('Pad shape', layout, how)
     const dialog = await review(true)
@@ -356,7 +355,7 @@ async function clickReaches({ x, y, under }: Spot): Promise<boolean> {
 
 describe('the bars float over the top of the content area', () => {
   it.each(SIZES)('at %i × %i, nothing in the page moves when the changed-on-disk bar comes or goes', async (width, height) => {
-    await page.viewport(width, height)
+    await viewport(width, height)
     const { folder } = await startApp()
     const before = placesOf()
     const bar = await changeOnDisk(folder)
@@ -368,7 +367,7 @@ describe('the bars float over the top of the content area', () => {
   })
 
   it.each(SIZES)('at %i × %i, nothing in the page moves when the update bar comes or goes', async (width, height) => {
-    await page.viewport(width, height)
+    await viewport(width, height)
     const { how, release } = await heldRelease()
     await startApp('Pad shape', undefined, how)
     const before = placesOf()
@@ -384,7 +383,7 @@ describe('the bars float over the top of the content area', () => {
   it.each(SIZES)(
     'at %i × %i, stacks the changed-on-disk bar, the update bar and a message in that order, apart and clear of the header, and each of their buttons can be pressed',
     async (width, height) => {
-      await page.viewport(width, height)
+      await viewport(width, height)
       const { folder } = await startApp('Pad shape', undefined, await olderRelease())
       await screen.findByRole('button', REVIEW)
       const onDisk = await changeOnDisk(folder)

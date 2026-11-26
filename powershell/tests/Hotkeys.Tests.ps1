@@ -64,8 +64,14 @@ Describe 'ForegroundWatcher' -Tag Integration {
     It 'raises Changed when another window comes to the front' {
         $w = [Macropad.ForegroundWatcher]::new(); $w.Context = @{ Count = 0 }
         $w.add_Changed({ param($sender, $e) $sender.Context.Count++ })
-        $f = New-Object System.Windows.Forms.Form; $f.Show(); $f.Activate(); Wait-Pump 200
-        try { $w.Context.Count | Should -BeGreaterThan 0 } finally { $f.Dispose(); $w.Dispose() }
+        $f = Show-FormInFront
+        try {
+            # A change of the foreground window from some other cause would pass this too, so the test
+            # counts only when the form is the window that came to the front.
+            $why = Get-NotInFrontReason $f
+            if ($why) { Set-ItResult -Skipped -Because $why; return }
+            $w.Context.Count | Should -BeGreaterThan 0
+        } finally { $f.Dispose(); $w.Dispose() }
     }
 }
 Describe 'Hotstring' {

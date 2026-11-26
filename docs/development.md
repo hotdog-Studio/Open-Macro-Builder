@@ -103,6 +103,8 @@ There is one clean-up, and every run ends through it. A run that reaches its end
 
 jsdom does not lay anything out, so every element measures 0 by 0 there and a drag cannot be tested. That is what the browser tests are for.
 
+A browser test sends its keys, clicks, pointer moves and touches through the harness in `test/browser/` (`keyboard`, `click`, `drag`, `hover` and the others in `harness.tsx`), not through Vitest's `userEvent` itself, and awaits each one: the lint (`@typescript-eslint/no-floating-promises`) fails a promise in a browser test that is not awaited. Between two tests the harness waits for the command still going and takes the app away, and it refuses a command sent after its test has ended, or one of more than 20 moves or presses, so that a test that ran past its limit cannot type into the next. The summary of `npm run test:browser` shows 5 tests as "expected fail": they are the tests in `src/ui/isolation.browser.test.tsx` that run past their limit on purpose (`it.fails`), each followed by a test that checks it left nothing behind. They prove those protections and are not defects.
+
 ### The pictures of the pad
 
 `src/ui/visual.browser.test.tsx` compares screenshots of the grid with the references in `src/ui/__screenshots__/`. Text is drawn with the fonts of the machine, so the references are Windows ones and the suite skips itself on other systems. After a deliberate change to how the grid looks, remake them and check the new pictures before committing:

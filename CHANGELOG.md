@@ -4,6 +4,8 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ## Unreleased
 
+## 1.0.7 - 2026-11-26
+
 ### Removed
 
 - A folder the configurator sets up no longer gets the files only a developer of the project uses: `powershell/tools/spike-hotkeys.ps1`, `spike-inputhook.ps1` and `preview-overlay.ps1` (now `powershell/tests/tools/`), `ahk/dump_config.ahk` (now `ahk/tests/dump_config.ahk`) and `img/icon.png` (now `docs/img/icon.png`). The update dialog lists them under "Removed" for a folder that has them unchanged; one you changed is kept, and named under "Kept as they are" after the update. The update removes files only, so the emptied `powershell/tools` folder stays; delete it if you like.

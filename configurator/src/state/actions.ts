@@ -117,6 +117,9 @@ export interface AppActions {
   /**
    * New file: a starter file in each chosen language, then (AutoHotkey) the include line that
    * loads it; shows the new pair. Resolves to the first error message, or null when done.
+   * A chosen language whose file exists, whatever the case of its name, keeps it as it is, or gets only
+   * its include line when a first try made the file and could not add the line; the files made then take
+   * that file's spelling, and the name is refused when no chosen language is left with anything to do.
    */
   createCommandFiles(req: { group: 'yours' | 'shared'; name: string; langs: LangId[] }): Promise<string | null>
   /** Create an empty file: the missing language of a pair, as New file makes it. */

@@ -1,8 +1,8 @@
 import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { at as pointOn, carry, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, startApp, strip, unmount, type Point } from '../../test/browser/harness'
+import { at as pointOn, carry, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, startApp, strip, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { HOVER_TIME } from './code/hoverDocs'
 import { GRACE } from './DocHover'
@@ -1052,18 +1052,43 @@ describe('Commands tab: docs on hover', () => {
       return { spot: (s: Spot) => spots[s], names, row, tip: from === 'elsewhere' ? null : tip }
     }
 
+    /** Two frames of the page: what a move set off (React's render, the card placed again) is on screen by then. */
+    const frames = () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
+
+    /** Moves the pointer to each point in turn, and holds it there for its milliseconds of the timers' clock. */
+    async function stops([[to, ms], ...rest]: [Point, number][]): Promise<void> {
+      await hoverPath([to])
+      await frames()
+      vi.advanceTimersByTime(ms)
+      if (rest.length > 0) await stops(rest)
+    }
+
     /**
-     * Starts from `from` and moves along `path` in one command. A stop proves something only when it is
-     * shorter than the grace, so a try whose command took as long as the grace is made again, from the
-     * start; a machine that never gets under it fails with that reason, not with a wrong card.
+     * Stops at each point for its time, as stops() does, with the page's timers on a clock the test turns
+     * (Vitest's fake setTimeout and clearTimeout); the moves, the events, the frames and React run as they
+     * do for a person. The grace is such a timer, so a stop is exactly as long as it says against it, on
+     * any machine. By the real clock a stop lasts as long as the machine takes to move the pointer twice,
+     * and the Windows build agent never once took less than the grace. The last stop is the rest that
+     * follows: as long as the grace or longer, every timer it starts has run by the time the real clock
+     * is back.
      */
-    async function along(from: From, path: Spot[], tries = 5): Promise<Awaited<ReturnType<typeof startFrom>>> {
+    async function stopsOnClock(points: [Point, number][]): Promise<void> {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        await stops(points)
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+
+    /** How long the pointer stops on a spot on the way: two thirds of the grace, by the timers' clock. */
+    const STOP = Math.round((GRACE * 2) / 3)
+
+    /** Starts from `from` and stops on each spot of `path` for STOP, then rests on the last for CARD_STAYS. */
+    async function along(from: From, path: Spot[]): Promise<Awaited<ReturnType<typeof startFrom>>> {
       const started = await startFrom(from)
-      const took = await hoverPath(path.map((s) => started.spot(s)))
-      if (path.length < 2 || took < GRACE) return started
-      if (tries <= 1) throw new Error(`this machine is too slow to test a stop shorter than the ${GRACE} ms grace (the moves took ${took} ms)`)
-      unmount()
-      return along(from, path, tries - 1)
+      await stopsOnClock(path.map((s, i) => [started.spot(s), i < path.length - 1 ? STOP : CARD_STAYS]))
+      return started
     }
 
     // Each path starts with the pointer on `from` and moves through the spots in turn, straight from one to
@@ -1095,8 +1120,8 @@ describe('Commands tab: docs on hover', () => {
         if (card === 'none') {
           await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
         } else {
-          // Past the grace after which a card left behind goes: the card is the one of where the pointer rests,
-          // and the same card all along, never gone and back.
+          // Past the grace after which a card left behind goes, by the timers' clock and then by the real one: the
+          // card is the one of where the pointer rests, and the same card all along, never gone and back.
           await pause(CARD_STAYS)
           const now = screen.getByRole('tooltip')
           expect(now.textContent).toContain(names[card])
@@ -1204,28 +1229,18 @@ describe('Commands tab: docs on hover', () => {
     it('card → (stop on the other row) → (stop in the gap) → back to the other row: the same card all along', async () => {
       // A guard. From the card straight onto another row, the card's leave comes after that row's enter. It must not
       // start a grace the enter has just ended: the grace would then count from the row, not from the gap, run
-      // out in the gap, and the card would go and come back. The stops are set: two thirds of the grace on the
-      // row, half of it in the gap, so the gap alone stays under the grace and the row and the gap together do
-      // not. A try whose moves took too long for that is made again.
-      const tryOnce = async (tries: number): Promise<void> => {
+      // out in the gap, and the card would go and come back. The stops are set on the timers' clock: two thirds
+      // of the grace on the row, half of it in the gap, so the gap alone stays under the grace and the row and
+      // the gap together do not.
+      try {
         const { spot, tip } = await startFrom('card')
-        await hoverPath([spot('other row')])
-        await pause(Math.round((GRACE * 2) / 3))
-        const toGap = performance.now()
-        await hoverPath([spot('gap')])
-        await pause(Math.round(GRACE / 2))
-        await hoverPath([spot('other row')])
-        const inGap = performance.now() - toGap
-        if (inGap >= GRACE - 20) {
-          if (tries <= 1) throw new Error(`this machine is too slow to test a stop shorter than the ${GRACE} ms grace (the gap took ${inGap} ms)`)
-          unmount()
-          return tryOnce(tries - 1)
-        }
+        await stopsOnClock([
+          [spot('other row'), STOP],
+          [spot('gap'), Math.round(GRACE / 2)],
+          [spot('other row'), CARD_STAYS],
+        ])
         await pause(CARD_STAYS)
         expect(screen.getByRole('tooltip')).toBe(tip)
-      }
-      try {
-        await tryOnce(5)
       } finally {
         await page.viewport(1280, 900)
       }

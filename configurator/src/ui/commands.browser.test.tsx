@@ -186,33 +186,6 @@ describe('Commands tab: typing', () => {
     expect(text()).toBe(before)
   })
 
-  it('lets the keyboard leave the editor with Esc and then Tab, and says so', async () => {
-    await start()
-    await openFile('media')
-    const hint = 'Tab indents. To leave the editor with the keyboard, press Esc and then Tab.'
-    expect(document.activeElement).toBe(editorEl())
-    // Said where the person is, and named by the editor for a screen reader.
-    const line = screen.getByText(hint)
-    expect(editorEl().closest('.cm-editor')?.contains(line)).toBe(true)
-    expect(line.id).not.toBe('')
-    expect(editorEl().getAttribute('aria-describedby')).toContain(line.id)
-    expect(line.getBoundingClientRect().height).toBeGreaterThan(1)
-
-    const before = text()
-    await key('{Escape}')
-    await key('{Tab}')
-    expect(document.activeElement).not.toBeNull()
-    expect(document.activeElement?.closest('.cm-editor')).toBeNull()
-    // Nothing was indented on the way out.
-    expect(text()).toBe(before)
-
-    // Away from the editor the line is still in the page for a screen reader, and not drawn.
-    expect(screen.getByText(hint)).toBeTruthy()
-    const drawn = screen.getByText(hint).getBoundingClientRect()
-    expect(drawn.width).toBeLessThanOrEqual(1)
-    expect(drawn.height).toBeLessThanOrEqual(1)
-  })
-
   it('a command typed by hand appears in the outline', async () => {
     await start()
     await openFile('media')
@@ -237,6 +210,160 @@ describe('Commands tab: typing', () => {
       const { from, to } = editorView().state.selection.main
       expect(text().slice(from, to)).toBe('Volume')
     })
+  })
+})
+
+const HINT = 'Tab indents. To leave the editor with the keyboard, press Esc and then Tab.'
+const hintEl = () => screen.getByText(HINT)
+const insideEditor = () => document.activeElement?.closest('.cm-editor') != null
+
+/** The rgb() of a computed colour as numbers. */
+const rgbOf = (colour: string): number[] => (colour.match(/[0-9.]+/g) ?? []).slice(0, 3).map(Number)
+
+/** The WCAG relative luminance of a colour. */
+function luminance([r, g, b]: number[]): number {
+  const [lr, lg, lb] = [r, g, b].map((c) => {
+    const v = c / 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb
+}
+
+/** What the editor shows of itself: its size, where its first line of text is, and how the hint is laid out. */
+function layoutOfEditor() {
+  const hint = hintEl()
+  const style = getComputedStyle(hint)
+  return {
+    editorHeight: document.querySelector('.cm-editor')!.getBoundingClientRect().height,
+    firstLineTop: document.querySelector('.cm-line')!.getBoundingClientRect().top,
+    hintTop: hint.getBoundingClientRect().top,
+    hintHeight: hint.getBoundingClientRect().height,
+    display: style.display,
+    visibility: style.visibility,
+    opacity: style.opacity,
+  }
+}
+
+describe('Commands tab: leaving the editor with the keyboard', () => {
+  /** A real wait: CodeMirror's own Escape lasts two seconds by the clock, so this is past it without any fake timer to misjudge. */
+  const pastCodeMirrorsLimit = () => new Promise((resolve) => setTimeout(resolve, 2400))
+
+  it('says how in a line of the editor, which the editor names for a screen reader', async () => {
+    await start()
+    await openFile('media')
+    expect(document.activeElement).toBe(editorEl())
+    const line = hintEl()
+    expect(editorEl().closest('.cm-editor')?.contains(line)).toBe(true)
+    expect(line.id).not.toBe('')
+    expect(editorEl().getAttribute('aria-describedby')).toContain(line.id)
+  })
+
+  it('Esc and then Tab leaves the editor, however long after the Esc, and nothing is indented', async () => {
+    await start()
+    await openFile('media')
+    const before = text()
+    await key('{Escape}')
+    await key('{Tab}')
+    expect(insideEditor()).toBe(false)
+    expect(text()).toBe(before)
+
+    await click(editorEl())
+    await key('{Escape}')
+    await pastCodeMirrorsLimit()
+    await key('{Tab}')
+    expect(insideEditor()).toBe(false)
+    expect(text()).toBe(before)
+  })
+
+  it('Esc and then Shift+Tab leaves the editor backwards', async () => {
+    await start()
+    await openFile('media')
+    const before = text()
+    await key('{Escape}')
+    await key('{Shift>}{Tab}{/Shift}')
+    expect(insideEditor()).toBe(false)
+    expect(text()).toBe(before)
+  })
+
+  it('another key after the Esc disarms it: Tab indents and the focus stays', async () => {
+    await start()
+    await openFile('media')
+    await key('{Control>}{End}{/Control}')
+    await key('{Enter}')
+    const before = text()
+    await key('{Escape}')
+    await key('x')
+    await key('{Tab}')
+    expect(document.activeElement).toBe(editorEl())
+    expect(text().slice(before.length)).toMatch(/^ +x$/)
+  })
+
+  it('coming back into the editor, Tab indents again without an Esc', async () => {
+    await start()
+    await openFile('media')
+    await key('{Escape}')
+    await key('{Tab}')
+    expect(insideEditor()).toBe(false)
+    await click(editorEl())
+    await key('{Control>}{End}{/Control}')
+    await key('{Enter}')
+    const before = text()
+    await key('{Tab}')
+    expect(document.activeElement).toBe(editorEl())
+    expect(text().slice(before.length)).toMatch(/^ +$/)
+  })
+})
+
+describe('Commands tab: the hint line of the editor', () => {
+  it('is laid out the same with and without the focus, so the text never moves; only whether it is seen changes', async () => {
+    await start()
+    await click(pairButton('windows'))
+    await waitFor(() => expect(document.querySelector('.cm-line')).not.toBeNull())
+    expect(insideEditor()).toBe(false)
+    const away = layoutOfEditor()
+    await click(editorEl())
+    expect(insideEditor()).toBe(true)
+    const focused = layoutOfEditor()
+
+    expect(focused.editorHeight).toBe(away.editorHeight)
+    expect(focused.firstLineTop).toBe(away.firstLineTop)
+    expect(focused.hintTop).toBe(away.hintTop)
+    expect(focused.hintHeight).toBe(away.hintHeight)
+    // In the page and in the accessibility tree either way: not display:none, hidden or aria-hidden.
+    for (const shown of [away, focused]) {
+      expect(shown.display).not.toBe('none')
+      expect(shown.visibility).toBe('visible')
+      expect(shown.hintHeight).toBeGreaterThan(8)
+    }
+    expect(hintEl().closest('[aria-hidden], [hidden]')).toBeNull()
+    expect(away.opacity).toBe('0')
+    expect(focused.opacity).toBe('1')
+  })
+
+  it('has a contrast of at least 4.5 against the editor when it is seen', async () => {
+    await start()
+    await openFile('media')
+    const text = luminance(rgbOf(getComputedStyle(hintEl()).color))
+    const back = luminance(rgbOf(getComputedStyle(document.querySelector('.cm-editor')!).backgroundColor))
+    const [light, dark] = text > back ? [text, back] : [back, text]
+    expect((light + 0.05) / (dark + 0.05)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('does not move a click: the last visible line of a long file takes the cursor, with the focus elsewhere', async () => {
+    await start()
+    await click(pairButton('windows'))
+    await waitFor(() => expect(editorView().state.doc.lines).toBeGreaterThan(30))
+    expect(insideEditor()).toBe(false)
+    let last = 1
+    while (last < editorView().state.doc.lines && lineVisible(last + 1)) last++
+    expect(last).toBeGreaterThan(5)
+    const view = editorView()
+    const block = view.lineBlockAt(view.state.doc.line(last).from)
+    // A press and a release on one point: a click, the way the real mouse makes it.
+    const spot = { x: editorEl().getBoundingClientRect().left + 24, y: block.top + view.documentTop + block.height / 2 }
+    await drag(spot, spot, 1)
+    expect(insideEditor()).toBe(true)
+    expect(caretLine().n).toBe(last)
   })
 })
 

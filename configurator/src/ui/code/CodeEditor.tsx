@@ -40,19 +40,17 @@ export interface CodeEditorProps {
 const THEME = EditorView.theme({
   '&': { height: '100%' },
   '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, Consolas, monospace' },
-  '.cm-tab-hint': { padding: '2px 12px', fontSize: '0.75rem', color: '#7d8799', borderTop: '1px solid #3f4451' },
-  // Away from the editor the line is drawn nowhere and stays in the page, where a screen reader finds it.
-  '&:not(.cm-focused) .cm-tab-hint': {
-    position: 'absolute',
-    width: '1px',
-    height: '1px',
-    padding: '0',
-    border: '0',
-    margin: '-1px',
-    overflow: 'hidden',
-    clip: 'rect(0, 0, 0, 0)',
-    whiteSpace: 'nowrap',
+  // The hint's line is always laid out, so the text never moves when the focus comes or goes. Only whether
+  // it is seen changes: it stays in the page and in the accessibility tree either way.
+  '.cm-tab-hint': {
+    padding: '2px 12px',
+    fontSize: '0.75rem',
+    lineHeight: '1.25',
+    color: '#abb2bf',
+    borderTop: '1px solid #3f4451',
+    opacity: '0',
   },
+  '&.cm-focused .cm-tab-hint': { opacity: '1' },
 })
 
 /** Said under the editor, because Tab indents there and a person on the keyboard would be stuck in it. */
@@ -60,8 +58,27 @@ const TAB_HINT = 'Tab indents. To leave the editor with the keyboard, press Esc 
 let hintCount = 0
 
 /**
- * A line of the editor's own that says how to leave it with the keyboard. It is drawn while the focus
- * is in the editor, is always in the page for a screen reader, and the editor's content names it.
+ * Escape arms leaving the editor: Tab or Shift+Tab pressed next moves the focus out, however long after
+ * the Escape, until another key is pressed or the focus leaves. CodeMirror's own Escape (tab-focus mode)
+ * lasts two seconds; this runs after it in the same event and lasts on. Infinity is a time never reached
+ * by the clock, and a key other than Tab ends it as it ends CodeMirror's. A mode a person turned on
+ * with Ctrl-m stays as it is (a number does not touch it), and a focus that leaves ends the armed one
+ * (a time already past), so coming back finds Tab indenting again.
+ */
+const LEAVE_WITH_TAB = EditorView.domEventHandlers({
+  keydown(event, view) {
+    if (event.key === 'Escape') queueMicrotask(() => view.setTabFocusMode(Infinity))
+    return false
+  },
+  blur(_event, view) {
+    view.setTabFocusMode(-1)
+  },
+})
+
+/**
+ * A line of the editor's own that says how to leave it with the keyboard, and the Escape that does it.
+ * The line is always laid out and in the page for a screen reader, drawn while the focus is in the
+ * editor (see THEME), and the editor's content names it.
  */
 function tabHint(): Extension {
   const id = `cm-tab-hint-${++hintCount}`
@@ -73,7 +90,7 @@ function tabHint(): Extension {
     view.dom.append(el)
     return { destroy: () => el.remove() }
   })
-  return [line, EditorView.contentAttributes.of({ 'aria-describedby': id })]
+  return [line, LEAVE_WITH_TAB, EditorView.contentAttributes.of({ 'aria-describedby': id })]
 }
 
 type Latest = Pick<CodeEditorProps, 'value' | 'lang' | 'label' | 'onChange' | 'onSave' | 'docs'> & { readOnly: boolean }

@@ -58,7 +58,15 @@ if ($EndToEnd -and $env:OMB_E2E -ne '1') {
     } finally { Remove-Item Env:\OMB_E2E, Env:\OMB_E2E_CASE, Env:\OMB_E2E_CI, Env:\OMB_E2E_LIMIT, Env:\OMB_E2E_REPEAT -ErrorAction SilentlyContinue }
     exit $code
 }
-Import-Module Pester -MinimumVersion 6.2.0 -Force
+# 6.2.0 is the version CI runs and the only one the suite is run on: with an older Pester, or none,
+# nothing runs (every run that gets here, the -EndToEnd one's own process included, stops here).
+try { Import-Module Pester -MinimumVersion 6.2.0 -Force -ErrorAction Stop }
+catch {
+    $found = Get-Module Pester -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
+    Write-Host ("Pester 6.2.0 or newer is needed; " + $(if ($found) { "the newest installed is $($found.Version)." } else { 'none is installed.' }))
+    Write-Host 'Install it: Install-Module Pester -MinimumVersion 6.2.0 -Scope CurrentUser -Force -SkipPublisherCheck'
+    exit 1
+}
 $c = New-PesterConfiguration
 $c.Run.Path = @($PSScriptRoot) + @(Join-Path $root 'local\powershell\tests' | Where-Object { Test-Path -LiteralPath $_ })
 $c.Run.Exit = $true
@@ -86,9 +94,9 @@ if ($Ci) {
     if (-not $EndToEnd -and -not $Integration) {
         # The plain -Ci run is the one that measures which of the PowerShell version's code the suite
         # executes: lib, commands (the built-in and the example custom ones) and config.ps1, not the
-        # tests, their helpers, the C# shim, main.ps1 or tools. The figure goes to the console, the
-        # JaCoCo file to results/pester/coverage.xml (the Jenkins stage archives it). Nothing fails on
-        # it: the run's exit code is the count of failed tests.
+        # tests (the scripts in tests\tools too), their helpers, the C# shim or main.ps1. The figure
+        # goes to the console, the JaCoCo file to results/pester/coverage.xml (the Jenkins stage
+        # archives it). Nothing fails on it: the run's exit code is the count of failed tests.
         $c.CodeCoverage.Enabled = $true
         $c.CodeCoverage.Path = @(@('powershell\lib\*.ps1', 'powershell\commands\*.ps1', 'powershell\commands\custom\*.ps1', 'powershell\config.ps1') | ForEach-Object { Join-Path $root $_ })
         $c.CodeCoverage.OutputFormat = 'JaCoCo'

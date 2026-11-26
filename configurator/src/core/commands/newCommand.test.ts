@@ -62,4 +62,32 @@ describe('checkCommandName', () => {
     expect(checkCommandName(files, {}, 'ahk', '')).toBe(message)
     expect(checkCommandName(files, {}, 'ahk', '1abc')).toBe(message)
   })
+
+  it.each(['ahk', 'ps'] as const)('refuses a word of the language in %s', (lang) => {
+    expect(checkCommandName([], {}, lang, 'Loop')).toBe('Loop is a word of the AutoHotkey language, so a command cannot have that name.')
+  })
+
+  it("refuses the name of one of AutoHotkey's own functions", () => {
+    expect(checkCommandName([], {}, 'ahk', 'send')).toBe(
+      "send is one of AutoHotkey's own functions. A command with that name would replace it for every other command.",
+    )
+  })
+
+  it.each([
+    ['SEND', "SEND is one of AutoHotkey's own functions. A command with that name would replace it for every other command."],
+    ['IsSet', 'IsSet is a word of the AutoHotkey language, so a command cannot have that name.'],
+  ])('refuses %s whatever its case, in both languages', (name, message) => {
+    for (const lang of ['ahk', 'ps'] as const) expect(checkCommandName([], {}, lang, name)).toBe(message)
+  })
+
+  it('does not trim: a name with a space after it is not a name, so the caller drops the space first', () => {
+    expect(checkCommandName([], {}, 'ahk', 'send ')).toBe('A command name starts with a letter or _ and uses only letters, digits and _.')
+  })
+
+  it('names a reserved name before it says a file defines it', () => {
+    const files = [held('local/ahk/mine.ahk', 'Send(Macro)\n{\n}\n')]
+    expect(checkCommandName(files, {}, 'ahk', 'Send')).toBe(
+      "Send is one of AutoHotkey's own functions. A command with that name would replace it for every other command.",
+    )
+  })
 })

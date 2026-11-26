@@ -7,6 +7,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 ### Fixed
 
 - Configurator: the Commands tab's **Delete this file** no longer says the keys "would stop working". It says the macropad will not start while the layout runs a command that only this file defines, and names the command with the key, hotkey or hotstring that runs it, and what to take out of the layout first (or to keep the command in another file). A parked layer is left out, as the macropad never loads it.
+- Configurator: **New command** refuses a name AutoHotkey already uses: a word of its language such as `Loop` or `Return`, or one of its own functions and classes such as `Send`, `Run` or `Map`, whatever the case and in a PowerShell file too (the macropad's commands have the same name in both versions). Such a command used to hide AutoHotkey's own function for every other command, or keep the macropad from starting. It also drops spaces typed before or after the name.
 
 ## 1.0.6 - 2026-11-25
 

@@ -20,7 +20,8 @@ function NewCommandDialog({ file, onClose }: Readonly<{ file: CommandFile; onClo
   const add = () => {
     if (busy.current) return
     busy.current = true
-    const why = checkCommandName(state.commandFiles, state.commands.drafts, file.lang, name)
+    const command = name.trim()
+    const why = checkCommandName(state.commandFiles, state.commands.drafts, file.lang, command)
     if (why) {
       busy.current = false
       setError(why)
@@ -29,9 +30,9 @@ function NewCommandDialog({ file, onClose }: Readonly<{ file: CommandFile; onClo
     const language = LANGUAGES[file.lang]
     const path = file.file.path
     const current = state.commands.drafts[path] ?? file.file.text
-    const next = appendBlock(current, language.starterCommand(name, description))
+    const next = appendBlock(current, language.starterCommand(command, description))
     actions.editCommand(path, next, file.file.version)
-    const added = language.findFunctions(next).filter((fn) => fn.name.toLowerCase() === name.toLowerCase())
+    const added = language.findFunctions(next).filter((fn) => fn.name.toLowerCase() === command.toLowerCase())
     const line = added.at(-1)?.line
     if (line !== undefined) dispatch({ type: 'jump', path, line })
     onClose()

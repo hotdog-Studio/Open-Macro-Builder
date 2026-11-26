@@ -1632,6 +1632,44 @@ describe('new command', () => {
     expect(editor().commands.drafts).toEqual({})
   })
 
+  it('adds a name typed with a space after it, without the space', async () => {
+    const { user } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    const dialog = await fill(user, '  Go  ', 'Goes')
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const added = `${MINE_AHK}\n/**\n * Goes\n * @param {Macro} Macro - The macro object.\n */\nGo(Macro)\n{\n}\n`
+    expect(editor().commands.drafts['local/ahk/mine.ahk']).toBe(added)
+    expect(cursorLine()).toBe(9)
+  })
+
+  it.each([
+    ['Loop', 'Loop is a word of the AutoHotkey language, so a command cannot have that name.'],
+    ['LOOP ', 'LOOP is a word of the AutoHotkey language, so a command cannot have that name.'],
+    ['send ', "send is one of AutoHotkey's own functions. A command with that name would replace it for every other command."],
+    ['SEND', "SEND is one of AutoHotkey's own functions. A command with that name would replace it for every other command."],
+  ])('refuses %j, whatever its case and with the space dropped, and adds nothing', async (typed, message) => {
+    const { user } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    const dialog = await fill(user, typed)
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    expect(within(dialog).getByText(message)).toBeTruthy()
+    expect(text()).toBe(MINE_AHK)
+    expect(editor().commands.drafts).toEqual({})
+  })
+
+  it('refuses a reserved name in a PowerShell file too', async () => {
+    const { user } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    await user.click(langButton('PowerShell'))
+    const dialog = await fill(user, 'Run ')
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    expect(
+      within(dialog).getByText("Run is one of AutoHotkey's own functions. A command with that name would replace it for every other command."),
+    ).toBeTruthy()
+    expect(editor().commands.drafts).toEqual({})
+  })
+
   it('counts a name added to a draft of another file', async () => {
     const { user } = await start({ files: { ...MINE, 'local/ahk/other.ahk': 'Other(Macro)\n{\n}\n' } })
     await user.click(pairButton('other'))

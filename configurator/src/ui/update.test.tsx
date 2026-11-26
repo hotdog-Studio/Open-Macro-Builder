@@ -1437,6 +1437,7 @@ describe('the update dialog, with a layout that runs a command the update takes 
         expect(itemsOf(within(done).getByRole('list', { name: DONE_HEAD }))).toEqual(SPLIT_ON_F15)
         expect(within(done).getByText(CLEAR_THEN_RELOAD)).toBeTruthy()
         expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
+        expect(within(done).queryByText(NOT_COMPARED)).toBeNull()
         expect(within(done).queryByRole('button', RELOAD)).toBeNull()
       },
     },
@@ -1445,6 +1446,7 @@ describe('the update dialog, with a layout that runs a command the update takes 
       files: { ...VS_105 },
       check: (done) => {
         expect(within(done).getByText(NOT_RESCANNED)).toBeTruthy()
+        expect(within(done).queryByText(NOT_COMPARED)).toBeNull()
         expect(within(done).queryByText(DONE_HEAD)).toBeNull()
         expect(within(done).queryByText(START_AGAIN)).toBeNull()
         expect(within(done).queryByRole('button', RELOAD)).toBeNull()

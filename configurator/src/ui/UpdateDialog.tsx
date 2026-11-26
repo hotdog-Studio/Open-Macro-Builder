@@ -28,7 +28,7 @@ const NOT_COMPARED =
   'What the update took away could not be compared with your layout: open the folder again before you reload the macropad.'
 /** Why Update is off while the app's command files load, and when they could not be loaded. */
 const CHECKING = 'Checking your layout against the new scripts…'
-const NOT_READ = 'The new scripts could not be read, so nothing can be updated now. Close this and press Review the update to try again.'
+const NOT_READ = 'The new scripts could not be read, so nothing can be updated now. Close this and open the folder again to try again.'
 const PATHS = 'break-all font-mono text-[12px] text-zinc-400'
 /** What a button that is off does. */
 const NOTHING = () => undefined
@@ -94,7 +94,7 @@ function NamedPaths({ heading, paths }: Readonly<{ heading: string; paths: strin
 
 /** What the macropad does about such commands, how to set it right, and how to keep a command. */
 const unsetFix = (commands: readonly NamedCommand[]) =>
-  `The macropad will not start until you ${remedy(commands)}. To keep a command, copy it into a file of your own before you update: Commands tab, New file.`
+  `The macropad will not start until you ${remedy(commands)}. To keep a command, copy its text before you update, and add it to a file of your own afterwards: Commands tab, New file.`
 
 /** After the update, in place of Reload the macropad: what to do first. */
 function clearThenReload(commands: readonly NamedCommand[]): string {

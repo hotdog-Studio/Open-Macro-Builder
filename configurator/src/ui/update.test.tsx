@@ -1278,20 +1278,20 @@ const HOT_LAYOUT = JSON.stringify(
 const PLAN_HEAD = 'Your layout runs commands that no file would define after this update:'
 const DONE_HEAD = 'Your layout runs commands that no file defines after this update:'
 const UNSET_FIX =
-  'The macropad will not start until you clear those keys in the Macros tab. To keep a command, copy it into a file of your own before you update: Commands tab, New file.'
+  'The macropad will not start until you clear those keys in the Macros tab. To keep a command, copy its text before you update, and add it to a file of your own afterwards: Commands tab, New file.'
 const HOT_FIX =
-  'The macropad will not start until you take those hotkeys and hotstrings out of the layout file. To keep a command, copy it into a file of your own before you update: Commands tab, New file.'
+  'The macropad will not start until you take those hotkeys and hotstrings out of the layout file. To keep a command, copy its text before you update, and add it to a file of your own afterwards: Commands tab, New file.'
 const CLEAR_THEN_RELOAD = 'Clear those keys in the Macros tab, or write the commands into a file of your own (Commands tab, New file); save, and then reload the macropad.'
 const HOT_THEN_RELOAD = 'Take those hotkeys and hotstrings out of the layout file, or write the commands into a file of your own (Commands tab, New file); save, and then reload the macropad.'
 const KEY_AND_HOTKEY_FIX =
-  'The macropad will not start until you clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file. To keep a command, copy it into a file of your own before you update: Commands tab, New file.'
+  'The macropad will not start until you clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file. To keep a command, copy its text before you update, and add it to a file of your own afterwards: Commands tab, New file.'
 const KEY_AND_HOTKEY_THEN_RELOAD =
   'Clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file, or write the commands into a file of your own (Commands tab, New file); save, and then reload the macropad.'
 const NOT_RESCANNED = 'The command lists could not be read again after the update: open the folder again before you reload the macropad.'
 const NOT_COMPARED =
   'What the update took away could not be compared with your layout: open the folder again before you reload the macropad.'
 const CHECKING = 'Checking your layout against the new scripts…'
-const NOT_READ = 'The new scripts could not be read, so nothing can be updated now. Close this and press Review the update to try again.'
+const NOT_READ = 'The new scripts could not be read, so nothing can be updated now. Close this and open the folder again to try again.'
 const SPLIT_ON_F15 = ['VsStudioSplitPanel (VS Studio · F15)']
 const SPLIT_ON_HOT = ['VsStudioSplitPanel (Hotkey ^!e, Hotstring :X:split)']
 const REPLACED_2 = { name: 'Replaced 2 files you have not changed' }
@@ -1551,6 +1551,30 @@ describe('the update dialog, with a layout that runs a command the update takes 
     expect(folder.changes).toEqual([])
   })
 
+  it('asks for the new scripts again when the dialog is opened after a read that failed, and Update comes on when it works', async () => {
+    let loads = 0
+    const { source, loadFiles } = await vsSource(async () => {
+      loads += 1
+      if (loads === 1) throw new Error('Failed to fetch.')
+      return starterFilesOf({ 'config.json': EXAMPLE, ...VS_NOW })
+    })
+    const { user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
+    await appFilesLoaded(loadFiles)
+    const offer = editor().update
+    if (!offer) throw new Error('no offer')
+    expect(within(dialog).getByText(NOT_READ)).toBeTruthy()
+    expect(disabled(within(dialog).getByRole('button', UPDATE))).toBe(true)
+    // Closing takes the offer away; the check after the folder is opened again makes it, and the dialog opens.
+    await user.click(within(dialog).getByRole('button', NOT_NOW))
+    expect(editor().update).toBeNull()
+    act(() => seen.dispatch({ type: 'update', update: { ...offer, dialog: true } }))
+    const again = dialogOf()
+    await waitFor(() => expect(disabled(within(again).getByRole('button', UPDATE))).toBe(false))
+    expect(loadFiles).toHaveBeenCalledTimes(2)
+    expect(within(again).queryByText(NOT_READ)).toBeNull()
+    expect(itemsOf(within(again).getByRole('list', { name: PLAN_HEAD }))).toEqual(SPLIT_ON_F15)
+  })
+
   it('loads the new scripts again when the dialog opens again, and keeps Update off until it has', async () => {
     const { held, release } = gate()
     let loads = 0
@@ -1576,7 +1600,7 @@ describe('the update dialog, with a layout that runs a command the update takes 
     const { source } = await vsSource()
     const { user, dialog } = await reviewed({ [CONFIG]: SPLIT_LAYOUT, ...VS_105 }, {}, source)
     await within(dialog).findByRole('list', { name: PLAN_HEAD })
-    expect(within(dialog).getByText(/To keep a command, copy it into a file of your own before you update: Commands tab, New file\./)).toBeTruthy()
+    expect(within(dialog).getByText(/To keep a command, copy its text before you update, and add it to a file of your own afterwards: Commands tab, New file\./)).toBeTruthy()
     expect(within(dialog).queryByText(/changelog/i)).toBeNull()
     await press(user, dialog)
     expect(within(dialogOf()).queryByText(/changelog/i)).toBeNull()

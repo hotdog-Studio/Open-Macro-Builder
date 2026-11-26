@@ -1148,9 +1148,13 @@ describe('updating', () => {
 
     release()
     await waitFor(() => expect(editor().update?.result?.ok).toBe(true))
-    // Once it has ended, Escape closes what the dialog says, as Close does.
-    fireEvent.keyDown(window, { key: 'Escape' })
-    expect(editor().update).toBeNull()
+    // Once it has ended, Escape closes what the dialog says, as Close does. The outcome's dialog listens for
+    // Escape from an effect of the render that shows it, in a task of its own that can come after the look
+    // that finds the outcome: an Escape before then does nothing, so the press is part of the wait.
+    await waitFor(() => {
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(editor().update).toBeNull()
+    })
   })
 
   it('lets no folder open until the outcome is shown, the running macropad looked for', async () => {

@@ -574,7 +574,9 @@ describe('Commands tab', () => {
     typeAt(0, '; x\n')
     expect(leaveIsStopped()).toBe(true)
     await save(user, 'chrome.ahk')
-    expect(leaveIsStopped()).toBe(false)
+    // save() waits for Save to go off, which React shows when it commits; the guard goes in the effects'
+    // clean-up, in a task of its own that can come after. So wait for the guard itself.
+    await waitFor(() => expect(leaveIsStopped()).toBe(false))
   })
 
   it('says when the chosen language has no file', async () => {
@@ -1279,7 +1281,9 @@ describe('new and deleted files', () => {
     expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
     expect(pairButton('new').getAttribute('aria-current')).toBe('true')
     expect(pairButton('new').textContent).toContain('AHK 0 · PS 0')
-    expect(text()).toBe(AHK_STARTER('new'))
+    // The new file's editor is made by an effect of the render that shows the file, in a task of its own
+    // that can come after the look that finds the dialog gone.
+    await waitFor(() => expect(text()).toBe(AHK_STARTER('new')))
     // The closure copy holds the new files too: they are watched.
     expect(watched.at(-1)).toEqual(expect.arrayContaining(['local/ahk/new.ahk', 'local/powershell/commands/new.ps1']))
 

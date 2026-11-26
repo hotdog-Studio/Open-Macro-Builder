@@ -353,8 +353,13 @@ describe('leaving the page', () => {
     expect(leaveIsStopped()).toBe(true)
 
     await user.click(saveButton())
-    await waitFor(() => expect(saveButton().disabled).toBe(true))
-    expect(leaveIsStopped()).toBe(false)
+    // The save ends after awaits, outside act(): React shows the saved state when it commits, and takes
+    // the guard away in the effects' clean-up, in a task of its own that can come after the look that
+    // finds Save off. So wait for the guard to go as well.
+    await waitFor(() => {
+      expect(saveButton().disabled).toBe(true)
+      expect(leaveIsStopped()).toBe(false)
+    })
 
     await editLabel(user, 'Again')
     expect(leaveIsStopped()).toBe(true)

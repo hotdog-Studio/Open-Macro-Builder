@@ -1662,6 +1662,21 @@ describe('new command', () => {
     expect(editor().commands.drafts).toEqual({})
   })
 
+  it.each([
+    ['nothing', ''],
+    ['only spaces', '   '],
+    ['a space inside', 'my cmd'],
+  ])('refuses a name of %s with the pattern message and adds nothing', async (_, typed) => {
+    const { user } = await start({ files: MINE })
+    await user.click(pairButton('mine'))
+    const dialog = await fill(user, typed)
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    expect(within(dialog).getByText('A command name starts with a letter or _ and uses only letters, digits and _.')).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: 'New command' })).toBe(dialog)
+    expect(text()).toBe(MINE_AHK)
+    expect(editor().commands.drafts).toEqual({})
+  })
+
   it('adds a name typed with a space after it, without the space', async () => {
     const { user } = await start({ files: MINE })
     await user.click(pairButton('mine'))

@@ -20,6 +20,8 @@ export const AHK_RESERVED_WORDS: readonly string[] = [
  * AutoHotkey's own functions and classes: every function of the alphabetical index at
  * https://www.autohotkey.com/docs/v2/lib/index.htm and every class of
  * https://www.autohotkey.com/docs/v2/ObjList.htm (read 2026-11-26), sorted and in lower case.
+ * The index row `HotIf / HotIfWin...` does not spell out the four `HotIfWin*` functions, so those
+ * come from https://www.autohotkey.com/docs/v2/lib/HotIf.htm (read the same day).
  * Directives, `A_` variables, control flow (see AHK_RESERVED_WORDS) and the names of a class's
  * members (`Gui.Button`) are left out. A command with one of these names hides the function for
  * every other command, or does not load.

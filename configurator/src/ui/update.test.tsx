@@ -1058,6 +1058,38 @@ describe('updating', () => {
     expect(planned).toHaveBeenCalledTimes(3)
   })
 
+  it('opens the dialog for Review the update pressed the moment the bar comes back after a failure', async () => {
+    // After Close on a failure the folder is checked again, and the bar comes back when that check ends:
+    // outside any event, so React shows it in one task and runs that render's effects in a later one. A
+    // press in between reaches its handler at once (React runs no pending effect before an event's
+    // handler), so the action must read the offer the bar shows.
+    const folder = await scriptsFolder(WORKED)
+    const user = await open(folder, await updateSourceOf())
+    await user.click(within(await findBar()).getByRole('button', REVIEW))
+    folder.beforeChange = (path) => {
+      if (path === TOOLS_PS1) throw new Error('The disk is full.')
+    }
+    await press(user, dialogOf())
+    expect(editor().update?.result?.ok).toBe(false)
+    let pressed = false
+    const review = () => [...document.querySelectorAll('button')].find((b) => b.textContent === REVIEW.name)
+    const observer = new MutationObserver(() => {
+      const button = review()
+      if (button && !pressed) {
+        pressed = true
+        fireEvent.click(button)
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      await user.click(within(dialogOf()).getByRole('button', { name: 'Close' }))
+      await waitFor(() => expect(pressed).toBe(true))
+    } finally {
+      observer.disconnect()
+    }
+    expect(dialogOf()).toBeTruthy()
+  })
+
   it('afterwards, the Commands tab lists the command file it added, and a key whose command the newer scripts lack is marked', async () => {
     const layout = EXAMPLE.replace('"action": "PreviousTrack"', '"action": "GoneCommand"')
     const folder = await scriptsFolder({ ...WORKED, [CONFIG]: layout })

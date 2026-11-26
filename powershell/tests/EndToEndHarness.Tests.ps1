@@ -561,15 +561,20 @@ Describe 'End-to-end windows: the helpers use the macropad''s window list as Get
 
     # The calls a desktop is needed for (the waits inside a case) cannot be run here: the text of the
     # harness and of the cases is read instead. A call of Get-E2eMacropadWindows gives its list as one
-    # object, so the list must be taken as it comes, in a variable or by .Count: wrapped in @(...) it is a
-    # list of one element, and piped (Get-E2eMacropadWindows -Others | ForEach-Object ...) the pipeline
-    # hands over the list as one object, so that $_ is the whole list and not a window. The same pattern
-    # reads a sample text and the files, so the samples show what the files are held to.
+    # object (return , @(...)), so the list must be taken as it comes, in a variable or by .Count. Which
+    # forms hand that one object on as it is, checked in a PowerShell with a stub that returns , @(1, 2):
+    #   Get-W | ForEach-Object { $_ }     $_ is the whole list (Object[]): wrong
+    #   @(Get-W)                          a list of one element, the real list: wrong
+    #   (Get-W) | ForEach-Object { $_ }   $_ is each item (Int32, Int32): right
+    #   $(Get-W) | ForEach-Object { $_ }  $_ is each item (Int32, Int32): right
+    # A group in brackets or a subexpression lists the array as an expression's value, item by item; a
+    # command piped directly, and @(...), do not. So the test refuses a wrap and a direct pipe only. The
+    # same pattern reads a sample text and the files, so the samples show what the files are held to.
     Context 'a call of Get-E2eMacropadWindows that takes the list as it comes' {
         BeforeAll {
             function Find-E2eWindowListMisuse {
                 param([string]$Text)
-                $pattern = '@\(\s*Get-E2eMacropadWindows|Get-E2eMacropadWindows[^|;)\r\n]*\)?\s*\|'
+                $pattern = '@\(\s*Get-E2eMacropadWindows|Get-E2eMacropadWindows[^|;)\r\n]*\s*\|'
                 foreach ($m in [regex]::Matches($Text, $pattern)) {
                     $line = ($Text.Substring(0, $m.Index) -split "`n").Count
                     "$line`: $($m.Value.Trim())"
@@ -583,7 +588,6 @@ Describe 'End-to-end windows: the helpers use the macropad''s window list as Get
             @{ Why = 'wrapped across two lines'; Text = "`$n = @(`r`n    Get-E2eMacropadWindows -Others`r`n).Count" }
             @{ Why = 'piped'; Text = 'Get-E2eMacropadWindows -Others | ForEach-Object { $_ }' }
             @{ Why = 'piped, with the arguments before the pipe'; Text = '$t = Get-E2eMacropadWindows -Tooltips -Overlay | Select-Object -First 1' }
-            @{ Why = 'piped from a group in brackets'; Text = '(Get-E2eMacropadWindows -Others) | Where-Object { $_ }' }
             @{ Why = 'piped to a pipe at the start of the next line'; Text = "Get-E2eMacropadWindows -Others`r`n    | ForEach-Object { `$_ }" }
         ) {
             @(Find-E2eWindowListMisuse $Text).Count | Should -Be 1
@@ -594,6 +598,8 @@ Describe 'End-to-end windows: the helpers use the macropad''s window list as Get
             @{ Why = 'a count of the list'; Text = 'if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)) { throw "no" }' }
             @{ Why = 'a count piped on'; Text = '(Get-E2eMacropadWindows -Overlay).Count | Should -Be 0' }
             @{ Why = 'a call, then a pipe in another statement'; Text = '$w = Get-E2eMacropadWindows; $w | ForEach-Object { $_ }' }
+            @{ Why = 'a group in brackets, piped: the group lists the array item by item'; Text = '(Get-E2eMacropadWindows -Others) | Where-Object { $_ }' }
+            @{ Why = 'a subexpression, piped: the same'; Text = '$(Get-E2eMacropadWindows -Others) | Where-Object { $_ }' }
             @{ Why = 'a variable that holds the list, piped'; Text = "`$left = Get-E2eMacropadWindows -Others`r`n`$left | ForEach-Object { `$_ }" }
         ) {
             @(Find-E2eWindowListMisuse $Text).Count | Should -Be 0

@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { buildDictionary, parseCache, type DictEntry, type Dictionary } from '../core/commands/dictionary'
 import type { Reference } from '../core/commands/reference'
-import { checkNewFile } from '../core/commands/files'
 import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type ParamMismatch } from '../core/commands/outline'
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
 import { keysUsing } from '../core/commands/usage'
@@ -373,7 +372,8 @@ function NewFileDialog({ onClose }: Readonly<{ onClose: () => void }>) {
   const create = async () => {
     if (busy.current) return
     busy.current = true
-    const why = checkNewFile(state.commandFiles, name, group, langs) ?? (await actions.createCommandFiles({ group, name, langs }))
+    // The same check runs first in the action, which knows which files it made without listing them.
+    const why = await actions.createCommandFiles({ group, name, langs })
     busy.current = false
     if (why) setError(why)
     else onClose()

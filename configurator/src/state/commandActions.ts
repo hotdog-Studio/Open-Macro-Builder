@@ -167,7 +167,15 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
   /** The number of the newest read whose library the state holds. */
   let libraryTaken = 0
 
+  /**
+   * The command files that New file made in this session and could not add to their include file, with
+   * the folder they were made in. Only these are listed by a retry; a file made or switched off by hand never is.
+   */
+  const unlisted = new Map<string, FolderAccess>()
+
   const entry = (path: string) => files.get().find((f) => f.file.path === path)
+  /** The command file at `path`, ignoring case (a name typed in another case is the file a case-insensitive disk holds). */
+  const heldAt = (path: string) => files.get().find((f) => f.file.path.toLowerCase() === path.toLowerCase())
   const banner = (text: string, kind: 'error' | 'warning' = 'error') => dispatch({ type: 'banner', banner: { text, kind } })
 
   /** The last change of the manifest: the next one starts when it ends, so two never interleave. */
@@ -432,6 +440,10 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
             () => null,
             (e: unknown) => `${path} was created, but ${listPath} was not updated: ${messageOf(e)}`,
           )
+    if (listPath !== null) {
+      if (error === null) unlisted.delete(path)
+      else unlisted.set(path, folder)
+    }
     // A file made again is no longer one the person deleted. When the manifest cannot be updated
     // nothing is reported: a `deleted` entry for a file that is in the folder never makes it count as
     // deleted (the check treats only missing files so). At most, while the file is the app's copy, a
@@ -449,9 +461,9 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
   }
 
   /**
-   * Makes sure the include file loads the command file at `path`, which exists: a first try of New
-   * file may have made the file and failed on this. Nothing is written when the line is there. Resolves
-   * to null when done, else why not.
+   * Makes sure the include file loads the command file at `path`, which a first try of New file made
+   * and could not add to it. Nothing is written when the line is there. Resolves to null when done,
+   * else why not.
    */
   async function ensureListed(path: string): Promise<string | null> {
     const folder = deps.folder()
@@ -459,30 +471,40 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const listPath = at && LANGUAGES[at.lang].listedIn(path)
     if (!folder || !at || !listPath) return null
     return addInclude(folder, LANGUAGES[at.lang], listPath, path).then(
-      () => null,
+      () => {
+        unlisted.delete(path)
+        return null
+      },
       (e: unknown) => `${path} exists, but ${listPath} was not updated: ${messageOf(e)}`,
     )
   }
 
-  /** New file, in each chosen language (see AppActions.createCommandFiles). */
+  /**
+   * New file, in each chosen language (see AppActions.createCommandFiles). A language whose file exists
+   * is left as it is (its text, an open draft), unless a first try made it and could not list it: then
+   * only its include line is made. A name is refused when every chosen language has its file, listed.
+   */
   async function createFiles({ group, name, langs }: Parameters<AppActions['createCommandFiles']>[0]): Promise<string | null> {
-    const why = checkNewFile(files.get(), name, group, langs)
+    const folder = deps.folder()
+    const needsList = (f: CommandFile) => unlisted.get(f.file.path) === folder
+    const why = checkNewFile(files.get().filter((f) => !needsList(f)), name, group, langs)
     if (why) return why
     let error: string | null = null
-    const made: LangId[] = []
     const create = async (lang: LangId): Promise<void> => {
       const path = newFilePath(lang, group, name)
-      // A file a first try made stays as it is (its text, an open draft): only its include line is made sure of.
-      const failed = entry(path) ? await ensureListed(path) : await createFile(path)
+      const held = heldAt(path)
+      let failed: string | null = null
+      if (!held) failed = await createFile(path)
+      else if (needsList(held)) failed = await ensureListed(held.file.path)
       error ??= failed
-      if (entry(path)) made.push(lang)
     }
     // One language at a time; a failed one does not stop the next.
     await langs.reduce((before, lang) => before.then(() => create(lang)), Promise.resolve())
-    if (made.length > 0) {
-      const at = commandFileAt(newFilePath(made[0], group, name))!
+    const shown = langs.flatMap((lang) => heldAt(newFilePath(lang, group, name)) ?? [])
+    if (shown.length > 0) {
+      const at = commandFileAt(shown[0].file.path)!
       const state = deps.getState()
-      const lang = state.screen === 'edit' && made.includes(state.commands.lang) ? state.commands.lang : made[0]
+      const lang = state.screen === 'edit' && shown.some((f) => f.lang === state.commands.lang) ? state.commands.lang : shown[0].lang
       dispatch({ type: 'commands-show', pair: `${at.group}:${at.pair}`, lang })
     }
     return error
@@ -516,6 +538,7 @@ export function createCommandActions(deps: CommandDeps): CommandActions {
     const manifestError = await updateManifest(folder, (m) => withDeleted(m, path))
     if (deps.folder() !== folder) return null
     files.set(withCommandFile(files.get(), path, null))
+    unlisted.delete(path)
     drafts.delete(path)
     written.delete(path)
     dispatch({ type: 'command-file', path, file: null })

@@ -1655,6 +1655,50 @@ describe('new and deleted files', () => {
       expect(folder.text(NEW_PS)).toBe(PS_STARTER('new'))
       expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
     })
+
+    it('lists the file the first try made when both files exist and only its include line failed', async () => {
+      const { user, folder } = await start({ files: MINE })
+      const disk = lock(folder, [HUB])
+      const first = await create(user, 'new')
+      expect(await within(first).findByText(`${NEW_AHK} was created, but ${HUB} was not updated: the disk is full`)).toBeTruthy()
+      expect(folder.text(NEW_PS)).toBe(PS_STARTER('new'))
+      await user.click(within(first).getByRole('button', { name: 'Cancel' }))
+
+      disk.locked = false
+      await create(user, 'new')
+      // Both files existed, and the dialog still closes: the file is listed now, not left unloaded.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
+      expect(pairButton('new').getAttribute('aria-current')).toBe('true')
+
+      // Listed and complete: the name is refused.
+      const third = await newFile(user, 'new')
+      await user.click(within(third).getByRole('button', { name: 'Create' }))
+      expect(within(third).getByText(`${NEW_AHK} already exists.`)).toBeTruthy()
+      expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
+    })
+
+    it('never lists a file of that name that was made or switched off by hand', async () => {
+      const HAND = 'X(Macro)\n{\n}\n'
+      const hub = '#Requires AutoHotkey v2.0\n#Include mine.ahk\n'
+      const { user, folder } = await start({ files: { ...MINE, [HUB]: hub, 'local/ahk/x.ahk': HAND } })
+      await create(user, 'x')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(folder.text('local/powershell/commands/x.ps1')).toBe(PS_STARTER('x'))
+      expect(folder.text('local/ahk/x.ahk')).toBe(HAND)
+      expect(folder.text(HUB)).toBe(hub)
+    })
+
+    it('finds the file that exists whatever the case of the name typed', async () => {
+      const HAND = 'X(Macro)\n{\n}\n'
+      const { user, folder } = await start({ files: { ...MINE, 'local/ahk/x.ahk': HAND } })
+      await create(user, 'X')
+      // No "already exists" for the AutoHotkey file: only the PowerShell file is made.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(folder.text('local/powershell/commands/X.ps1')).toBe(PS_STARTER('X'))
+      expect(folder.text('local/ahk/x.ahk')).toBe(HAND)
+      expect(await folder.readBytes(HUB)).toBeNull()
+    })
   })
 
   it('refuses a name that already exists', async () => {

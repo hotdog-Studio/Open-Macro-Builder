@@ -186,6 +186,33 @@ describe('Commands tab: typing', () => {
     expect(text()).toBe(before)
   })
 
+  it('lets the keyboard leave the editor with Esc and then Tab, and says so', async () => {
+    await start()
+    await openFile('media')
+    const hint = 'Tab indents. To leave the editor with the keyboard, press Esc and then Tab.'
+    expect(document.activeElement).toBe(editorEl())
+    // Said where the person is, and named by the editor for a screen reader.
+    const line = screen.getByText(hint)
+    expect(editorEl().closest('.cm-editor')?.contains(line)).toBe(true)
+    expect(line.id).not.toBe('')
+    expect(editorEl().getAttribute('aria-describedby')).toContain(line.id)
+    expect(line.getBoundingClientRect().height).toBeGreaterThan(1)
+
+    const before = text()
+    await key('{Escape}')
+    await key('{Tab}')
+    expect(document.activeElement).not.toBeNull()
+    expect(document.activeElement?.closest('.cm-editor')).toBeNull()
+    // Nothing was indented on the way out.
+    expect(text()).toBe(before)
+
+    // Away from the editor the line is still in the page for a screen reader, and not drawn.
+    expect(screen.getByText(hint)).toBeTruthy()
+    const drawn = screen.getByText(hint).getBoundingClientRect()
+    expect(drawn.width).toBeLessThanOrEqual(1)
+    expect(drawn.height).toBeLessThanOrEqual(1)
+  })
+
   it('a command typed by hand appears in the outline', async () => {
     await start()
     await openFile('media')

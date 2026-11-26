@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching } from '@codemirror/language'
 import { searchKeymap } from '@codemirror/search'
-import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state'
 import { oneDark } from '@codemirror/theme-one-dark'
 import {
   drawSelection,
@@ -10,6 +10,7 @@ import {
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
+  ViewPlugin,
 } from '@codemirror/view'
 import { useEffect, useRef, type RefObject } from 'react'
 import type { Dictionary } from '../../core/commands/dictionary'
@@ -39,7 +40,41 @@ export interface CodeEditorProps {
 const THEME = EditorView.theme({
   '&': { height: '100%' },
   '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, Consolas, monospace' },
+  '.cm-tab-hint': { padding: '2px 12px', fontSize: '0.75rem', color: '#7d8799', borderTop: '1px solid #3f4451' },
+  // Away from the editor the line is drawn nowhere and stays in the page, where a screen reader finds it.
+  '&:not(.cm-focused) .cm-tab-hint': {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    padding: '0',
+    border: '0',
+    margin: '-1px',
+    overflow: 'hidden',
+    clip: 'rect(0, 0, 0, 0)',
+    whiteSpace: 'nowrap',
+  },
 })
+
+/** Said under the editor, because Tab indents there and a person on the keyboard would be stuck in it. */
+const TAB_HINT = 'Tab indents. To leave the editor with the keyboard, press Esc and then Tab.'
+let hintCount = 0
+
+/**
+ * A line of the editor's own that says how to leave it with the keyboard. It is drawn while the focus
+ * is in the editor, is always in the page for a screen reader, and the editor's content names it.
+ */
+function tabHint(): Extension {
+  const id = `cm-tab-hint-${++hintCount}`
+  const line = ViewPlugin.define((view) => {
+    const el = document.createElement('div')
+    el.id = id
+    el.className = 'cm-tab-hint'
+    el.textContent = TAB_HINT
+    view.dom.append(el)
+    return { destroy: () => el.remove() }
+  })
+  return [line, EditorView.contentAttributes.of({ 'aria-describedby': id })]
+}
 
 type Latest = Pick<CodeEditorProps, 'value' | 'lang' | 'label' | 'onChange' | 'onSave' | 'docs'> & { readOnly: boolean }
 
@@ -190,6 +225,7 @@ export function CodeEditor({
   return <div ref={host} className="h-full min-h-0 w-full overflow-hidden" />
 }
 
-function readOnlyExtensions(readOnly: boolean) {
-  return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]
+/** What changes with read-only: a file that is read-only is not indented, so it has no hint about Tab. */
+function readOnlyExtensions(readOnly: boolean): Extension[] {
+  return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly), readOnly ? [] : tabHint()]
 }

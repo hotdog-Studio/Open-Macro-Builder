@@ -50,7 +50,7 @@ Press **Open folder** and pick this repository.
 
 | Command | From | What it runs |
 | --- | --- | --- |
-| `node --test "scripts/*.test.mjs"` | the repository root | The validator and the private-details check. |
+| `node --test "scripts/*.test.mjs"` | the repository root | The tests of the validator, the private-details check, and the version and release scripts that CI runs (`ci-version.mjs`, and `ci-release.mjs` with its check of the changelog). |
 | `node scripts/validate-config.mjs` | the repository root | Checks the layout both versions would load. |
 | `npm test` | `configurator/` | The unit tests (Vitest, in Node and jsdom). Add `-- --coverage` for coverage. |
 | `npm run test:browser` | `configurator/` | The app in headless Chromium: real mouse drags, keyboard, touch, small windows, a real folder handle, and pictures of the pad. |

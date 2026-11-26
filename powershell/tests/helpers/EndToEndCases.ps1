@@ -626,7 +626,7 @@ function Get-E2eCases {
             }
         }
         @{ Command = 'E2eNothing'; Name = 'E2eOverlayIcon'; File = 'e2e'; Kind = 'Custom'
-            Covers  = 'while Fn is held, a click on the icon of key 1 selects layer 1 from another layer, as the example layout''s iconAction "Layer" has it (with labels shown and macro icons off): the label of key 1 then reads the name of layer 1''s first command, and once Fn is let go key 1 runs it, E2eMark; the click takes neither the keyboard nor the foreground from the window in front (B). After the click, the pointer moved one pixel inside the icon brings up a tooltip of the macropad''s within 3 s, in a macropad whose overlay has been hidden before; Fn is let go with that tooltip seen up and the pointer left on the icon, and the tooltip must be gone within 2.5 s of the overlay being seen hidden. Not run: iconAction "Macro" and the layouts without labels or with macro icons, where a click on an icon runs the key''s command instead, what the tooltip says (another program cannot read it), and the icon of a key that has no layer'
+            Covers  = 'while Fn is held, a click on the icon of key 1 selects layer 1 from another layer, as the example layout''s iconAction "Layer" has it (with labels shown and macro icons off): the label of key 1 then reads the name of layer 1''s first command, and once Fn is let go key 1 runs it, E2eMark; the click takes neither the keyboard nor the foreground from the window in front (B). After the click a tooltip of the macropad''s comes up over the icon, within 1 s with the pointer still or else within 3 s of a one-pixel move inside the icon, in a macropad whose overlay has been hidden before; Fn is let go with that tooltip seen up and the pointer left on the icon, and the tooltip must be gone within 2.5 s of the overlay being seen hidden. That proves the tooltip goes with the overlay when it came up with the pointer still (the line says so); after the move it is evidence only. In the PowerShell macropad the case also fails, as proving nothing, when the wait for the tooltip to go began more than 2 s after the pointer reached the icon. Not run: iconAction "Macro" and the layouts without labels or with macro icons, where a click on an icon runs the key''s command instead, what the tooltip says (another program cannot read it), and the icon of a key that has no layer'
             Arrange = { param($ctx) Assert-E2eOverlayOptions -IconSelectsLayer; [void](Use-E2eStandin 'B') }
             Assert  = {
                 param($ctx)
@@ -639,12 +639,16 @@ function Get-E2eCases {
                 # layout that fills one layer has a second, empty one: Write-E2eLayoutFile).
                 $from = $ctx.Case.Layer
                 if ($from -eq 1) { $from = 2; Select-E2eLayer 2; $ctx.Run.Macropad.Layer = 0 }
-                Invoke-E2eOverlayPointer -TooltipAtRelease {
+                # Fn is let go with the icon's tooltip up (Invoke-E2eOverlayPointer -Tooltip): Since starts when
+                # the pointer reaches the icon, before which no tooltip of the icon can show.
+                $ctx.Tip = [pscustomobject]@{ Since = [System.Diagnostics.Stopwatch]::new(); Came = '' }
+                Invoke-E2eOverlayPointer -Tooltip $ctx.Tip {
                     param($overlay)
                     $p = Get-E2eOverlayPoint 1 Icon
                     $ctx.Clicked = "($($p.X), $($p.Y)), the middle of the icon of key 1 (the layout's rectangle $($p.Rect) at scale $($p.Scale))"
                     Wait-ScreenChange  # the pointer on the icon brings up its tooltip
                     Move-E2ePointer $p.X $p.Y
+                    $ctx.Tip.Since.Start()
                     Assert-E2eOnOverlay $p $overlay 'the middle of the icon of key 1'
                     $label = Get-E2eOverlayPoint 1 Label
                     $want = @(@((Get-E2eLayoutModel).Layers)[0].Macros)[0].Name
@@ -660,15 +664,23 @@ function Get-E2eCases {
                         throw "After a click at $($ctx.Clicked) with layer $from selected, the overlay must show layer 1, whose first key's label reads '$want'; the label of key 1 read '$before' before the click and reads '$(Get-E2eOverlayText $overlay $label)' 3 s after it. B's log since the click: $(if ($bLines.Count) { $bLines -join ' / ' } else { 'nothing' }); in front: $(Get-E2eForegroundText). Key 1 was not pressed."
                     }
                     [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "a click on the overlay takes neither the keyboard nor the foreground (in front: $(Get-E2eForegroundText))"
-                    # Fn is let go with a tooltip up (-TooltipAtRelease): the icon's, once the pointer moves
-                    # a pixel on it as a hand does (a tooltip control shows its tip for a move, and the click
-                    # has just set the overlay's texts again). The overlay has been hidden before in this
+                    # The icon's tooltip, first with the pointer still, as in build #4, where the PowerShell
+                    # tip came up after the click and outlived the hidden overlay: a hide tried then is the
+                    # proof. Only if none came within 1 s is the pointer moved a pixel on the icon, as a hand
+                    # moves it (a tooltip control shows its tip for a move); a hide tried after that move is
+                    # evidence only, since the move may set the control's own check for the pointer leaving
+                    # its tool going. The line says which (Came). The overlay has been hidden before in this
                     # macropad (at the end of E2eOverlayLabel, and by Select-E2eLayer 2 above when the case's
                     # own layer is 1), so this tooltip also shows that tooltips still come after a hide.
-                    Wait-ScreenChange  # the move on the icon brings up its tooltip
-                    Move-E2ePointer ($p.X + 1) $p.Y
-                    $tip = Wait-E2eCondition { Get-E2eTooltip } -TimeoutMs 3000
-                    if (-not $tip) { throw "No tooltip of the macropad's showed within 3 s of the pointer moving one pixel, to ($($p.X + 1), $($p.Y)), inside the icon of key 1, after the click had selected layer 1; the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
+                    $tip = Wait-E2eCondition { Get-E2eTooltip } -TimeoutMs 1000
+                    if ($tip) { $ctx.Tip.Came = 'without a move of the pointer' }
+                    else {
+                        Wait-ScreenChange  # the move on the icon brings up its tooltip
+                        Move-E2ePointer ($p.X + 1) $p.Y
+                        $tip = Wait-E2eCondition { Get-E2eTooltip } -TimeoutMs 3000
+                        if (-not $tip) { throw "No tooltip of the macropad's showed within 1 s with the pointer still at $($ctx.Clicked), once the click had selected layer 1, nor within 3 s of the pointer moving one pixel, to ($($p.X + 1), $($p.Y)), inside the icon of key 1; the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
+                        $ctx.Tip.Came = 'only after the pointer moved one pixel'
+                    }
                     Wait-ScreenChange -Observed
                 }
                 $commands = Get-E2eCommandMark

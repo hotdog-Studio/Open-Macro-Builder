@@ -444,16 +444,18 @@ $script:E2eFrontMs = 3000
 # it took. Build #4's case times did not measure it (E2eOverlayLabel took 4.46 s in AutoHotkey and
 # 3.38 s in PowerShell, E2eOverlayIcon 4.89 s and 8.6 s, 4.8 s of the last this wait).
 # The limit is what separates the PowerShell tip of before 1.0.7, which ran out its own 5 s (AutoPopDelay)
-# from when it showed, from one that goes with the overlay. E2eOverlayIcon lets Fn go with a tip that it
-# saw up at its last step, within one look (50 ms) of its showing; then come the pacing floor (350 ms at
-# most), the look whether a tooltip shows, Fn's release and the wait for the overlay to hide (in build #4,
-# in the order before this one, 193 ms of the 5 s had passed when this wait began). The wait for the hide
-# may take up to 3 s, which would leave too little of the 5 s: so that case fails when this wait began
-# more than $script:E2eTooltipProofMs after its last step. Within that, more than 5000 - 1500 - 100 =
-# 3400 ms of an old tip are left when this wait begins, so a tip left to run out fails the limit by more
-# than 900 ms.
+# from when it showed, from one that goes with the overlay. E2eOverlayIcon lets Fn go with a tip up whose
+# showing it does not see exactly: by build #4 it comes up shortly after the click, and the label wait,
+# the wait for the tip and pacing floors lie between that and Fn's release. So the case starts a clock
+# when the pointer reaches the icon, before which no tip of the icon can show, and hands it to
+# Invoke-E2eOverlayPointer; in the PowerShell macropad the case fails ("the run proved nothing") when that
+# clock reads more than $script:E2eTooltipProofMs as this wait begins. Within that, an old tip has more
+# than 5000 - 2000 = 3000 ms left when this wait begins, so a tip left to run out fails the 2500 ms limit
+# by more than 500 ms. Ordinarily the clock reads about a second then: the pacing floor before the click,
+# the click, the label and tip waits, the floor before Fn's release, and the hide. An AutoHotkey tip has
+# no lifetime of its own, so there the bound guards nothing and is not applied.
 $script:E2eTooltipGoneMs = 2500
-$script:E2eTooltipProofMs = 1500
+$script:E2eTooltipProofMs = 2000
 $script:E2eChangeClock = $null
 $script:E2eWarning = 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
 # The banner's window (ahk\tests\e2e\banner.ahk), as Find-Window reads it.
@@ -1917,19 +1919,22 @@ function Assert-E2eOnOverlay {
 # milliseconds after the overlay was seen hidden the wait found none ($null when one was still there at
 # the limit, LimitMs). Counted from just before the wait, so up to one look (tens of ms) more than the
 # wait's own count, which starts after its first look: a figure a little over the limit can be a pass.
+# Came, when the case waited for a tooltip before Fn's release (E2eOverlayIcon), says how that one came up.
 function Format-E2eOverlayTooltipTime {
-    param([string]$Case, $AtFn, [bool]$SeenAfter, $GoneAfterMs, [int]$LimitMs)
-    $line = "Overlay tooltip, ${Case}: "
+    param([string]$Case, $AtFn, [bool]$SeenAfter, $GoneAfterMs, [int]$LimitMs, [string]$Came = '')
     if ($AtFn -eq $true) {
-        $line += 'showing when Fn was let go, '
-        if ($null -eq $GoneAfterMs) { return $line + "still showing $LimitMs ms after the overlay was seen hidden" }
-        if ($SeenAfter) { return $line + "gone $GoneAfterMs ms after the overlay was seen hidden (limit $LimitMs ms)" }
-        return $line + "gone by the time the overlay was seen hidden (none at the first look after it; limit $LimitMs ms)"
+        $what = 'showing when Fn was let go, '
+        if ($null -eq $GoneAfterMs) { $what += "still showing $LimitMs ms after the overlay was seen hidden" }
+        elseif ($SeenAfter) { $what += "gone $GoneAfterMs ms after the overlay was seen hidden (limit $LimitMs ms)" }
+        else { $what += "gone by the time the overlay was seen hidden (none at the first look after it; limit $LimitMs ms)" }
+    } else {
+        if ($AtFn -eq $false) { $what = 'none showing when Fn was let go, ' } else { $what = 'not known whether one showed when Fn was let go (the look failed), ' }
+        if ($null -eq $GoneAfterMs) { $what += "but one showing $LimitMs ms after the overlay was seen hidden" }
+        elseif ($SeenAfter) { $what += "but one showing after the overlay was seen hidden, gone $GoneAfterMs ms after it (limit $LimitMs ms)" }
+        else { $what += 'and none after the overlay was seen hidden' }
     }
-    if ($AtFn -eq $false) { $line += 'none showing when Fn was let go, ' } else { $line += 'not known whether one showed when Fn was let go (the look failed), ' }
-    if ($null -eq $GoneAfterMs) { return $line + "but one showing $LimitMs ms after the overlay was seen hidden" }
-    if ($SeenAfter) { return $line + "but one showing after the overlay was seen hidden, gone $GoneAfterMs ms after it (limit $LimitMs ms)" }
-    $line + 'and none after the overlay was seen hidden'
+    if ($Came) { $what += "; the tooltip the case waited for came up $Came" }
+    "Overlay tooltip, ${Case}: $what"
 }
 
 # Holds Fn until the overlay shows and gives Action the overlay's window; then, however Action ended,
@@ -1941,26 +1946,26 @@ function Format-E2eOverlayTooltipTime {
 # raise a tooltip of the harness's own, and one that leaves the overlay would take an AutoHotkey tip away
 # by WM_MOUSELEAVE, so that the hide would not be what is checked. A
 # tooltip has no title, as the overlay has none, and one left on the screen would stand over the next
-# case. With -TooltipAtRelease the case has seen a tooltip up at its last step, and this fails unless the
-# look before Fn's release saw one too and the wait for the tooltip began within
-# $script:E2eTooltipProofMs of that step: otherwise the run cannot tell a tooltip that goes with the
-# overlay from one that ran out by itself. Before Fn goes down, the pointer rests on the title bar of the
+# case. With -Tooltip the case lets Fn go with a tooltip it saw up; the object holds Since, a stopwatch
+# the case started when no tooltip of what it points at could have shown yet, and Came, how that tooltip
+# came up (printed in the line). This then fails unless the look before Fn's release saw a tooltip too,
+# and, in the PowerShell macropad, unless Since read at most $script:E2eTooltipProofMs when the wait for
+# the tooltip began: otherwise the run cannot tell a tooltip that goes with the overlay from one that ran
+# out its own 5 s, and proved nothing. Before Fn goes down, the pointer rests on the title bar of the
 # stand-in B (top left of the screen), off the overlay (the middle of the screen), so that no tooltip
 # shows before Action puts the pointer where it wants it. Each change of the screen is paced. Fn is let go
 # and the pointer put back whatever happened. What this throws starts with Action's failure, and what
 # could not be put back follows it. The variables have names of their own: Action runs inside this
 # function and reads the case's variables by name.
 function Invoke-E2eOverlayPointer {
-    param([Parameter(Mandatory)][scriptblock]$Action, [switch]$TooltipAtRelease)
+    param([Parameter(Mandatory)][scriptblock]$Action, $Tooltip)
     Assert-E2eMacropadRuns
     $e2eFrom = [OmbE2e.Input]::MousePosition()
     $e2eFailure = $null
     $e2eProblems = [System.Collections.Generic.List[string]]::new()
     $e2eStep = { param([scriptblock]$Do) try { & $Do } catch { $e2eProblems.Add($_.Exception.Message) } }
-    # What the look just before Fn's release saw ($null when it could not look), and a clock from the end
-    # of Action.
+    # What the look just before Fn's release saw ($null when it could not look).
     $e2eTipAtFn = $null
-    $e2eSinceAction = $null
     try {
         try {
             $e2eRest = Get-WindowRect $script:E2eRun.Standins['B'].Hwnd
@@ -1970,7 +1975,6 @@ function Invoke-E2eOverlayPointer {
             $e2eOverlay = Wait-E2eCondition { Get-E2eSoleOverlay } -TimeoutMs 3000
             if ($null -eq $e2eOverlay) { throw "The overlay did not show as one window within 3 s while Fn was held; the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
             & $Action $e2eOverlay
-            $e2eSinceAction = [System.Diagnostics.Stopwatch]::StartNew()
         } catch { $e2eFailure = $_ }
         finally {
             # Also when the run is stopped. Fn is let go by name, as Select-E2eLayer lets it go: a macropad's
@@ -1987,17 +1991,18 @@ function Invoke-E2eOverlayPointer {
             Wait-ScreenChange -Observed
         }
         & $e2eStep {
-            $sinceAction = if ($null -ne $e2eSinceAction) { $e2eSinceAction.ElapsedMilliseconds }
+            $age = if ($null -ne $Tooltip) { $Tooltip.Since.ElapsedMilliseconds }
             $after = @{ Seen = $false }
             $clock = [System.Diagnostics.Stopwatch]::StartNew()
             $gone = Wait-E2eCondition { $t = Get-E2eMacropadWindows -Tooltips; if ($t.Count -gt 0) { $after.Seen = $true }; $t.Count -eq 0 } -TimeoutMs $script:E2eTooltipGoneMs
             # Said whether the case passes or fails, as the NextWindow cases say theirs: how long a tooltip took to go.
-            Write-Host (Format-E2eOverlayTooltipTime $script:E2eRun.Case $e2eTipAtFn $after.Seen $(if ($gone) { $clock.ElapsedMilliseconds }) $script:E2eTooltipGoneMs)
+            Write-Host (Format-E2eOverlayTooltipTime $script:E2eRun.Case $e2eTipAtFn $after.Seen $(if ($gone) { $clock.ElapsedMilliseconds }) $script:E2eTooltipGoneMs $(if ($null -ne $Tooltip) { $Tooltip.Came }))
             if (-not $gone) { throw "a tooltip of the macropad's still showed $($script:E2eTooltipGoneMs) ms after the overlay was seen hidden, Fn let go and the pointer left where it was (the tooltip must go with the overlay); the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
             if ($e2eTipAtFn -or $after.Seen) { Wait-ScreenChange -Observed }
-            if ($TooltipAtRelease -and $null -eq $e2eFailure) {
-                if ($e2eTipAtFn -eq $false) { throw "no tooltip of the macropad's showed in the look just before Fn was let go, though the case had seen one up: the hide was not tried with a tooltip up, so this run does not show that the tooltip goes with the overlay" }
-                if ($sinceAction -gt $script:E2eTooltipProofMs) { throw "the wait for the tooltip to go began $sinceAction ms after the case had seen the tooltip up, more than $($script:E2eTooltipProofMs) ms (the pacing floor, the look, Fn's release and the wait for the overlay to hide): a tooltip that ran out its own 5 s, as the PowerShell one did before 1.0.7, could then be gone within the limit too, so this run does not show that the tooltip goes with the overlay" }
+            if ($null -ne $Tooltip -and $null -eq $e2eFailure) {
+                if ($e2eTipAtFn -eq $false) { throw "no tooltip of the macropad's showed in the look just before Fn was let go, though the case had seen one up: the hide was not tried with a tooltip up, so the run proved nothing of the tooltip going with the overlay" }
+                # Only the PowerShell tooltip of before 1.0.7 ran out by itself (5 s); an AutoHotkey one never does.
+                if ($script:E2eRun.Macropad.Lang -eq 'ps' -and $age -gt $script:E2eTooltipProofMs) { throw "the wait for the tooltip to go began $age ms after the pointer reached the point whose tooltip the case saw, more than $($script:E2eTooltipProofMs) ms: a tooltip that ran out its own 5 s, as the PowerShell one did before 1.0.7, could then have been gone within the limit too, so the run proved nothing of the tooltip going with the overlay (this says nothing against the macropad)" }
             }
         }
     } finally {

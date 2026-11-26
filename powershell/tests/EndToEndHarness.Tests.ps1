@@ -937,6 +937,17 @@ Describe 'End-to-end overlay tooltip timing: the line the run prints' {
     ) {
         Format-E2eOverlayTooltipTime 'ahk E2eOverlayIcon' $AtFn $SeenAfter $Ms 2500 | Should -BeExactly $Want
     }
+
+    # E2eOverlayIcon waits for a tooltip before Fn's release and says how it came up (Came): with the pointer
+    # still, or only after a one-pixel move. That goes at the end of whatever the rest of the line says.
+    It 'says how the case''s tooltip came up: <Why>' -ForEach @(
+        @{ Why = 'without a move, gone by the hide'; AtFn = $true; SeenAfter = $false; Ms = 12; Came = 'without a move of the pointer'; Want = 'Overlay tooltip, ps E2eOverlayIcon: showing when Fn was let go, gone by the time the overlay was seen hidden (none at the first look after it; limit 2500 ms); the tooltip the case waited for came up without a move of the pointer' }
+        @{ Why = 'after the move, gone after the hide'; AtFn = $true; SeenAfter = $true; Ms = 90; Came = 'only after the pointer moved one pixel'; Want = 'Overlay tooltip, ps E2eOverlayIcon: showing when Fn was let go, gone 90 ms after the overlay was seen hidden (limit 2500 ms); the tooltip the case waited for came up only after the pointer moved one pixel' }
+        @{ Why = 'without a move, still there at the limit'; AtFn = $true; SeenAfter = $true; Ms = $null; Came = 'without a move of the pointer'; Want = 'Overlay tooltip, ps E2eOverlayIcon: showing when Fn was let go, still showing 2500 ms after the overlay was seen hidden; the tooltip the case waited for came up without a move of the pointer' }
+        @{ Why = 'none at Fn after all'; AtFn = $false; SeenAfter = $false; Ms = 3; Came = 'without a move of the pointer'; Want = 'Overlay tooltip, ps E2eOverlayIcon: none showing when Fn was let go, and none after the overlay was seen hidden; the tooltip the case waited for came up without a move of the pointer' }
+    ) {
+        Format-E2eOverlayTooltipTime 'ps E2eOverlayIcon' $AtFn $SeenAfter $Ms 2500 $Came | Should -BeExactly $Want
+    }
 }
 
 Describe 'End-to-end waits: the limit is time spent waiting, not the time a look takes' {

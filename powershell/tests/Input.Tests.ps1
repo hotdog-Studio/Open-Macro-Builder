@@ -320,14 +320,33 @@ Describe 'Send-Chord: a chord Windows took in part' {
         Send-Chord 'Ctrl+Shift+t'
         $script:Calls.Count | Should -Be 1
     }
-    It 'says so, and does not try again, when Windows took only part of the release too' {
+    # The release goes out in one call and Windows takes its events in order: of a release of t, Shift, Ctrl
+    # that it took 1 of, only t was let go. Each message is read as the person reads it in the log, and says
+    # nothing that is not so.
+    It 'says which keys were let go and which may still be held, and does not try again, when Windows took part of the release' {
+        $script:Taken = 3
+        Mock Invoke-KeyInjection {
+            $script:Calls.Add((Format-ChordInput $Inputs))
+            if ($script:Calls.Count -eq 1) { 3 } else { 1 }
+        }
+        $message = try { Send-Chord 'Ctrl+Shift+t' } catch { $_.Exception.Message }
+        $message | Should -BeExactly "Windows took 3 of the 6 key events of the chord 'Ctrl+Shift+t', so the chord was not sent whole. It tried to let go of the keys it had pressed (t, Shift, Ctrl), but Windows took only 1 of its 3 key events. Let go: t. May still be held: Shift, Ctrl."
+        $script:Calls.Count | Should -Be 2
+    }
+    It 'says no key was let go, and does not try again, when Windows took none of the release' {
         $script:Taken = 2
         Mock Invoke-KeyInjection {
             $script:Calls.Add((Format-ChordInput $Inputs))
-            if ($script:Calls.Count -eq 1) { 2 } else { 1 }
+            if ($script:Calls.Count -eq 1) { 2 } else { 0 }
         }
-        { Send-Chord 'Ctrl+Shift+t' } | Should -Throw "*let go again: Shift, Ctrl. Windows took 1 of the 2 key events of that release, so a key may still be held."
+        $message = try { Send-Chord 'Ctrl+Shift+t' } catch { $_.Exception.Message }
+        $message | Should -BeExactly "Windows took 2 of the 6 key events of the chord 'Ctrl+Shift+t', so the chord was not sent whole. It tried to let go of the keys it had pressed (Shift, Ctrl), but Windows took none of them, so Shift, Ctrl may still be held."
         $script:Calls.Count | Should -Be 2
+    }
+    It 'says in full, when Windows took the whole release, that the keys were let go' {
+        $script:Taken = 2
+        $message = try { Send-Chord 'Ctrl+Shift+t' } catch { $_.Exception.Message }
+        $message | Should -BeExactly "Windows took 2 of the 6 key events of the chord 'Ctrl+Shift+t', so the chord was not sent whole. The keys it had pressed were let go again: Shift, Ctrl."
     }
 }
 Describe 'Send-Chord: what one call hands Windows' {

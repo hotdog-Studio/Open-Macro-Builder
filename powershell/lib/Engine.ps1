@@ -133,17 +133,20 @@ function Invoke-EngineMacro {
 # Runs a macro's action: a function name or a scriptblock, given the macro itself.
 # A function name is looked up as a function and called as what the lookup returns, not as `& $name`:
 # PowerShell resolves an alias before a function, so a command named sleep, start, move or sort
-# (Windows PowerShell 5.1 has 151 such aliases) would run the cmdlet behind the alias. The lookup runs
-# from the scope of this call, as `& $name` did, so it sees the commands main.ps1 dot-sourced.
+# (or any other alias) would run the cmdlet behind the alias. The lookup runs from the scope of this
+# call, as `& $name` did, so it sees the commands main.ps1 dot-sourced. A name that carries a module
+# (Module\Cmdlet) makes the lookup return that cmdlet, not a function, so only a FunctionInfo
+# (a filter is one too) is run. The variables have names of their own: a command runs inside this
+# function and could read a plain $action.
 function Invoke-Macro {
     param($Macro)
-    $action = $Macro.Action
-    if ($action -is [string]) {
-        $command = $ExecutionContext.InvokeCommand.GetCommand($action, [System.Management.Automation.CommandTypes]::Function)
-        if ($null -eq $command) { throw "The command '$action' is not defined." }
-        $action = $command
+    $macroAction = $Macro.Action
+    if ($macroAction -is [string]) {
+        $macroCommand = $ExecutionContext.InvokeCommand.GetCommand($macroAction, [System.Management.Automation.CommandTypes]::Function)
+        if ($macroCommand -isnot [System.Management.Automation.FunctionInfo]) { throw "The command '$macroAction' is not defined." }
+        $macroAction = $macroCommand
     }
-    & $action $Macro
+    & $macroAction $Macro
 }
 
 # Fn is swallowed by a low-level hook and arrives as FnDown / FnUp (see README);

@@ -123,6 +123,18 @@ Describe 'Invoke-Macro' {
         Invoke-Macro ([pscustomobject]@{ Action = { param($Macro) $script:ranBlock = $true }; Name = 'block' })
         $script:ranBlock | Should -BeTrue
     }
+    It 'runs a filter of that name, as a filter is a function too' {
+        filter global:OmbTestFilter { param($Macro) $script:ranFilter = $Macro.Name }
+        try {
+            $script:ranFilter = $null
+            Invoke-Macro ([pscustomobject]@{ Action = 'OmbTestFilter'; Name = 'filtered' })
+            $script:ranFilter | Should -Be 'filtered'
+        } finally { Remove-Item function:global:OmbTestFilter }
+    }
+    It 'does not run a cmdlet named with its module as if it were the command' {
+        { Invoke-Macro ([pscustomobject]@{ Action = 'Microsoft.PowerShell.Management\Get-ChildItem'; Name = 'x' }) } |
+            Should -Throw "*The command 'Microsoft.PowerShell.Management\Get-ChildItem' is not defined.*"
+    }
     It 'says which command is not defined' {
         { Invoke-Macro ([pscustomobject]@{ Action = 'NoSuchCommandHere'; Name = 'x' }) } | Should -Throw "*The command 'NoSuchCommandHere' is not defined.*"
     }

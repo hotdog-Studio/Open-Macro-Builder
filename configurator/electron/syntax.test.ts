@@ -1,5 +1,8 @@
-import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { spawn } from 'node:child_process'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PathError } from '../src/core/folder/path'
 import { resolveInside } from './nodeFolder'
 import {
@@ -174,4 +177,138 @@ describe('checkSyntax', () => {
     )
     expect(exec).not.toHaveBeenCalled()
   })
+
+  describe('when the check could not run', () => {
+    const REASON = 'The syntax check could not run: '
+    const PS_FILE = 'local/powershell/commands/a.ps1'
+
+    it("says so when PowerShell ends with an error, in PowerShell's own words and never the command text", async () => {
+      const failed = Object.assign(new Error(`Command failed: powershell.exe -Command ${PS_PARSE_QUERY}`), { code: 1 })
+      const exec = fakeExec({ error: failed, stderr: String.raw`Could not find file C:\x\gone.ps1` + '\r\n' })
+      const report = await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: exec as never })
+      expect(report).toEqual({ skipped: String.raw`${REASON}Could not find file C:\x\gone.ps1.` })
+      expect(JSON.stringify(report)).not.toContain('ParseFile')
+
+      // Without a word on the error stream there is only the fact.
+      const silent = fakeExec({ error: failed, stderr: ' \r\n' })
+      expect(await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: silent as never })).toEqual({
+        skipped: `${REASON}powershell.exe ended with an error.`,
+      })
+    })
+
+    it('says so when PowerShell cannot be started', async () => {
+      const exec = fakeExec({ error: Object.assign(new Error('spawn powershell.exe ENOENT'), { code: 'ENOENT' }) })
+      expect(await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: exec as never })).toEqual({
+        skipped: `${REASON}powershell.exe could not be started.`,
+      })
+    })
+
+    it.each(['', 'Welcome to PowerShell', 'null'])('says so when its answer is not JSON of problems (%j)', async (stdout) => {
+      const exec = fakeExec({ stdout })
+      expect(await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: exec as never })).toEqual({
+        skipped: `${REASON}its answer could not be read.`,
+      })
+    })
+
+    it('tells output too long to read from a check that ran out of time', async () => {
+      // Node kills the child when the output passes maxBuffer, and then sets killed too.
+      const tooLong = Object.assign(new Error('maxBuffer exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', killed: true })
+      const expected = { skipped: 'The syntax check wrote more than the app can read, so its result is not shown.' }
+      for (const lang of ['ahk', 'ps'] as const) {
+        const exec = fakeExec({ error: tooLong })
+        expect(await checkSyntax(lang, ROOT, 'local/x', { ...win, ahkExe: AHK_EXE, exec: exec as never })).toEqual(expected)
+      }
+      const slow = fakeExec({ error: Object.assign(new Error('timed out'), { killed: true }) })
+      expect(await checkSyntax('ps', ROOT, 'local/x', { ...win, exec: slow as never })).toEqual({
+        skipped: 'The syntax check did not finish within 10 seconds.',
+      })
+    })
+
+    it('says AutoHotkey could not be started when it failed without a word', async () => {
+      const exec = fakeExec({ error: Object.assign(new Error(`spawn ${AHK_EXE} ENOENT`), { code: 'ENOENT' }) })
+      expect(await checkSyntax('ahk', ROOT, 'local/ahk/mine.ahk', { ...win, ahkExe: AHK_EXE, exec: exec as never })).toEqual({
+        skipped: 'AutoHotkey could not be started, so the syntax was not checked.',
+      })
+    })
+  })
+})
+
+// These start the real, hidden powershell.exe (no window, no key sent) on files in a folder of their
+// own. The first start of PowerShell can be slow on a fresh machine, so each one gets a long timeout.
+describe.skipIf(process.platform !== 'win32')('checkSyntax with the real PowerShell', () => {
+  const REAL_TIMEOUT_MS = 60_000
+  const commands = 'powershell/commands'
+  let root = ''
+
+  beforeAll(() => {
+    root = realpathSync.native(mkdtempSync(join(tmpdir(), 'omb-syntax-')))
+    mkdirSync(join(root, commands), { recursive: true })
+  })
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it(
+    'does not call a file that is not there clean, and says why in its own words',
+    async () => {
+      const report = await checkSyntax('ps', root, `${commands}/gône.ps1`)
+      expect('skipped' in report).toBe(true)
+      const { skipped } = report as { skipped: string }
+      // PowerShell's own sentence, about this file, ending in one full stop (it writes two).
+      expect(skipped).toMatch(/^The syntax check could not run: The file could not be read: Could not find file '.+'\.$/)
+      expect(skipped).toContain(join(root, commands, 'gône.ps1'))
+      expect(skipped).not.toContain('ParseFile')
+      expect(skipped).not.toContain('OMB_CHECK_FILE')
+    },
+    REAL_TIMEOUT_MS,
+  )
+
+  it(
+    'finds the error in a real file, and none in a sound one',
+    async () => {
+      writeFileSync(join(root, commands, 'broken.ps1'), 'function A {')
+      writeFileSync(join(root, commands, 'sound.ps1'), 'function A { }')
+      const broken = await checkSyntax('ps', root, `${commands}/broken.ps1`)
+      expect(broken).toMatchObject({ ok: false, problems: [{ path: `${commands}/broken.ps1`, line: 1 }] })
+      expect((broken as { problems: unknown[] }).problems).toHaveLength(1)
+      expect(await checkSyntax('ps', root, `${commands}/sound.ps1`)).toEqual({ ok: true })
+    },
+    REAL_TIMEOUT_MS,
+  )
+
+  it(
+    'does not call a file that another program holds open clean',
+    async () => {
+      const file = join(root, commands, 'locked.ps1')
+      writeFileSync(file, 'function A { }')
+      // A hidden PowerShell opens the file with no sharing and says so once it holds it.
+      const holder = spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "$h = [System.IO.File]::Open($env:OMB_HOLD_FILE, 'Open', 'Read', 'None'); [Console]::Out.WriteLine('held'); Start-Sleep -Seconds 120",
+        ],
+        { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, OMB_HOLD_FILE: file } },
+      )
+      const exited = new Promise<void>((done) => holder.once('exit', () => done()))
+      try {
+        await new Promise<void>((held, failed) => {
+          holder.once('exit', () => failed(new Error('the holder ended before it held the file')))
+          holder.stdout.on('data', (chunk: Buffer) => {
+            if (chunk.toString().includes('held')) held()
+          })
+        })
+        const report = await checkSyntax('ps', root, `${commands}/locked.ps1`)
+        expect(report).toEqual({
+          skipped: expect.stringMatching(/^The syntax check could not run: .*being used by another process\.$/),
+        })
+      } finally {
+        holder.kill()
+        await exited
+      }
+    },
+    REAL_TIMEOUT_MS,
+  )
 })

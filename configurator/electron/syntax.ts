@@ -15,6 +15,11 @@ const NOT_INSTALLED = 'AutoHotkey is not installed, so the syntax was not checke
 const NEEDS_WINDOWS = 'The syntax check needs Windows.'
 const TOO_SLOW = 'The syntax check did not finish within 10 seconds.'
 const AHK_TOO_SLOW = `${TOO_SLOW} AutoHotkey may be showing an error window.`
+const TOO_MUCH_OUTPUT = 'The syntax check wrote more than the app can read, so its result is not shown.'
+const AHK_NOT_STARTED = 'AutoHotkey could not be started, so the syntax was not checked.'
+const COULD_NOT_RUN = 'The syntax check could not run'
+const POWERSHELL_NOT_STARTED = `${COULD_NOT_RUN}: powershell.exe could not be started.`
+const ANSWER_UNREADABLE = `${COULD_NOT_RUN}: its answer could not be read.`
 
 /** Validates main.ahk rather than the saved file, so every include loads as the macropad loads it. */
 export function ahkCheckCommand(exe: string, root: string): { file: string; args: string[] } {
@@ -53,12 +58,21 @@ export function parseAhkErrors(output: string, root: string): SyntaxProblem[] {
  * Parses the file named by OMB_CHECK_FILE and prints its errors as JSON. The path never goes into
  * the command text, so no quoting in it can change the command. UTF-8 without a byte-order mark,
  * as PROCESS_QUERY explains; -InputObject keeps [] and a one-item array as arrays.
+ * A file the parser cannot read (gone, locked by another program) is not thrown: the parser lists it
+ * as a FileReadError among the errors, on line 0, which would pass for a syntax error in the file.
+ * It is written alone to the error stream, as the one line powershellReason takes, with exit 1; so is
+ * any exception the parse throws, by the catch (innermost message). Left to PowerShell, an uncaught
+ * error comes wrapped in its own layout.
  */
 export const PS_PARSE_QUERY =
   '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); ' +
+  'try { ' +
   '$errors = $null; ' +
   '[void][System.Management.Automation.Language.Parser]::ParseFile($env:OMB_CHECK_FILE, [ref]$null, [ref]$errors); ' +
-  'ConvertTo-Json -InputObject @($errors | ForEach-Object { @{ line = $_.Extent.StartLineNumber; message = $_.Message } }) -Compress'
+  "$unread = $errors | Where-Object { $_.ErrorId -eq 'FileReadError' } | Select-Object -First 1; " +
+  'if ($unread) { [Console]::Error.WriteLine($unread.Message); exit 1 } ' +
+  'ConvertTo-Json -InputObject @($errors | ForEach-Object { @{ line = $_.Extent.StartLineNumber; message = $_.Message } }) -Compress ' +
+  '} catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; [Console]::Error.WriteLine($e.Message); exit 1 }'
 
 /** The PowerShell parser's errors, from PS_PARSE_QUERY's JSON, all in the file at `rel`. */
 export function parsePsErrors(json: string, rel: string): SyntaxProblem[] {
@@ -100,8 +114,55 @@ export interface CheckDeps {
 }
 
 /**
- * Checks the syntax of the command file at `rel` in the folder `root`. Throws for a path outside
- * the folder before anything runs, and when the checker could not run at all.
+ * Why a check that was cut short has no result: too much output, too little time, or null when
+ * the checker ended by itself. The output limit comes first, as exceeding it kills the child too.
+ */
+function cutShort(error: ExecException | null, tooSlow: string): string | null {
+  if (!error) return null
+  if ((error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return TOO_MUCH_OUTPUT
+  return error.killed ? tooSlow : null
+}
+
+/** PowerShell's words for why it ended with an error: the first line of its error stream that is not empty, without its full stop(s). */
+function powershellReason(stderr: string): string {
+  const first = stderr.split(/\r?\n/).find((line) => line.trim() !== '')
+  if (first === undefined) return 'powershell.exe ended with an error'
+  return first.trim().replace(/\.+$/, '')
+}
+
+async function checkAhk(root: string, exe: string, exec: Exec, env: NodeJS.ProcessEnv): Promise<SyntaxReport> {
+  const { file, args } = ahkCheckCommand(exe, root)
+  const { error, stdout, stderr } = await run(exec, file, args, env)
+  const stopped = cutShort(error, AHK_TOO_SLOW)
+  if (stopped !== null) return { skipped: stopped }
+  if (!error) return { ok: true }
+  const problems = parseAhkErrors(`${stdout}\n${stderr}`, root)
+  // Failed without a word: AutoHotkey did not run at all.
+  if (problems.length === 0) return { skipped: AHK_NOT_STARTED }
+  return { ok: false, problems }
+}
+
+async function checkPowerShell(abs: string, rel: string, exec: Exec, env: NodeJS.ProcessEnv): Promise<SyntaxReport> {
+  const args = ['-NoProfile', '-NonInteractive', '-Command', PS_PARSE_QUERY]
+  const { error, stdout, stderr } = await run(exec, 'powershell.exe', args, { ...env, OMB_CHECK_FILE: abs })
+  const stopped = cutShort(error, TOO_SLOW)
+  if (stopped !== null) return { skipped: stopped }
+  if ((error as { code?: unknown } | null)?.code === 'ENOENT') return { skipped: POWERSHELL_NOT_STARTED }
+  // Never the error's own message: for a failed start it is the whole command text.
+  if (error) return { skipped: `${COULD_NOT_RUN}: ${powershellReason(stderr)}.` }
+  let problems: SyntaxProblem[]
+  try {
+    problems = parsePsErrors(stdout, rel)
+  } catch {
+    return { skipped: ANSWER_UNREADABLE }
+  }
+  return problems.length === 0 ? { ok: true } : { ok: false, problems }
+}
+
+/**
+ * Checks the syntax of the command file at `rel` in the folder `root`. Throws only for a path
+ * outside the folder, before anything runs. Whenever the checker could not run, or could not read
+ * the file, it resolves to `{ skipped }` with a line a person can read.
  */
 export async function checkSyntax(lang: LangId, root: string, rel: string, deps: CheckDeps = {}): Promise<SyntaxReport> {
   const abs = resolveInside(root, rel)
@@ -111,20 +172,7 @@ export async function checkSyntax(lang: LangId, root: string, rel: string, deps:
   if (lang === 'ahk') {
     const exe = deps.ahkExe === undefined ? findAutoHotkey(env) : deps.ahkExe
     if (!exe) return { skipped: NOT_INSTALLED }
-    const { file, args } = ahkCheckCommand(exe, root)
-    const { error, stdout, stderr } = await run(exec, file, args, env)
-    if (error?.killed) return { skipped: AHK_TOO_SLOW }
-    if (!error) return { ok: true }
-    const problems = parseAhkErrors(`${stdout}\n${stderr}`, root)
-    // Failed without a word: AutoHotkey did not run at all.
-    if (problems.length === 0) throw error
-    return { ok: false, problems }
+    return checkAhk(root, exe, exec, env)
   }
-
-  const args = ['-NoProfile', '-NonInteractive', '-Command', PS_PARSE_QUERY]
-  const { error, stdout } = await run(exec, 'powershell.exe', args, { ...env, OMB_CHECK_FILE: abs })
-  if (error?.killed) return { skipped: TOO_SLOW }
-  if (error) throw error
-  const problems = parsePsErrors(stdout, rel)
-  return problems.length === 0 ? { ok: true } : { ok: false, problems }
+  return checkPowerShell(abs, rel, exec, env)
 }

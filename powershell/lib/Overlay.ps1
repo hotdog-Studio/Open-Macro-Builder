@@ -229,15 +229,19 @@ function Show-Overlay {
 # Hides the overlay, and the tooltip that shows over it. The tooltip is a window of its own (a tooltip
 # control, not a child of the form), so hiding the form alone leaves a tip that is showing on the screen
 # until the control's own AutoPopDelay (5 s) ends it. So the ToolTip is switched off and on again:
-# Active = $false sends the control TTM_ACTIVATE with 0 once its window exists (the Active setter of
-# dotnet/winforms ToolTip.cs, as read there; the .NET Framework class that Windows PowerShell 5.1 runs
-# was not read), and a tooltip control that is deactivated hides the tip it shows (TOOLTIPS_Activate in
-# Wine's dlls/comctl32/tooltips.c, as read there; Windows' own control was not read). That it takes the
-# tip off a real desktop is proved by the end-to-end case E2eOverlayIcon, not by anything here;
-# E2eOverlayLabel does not prove it, since its click already puts the tip away. The switch-on is in
-# the finally, so that however the off ends, the next time the overlay shows its tooltips work as
-# before; Active leaves the registered texts as they are. The form is hidden first, so that no mouse
-# message reaches the tooltip between the two.
+# Active = $false sends the control TTM_ACTIVATE (0x401) with 0 once its window exists: the Active
+# setter of System.Windows.Forms 4.8 (4.8.10001.0, the .NET Framework class Windows PowerShell 5.1 runs,
+# read by reflection) checks DesignMode and whether the handle was created, then sends that message, as
+# dotnet/winforms ToolTip.cs does. A tooltip control that is deactivated hides the tip it shows
+# (TOOLTIPS_Activate in Wine's dlls/comctl32/tooltips.c, as read there; Windows' own control was not
+# read). Whether it takes the tip off a real desktop is what the end-to-end case E2eOverlayIcon checks:
+# it lets Fn go with a tip seen up and the pointer left still, and wants the tip gone within 2.5 s of the
+# overlay being seen hidden, where a tip left to its own 5 s cannot be; it prints which it was. That case
+# sees its tip after the overlay has been hidden before, so it also shows that the switch-on leaves the
+# tooltips working. E2eOverlayLabel does not show it: by build #4's times its click already put the
+# tip away. The switch-on is in the finally, so that however the off ends, the next time the overlay
+# shows its tooltips work as before; Active leaves the registered texts as they are. The form is
+# hidden first, so that no mouse message reaches the tooltip between the two.
 function Hide-Overlay {
     param($Overlay)
     $Overlay.Form.Hide()

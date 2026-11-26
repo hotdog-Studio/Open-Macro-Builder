@@ -76,11 +76,12 @@ Describe 'New-Overlay / Select-Layer' {
 # Hide-Overlay puts the overlay's tooltip away with the overlay: the tooltip is a window of its own (the
 # common control Windows Forms makes for System.Windows.Forms.ToolTip), not a child of the form, so hiding
 # the form leaves a tip that is showing on the screen until its own five seconds run out. Hide-Overlay
-# switches the ToolTip off and on again (Active), which takes a showing tip away. Whether a tip that shows
-# goes is seen on a screen only, in the end-to-end test (E2eOverlayIcon, Invoke-E2eOverlayPointer), and
-# these tests do not show it: they pass on the code before the change as well, and cannot fail for the
-# defect itself. What they guard is that hiding leaves the tooltip switched on and with its texts, so they
-# would fail a version that switched it off and forgot to switch it on again.
+# switches the ToolTip off and on again (Active), which is to take a showing tip away. Whether a tip that
+# shows goes is seen on a screen only, in the end-to-end case E2eOverlayIcon (Invoke-E2eOverlayPointer),
+# which lets Fn go with a tip seen up, after earlier hides, and wants it gone within 2.5 s of the overlay
+# being seen hidden. These tests do not show it: they pass on the code before the change as well, and
+# cannot fail for the defect itself. What they guard is that hiding leaves the tooltip switched on and
+# with its texts, so they would fail a version that switched it off and forgot to switch it on again.
 Describe 'Hide-Overlay' {
     BeforeAll { . "$PSScriptRoot\..\lib\Interop.ps1" }   # the window functions (Macropad.WindowApi); it only compiles types
     It 'leaves the tooltip switched on, with its texts, when it hides an overlay that was never shown' {

@@ -5,7 +5,12 @@ Describe 'ConvertTo-VolumeLevel' {
 }
 Describe 'default playback device' -Tag Integration {
     It 'sets and restores volume and mute' {
-        try { $vol = Get-SoundVolume; $mute = Get-SoundMute } catch { Set-ItResult -Skipped -Because $_.Exception.Message; return }
+        try { $vol = Get-SoundVolume; $mute = Get-SoundMute } catch {
+            # The error says it in the words of the call ('Exception calling "GetVolume" ...'); a build log
+            # reads better with the cause first. Any other error is passed on as it is.
+            $cause = if ($_.Exception.Message -match 'No default playback device') { 'this PC has no default playback device (no sound output), so the volume and mute cannot be tried' } else { $_.Exception.Message }
+            Set-ItResult -Skipped -Because $cause; return
+        }
         try {
             $target = if ($vol -ge 50) { $vol - 10 } else { $vol + 10 }
             Set-SoundVolume $target; Get-SoundVolume | Should -Be $target

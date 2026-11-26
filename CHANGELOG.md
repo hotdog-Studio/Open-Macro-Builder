@@ -42,6 +42,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 - Desktop app: the program, its installer, its window and its taskbar button show the project logo, the hotdog on a key, as the web page does. The tray icon of both macropad versions stays the hotdog, so a running macropad and the configurator are told apart.
 - Configurator: closing or reloading the window while an update of the scripts runs asks first, as with unsaved changes, because the update would stop part-way. The desktop app's question now says "You have unsaved changes, or the scripts are being updated." and "Leave anyway? Unsaved changes are lost, and an update stops part-way."
+- Configurator: the bar that says `config.json` changed on disk floats over the top of the editor too, as messages and the update's bar do. When more than one shows, they stack without covering each other, and a click beside them reaches the editor.
 
 ### Removed
 
@@ -69,7 +70,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 ### Changed
 
 - Configurator: the right-hand panel on Pad shape, Layers and Macros grows to fit the overlay preview, so the preview shows whole without a sideways scrollbar of its own. The panel stops at half the window, and a preview wider than that scrolls as before.
-- Configurator: messages and the bar that says `config.json` changed on disk float over the top of the editor and no longer push it down. When more than one shows, they stack without covering each other, and a click beside them reaches the editor. Notices are blue and refused actions amber, and both leave by themselves after a few seconds. Failures are red and stay until dismissed, and so do the notices shown when a folder is opened.
+- Configurator: messages float over the editor and no longer push it down. Notices are blue and refused actions amber, and both leave by themselves after a few seconds. Failures are red and stay until dismissed, and so do the notices shown when a folder is opened.
 - Configurator: the New command file dialog and the `local/config.json` prompt no longer mention git, because a folder the configurator sets up is a plain copy and not a clone. The comment at the top of a new `local/ahk/commands.ahk` changed with them.
 - Desktop app: the two links in the Get started guide, to the AutoHotkey download page and to the contributing guide, open in the default browser. Every other address is still refused.
 - Configurator: in a window narrower than 1440 px the header leaves out the path of the layout file, so the five tabs and the buttons stay on one row at the desktop app's default size.

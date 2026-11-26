@@ -309,8 +309,13 @@ describe('the floating card, by keyboard and click', () => {
     const onKey = lastKeyListener()
     expect(onKey).toBeDefined()
     await user.unhover(row('ActivateOrOpen'))
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-    expect(remove).toHaveBeenCalledWith('keydown', onKey)
+    // The grace's timer hides the card outside act(): React takes the card off the page when it commits,
+    // and runs the effects' cleanup, which removes the listener, in a task of its own that can come after
+    // the look that finds the card gone. So wait for the listener to go as well.
+    await waitFor(() => {
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      expect(remove).toHaveBeenCalledWith('keydown', onKey)
+    })
 
     await user.hover(row('ActivateOrOpen'))
     const again = lastKeyListener()

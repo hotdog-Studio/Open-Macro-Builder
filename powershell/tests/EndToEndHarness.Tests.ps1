@@ -18,6 +18,10 @@
 # How a wait counts its limit (Wait-E2eCondition), and which waits a run lists at its end as having
 # come close to theirs (Add-E2eSlowWait).
 #
+# How the test writes its layouts (the example layout's display options, and a second layer for a layout
+# that fills one), and where on the screen it finds a key's label or icon on an overlay drawn from one
+# (ConvertTo-E2eOverlayPoint, handed the rectangles a drawn overlay would have).
+#
 # These are unit tests on files in TestDrive: they show no window and press no key, so they run in the
 # normal suite, not under the EndToEnd tag. None of them measures time or races a clock: a rule about
 # how long something took is handed its numbers, and a wait is handed its looks. A test that lives
@@ -246,6 +250,114 @@ Describe 'End-to-end command log: what the macropad says of the commands its key
         $envs = Get-E2eMacropadEnvironment
         $envs.OMB_E2E | Should -Be '1'
         $envs.OMB_E2E_DIR | Should -Be $TestDrive
+    }
+}
+
+Describe 'End-to-end layouts: the overlay is drawn as the example layout draws it' {
+    BeforeAll {
+        foreach ($f in 'Assets', 'Model', 'ConfigJson') { . "$root\powershell\lib\$f.ps1" }
+        $script:Shown = [pscustomobject]@{ showFn = ' '; showMacroMarkers = $true; showLabels = $true; useMacroIcons = $false; iconAction = 'Layer' }
+        # A layout file of Count slots as the test writes it, and its path.
+        function Write-TestLayout {
+            param([int]$Count, $Options = $script:Shown)
+            $path = Join-Path $TestDrive "layout-$Count-$(Get-Random).json"
+            $slots = @(for ($i = 0; $i -lt $Count; $i++) { @{ action = "E2eCase$i"; name = "E2eCase$i"; description = '' } })
+            Write-E2eLayoutFile $slots $path $Options
+            $path
+        }
+        # The controls of an overlay drawn from Layout at Scale, its client area at 100, 200: each key's
+        # label and icon, and the Fn key's, at their rounded places (Windows places each control on whole
+        # pixels).
+        function Get-TestControls {
+            param($Layout, [double]$Scale, [switch]$NoFn)
+            $s = { param($v) [int][math]::Round($v * $Scale) }
+            $keys = @($Layout.Keys) + @(if (-not $NoFn) { $Layout.Fn })
+            , @(foreach ($k in $keys) {
+                    , @((100 + (& $s $k.Label.X)), (200 + (& $s $k.Label.Y)), (& $s $k.Label.W), (& $s $k.Label.H))
+                    , @((100 + (& $s $k.X)), (200 + (& $s $k.Y)), (& $s $k.W), (& $s $k.H))
+                })
+        }
+    }
+
+    It 'reads the five display options of config.json as the file gives them' {
+        $want = [System.IO.File]::ReadAllText((Join-Path $root 'config.json')) | ConvertFrom-Json
+        $got = Get-E2eLayoutOptions
+        @($got.PSObject.Properties.Name) -join ',' | Should -Be 'showFn,showMacroMarkers,showLabels,useMacroIcons,iconAction'
+        foreach ($name in 'showFn', 'showMacroMarkers', 'showLabels', 'useMacroIcons', 'iconAction') { $got.$name | Should -BeExactly $want.$name -Because "$name is the example layout's" }
+    }
+
+    It 'leaves out an option the file does not have, for the macropad''s own default' {
+        $path = Join-Path $TestDrive 'some-options.json'
+        [System.IO.File]::WriteAllText($path, '{ "showLabels": true, "iconAction": "Macro" }')
+        $got = Get-E2eLayoutOptions $path
+        @($got.PSObject.Properties.Name) -join ',' | Should -Be 'showLabels,iconAction'
+    }
+
+    It 'writes the example layout''s display options into every layout' {
+        $want = Get-E2eLayoutOptions
+        $path = Join-Path $TestDrive 'layout-default-options.json'
+        Write-E2eLayoutFile @(@{ action = 'E2eCase0'; name = 'E2eCase0'; description = '' }) $path
+        $json = [System.IO.File]::ReadAllText($path) | ConvertFrom-Json
+        foreach ($name in 'showFn', 'showMacroMarkers', 'showLabels', 'useMacroIcons', 'iconAction') { $json.$name | Should -BeExactly $want.$name -Because "$name is written as config.json has it" }
+    }
+
+    It 'writes options that the model of both macropads reads back' {
+        $layout = Import-MacropadConfig (Write-TestLayout 3)
+        "$($layout.ShowFn)|$($layout.ShowMacroMarkers)|$($layout.ShowLabels)|$($layout.UseMacroIcons)|$($layout.IconAction)" | Should -BeExactly ' |True|True|False|Layer'
+    }
+
+    It 'gives a layout of <Count> slots <Layers> layers, the last with <Last> macros' -ForEach @(
+        @{ Count = 3; Layers = 2; Last = 0 }
+        @{ Count = 11; Layers = 2; Last = 0 }
+        @{ Count = 12; Layers = 2; Last = 1 }
+        @{ Count = 23; Layers = 3; Last = 1 }
+    ) {
+        $layout = Import-MacropadConfig (Write-TestLayout $Count)
+        $layers = @($layout.Layers)
+        $layers.Count | Should -Be $Layers
+        @($layers[-1].Macros).Count | Should -Be $Last
+        $layers[-1].Title | Should -Be "Test $Layers"
+        @($layers[0].Macros).Count | Should -Be ([math]::Min($Count, 11))
+    }
+
+    It 'finds the middle of the <Part> of key <Slot> at <X>, <Y> when the overlay is drawn at scale <Scale>' -ForEach @(
+        @{ Slot = 1; Part = 'Label'; Scale = 1.0; X = 132; Y = 208 }
+        @{ Slot = 1; Part = 'Icon'; Scale = 1.0; X = 132; Y = 249 }
+        @{ Slot = 6; Part = 'Label'; Scale = 1.0; X = 196; Y = 291 }
+        @{ Slot = 6; Part = 'Icon'; Scale = 1.0; X = 196; Y = 332 }
+        @{ Slot = 11; Part = 'Icon'; Scale = 1.0; X = 260; Y = 415 }
+        @{ Slot = 1; Part = 'Label'; Scale = 1.25; X = 140; Y = 210 }
+        @{ Slot = 6; Part = 'Icon'; Scale = 1.25; X = 220; Y = 365 }
+        @{ Slot = 6; Part = 'Icon'; Scale = 1.5; X = 244; Y = 398 }
+    ) {
+        $layout = Import-MacropadConfig (Write-TestLayout 3)
+        $p = ConvertTo-E2eOverlayPoint $layout $Slot $Part @(100, 200, 300, 400) (Get-TestControls $layout $Scale)
+        "$($p.X), $($p.Y)" | Should -Be "$X, $Y"
+        $p.Scale | Should -Be $Scale
+    }
+
+    It 'measures the scale on the controls, not on the client area: AutoHotkey''s window is larger than its controls by its margins' {
+        $layout = Import-MacropadConfig (Write-TestLayout 3)
+        $p = ConvertTo-E2eOverlayPoint $layout 1 'Icon' @(100, 200, 290, 350) (Get-TestControls $layout 1.0)
+        "$($p.X), $($p.Y), $($p.Scale)" | Should -Be '132, 249, 1'
+    }
+
+    It 'refuses controls that do not fit the layout at one scale, saying how far they reach' {
+        # An overlay drawn without the Fn key reaches 256 x 247 px: not the layout's 256 x 330.
+        $layout = Import-MacropadConfig (Write-TestLayout 3)
+        { ConvertTo-E2eOverlayPoint $layout 1 'Label' @(100, 200, 256, 330) (Get-TestControls $layout 1.0 -NoFn) } |
+            Should -Throw -ExpectedMessage "The overlay's 22 controls reach 256 x 247 px from its client origin (100, 200), which is not the layout's 256 x 330 px at one scale*"
+    }
+
+    It 'says that there is no label to point at on a layout that shows none' {
+        $layout = Import-MacropadConfig (Write-TestLayout 3 ([pscustomobject]@{ showLabels = $false }))
+        { ConvertTo-E2eOverlayPoint $layout 1 'Label' @(100, 200, 256, 256) (Get-TestControls $layout 1.0 -NoFn) } |
+            Should -Throw -ExpectedMessage 'Key 1 has no label on the overlay: the layout shows no labels.'
+    }
+
+    It 'says that the layout has no key <Slot>' -ForEach @(@{ Slot = 0 }, @{ Slot = 12 }) {
+        $layout = Import-MacropadConfig (Write-TestLayout 3)
+        { ConvertTo-E2eOverlayPoint $layout $Slot 'Icon' @(100, 200, 256, 330) (Get-TestControls $layout 1.0) } | Should -Throw -ExpectedMessage "The layout has no key $Slot; it has 11."
     }
 }
 

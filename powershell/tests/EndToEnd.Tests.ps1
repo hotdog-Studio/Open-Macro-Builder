@@ -25,7 +25,8 @@ BeforeDiscovery {
 
 BeforeAll {
     $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-    foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'AhkSyntax', 'WinTitle', 'WindowOps', 'Window', 'Sound') { . "$root\powershell\lib\$f.ps1" }
+    # Assets, Model and ConfigJson: the model of a layout, from which the test finds the overlay's keys.
+    foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'AhkSyntax', 'WinTitle', 'WindowOps', 'Window', 'Sound', 'Assets', 'Model', 'ConfigJson') { . "$root\powershell\lib\$f.ps1" }
     . "$PSScriptRoot\helpers\Ahk.ps1"
     . "$PSScriptRoot\helpers\CommandSource.ps1"
     . "$PSScriptRoot\helpers\EndToEnd.ps1"
@@ -135,6 +136,12 @@ Describe 'End-to-end layouts' -Tag EndToEnd {
         @($plan | Where-Object { $_.Layer -lt 1 -or $_.Layer -gt 11 -or $_.Slot -lt 1 -or $_.Slot -gt 11 }).Count | Should -Be 0
         @($plan | Where-Object { $_.Layer -eq 1 -and $_.Slot -le 2 }).Count | Should -Be 0 -Because 'the first two keys of each layout are the harness''s own'
         @($plan | Group-Object { "$($_.Chunk) $($_.Layer) $($_.Slot)" } | Where-Object Count -gt 1).Count | Should -Be 0 -Because 'no two cases share a key'
+    }
+    It 'draws the overlay with the display options of the example layout, labels and markers among them' {
+        $options = Get-E2eLayoutOptions
+        $options.showLabels | Should -BeTrue
+        $options.showMacroMarkers | Should -BeTrue
+        $options.showFn | Should -Not -BeNullOrEmpty
     }
 }
 Describe 'End-to-end parity of the two languages' -Tag EndToEnd {

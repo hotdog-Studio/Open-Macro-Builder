@@ -1,7 +1,9 @@
 # The harness of the end-to-end test (EndToEnd.Tests.ps1): it makes the desktop the test's own, starts
 # a real macropad, presses real keys with SendInput from this process, reads what happened, and puts
 # everything back. Dot-source it after lib\Native.ps1, Interop.ps1, Pump.ps1, Input.ps1, AhkSyntax.ps1,
-# WinTitle.ps1, WindowOps.ps1, Window.ps1 and the helpers Ahk.ps1 and CommandSource.ps1.
+# WinTitle.ps1, WindowOps.ps1, Window.ps1 and the helpers Ahk.ps1 and CommandSource.ps1; a run that
+# points at the overlay (Get-E2eOverlayPoint) also needs lib\Assets.ps1, Model.ps1 and ConfigJson.ps1,
+# whose model of a layout both macropads draw their overlay from.
 #
 # The keys go through SendInput untagged, as a keyboard's would: not through [Macropad.Inject], whose
 # tag the PowerShell macropad ignores, and not from an AutoHotkey script, whose input AutoHotkey's hook
@@ -33,6 +35,10 @@ namespace OmbE2e
         private static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out POINT p);
+        [DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(POINT p);
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT { public int X; public int Y; }
 
@@ -58,6 +64,16 @@ namespace OmbE2e
 
         public static bool MoveMouse(int x, int y) { return SetCursorPos(x, y); }
         public static int[] MousePosition() { POINT p; GetCursorPos(out p); return new int[] { p.X, p.Y }; }
+
+        // The top-level window at a point of the screen, as Windows finds the window a click there
+        // goes to (a pixel a layered window keys out as transparent is not that window's), or
+        // IntPtr.Zero for none.
+        public static IntPtr TopWindowAt(int x, int y)
+        {
+            POINT p; p.X = x; p.Y = y;
+            IntPtr h = WindowFromPoint(p);
+            return h == IntPtr.Zero ? h : GetAncestor(h, 2);  // GA_ROOT
+        }
     }
 
     // A low-level keyboard hook on its own thread, for keys that Windows takes before any window gets
@@ -377,6 +393,16 @@ function Send-E2eClick {
     [void][OmbE2e.Input]::Mouse($flags[0])
     try { if ($Until) { [void](Wait-E2eCondition $Until -TimeoutMs $TimeoutMs) } else { Wait-Pump 30 } }
     finally { [void][OmbE2e.Input]::Mouse($flags[1]) }
+}
+
+# Puts the pointer at a point of the screen (the units SetCursorPos and GetWindowRect use in this
+# process), and throws when it is not there afterwards: Windows keeps the pointer on the screen, and
+# inside a clipping rectangle a program may have set.
+function Move-E2ePointer {
+    param([int]$X, [int]$Y)
+    [void][OmbE2e.Input]::MoveMouse($X, $Y)
+    $at = [OmbE2e.Input]::MousePosition()
+    if ($at[0] -ne $X -or $at[1] -ne $Y) { throw "The pointer could not be put at ($X, $Y); it is at ($($at -join ', '))." }
 }
 
 # Lets go of Shift, Ctrl, Alt, the Windows keys and Fn where Windows says one is still down, so that a
@@ -1474,16 +1500,28 @@ function Stop-E2eMacropad {
     $script:E2eRun.Macropad = $null
 }
 
-# The macropad's visible windows (its overlay while Fn is held, a form, a message box).
+# The macropad's visible windows (its overlay while Fn is held, a tooltip of the overlay, a form, a
+# message box).
 function Get-E2eMacropadWindows {
-    param([switch]$Overlay, [switch]$Others)
+    param([switch]$Overlay, [switch]$Others, [switch]$Tooltips)
     $m = $script:E2eRun.Macropad
     if ($null -eq $m) { return , @() }
     $all = @([Macropad.Native]::GetProcessWindows([int[]]@($m.Process.Id)))
-    # The overlay is the one without a title; forms and message boxes have one.
-    if ($Overlay) { return , @($all | Where-Object { [Macropad.WindowApi]::Title($_) -eq '' }) }
+    # The overlay is the one without a title that is not a tooltip; forms and message boxes have a
+    # title. A tooltip (the common control both macropads show over the overlay: AutoHotkey's ToolTip,
+    # WinForms' ToolTip) has no title either, and may stay up a moment after the overlay hid.
+    if ($Overlay) { return , @($all | Where-Object { [Macropad.WindowApi]::Title($_) -eq '' -and [Macropad.WindowApi]::ClassName($_) -ne 'tooltips_class32' }) }
+    if ($Tooltips) { return , @($all | Where-Object { [Macropad.WindowApi]::ClassName($_) -eq 'tooltips_class32' }) }
     if ($Others) { return , @($all | Where-Object { [Macropad.WindowApi]::Title($_) -ne '' }) }
     , $all
+}
+
+# The macropad's visible windows in words, for a failure message: handle, title, class, and where on
+# the screen.
+function Get-E2eMacropadWindowsText {
+    $all = @(Get-E2eMacropadWindows)
+    if ($all.Count -eq 0) { return 'none' }
+    (@($all | ForEach-Object { $r = [Macropad.WindowApi]::Rect($_); "$_ '$([Macropad.WindowApi]::Title($_))' $([Macropad.WindowApi]::ClassName($_)) at $($r[0]), $($r[1]) size $($r[2]) x $($r[3])" }) -join '; ')
 }
 
 # Selects a layer as a person does: hold Fn, press the layer's key, let Fn go. The overlay shows and
@@ -1512,6 +1550,158 @@ function Invoke-E2eMacroKey {
     param([Parameter(Mandatory)][int]$Slot)
     Assert-E2eMacropadRuns
     Send-E2eTap ($script:E2eFirstKeyVk + $Slot - 1)
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The pointer on the overlay. Both macropads draw the overlay from the same model of the layout file
+# (Import-MacropadConfig; Config.Tests.ps1 holds the AutoHotkey version to the same geometry): a key's
+# label and icon are child controls of the overlay window, placed at the model's rectangle from the
+# window's client origin. AutoHotkey scales those rectangles by the screen's DPI (its Gui's DPIScale,
+# on by default), the PowerShell overlay does not scale them and Windows stretches the whole window
+# instead, and what this process sees of either depends on its own DPI awareness. So the scale is
+# measured on the overlay as it is drawn, not assumed (ConvertTo-E2eOverlayPoint): at 100 % it is 1.
+
+# The screen point at the middle of a key's label or icon (Part) on the overlay that shows now (Fn
+# held): Slot is the key (1 to 11), on the layout file the macropad under test runs.
+function Get-E2eOverlayPoint {
+    param([Parameter(Mandatory)][int]$Slot, [Parameter(Mandatory)][ValidateSet('Label', 'Icon')][string]$Part)
+    if ($null -eq $script:E2eRun.Macropad) { throw 'No macropad under test runs: there is no overlay to point at.' }
+    $overlay = @(Get-E2eMacropadWindows -Overlay)
+    if ($overlay.Count -ne 1) { throw "The overlay must show as one window to point at it; the macropad's visible windows: $(Get-E2eMacropadWindowsText)." }
+    $controls = @(foreach ($c in [Macropad.WindowApi]::Children($overlay[0])) { , [Macropad.WindowApi]::Rect($c) })
+    ConvertTo-E2eOverlayPoint (Get-E2eLayoutModel) $Slot $Part ([Macropad.WindowApi]::ClientRect($overlay[0])) $controls
+}
+
+# The layout the macropad under test runs, as the model both versions draw the overlay from.
+function Get-E2eLayoutModel {
+    $m = $script:E2eRun.Macropad
+    Import-MacropadConfig (Join-Path $script:E2eRun.Dir "layout-$($m.Lang)-$($m.Chunk).json")
+}
+
+# What the overlay's control at a point (Get-E2eOverlayPoint) reads, as Windows gives a control's text:
+# for the middle of a key's label, the name of that key's command on the layer the overlay shows. $null
+# when no control of the overlay is there.
+function Get-E2eOverlayText {
+    param([IntPtr]$Overlay, $Point)
+    foreach ($c in [Macropad.WindowApi]::Children($Overlay)) {
+        $r = [Macropad.WindowApi]::Rect($c)
+        if ($Point.X -ge $r[0] -and $Point.X -lt $r[0] + $r[2] -and $Point.Y -ge $r[1] -and $Point.Y -lt $r[1] + $r[3]) { return Get-ControlText $c }
+    }
+    $null
+}
+
+# The screen point at the middle of a key's label or icon on an overlay drawn from Layout (the model,
+# Import-MacropadConfig). Client is the overlay's client area (x, y on the screen, width, height:
+# WindowApi.ClientRect); Controls are its child controls (each x, y, width, height on the screen). Both
+# overlays place the controls of the keys, and of the Fn key when it shows, from the client origin, so
+# together they reach exactly as far right and down as the model's keys do, at the scale the overlay is
+# drawn at: that is the scale (AutoHotkey's window is larger than its controls, by its margins, so the
+# client size would not do). Returns X, Y, the Scale and the key's Rect in the model. Throws when the
+# controls do not fit the model at one scale: the overlay is then not drawn from this layout.
+function ConvertTo-E2eOverlayPoint {
+    param([Parameter(Mandatory)]$Layout, [int]$Slot, [ValidateSet('Label', 'Icon')][string]$Part, [int[]]$Client, [object[]]$Controls)
+    $keys = @($Layout.Keys)
+    if ($Slot -lt 1 -or $Slot -gt $keys.Count) { throw "The layout has no key $Slot; it has $($keys.Count)." }
+    $key = $keys[$Slot - 1]
+    if ($Part -eq 'Label') { $rect = @($key.Label.X, $key.Label.Y, $key.Label.W, $key.Label.H) } else { $rect = @($key.X, $key.Y, $key.W, $key.H) }
+    if ($rect[2] -le 0 -or $rect[3] -le 0) { throw "Key $Slot has no $($Part.ToLower()) on the overlay: the layout shows no labels." }
+    $drawn = @($keys) + @(if ($Layout.ShowFn -ne '') { $Layout.Fn })
+    $width = ($drawn | ForEach-Object { $_.X + $_.W } | Measure-Object -Maximum).Maximum
+    $height = ($drawn | ForEach-Object { $_.Y + $_.H } | Measure-Object -Maximum).Maximum
+    $right = 0; $bottom = 0
+    foreach ($c in @($Controls)) {
+        $right = [math]::Max($right, $c[0] + $c[2] - $Client[0])
+        $bottom = [math]::Max($bottom, $c[1] + $c[3] - $Client[1])
+    }
+    $scale = $right / $width
+    # Each control is placed at its own rounded position: at 125 %, 330 px of the model are 412 or 413.
+    if ($right -le 0 -or [math]::Abs($bottom - $height * $scale) -gt 2) {
+        throw "The overlay's $(@($Controls).Count) controls reach $right x $bottom px from its client origin ($($Client[0]), $($Client[1])), which is not the layout's $width x $height px at one scale: the overlay is not drawn from this layout."
+    }
+    [pscustomobject]@{
+        X     = $Client[0] + [int][math]::Floor(($rect[0] + $rect[2] / 2) * $scale)
+        Y     = $Client[1] + [int][math]::Floor(($rect[1] + $rect[3] / 2) * $scale)
+        Scale = $scale
+        Rect  = $rect -join ', '
+    }
+}
+
+# The point (Get-E2eOverlayPoint) must be on the overlay window: the window a click there goes to is the
+# overlay or one of its controls. What, in words, for the message. Throws, naming the window that is
+# there, when it is not: a transparent pixel of the overlay (a click would go through it), or another
+# window over it.
+function Assert-E2eOnOverlay {
+    param($Point, [IntPtr]$Overlay, [string]$What)
+    $at = [OmbE2e.Input]::TopWindowAt($Point.X, $Point.Y)
+    if ($at -ne $Overlay) {
+        $r = [Macropad.WindowApi]::Rect($Overlay)
+        throw "The pointer at ($($Point.X), $($Point.Y)), $What (the layout's rectangle $($Point.Rect) at scale $($Point.Scale)), is not on the overlay $Overlay (at $($r[0]), $($r[1]) size $($r[2]) x $($r[3])): a click there would go to $(Get-E2eWindowText $at)."
+    }
+}
+
+# Holds Fn until the overlay shows and gives Action the overlay's window; then, however Action ended,
+# lets Fn go and puts the pointer back where it was, and waits for the overlay to hide and for every
+# tooltip of the macropad's to be gone: a tooltip has no title, as the overlay has none, and one left on
+# the screen would stand over the next case. Before Fn goes down, the pointer rests on the title bar of
+# the stand-in B (top left of the screen), off the overlay (the middle of the screen), so that no tooltip
+# shows before Action puts the pointer where it wants it. Each change of the screen is paced. What this
+# throws starts with Action's failure, and what could not be put back follows it. The variables have
+# names of their own: Action runs inside this function and reads the case's variables by name.
+function Invoke-E2eOverlayPointer {
+    param([Parameter(Mandatory)][scriptblock]$Action)
+    Assert-E2eMacropadRuns
+    $e2eFrom = [OmbE2e.Input]::MousePosition()
+    $e2eFailure = $null
+    try {
+        $e2eRest = Get-WindowRect $script:E2eRun.Standins['B'].Hwnd
+        Move-E2ePointer ($e2eRest.X + [int]($e2eRest.Width / 2)) ($e2eRest.Y + 10)
+        Wait-ScreenChange
+        Send-E2eKey $script:E2eFnVk
+        $e2eOverlay = Wait-E2eCondition { $o = @(Get-E2eMacropadWindows -Overlay); if ($o.Count -eq 1) { $o[0] } } -TimeoutMs 3000
+        if ($null -eq $e2eOverlay) { throw "The overlay did not show as one window within 3 s while Fn was held; the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
+        & $Action $e2eOverlay
+    } catch { $e2eFailure = $_ }
+    finally {
+        # Also when the run is stopped. Fn is let go by name, as Select-E2eLayer lets it go: a macropad's
+        # hook may keep it from Windows' key state, which is all Clear-E2eHeldKeys reads.
+        try { Wait-ScreenChange } finally { try { Send-E2eKey $script:E2eFnVk -Up } finally { [void][OmbE2e.Input]::MoveMouse($e2eFrom[0], $e2eFrom[1]) } }
+    }
+    $e2eProblems = [System.Collections.Generic.List[string]]::new()
+    $e2eStep = { param([scriptblock]$Do) try { & $Do } catch { $e2eProblems.Add($_.Exception.Message) } }
+    & $e2eStep {
+        $at = [OmbE2e.Input]::MousePosition()
+        if ($at[0] -ne $e2eFrom[0] -or $at[1] -ne $e2eFrom[1]) { throw "the pointer could not be put back at ($($e2eFrom -join ', ')); it is at ($($at -join ', '))" }
+    }
+    & $e2eStep {
+        if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Overlay).Count -eq 0 } -TimeoutMs 3000)) { throw "the overlay did not hide within 3 s of Fn being let go; the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
+        Wait-ScreenChange -Observed
+    }
+    & $e2eStep {
+        $shown = @(Get-E2eMacropadWindows -Tooltips).Count -gt 0
+        if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)) { throw "a tooltip of the macropad's still showed 6 s after Fn was let go and the pointer put back; the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
+        if ($shown) { Wait-ScreenChange -Observed }
+    }
+    if ($e2eFailure) {
+        if ($e2eProblems.Count -eq 0) { throw $e2eFailure }
+        throw "$($e2eFailure.Exception.Message)`nThen, letting go of the overlay: $($e2eProblems -join '; ')"
+    }
+    if ($e2eProblems.Count -gt 0) { throw "Letting go of the overlay: $($e2eProblems -join '; ')" }
+}
+
+# The display options a case that uses the pointer on the overlay counts on, as the example layout has
+# them (Get-E2eLayoutOptions): labels shown and macro icons off, so that a key's label shows its command
+# and a click on the label runs it, in both versions; with -IconSelectsLayer also iconAction 'Layer' (the
+# default when it is left out), so that a click on a key's icon selects that key's layer. Throws, naming
+# the options, when config.json says otherwise: the case would click something else than it says.
+function Assert-E2eOverlayOptions {
+    param([switch]$IconSelectsLayer)
+    $o = Get-E2eLayoutOptions
+    $iconAction = if ($null -ne $o.iconAction) { $o.iconAction } else { 'Layer' }
+    $ok = $o.showLabels -eq $true -and $o.useMacroIcons -ne $true -and (-not $IconSelectsLayer -or $iconAction -eq 'Layer')
+    if (-not $ok) {
+        $want = if ($IconSelectsLayer) { "showLabels true, useMacroIcons false and iconAction 'Layer'" } else { 'showLabels true and useMacroIcons false' }
+        throw "The case counts on the example layout's $want; config.json has showLabels $($o.showLabels), useMacroIcons $($o.useMacroIcons), iconAction '$($o.iconAction)'."
+    }
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -1556,14 +1746,34 @@ function Write-E2eLayout {
     $script:E2eRun.Chunks = $chunks
 }
 
+# The display options of the example layout, the repository's config.json, that the test's layouts
+# take, so that the overlay under test is drawn as a person's is: showFn, showMacroMarkers, showLabels,
+# useMacroIcons and iconAction, with the values the file gives them. One the file leaves out is left
+# out here too, and each macropad then takes its own default, as it would for a person.
+function Get-E2eLayoutOptions {
+    param([string]$Path = (Join-Path $script:E2eRepo 'config.json'))
+    $json = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    $options = [ordered]@{}
+    foreach ($name in 'showFn', 'showMacroMarkers', 'showLabels', 'useMacroIcons', 'iconAction') {
+        if ($null -ne $json.PSObject.Properties[$name]) { $options[$name] = $json.$name }
+    }
+    [pscustomobject]$options
+}
+
+# Writes a layout file: the test's keys (F13 to F23, Fn F24) with the Slots on layers of 11 keys, and
+# the display options of the example layout (Get-E2eLayoutOptions). A layout whose slots fill one layer
+# gets a second layer without macros, so that there is always another layer to select: a click on an
+# icon (E2eOverlayIcon) selects layer 1 from it.
 function Write-E2eLayoutFile {
-    param([object[]]$Slots, [string]$Path)
+    param([object[]]$Slots, [string]$Path, $Options = (Get-E2eLayoutOptions))
     $keys = @(for ($i = 0; $i -lt $script:E2eKeyCount; $i++) { @{ key = "F$(13 + $i)"; row = [math]::Floor($i / 4) + 1; col = ($i % 4) + 1 } })
     $layers = @(for ($l = 0; $l * $script:E2eKeyCount -lt $Slots.Count; $l++) {
             $last = [math]::Min($Slots.Count, ($l + 1) * $script:E2eKeyCount) - 1
             @{ title = "Test $($l + 1)"; icon = 'default_commands'; macros = @($Slots[($l * $script:E2eKeyCount)..$last]) }
         })
+    if ($layers.Count -eq 1) { $layers += @{ title = 'Test 2'; icon = 'default_commands'; macros = @() } }
     $layout = @{ fn = @{ key = 'F24'; row = 4; col = 1 }; keys = $keys; layers = $layers; default = 1 }
+    foreach ($p in $Options.PSObject.Properties) { $layout[$p.Name] = $p.Value }
     [System.IO.File]::WriteAllText($Path, ($layout | ConvertTo-Json -Depth 8))
 }
 
@@ -1576,11 +1786,16 @@ function Get-E2eErrorLines {
     @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'errors.log')) + @(Read-E2eLog (Join-Path $script:E2eRun.Dir 'temp\LayeredMacropad.log'))
 }
 
+# A window, described for a message.
+function Get-E2eWindowText {
+    param([IntPtr]$Hwnd)
+    $i = Get-WindowInfo $Hwnd
+    "'$($i.Title)' ($($i.Exe), class $($i.Class))"
+}
+
 # The window that has the keyboard, described for a message.
 function Get-E2eForegroundText {
-    $h = [Macropad.WindowApi]::Foreground()
-    $i = Get-WindowInfo $h
-    "'$($i.Title)' ($($i.Exe), class $($i.Class))"
+    Get-E2eWindowText ([Macropad.WindowApi]::Foreground())
 }
 
 # A window in front that the run did not start and the case does not expect: a person or another

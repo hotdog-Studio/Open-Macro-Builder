@@ -19,6 +19,10 @@ function E2eWrite {
 # powershell\lib\Engine.ps1) says that it ran to its end.
 function E2eMark { param($Macro) }
 
+# Does nothing, for a case whose subject is not its own key: the overlay cases click the overlay, and
+# read in the macropad's command log that a click on a key's label ran that key's command.
+function E2eNothing { param($Macro) }
+
 # Ends the macropad, as its tray menu's Exit does.
 function E2eExit {
     param($Macro)

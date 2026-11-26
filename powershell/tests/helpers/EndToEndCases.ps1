@@ -497,6 +497,97 @@ function Get-E2eCases {
                 $waited | Should -BeTrue -Because "a press while one of its windows is active brings the bottom one (in front: $(Get-E2eForegroundText); for this press, $(Get-E2eCommandText $second 'E2eStep' $second.Lines); the program's windows from the top, before the press: $before; now: $(& $order))"
             }
         }
+        # The overlay with the pointer. The test's layouts have the example layout's display options
+        # (Write-E2eLayoutFile), and each case holds Fn, so that the overlay shows, uses the pointer on it,
+        # lets Fn go and puts the pointer back (Invoke-E2eOverlayPointer). Their own key runs E2eNothing,
+        # which does nothing: what they prove is what the pointer does.
+        # A name short enough for the label's 64 px, so that what the label reads is the whole name.
+        @{ Command = 'E2eNothing'; Name = 'E2eOverlayLabel'; File = 'e2e'; Kind = 'Custom'; Macro = @{ name = 'label' }
+            Covers  = 'while Fn is held, a key''s label on the overlay reads the name of the key''s command on the selected layer, the pointer resting on it brings up a tooltip of the macropad''s within 3 s, and a click on it runs that command, as the example layout''s display options have it (labels shown, macro icons off); the click takes neither the keyboard nor the foreground from the window in front (B). Not run: what the tooltip says (another program cannot read it), a label of a key without a command, and the layouts with macro icons, where a click on a label selects a layer'
+            Arrange = { param($ctx) Assert-E2eOverlayOptions; [void](Use-E2eStandin 'B') }
+            Assert  = {
+                param($ctx)
+                $b = $ctx.Run.Standins['B']
+                # The case's own press ran E2eNothing once, and has finished: the click runs it a second time.
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                Invoke-E2eOverlayPointer {
+                    param($overlay)
+                    $slot = $ctx.Case.Slot
+                    $what = "the middle of the label of key $slot, on layer $($ctx.Case.Layer)"
+                    # A tooltip that showed already would pass for the label's.
+                    if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)) {
+                        throw "A tooltip of the macropad's showed before the pointer went to the label, while the pointer rested at ($([OmbE2e.Input]::MousePosition() -join ', ')); the macropad's visible windows: $(Get-E2eMacropadWindowsText)."
+                    }
+                    $p = Get-E2eOverlayPoint $slot Label
+                    $name = @(@((Get-E2eLayoutModel).Layers)[$ctx.Case.Layer - 1].Macros)[$slot - 1].Name
+                    $text = Get-E2eOverlayText $overlay $p
+                    if ($text -cne $name) { throw "The label of key $slot must read '$name', the name of its command on layer $($ctx.Case.Layer); at ($($p.X), $($p.Y)), $what (the layout's rectangle $($p.Rect) at scale $($p.Scale)), the overlay's control reads $(if ($null -eq $text) { 'nothing: no control of the overlay is there' } else { "'$text'" })." }
+                    Wait-ScreenChange  # the pointer on the label brings up its tooltip
+                    Move-E2ePointer $p.X $p.Y
+                    Assert-E2eOnOverlay $p $overlay $what
+                    $tip = Wait-E2eCondition { @(Get-E2eMacropadWindows -Tooltips) | Select-Object -First 1 } -TimeoutMs 3000
+                    if (-not $tip) { throw "No tooltip of the macropad's showed within 3 s while the pointer rested at ($($p.X), $($p.Y)), $what (the layout's rectangle $($p.Rect) at scale $($p.Scale)); the macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)." }
+                    Wait-ScreenChange -Observed
+                    $bMark = Get-E2eStandinMark $b
+                    Wait-ScreenChange  # the click may put the tooltip away
+                    Send-E2eClick $p.X $p.Y
+                    $s = Wait-E2eCommand $ctx.Commands 'E2eNothing' -Run 2 -TimeoutMs 8000
+                    if ($s.State -ne 'done') {
+                        $bLines = @(Read-E2eLog $b.Log | Select-Object -Skip $bMark)
+                        throw "A click at ($($p.X), $($p.Y)), $what, must run the key's command, E2eNothing, a second time: of that run, $(Get-E2eCommandText $s 'E2eNothing' $s.Lines). The pointer is at ($([OmbE2e.Input]::MousePosition() -join ', ')); a click there goes to $(Get-E2eWindowText ([OmbE2e.Input]::TopWindowAt($p.X, $p.Y))); B's log since the click: $(if ($bLines.Count) { $bLines -join ' / ' } else { 'nothing' }); in front: $(Get-E2eForegroundText)."
+                    }
+                    [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "a click on the overlay takes neither the keyboard nor the foreground (in front: $(Get-E2eForegroundText))"
+                }
+                [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "B is still the active window once Fn is let go (in front: $(Get-E2eForegroundText))"
+            }
+        }
+        @{ Command = 'E2eNothing'; Name = 'E2eOverlayIcon'; File = 'e2e'; Kind = 'Custom'
+            Covers  = 'while Fn is held, a click on the icon of key 1 selects layer 1 from another layer, as the example layout''s iconAction "Layer" has it (with labels shown and macro icons off): the label of key 1 then reads the name of layer 1''s first command, and once Fn is let go key 1 runs it, E2eMark; the click takes neither the keyboard nor the foreground from the window in front (B). Not run: iconAction "Macro" and the layouts without labels or with macro icons, where a click on an icon runs the key''s command instead, the icons'' tooltips, and the icon of a key that has no layer'
+            Arrange = { param($ctx) Assert-E2eOverlayOptions -IconSelectsLayer; [void](Use-E2eStandin 'B') }
+            Assert  = {
+                param($ctx)
+                $b = $ctx.Run.Standins['B']
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                # From the first layer change on, the harness's record of the layer is unknown (0) until key
+                # 1 says that layer 1 is selected: should the case fail, the next case selects its own layer.
+                $ctx.Run.Macropad.Layer = 0
+                # The click selects layer 1 from another: the case's own, or layer 2 when its own is 1 (a
+                # layout that fills one layer has a second, empty one: Write-E2eLayoutFile).
+                $from = $ctx.Case.Layer
+                if ($from -eq 1) { $from = 2; Select-E2eLayer 2; $ctx.Run.Macropad.Layer = 0 }
+                Invoke-E2eOverlayPointer {
+                    param($overlay)
+                    $p = Get-E2eOverlayPoint 1 Icon
+                    $ctx.Clicked = "($($p.X), $($p.Y)), the middle of the icon of key 1 (the layout's rectangle $($p.Rect) at scale $($p.Scale))"
+                    Wait-ScreenChange  # the pointer on the icon brings up its tooltip
+                    Move-E2ePointer $p.X $p.Y
+                    Assert-E2eOnOverlay $p $overlay 'the middle of the icon of key 1'
+                    $label = Get-E2eOverlayPoint 1 Label
+                    $want = @(@((Get-E2eLayoutModel).Layers)[0].Macros)[0].Name
+                    $before = Get-E2eOverlayText $overlay $label
+                    $ctx.BMark = Get-E2eStandinMark $b
+                    Wait-ScreenChange  # the click selects layer 1: the overlay's icons and labels change
+                    Send-E2eClick $p.X $p.Y
+                    # Layer 1 must show before key 1 is pressed: on another layer key 1 runs another
+                    # case's command, which may open a window.
+                    $shows = Wait-E2eCondition { $t = Get-E2eOverlayText $overlay $label; if ($t -ceq $want) { $t } } -TimeoutMs 3000
+                    if (-not $shows) {
+                        $bLines = @(Read-E2eLog $b.Log | Select-Object -Skip $ctx.BMark)
+                        throw "After a click at $($ctx.Clicked) with layer $from selected, the overlay must show layer 1, whose first key's label reads '$want'; the label of key 1 read '$before' before the click and reads '$(Get-E2eOverlayText $overlay $label)' 3 s after it. B's log since the click: $(if ($bLines.Count) { $bLines -join ' / ' } else { 'nothing' }); in front: $(Get-E2eForegroundText). Key 1 was not pressed."
+                    }
+                    [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "a click on the overlay takes neither the keyboard nor the foreground (in front: $(Get-E2eForegroundText))"
+                }
+                $commands = Get-E2eCommandMark
+                Invoke-E2eCaseKey $ctx -Front $b.Hwnd -Slot 1
+                $s = Wait-E2eCommand $commands 'E2eMark' -TimeoutMs 8000
+                if ($s.State -ne 'done') {
+                    $bLines = @(Read-E2eLog $b.Log | Select-Object -Skip $ctx.BMark)
+                    throw "After a click at $($ctx.Clicked) with layer $from selected, key 1 must run E2eMark, the first key of layer 1: $(Get-E2eCommandText $s 'E2eMark' $s.Lines). B's log since the click: $(if ($bLines.Count) { $bLines -join ' / ' } else { 'nothing' }); in front: $(Get-E2eForegroundText)."
+                }
+                $ctx.Run.Macropad.Layer = 1
+                [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "B is still the active window (in front: $(Get-E2eForegroundText))"
+            }
+        }
         (New-E2eOpenerCase 'OpenFileExplorer' 'windows' $script:E2eExplorer -Targets 'explorer.exe' -TimeoutMs $script:E2eSlowStartMs -Covers 'opens or brings forward a File Explorer window, not the taskbar, where File Explorer starts' `
                 -Folder { param($p) $p -and -not $p.StartsWith($script:E2eControlPanel) } -FolderWhat 'where File Explorer starts (not Control Panel)' -SkipIf {
                 $f = Get-E2eForeignWindows $script:E2eExplorer

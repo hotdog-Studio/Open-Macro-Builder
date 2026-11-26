@@ -35,6 +35,14 @@ E2eMark(Macro) {
 }
 
 /**
+ * Does nothing, for a case whose subject is not its own key: the overlay cases click the overlay, and
+ * read in the macropad's command log that a click on a key's label ran that key's command.
+ * @param {Macro} Macro - The macro object (not used).
+ */
+E2eNothing(Macro) {
+}
+
+/**
  * Ends the macropad, as its tray menu's Exit does.
  * @param {Macro} Macro - The macro object (not used).
  */

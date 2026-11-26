@@ -37,4 +37,15 @@ export default tseslint.config(
     files: ['electron/**', 'scripts/**', '*.config.{js,ts}'],
     languageOptions: { globals: { ...globals.node } },
   },
+  {
+    // The browser tests' harness (test/browser/harness.tsx) waits for every command still in flight before
+    // the next test starts, and keeps that wait inside its hook's time limit by bounding how long one
+    // command may be (LONGEST_COMMAND). That bound holds only while each test awaits each command it sends:
+    // one left running is not timed by its test and can hold the clean-up for most of the limit. This rule
+    // keeps every promise awaited. It needs the types, so only these files are linted with them
+    // (tsconfig.json covers src and test); the rest of the lint stays without.
+    files: ['src/**/*.browser.test.tsx', 'test/browser/**/*.{ts,tsx}'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: { '@typescript-eslint/no-floating-promises': 'error' },
+  },
 )

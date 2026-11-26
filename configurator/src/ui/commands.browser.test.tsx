@@ -865,23 +865,57 @@ describe('Commands tab: docs on hover', () => {
     return screen.getByRole('region', { name: 'Other commands available' })
   }
 
-  it('keeps the card of the list level with its row while the panel scrolls', async () => {
-    const other = await powerShellList()
-    // A row with a short card. A tall one (Send-Chord's, in the fonts of the Linux build server) has no room
-    // under its row once the row has moved down, and the page then rightly moves it up to keep it whole.
-    const row = within(other).getByRole('button', { name: /^Send-Key\b/ })
-    // Near the top of the window, so the card has room under the row's top edge before and after.
+  /**
+   * The card of a tool whose docs the test writes, a summary and `examples` lines of examples, shown for
+   * its row by the keyboard, with the row at the top of the panel. The shown file is 60 tools and the row
+   * the 31st, so that the panel has a long way to scroll above the row and below it. No docs that ship
+   * are in it, and the tests measure the card and the room they find, so neither a help text nor the
+   * machine's fonts decide them.
+   */
+  async function writtenCard(examples: number): Promise<{ row: HTMLElement; tip: HTMLElement; panel: HTMLElement }> {
+    await start()
+    await openFile('windows')
+    const tool = (name: string, docs: string[]) => ['/**', ...docs.map((line) => ` * ${line}`), ' */', `${name}(A)`, '{', '}', '']
+    const written = ['A written tool.', ...Array.from({ length: examples }, (_, i) => `@example Written(${i})`)]
+    const tools = Array.from({ length: 60 }, (_, i) => (i === 30 ? tool('Written', written) : tool(`Tool${i}`, ['A tool.'])))
+    replaceAll(tools.flat().join('\n'))
+    const row = within(screen.getByRole('region', { name: 'Other commands available' })).getByRole('button', { name: /^Written\b/ })
     row.scrollIntoView({ block: 'start' })
     row.focus()
-    const tip = await screen.findByRole('tooltip')
-    const level = () => Math.abs(tip.getBoundingClientRect().top - row.getBoundingClientRect().top)
+    return { row, tip: await screen.findByRole('tooltip'), panel: row.closest('aside')! }
+  }
+
+  const topOf = (el: Element) => el.getBoundingClientRect().top
+
+  it('keeps the card of the list level with its row while the panel scrolls', async () => {
+    // A card of one line: short in any font, so it has room under its row before and after.
+    const { row, tip, panel } = await writtenCard(0)
+    const level = () => Math.abs(topOf(tip) - topOf(row))
     await waitFor(() => expect(level()).toBeLessThanOrEqual(1))
-    const before = row.getBoundingClientRect().top
+    const before = topOf(row)
     // The card still fits under the row 100 px further down, so level with it is where the page puts it there.
     expect(before + 100 + tip.offsetHeight + GAP).toBeLessThanOrEqual(document.documentElement.clientHeight)
-    other.closest('aside')!.scrollBy(0, -100)
-    await waitFor(() => expect(row.getBoundingClientRect().top).toBeGreaterThan(before + 50))
+    panel.scrollBy(0, -100)
+    await waitFor(() => expect(topOf(row)).toBeGreaterThan(before + 50))
     await waitFor(() => expect(level()).toBeLessThanOrEqual(1))
+  })
+
+  it('moves the card of the list up from a row scrolled too low for it, only as far as it takes to keep the whole card in the window', async () => {
+    // A card of a summary and four examples: a few times the height of a row, and well under the window's.
+    const { row, tip, panel } = await writtenCard(4)
+    const before = topOf(row)
+    // The lowest the card can be with all of it in the window, the gap under it: where the page stops it.
+    const lowest = () => document.documentElement.clientHeight - tip.offsetHeight - GAP
+    // The card has room under its row where the row is now, and the panel can scroll the row to 50 px
+    // lower than the card can follow.
+    expect(lowest()).toBeGreaterThan(before)
+    const down = lowest() - before + 50
+    expect(panel.scrollTop).toBeGreaterThanOrEqual(down)
+    await waitFor(() => expect(Math.abs(topOf(tip) - before)).toBeLessThanOrEqual(1))
+    panel.scrollBy(0, -down)
+    await waitFor(() => expect(Math.abs(topOf(row) - (before + down))).toBeLessThanOrEqual(1))
+    await waitFor(() => expect(Math.abs(topOf(tip) - lowest())).toBeLessThanOrEqual(1))
+    expect(Math.abs(tip.getBoundingClientRect().bottom - (document.documentElement.clientHeight - GAP))).toBeLessThanOrEqual(1)
   })
 
   it('keeps a long card of the list inside a short window, and lets it be scrolled', async () => {

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { decide, tag, notes, checksums, github, main } from './ci-release.mjs';
+import { decide, tag, notes, checksums, github, main, changelogProblem } from './ci-release.mjs';
 
 const HEAD = 'a'.repeat(40);
 const OTHER = 'b'.repeat(40);
@@ -229,5 +229,82 @@ test('anything else is a usage error', async () => {
     const result = await run(argv, {});
     assert.equal(result.code, 2);
     assert.match(result.log[0], /^usage/);
+  }
+});
+
+const head = '# Changelog\n\nintro\n\n';
+test('a version with its heading and nothing unreleased has no problem', () => {
+  assert.equal(changelogProblem(`${head}## Unreleased\n\n## 1.0.7 - 2026-12-01\n\n### Fixed\n\n- x\n`, '1.0.7'), null);
+});
+
+test('entries still under Unreleased are a problem', () => {
+  assert.match(changelogProblem(`${head}## Unreleased\n\n### Fixed\n\n- x\n\n## 1.0.7 - 2026-12-01\n`, '1.0.7'), /Unreleased/);
+});
+
+test('a missing heading is a problem that names the version', () => {
+  assert.match(changelogProblem(`${head}## Unreleased\n\n## 1.0.6 - 2026-11-25\n`, '1.0.7'), /## 1\.0\.7/);
+});
+
+test('a heading without its date is a problem', () => {
+  assert.match(changelogProblem(`${head}## Unreleased\n\n## 1.0.7\n`, '1.0.7'), /date/);
+  assert.match(changelogProblem(`${head}## Unreleased\n\n## 1.0.7 - soon\n`, '1.0.7'), /date/);
+});
+
+test('1.0.70 is not the heading of 1.0.7', () => {
+  assert.notEqual(changelogProblem(`${head}## 1.0.70 - 2026-12-01\n`, '1.0.7'), null);
+});
+
+test('a changelog with Windows line endings is read the same', () => {
+  const text = `${head}## Unreleased\n\n## 1.0.7 - 2026-12-01\n\n### Fixed\n\n- x\n`.replaceAll('\n', '\r\n');
+  assert.equal(changelogProblem(text, '1.0.7'), null);
+  assert.match(changelogProblem(text.replace('## 1.0.7', '### 1.0.7'), '1.0.7'), /## 1\.0\.7/);
+});
+
+test('only the lines under Unreleased count as unreleased entries', () => {
+  const text = `${head}## Unreleased\n\nnothing yet\n\n## 1.0.7 - 2026-12-01\n\n- released\n`;
+  assert.equal(changelogProblem(text, '1.0.7'), null);
+});
+
+test('a changelog with no Unreleased section has no unreleased entries', () => {
+  assert.equal(changelogProblem(`${head}## 1.0.7 - 2026-12-01\n\n- released\n`, '1.0.7'), null);
+});
+
+// Runs `changelog` against a CHANGELOG.md with this text; returns { code, log, errors }.
+async function runChangelog(text, environment) {
+  const log = [];
+  const errors = [];
+  const readFile = (path) => {
+    assert.equal(path, 'CHANGELOG.md');
+    return Buffer.from(text);
+  };
+  const code = await main(['changelog'], {
+    env: environment,
+    git: fakeGit().git,
+    fetch: fakeGitHub().fetch,
+    readFile,
+    log: (line) => log.push(line),
+    logError: (line) => errors.push(line),
+  });
+  return { code, log, errors };
+}
+
+test('the changelog command exits 0 when the version has its heading', async () => {
+  const done = await runChangelog(`${head}## Unreleased\n\n## 1.0.7 - 2026-12-01\n`, { VERSION: '1.0.7' });
+  assert.deepEqual(done, { code: 0, log: [], errors: [] });
+});
+
+test('the changelog command exits 5 with the reason on the error stream', async () => {
+  const { code, log, errors } = await runChangelog(`${head}## Unreleased\n\n- x\n\n## 1.0.7 - 2026-12-01\n`, { VERSION: '1.0.7' });
+  assert.equal(code, 5);
+  assert.deepEqual(log, []);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /Unreleased/);
+});
+
+test('the changelog command needs a three-number VERSION', async () => {
+  for (const environment of [{}, { VERSION: 'latest' }]) {
+    const { code, errors } = await runChangelog(`${head}## 1.0.7 - 2026-12-01\n`, environment);
+    assert.equal(code, 2);
+    assert.match(errors[0], /VERSION/);
   }
 });

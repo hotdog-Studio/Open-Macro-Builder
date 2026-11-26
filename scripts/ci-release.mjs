@@ -4,6 +4,8 @@
 //   node scripts/ci-release.mjs --check          exit 0 when BRANCH_NAME releases, 3 with the reason when not
 //   node scripts/ci-release.mjs tag              make the tag v<VERSION> on HEAD and push it
 //   node scripts/ci-release.mjs github <file>…   publish the GitHub release of v<VERSION> with these files
+//   node scripts/ci-release.mjs changelog        exit 0 when CHANGELOG.md has the heading of VERSION and
+//                                                nothing left under Unreleased, 5 with the reason when not
 //
 // From the environment: BRANCH_NAME (the branch Jenkins builds), VERSION (what scripts/ci-version.mjs
 // printed) and, for `github`, GITHUB_TOKEN (may write the repository's contents), GITHUB_REPOSITORY
@@ -26,6 +28,7 @@ const VERSION = /^\d+\.\d+\.\d+$/;
 const EXIT_USAGE = 2;
 const EXIT_SKIPPED = 3;
 const EXIT_TAG_ELSEWHERE = 4;
+const EXIT_CHANGELOG = 5;
 
 /** Does a green build of this branch release? `{ release: true }` or `{ release: false, reason }`. */
 export function decide(branch) {
@@ -49,6 +52,38 @@ function previousTag(git) {
   } catch {
     return null;
   }
+}
+
+/**
+ * What is wrong with this CHANGELOG.md for a release of `version`, or null when nothing is. A release
+ * needs the heading `## <version> - YYYY-MM-DD` and no entry (a line starting with `- `) left
+ * under `## Unreleased`.
+ */
+export function changelogProblem(text, version) {
+  const lines = text.split(/\r?\n/);
+  const heading = lines.find((line) => line === `## ${version}` || line.startsWith(`## ${version} `));
+  if (heading === undefined) return `CHANGELOG.md has no heading '## ${version} - YYYY-MM-DD': move the entries under Unreleased below it`;
+  if (!/^ - \d{4}-\d{2}-\d{2}\s*$/.test(heading.slice(`## ${version}`.length))) {
+    return `the heading '${heading}' in CHANGELOG.md has no date: write it as '## ${version} - YYYY-MM-DD'`;
+  }
+  const start = lines.indexOf('## Unreleased');
+  if (start === -1) return null;
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
+  const entries = lines.slice(start + 1, end === -1 ? undefined : end).filter((line) => line.startsWith('- '));
+  if (entries.length > 0) return `CHANGELOG.md still has ${entries.length} entries under Unreleased: move them under '## ${version} - YYYY-MM-DD'`;
+  return null;
+}
+
+/** Checks CHANGELOG.md against VERSION: exit 0, or 5 with the reason (2 without a version). */
+export function changelog({ env, readFile, logError }) {
+  if (!VERSION.test(env.VERSION ?? '')) {
+    logError(`ci-release: VERSION is not MAJOR.MINOR.PATCH: '${env.VERSION ?? ''}'`);
+    return EXIT_USAGE;
+  }
+  const problem = changelogProblem(readFile('CHANGELOG.md').toString(), env.VERSION);
+  if (problem === null) return 0;
+  logError(problem);
+  return EXIT_CHANGELOG;
 }
 
 /** Makes the annotated tag v<VERSION> on HEAD, listing the commits it carries, and pushes it. */
@@ -149,7 +184,7 @@ export async function github({ env, paths, git, fetch, readFile, log }) {
 }
 
 /** Runs the command line and returns the exit code. */
-export async function main(argv, { env, git, fetch, readFile, log }) {
+export async function main(argv, { env, git, fetch, readFile, log, logError }) {
   const [command, ...rest] = argv;
   if (command === '--check' && rest.length === 0) {
     const decision = decide(env.BRANCH_NAME);
@@ -159,7 +194,8 @@ export async function main(argv, { env, git, fetch, readFile, log }) {
   }
   if (command === 'tag' && rest.length === 0) return tag({ env, git, log });
   if (command === 'github') return github({ env, paths: rest, git, fetch, readFile, log });
-  log('usage: node scripts/ci-release.mjs --check | tag | github <file>…');
+  if (command === 'changelog' && rest.length === 0) return changelog({ env, readFile, logError });
+  log('usage: node scripts/ci-release.mjs --check | tag | github <file>… | changelog');
   return EXIT_USAGE;
 }
 
@@ -167,7 +203,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // The git on PATH, as in scripts/check-private.mjs: whoever controls PATH on the build machine
   // already controls the build (hence NOSONAR). It runs in the workspace Jenkins checked out.
   const git = (args) => execFileSync('git', args, { stdio: ['ignore', 'pipe', 'pipe'] }).toString(); // NOSONAR S4036
-  const deps = { env: process.env, git, fetch, readFile: (path) => readFileSync(path), log: (line) => console.log(line) };
+  const deps = { env: process.env, git, fetch, readFile: (path) => readFileSync(path), log: (line) => console.log(line), logError: (line) => console.error(line) };
   try {
     process.exitCode = await main(process.argv.slice(2), deps);
   } catch (error) {

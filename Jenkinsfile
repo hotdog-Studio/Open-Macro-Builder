@@ -39,8 +39,9 @@
 // so a branch proves itself on the Windows agents before it is merged; on develop either one that
 // fails, or that found no agent, stops the release.
 //
-// STAGES, in order: Checkout → Version → Validate config (scripts/validate-config.mjs: config.json's
-// structure, icons, and every action defined in both versions) → Script tests (node:test,
+// STAGES, in order: Checkout → Version (on develop it also checks that CHANGELOG.md has the heading of
+// the version: scripts/ci-release.mjs changelog) → Validate config (scripts/validate-config.mjs:
+// config.json's structure, icons, and every action defined in both versions) → Script tests (node:test,
 // scripts/*.test.mjs) → Configurator install / lint / test / browser test / build (configurator/,
 // installed with ELECTRON_SKIP_BINARY_DOWNLOAD=1 because the agent never starts Electron: the
 // desktop-app tests in configurator/e2e skip themselves without the binary) → Windows tests (the
@@ -171,6 +172,16 @@ node {
         def verdict = sh(returnStatus: true, script: 'node scripts/ci-release.mjs --check')
         if (verdict != 0 && verdict != 3) { error "scripts/ci-release.mjs --check failed (exit ${verdict})" }
         releasing = (verdict == 0)
+        // A release needs the heading of its version in CHANGELOG.md and nothing left under
+        // Unreleased: a build without them stops here and takes no number (docs/releasing.md).
+        // The version was checked above to be digits and dots, so it is safe in the command.
+        if (releasing) {
+            def changelog = sh(returnStatus: true, script: "mkdir -p results && VERSION=${version} node scripts/ci-release.mjs changelog 2>results/changelog-problem.txt")
+            if (changelog != 0) {
+                def reason = fileExists('results/changelog-problem.txt') ? readFile('results/changelog-problem.txt').trim() : ''
+                error "CHANGELOG.md is not ready to release ${version} (exit ${changelog}): ${reason}"
+            }
+        }
         // Only a release owns its number: another branch would show the number develop takes next.
         if (releasing) { currentBuild.displayName = "#${env.BUILD_NUMBER} v${version}" }
     }

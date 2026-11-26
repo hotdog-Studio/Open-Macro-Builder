@@ -25,9 +25,17 @@ A version is `MAJOR.MINOR.PATCH`, and `node scripts/ci-version.mjs` prints the o
 
 - **Tags are the record.** Jenkins pushes the tag `v<version>` for each release and writes nothing back to the repository. Never push a `v*` tag by hand.
 - **One number, one commit.** A build of a commit that already has the newest tag is a rebuild of that release and keeps its number. A red build takes no number.
-- **Moving `MAJOR` or `MINOR`.** In `configurator/`, run `npm version <MAJOR>.<MINOR>.0 --no-git-tag-version`, set `sonar.projectVersion` in `sonar-project.properties` to `<MAJOR>.<MINOR>`, move the entries under **Unreleased** in `CHANGELOG.md` to a heading for the line that just ended, and commit. The next green build of `develop` is `<MAJOR>.<MINOR>.0`.
+- **Moving `MAJOR` or `MINOR`.** In `configurator/`, run `npm version <MAJOR>.<MINOR>.0 --no-git-tag-version`, set `sonar.projectVersion` in `sonar-project.properties` to `<MAJOR>.<MINOR>`, and commit. The next green build of `develop` is `<MAJOR>.<MINOR>.0`.
 
 The `PATCH` in `package.json` stays `0`. The installer and the desktop app get the real number because the build writes it into its own copy of `package.json` before packaging.
+
+## The changelog
+
+`CHANGELOG.md` has a heading for each release, `## <version> - <date>`, newest first, under an empty **Unreleased**. The version is `MAJOR.MINOR.PATCH`, and every green build of `develop` is a release, so a patch release can add a feature or remove a command: its entry says so, in the group (Added, Changed, Removed, Fixed, Security) that fits.
+
+- **Entries are written under Unreleased**, in the commit of the change a user would notice.
+- **Before the merge into `develop` that releases them**, they move under `## <version> - <date>`, where `<version>` is what `node scripts/ci-version.mjs` prints on the branch and `<date>` is the day of the merge (`YYYY-MM-DD`). Unreleased stays at the top, empty.
+- **A `develop` build checks it.** In the `Version` stage, `node scripts/ci-release.mjs changelog` fails the build when `CHANGELOG.md` has no heading `## <version> - <date>` for the version of this build, or has entries left under **Unreleased**. The build then ends FAILURE before anything else runs and takes no number. Other branches skip the check.
 
 ## What Jenkins does
 

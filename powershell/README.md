@@ -8,15 +8,15 @@ Hold the Fn key (ScrollLock) to show the overlay, and press a macro key (F13 to 
 
 - Windows PowerShell 5.1 (`powershell.exe`). PowerShell 7 is not needed.
 - Nothing else at runtime. WinForms and System.Drawing come with .NET Framework.
-- For the tests only: Pester 5.5 or newer, installed for the current user:
+- For the tests only, which are in the project's repository and not in a folder the configurator set up: Pester 6.2.0 or newer, the version CI runs, installed for the current user:
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+Install-Module Pester -MinimumVersion 6.2.0 -Scope CurrentUser -Force -SkipPublisherCheck
 ```
 
 ## Run
 
-Close the AutoHotkey macropad first (tray icon, then Exit). Its keyboard hook swallows F13 to F24 and ScrollLock, so the two versions cannot run at the same time.
+Close the AutoHotkey macropad first (tray icon, then Exit). Its keyboard hook swallows F13 to F24 and ScrollLock, so the two versions cannot run at the same time. This version refuses to start while an AutoHotkey macropad runs, from any folder, and says so in a message box. The AutoHotkey version makes no such check, so exit this one before you start that one.
 
 ```
 wscript powershell\launch.vbs
@@ -28,9 +28,9 @@ Errors from macros show as a tray balloon and are appended to `%TEMP%\LayeredMac
 
 ## Configure
 
-The layout is a JSON file that the AutoHotkey version reads too, so both stay in step: the file named by `$env:OMB_CONFIG`, else your own `../local/config.json` (ignored by git), else the example `../config.json`. `config.ps1` here and `../ahk/config.ahk` only load it. A test checks that both versions build the same layout from the example and from your own file.
+The layout is a JSON file that the AutoHotkey version reads too, so both stay in step: the file named by `$env:OMB_CONFIG`, else your own `../local/config.json` (ignored by git), else the example `../config.json`. `config.ps1` here and `../ahk/config.ahk` only load it. A test in the project's repository checks that both versions build the same layout from the example and from your own file.
 
-Your own commands go in `../local/powershell/commands`, which is loaded after `commands/`, and their tests in `../local/powershell/tests`. The root readme describes the `local` folder.
+Your own commands go in `../local/powershell/commands`, which is loaded after `commands/`, and, in a copy of the repository, their tests in `../local/powershell/tests`. [The project's readme](https://github.com/hotdog-Studio/Open-Macro-Builder#your-own-layout-and-commands) describes the `local` folder; it is in the repository, not in a folder the configurator set up.
 
 ```json
 {
@@ -135,41 +135,44 @@ A parameter's `.PARAMETER` line must give its name as the function declares it. 
 > [!WARNING]
 > **Photosensitivity warning.** These tests open, move and close windows in quick succession, which makes the screen flash and flicker, with or without the Integration tests. If you have photosensitive epilepsy, or flashing affects you, do not watch the screen while they run: look away, switch the monitor off, or let CI run them.
 
-From `macropad_ahk`:
+The tests are in the project's repository only: a folder the configurator sets up does not get `tests/`. From the root of a copy of the repository (the folder that holds `powershell`):
 
 ```
 powershell -NoProfile -File powershell\tests\run.ps1
 powershell -NoProfile -File powershell\tests\run.ps1 -ExcludeTag Integration
+powershell -NoProfile -File powershell\tests\run.ps1 -Integration
 ```
 
-The Integration tests send real keys and clicks, open and close Character Map, and run AutoHotkey check scripts. They type only into their own test windows, and the Fn hook swallows their ScrollLock press. One of them (in `Send.Tests.ps1`) switches NumLock, which is the whole keyboard's, for about a third of a second, and puts it back, also when it fails. Exclude them when you do not want keys sent or other programs started. The unit tests still flash a few of their own windows while they run: a tooltip, and the small test windows that the window tests move, resize, minimize and close. The overlay and the delayed key and click forms are built but never shown.
+The first runs every test but the end-to-end test, the second leaves out the Integration tests as well, and the third runs only the Integration tests. The Integration tests send real keys and clicks, open and close Character Map, and run AutoHotkey check scripts. They type only into their own test windows, and the Fn hook swallows their ScrollLock press. One of them (in `Send.Tests.ps1`) switches NumLock, which is the whole keyboard's, for about a third of a second, and puts it back, also when it fails. Exclude them when you do not want keys sent or other programs started. The unit tests still flash a few of their own windows while they run: a tooltip, and the small test windows that the window tests move, resize, minimize and close. The overlay and the delayed key and click forms are built but never shown.
 
-The end-to-end test is left out of both, and runs alone:
+CI runs them on every branch: `run.ps1 -Ci` on the Windows agent, which leaves the Integration tests out (`-Ci` alone does) and measures the code coverage of `lib`, `commands` and `config.ps1`, then `run.ps1 -Ci -Integration` on the Windows agent with a real desktop.
+
+The end-to-end test is left out of all three, and runs alone:
 
 ```
 powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd
 ```
 
-It starts the real macropad, this version and the AutoHotkey one in turn, presses the macro keys and checks what every command did (see "The end-to-end test" in `docs/development.md`). It flashes more than the unit tests, at most three changes of the screen a second; the list of what it opens, moves and shows is under "The end-to-end test" in `docs/development.md`. It stops any macropad that runs and starts it again at the end, as it was started; the macropads it tests start from a copy that leaves out your own commands in `local/`. It needs AutoHotkey v2 and Python, and skips itself without AutoHotkey (under `-Ci` it fails instead).
+It starts the real macropad, this version and the AutoHotkey one in turn, presses the macro keys and checks what every command did (see "The end-to-end test" in `docs/development.md`). It flashes more than the unit tests, at most three changes of the screen a second; the list of what it opens, moves and shows is under "The end-to-end test" in `docs/development.md`. It stops any macropad that runs and starts it again at the end, as it was started; the macropads it tests start from a copy that leaves out your own commands in `local/`. It needs AutoHotkey v2 and Python, and skips itself without AutoHotkey (under `-Ci` it fails instead). CI runs it on every branch, on the Windows agent with a real desktop; a case whose need that desktop does not meet (a second monitor, for example) does not run there, and the run's last lines name each case that did not run, with the reason.
 
 `tests/tools/spike-hotkeys.ps1`, `tests/tools/spike-inputhook.ps1` and `tests/tools/preview-overlay.ps1` are manual checks for the hotkeys and the overlay. They are in the project's repository only: a folder the configurator sets up does not get `tests/`.
 
 ## Start with Windows
 
-The startup shortcut `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LayeredMacropad.lnk` starts one version at login. The AutoHotkey and PowerShell versions cannot run at the same time, so point it at only one of them.
+A shortcut in your Startup folder (`shell:startup`, which is `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) starts the macropad when you sign in. The AutoHotkey and PowerShell versions cannot run at the same time, so point it at only one of them.
 
-To switch to the PowerShell version, retarget the shortcut to `wscript.exe` with `launch.vbs` as its argument:
+These commands make the shortcut `LayeredMacropad.lnk` there for the PowerShell version, or point it at the PowerShell version when it is already there. Replace `<folder>` with the folder that holds `ahk` and `powershell`: your copy of the repository, or the folder the configurator set up.
 
 ```powershell
 $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\LayeredMacropad.lnk"
 $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
 $s.TargetPath = 'C:\Windows\System32\wscript.exe'
-$s.Arguments = '"<repo>\macropad_ahk\powershell\launch.vbs"'
-$s.WorkingDirectory = '<repo>\macropad_ahk\powershell'
+$s.Arguments = '"<folder>\powershell\launch.vbs"'
+$s.WorkingDirectory = '<folder>\powershell'
 $s.Save()
 ```
 
-To switch back, set `TargetPath` to `<repo>\macropad_ahk\ahk\main.ahk`, `Arguments` to `''` and `WorkingDirectory` to `<repo>\macropad_ahk\ahk`. Replace `<repo>` with the folder that holds this repository.
+For the AutoHotkey version, run the same commands with `TargetPath` set to `<folder>\ahk\main.ahk`, `Arguments` to `''` and `WorkingDirectory` to `<folder>\ahk`.
 
 ## How the Fn key is detected
 

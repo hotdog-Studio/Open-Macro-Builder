@@ -130,8 +130,9 @@ function powershellReason(stderr: string): string {
   // Not `.replace(/\.+$/, '')`: that backtracks quadratically on a long run of dots that does not end the line.
   const reason = first.trim()
   let end = reason.length
-  while (end > 0 && reason[end - 1] === '.') end--
-  return reason.slice(0, end)
+  while (end > 0 && (reason[end - 1] === '.' || reason[end - 1] === ' ')) end--
+  // Nothing left but full stops and spaces is no reason: the same words as for no line at all.
+  return end === 0 ? 'powershell.exe ended with an error' : reason.slice(0, end)
 }
 
 async function checkAhk(root: string, exe: string, exec: Exec, env: NodeJS.ProcessEnv): Promise<SyntaxReport> {

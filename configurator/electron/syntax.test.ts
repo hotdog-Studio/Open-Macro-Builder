@@ -212,13 +212,16 @@ describe('checkSyntax', () => {
     })
 
     // The line says the reason and ends in one full stop of its own: PowerShell's trailing full stops go, the ones
-    // inside stay, and a reason that was only full stops is empty (the line then reads "could not run: .").
+    // inside stay, and a reason that was only full stops (and spaces) is no reason: the line then gives the same
+    // words as when there is no line at all, never "could not run: .".
     it.each([
       ['gone.ps1.', 'gone.ps1'],
       ['gone.ps1...', 'gone.ps1'],
       ['a.b.', 'a.b'],
       ['a.b', 'a.b'],
-      ['...', ''],
+      ['...', 'powershell.exe ended with an error'],
+      ['. . .', 'powershell.exe ended with an error'],
+      ['gone.ps1 . .', 'gone.ps1'],
       [`a${'.'.repeat(50_000)}b`, `a${'.'.repeat(50_000)}b`],
     ])("takes the trailing full stops off PowerShell's reason (%#)", async (stderr, reason) => {
       const failed = Object.assign(new Error('Command failed'), { code: 1 })

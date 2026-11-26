@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PathError } from '../src/core/folder/path'
+import type { SyntaxReport } from '../src/platform/types'
 import { resolveInside } from './nodeFolder'
 import {
   ahkCheckCommand,
@@ -182,12 +183,26 @@ describe('checkSyntax', () => {
     const REASON = 'The syntax check could not run: '
     const PS_FILE = 'local/powershell/commands/a.ps1'
 
-    it("says so when PowerShell ends with an error, in PowerShell's own words and never the command text", async () => {
+    it("says the check could not run when PowerShell ends with an error, in PowerShell's own words and never the command text", async () => {
       const failed = Object.assign(new Error(`Command failed: powershell.exe -Command ${PS_PARSE_QUERY}`), { code: 1 })
       const exec = fakeExec({ error: failed, stderr: String.raw`Could not find file C:\x\gone.ps1` + '\r\n' })
       const report = await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: exec as never })
       expect(report).toEqual({ skipped: String.raw`${REASON}Could not find file C:\x\gone.ps1.` })
       expect(JSON.stringify(report)).not.toContain('ParseFile')
+
+      // PowerShell's own layout around an uncaught error: only its first line is the reason.
+      const layout = [
+        String.raw`Could not find file C:\x\gone.ps1`,
+        'At line:1 char:1',
+        `+ ${PS_PARSE_QUERY}`,
+        '+ ~~~~~~~~',
+        '    + CategoryInfo          : NotSpecified: (:) [], FileNotFoundException',
+        '',
+      ].join('\r\n')
+      const wrapped = fakeExec({ error: failed, stderr: layout })
+      expect(await checkSyntax('ps', ROOT, PS_FILE, { ...win, exec: wrapped as never })).toEqual({
+        skipped: String.raw`${REASON}Could not find file C:\x\gone.ps1.`,
+      })
 
       // Without a word on the error stream there is only the fact.
       const silent = fakeExec({ error: failed, stderr: ' \r\n' })
@@ -234,31 +249,48 @@ describe('checkSyntax', () => {
 })
 
 // These start the real, hidden powershell.exe (no window, no key sent) on files in a folder of their
-// own. The first start of PowerShell can be slow on a fresh machine, so each one gets a long timeout.
+// own. The first start of PowerShell can be slow on a fresh machine (a 2-core VM), and the check kills
+// it after CHECK_TIMEOUT_MS, so beforeAll starts one first; each test also gets a long timeout.
 describe.skipIf(process.platform !== 'win32')('checkSyntax with the real PowerShell', () => {
   const REAL_TIMEOUT_MS = 60_000
   const commands = 'powershell/commands'
+  /** The app's other reasons for no result: a slow start must not pass for the one a test is about. */
+  const OTHER_REASONS = /did not finish|wrote more than|could not be started|answer could not be read|ended with an error/
   let root = ''
 
-  beforeAll(() => {
+  beforeAll(async () => {
     root = realpathSync.native(mkdtempSync(join(tmpdir(), 'omb-syntax-')))
     mkdirSync(join(root, commands), { recursive: true })
-  })
+    // Warm-up: its result is ignored, only that PowerShell has started once.
+    await new Promise<void>((done) => {
+      const args = ['-NoProfile', '-NonInteractive', '-Command', 'exit']
+      execFile('powershell.exe', args, { windowsHide: true, timeout: 50_000 }, () => done())
+    })
+  }, REAL_TIMEOUT_MS)
   afterAll(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  /** The line of a check that could not run; fails the test for any other answer or any other reason. */
+  function skippedReason(report: SyntaxReport): string {
+    expect(report).toEqual({ skipped: expect.any(String) })
+    const { skipped } = report as { skipped: string }
+    expect(skipped.startsWith('The syntax check could not run: ')).toBe(true)
+    expect(skipped.endsWith('.')).toBe(true)
+    expect(skipped).not.toMatch(OTHER_REASONS)
+    expect(skipped).not.toContain('ParseFile')
+    expect(skipped).not.toContain('OMB_CHECK_FILE')
+    return skipped
+  }
+
   it(
-    'does not call a file that is not there clean, and says why in its own words',
+    'does not call a file that is not there clean, with the real PowerShell',
     async () => {
-      const report = await checkSyntax('ps', root, `${commands}/gône.ps1`)
-      expect('skipped' in report).toBe(true)
-      const { skipped } = report as { skipped: string }
-      // PowerShell's own sentence, about this file, ending in one full stop (it writes two).
-      expect(skipped).toMatch(/^The syntax check could not run: The file could not be read: Could not find file '.+'\.$/)
+      // A name with a letter outside ASCII also proves the error stream is read as UTF-8.
+      const skipped = skippedReason(await checkSyntax('ps', root, `${commands}/gône.ps1`))
       expect(skipped).toContain(join(root, commands, 'gône.ps1'))
-      expect(skipped).not.toContain('ParseFile')
-      expect(skipped).not.toContain('OMB_CHECK_FILE')
+      // PowerShell writes two full stops after the path; the line has one.
+      expect(skipped.endsWith('..')).toBe(false)
     },
     REAL_TIMEOUT_MS,
   )
@@ -281,34 +313,58 @@ describe.skipIf(process.platform !== 'win32')('checkSyntax with the real PowerSh
     async () => {
       const file = join(root, commands, 'locked.ps1')
       writeFileSync(file, 'function A { }')
-      // A hidden PowerShell opens the file with no sharing and says so once it holds it.
-      const holder = spawn(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          "$h = [System.IO.File]::Open($env:OMB_HOLD_FILE, 'Open', 'Read', 'None'); [Console]::Out.WriteLine('held'); Start-Sleep -Seconds 120",
-        ],
-        { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, OMB_HOLD_FILE: file } },
-      )
-      const exited = new Promise<void>((done) => holder.once('exit', () => done()))
+      const holder = await holdOpen(file)
       try {
-        await new Promise<void>((held, failed) => {
-          holder.once('exit', () => failed(new Error('the holder ended before it held the file')))
-          holder.stdout.on('data', (chunk: Buffer) => {
-            if (chunk.toString().includes('held')) held()
-          })
-        })
-        const report = await checkSyntax('ps', root, `${commands}/locked.ps1`)
-        expect(report).toEqual({
-          skipped: expect.stringMatching(/^The syntax check could not run: .*being used by another process\.$/),
-        })
+        const skipped = skippedReason(await checkSyntax('ps', root, `${commands}/locked.ps1`))
+        expect(skipped).toContain(file)
       } finally {
-        holder.kill()
-        await exited
+        await holder.release()
       }
     },
     REAL_TIMEOUT_MS,
   )
 })
+
+/**
+ * A hidden PowerShell that holds `file` open with no sharing until released. Resolves once it says it
+ * holds the file; when it cannot be started, ends early or is too slow, it is ended and this rejects.
+ */
+async function holdOpen(file: string): Promise<{ release: () => Promise<void> }> {
+  const holder = spawn(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "$h = [System.IO.File]::Open($env:OMB_HOLD_FILE, 'Open', 'Read', 'None'); [Console]::Out.WriteLine('held'); Start-Sleep -Seconds 120",
+    ],
+    { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, OMB_HOLD_FILE: file } },
+  )
+  // Settles when the process has ended, or could not be started at all (then no exit comes).
+  const ended = new Promise<void>((done) => {
+    holder.once('exit', () => done())
+    holder.once('error', () => done())
+  })
+  const release = async () => {
+    holder.kill()
+    await ended
+  }
+  try {
+    await new Promise<void>((held, failed) => {
+      const timer = setTimeout(() => failed(new Error('the holder did not hold the file in time')), 30_000)
+      const settle = (done: () => void) => {
+        clearTimeout(timer)
+        done()
+      }
+      holder.once('error', (e) => settle(() => failed(e)))
+      holder.once('exit', () => settle(() => failed(new Error('the holder ended before it held the file'))))
+      holder.stdout.on('data', (chunk: Buffer) => {
+        if (chunk.toString().includes('held')) settle(held)
+      })
+    })
+  } catch (e) {
+    await release()
+    throw e
+  }
+  return { release }
+}

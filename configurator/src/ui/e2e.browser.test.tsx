@@ -4,7 +4,7 @@ import { SETTINGS_PATH } from '../core/settings'
 import { idbHandleStore } from '../platform/browser'
 import { detectPlatform } from '../platform/detect'
 import type { Platform } from '../platform/types'
-import { banner, cell, cleanUp, click, dirty, drag, editableFiles, mount, offset, openTab, padKey, repoFiles, rest, unmount, validatorProblems, ws } from '../../test/browser/harness'
+import { banner, cell, cleanUp, click, dirty, drag, editableFiles, mount, offset, openTab, padKey, repoFiles, rest, unmount, validatorProblems, ws, type Point } from '../../test/browser/harness'
 
 // End to end in the browser: the real platform code (platform/browser.ts) over a real folder
 // handle, the folder remembered in the real IndexedDB, and edits made by dragging. The folder is
@@ -107,6 +107,13 @@ async function save(): Promise<void> {
   if (screen.queryByRole('dialog')) await choose('OK')
 }
 
+/**
+ * A drag in two moves: one past the 5 px after which the grid starts a drag, one onto the target. How a
+ * drag follows the mouse step by step is what the shape, layers and macros suites test; here it is what
+ * the folder holds afterwards, and on the Windows build agent every step of a drag costs about 140 ms.
+ */
+const dragTo = (from: Element | Point, to: Element | Point) => drag(from, to, 2)
+
 const layerKey = (title: string) =>
   within(screen.getByRole('list', { name: 'Keys' })).getByRole('button', { name: new RegExp(`^${title}( Start layer)?$`) })
 function command(name: string): HTMLElement {
@@ -114,6 +121,49 @@ function command(name: string): HTMLElement {
   if (!row) throw new Error(`the command list has no ${name}`)
   row.scrollIntoView({ block: 'center' })
   return row
+}
+
+/**
+ * Saves, checks the copy of the file before kept beside it and that the macropad would load what was
+ * saved (the validator Jenkins runs has nothing to say), then starts the app again: it reopens the
+ * remembered folder by itself, on what was saved. Returns the saved config.
+ */
+async function saveAndStartAgain(before: string | null): Promise<SavedConfig> {
+  await save()
+  const config = await saved()
+  expect(await read('local/config.json.bak')).toBe(before)
+  expect(await validatorProblems((await read('local/config.json'))!)).toEqual([])
+  unmount()
+  launch()
+  await screen.findByRole('list', { name: 'Keys' })
+  expect(dirty()).toBe(false)
+  return config
+}
+
+/** The validator does find problems: a config with an action no version defines is refused. */
+async function validatorRefusesABrokenConfig(): Promise<void> {
+  const broken = await saved()
+  broken.layers[0]!.macros[0] = { action: 'NoSuchCommandAnywhere', name: 'x' }
+  expect(await validatorProblems(JSON.stringify(broken))).not.toEqual([])
+}
+
+/** Saves, and returns the saved config once the validator has passed it. */
+async function savedPassingTheValidator(): Promise<SavedConfig> {
+  await save()
+  const text = (await read('local/config.json'))!
+  expect(await validatorProblems(text)).toEqual([])
+  // The file really holds the edits the validator passed.
+  return JSON.parse(text) as SavedConfig
+}
+
+/** On the Layers tab: a new layer, from the Parked shelf onto F16, which has none. */
+async function newLayerOnF16(): Promise<void> {
+  await click(screen.getByRole('button', { name: '+ New layer' }))
+  await waitFor(() => expect(ws().parked).toHaveLength(1))
+  const shelf = screen.getByRole('group', { name: 'Parked' })
+  const chip = within(shelf).getByText('New layer').closest('[aria-roledescription="draggable"]') as HTMLElement
+  await dragTo(chip, padKey('F16'))
+  await waitFor(() => expect(ws().slots.k4?.title).toBe('New layer'))
 }
 
 beforeEach(async () => {
@@ -146,7 +196,7 @@ describe('in the browser, on a real folder', () => {
     expect(screen.getByText('local/config.json')).toBeTruthy()
     expect(JSON.parse((await read(SETTINGS_PATH)) ?? '{}')).toMatchObject({ languages: ['ahk'] })
 
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(dirty()).toBe(true))
     await save()
 
@@ -172,35 +222,25 @@ describe('in the browser, on a real folder', () => {
     expect(await hasDir('powershell/tests')).toBe(false)
   })
 
-  it('drags on every tab are saved to the folder, and are there when the app starts again', async () => {
+  it('drags on the Pad shape and Layers tabs are saved to the folder, and are there when the app starts again', async () => {
     await openEditor()
     const before = await read('local/config.json')
 
     // Pad shape: move F24 to the free row and make it two rows tall.
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(ws().keys[11]).toMatchObject({ row: 5, col: 1 }))
     const corner = screen.getByRole('button', { name: 'Resize F24' })
-    await drag(corner, offset(corner, 0, ROW))
+    await dragTo(corner, offset(corner, 0, ROW))
     await waitFor(() => expect(ws().keys[11]).toMatchObject({ height: 2 }))
 
     // Layers: swap Media and Programs, and park Chrome.
     await openTab('Layers')
-    await drag(layerKey('Media'), layerKey('Programs'))
+    await dragTo(layerKey('Media'), layerKey('Programs'))
     await waitFor(() => expect(ws().slots.k2?.title).toBe('Media'))
-    await drag(layerKey('Chrome'), screen.getByRole('group', { name: 'Parked' }))
+    await dragTo(layerKey('Chrome'), screen.getByRole('group', { name: 'Parked' }))
     await waitFor(() => expect(ws().parked.map((l) => l.title)).toEqual(['Chrome']))
 
-    // Macros (Media, the start layer): a command onto F16, and swap the macros of F13 and F14.
-    await openTab('Macros')
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Media' }).getAttribute('aria-pressed')).toBe('true'))
-    await drag(command('Lock'), padKey('F16'))
-    await waitFor(() => expect(ws().slots.k2.macros.k4?.action).toBe('Lock'))
-    await drag(padKey('F13'), padKey('F14'))
-    await waitFor(() => expect(ws().slots.k2.macros.k1?.name).toBe('Play'))
-
-    await save()
-
-    const config = await saved()
+    const config = await saveAndStartAgain(before)
     expect(config.keys[11]).toMatchObject({ key: 'F24', row: 5, col: 1, height: 2 })
     // A layer's place in the list is the key it is on: Programs on F13, Media on F14.
     expect(config.layers[0]?.title).toBe('Programs')
@@ -208,90 +248,98 @@ describe('in the browser, on a real folder', () => {
     expect(config.default).toBe(2)
     expect(config.layers[2]).toBeNull()
     expect(config.layers.find((l) => l?.title === 'Chrome')).toMatchObject({ disabled: true })
-    const media = config.layers[1]!.macros
-    expect(media[0]).toMatchObject({ action: 'PlayPause', name: 'Play' })
-    expect(media[1]).toMatchObject({ action: 'PreviousTrack', name: 'Prev' })
-    expect(media[3]).toMatchObject({ action: 'Lock', name: 'Lock' })
-    // The version before the save is kept beside it.
-    expect(await read('local/config.json.bak')).toBe(before)
-    // And the macropad would load it: the validator Jenkins runs has nothing to say.
-    expect(await validatorProblems((await read('local/config.json'))!)).toEqual([])
-
-    // Start the app again: it reopens the remembered folder by itself, on what was saved.
-    unmount()
-    launch()
-    await screen.findByRole('list', { name: 'Keys' })
-    expect(dirty()).toBe(false)
+    // Started again, on what was saved.
     expect(ws().keys[11]).toMatchObject({ row: 5, col: 1, height: 2 })
     expect(ws().slots.k1?.title).toBe('Programs')
     expect(ws().slots.k2?.title).toBe('Media')
     expect(ws().options.defaultKey).toBe('k2')
     expect(ws().parked.map((l) => l.title)).toEqual(['Chrome'])
-    expect(ws().slots.k2.macros.k4).toMatchObject({ action: 'Lock' })
     expect(screen.getByRole('button', { name: 'F24 1×2' })).toBeTruthy()
+  })
+
+  it('drags on the Macros tab are saved to the folder, and are there when the app starts again', async () => {
+    await openEditor()
+    const before = await read('local/config.json')
+
+    // Macros (Media, the start layer, on F13): a command onto F16, and swap the macros of F13 and F14.
+    await openTab('Macros')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Media' }).getAttribute('aria-pressed')).toBe('true'))
+    await dragTo(command('Lock'), padKey('F16'))
+    await waitFor(() => expect(ws().slots.k1.macros.k4?.action).toBe('Lock'))
+    await dragTo(padKey('F13'), padKey('F14'))
+    await waitFor(() => expect(ws().slots.k1.macros.k1?.name).toBe('Play'))
+
+    const config = await saveAndStartAgain(before)
+    expect(config.layers[0]?.title).toBe('Media')
+    const media = config.layers[0]!.macros
+    expect(media[0]).toMatchObject({ action: 'PlayPause', name: 'Play' })
+    expect(media[1]).toMatchObject({ action: 'PreviousTrack', name: 'Prev' })
+    expect(media[3]).toMatchObject({ action: 'Lock', name: 'Lock' })
+    // Started again, on what was saved.
+    expect(ws().slots.k1.macros.k4).toMatchObject({ action: 'Lock' })
+    expect(ws().slots.k1.macros.k1).toMatchObject({ action: 'PlayPause', name: 'Play' })
   })
 
   it('a save with nothing else changed writes the same file back', async () => {
     await openEditor()
     const before = (await read('local/config.json'))!
     // There and back again: the config is unsaved, but the same as on disk.
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(ws().keys[11]).toMatchObject({ row: 5 }))
-    await drag(padKey('F24'), cell(4, 3))
+    await dragTo(padKey('F24'), cell(4, 3))
     await waitFor(() => expect(ws().keys[11]).toMatchObject({ row: 4, col: 3 }))
     if (dirty()) await save()
     expect(JSON.parse((await read('local/config.json'))!)).toEqual(JSON.parse(before))
   })
 
-  it('what the configurator saves passes the validator the macropad is checked with, after edits of every kind', async () => {
+  it('what the configurator saves passes the validator the macropad is checked with, after edits of the shape and the layers', async () => {
     await openEditor()
-    // The validator does find problems: a config with an action no version defines is refused.
-    const broken = await saved()
-    broken.layers[0]!.macros[0] = { action: 'NoSuchCommandAnywhere', name: 'x' }
-    expect(await validatorProblems(JSON.stringify(broken))).not.toEqual([])
+    await validatorRefusesABrokenConfig()
 
     // Shape: a new key, a moved key, a resized key.
     await click(screen.getByRole('button', { name: '+ Add key' }))
     await waitFor(() => expect(ws().keys).toHaveLength(13))
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(ws().keys[11]).toMatchObject({ row: 5, col: 1 }))
     const corner = screen.getByRole('button', { name: 'Resize F24' })
-    await drag(corner, offset(corner, 80, 0))
+    await dragTo(corner, offset(corner, 80, 0))
     await waitFor(() => expect(ws().keys[11]).toMatchObject({ width: 2 }))
 
-    // Layers: a new layer onto the new key, a swap, a parked layer, another start layer.
+    // Layers: a new layer onto a key without one, a swap, a parked layer, another start layer.
     await openTab('Layers')
-    await click(screen.getByRole('button', { name: '+ New layer' }))
-    await waitFor(() => expect(ws().parked).toHaveLength(1))
-    const shelf = screen.getByRole('group', { name: 'Parked' })
-    const chip = within(shelf).getByText('New layer').closest('[aria-roledescription="draggable"]') as HTMLElement
-    await drag(chip, padKey('F16'))
-    await waitFor(() => expect(ws().slots.k4?.title).toBe('New layer'))
-    await drag(layerKey('Media'), layerKey('Chrome'))
+    await newLayerOnF16()
+    await dragTo(layerKey('Media'), layerKey('Chrome'))
     await waitFor(() => expect(ws().slots.k3?.title).toBe('Media'))
-    await drag(layerKey('Programs'), shelf)
+    await dragTo(layerKey('Programs'), screen.getByRole('group', { name: 'Parked' }))
     await waitFor(() => expect(ws().parked.map((l) => l.title)).toEqual(['Programs']))
+
+    const config = await savedPassingTheValidator()
+    expect(config.keys).toHaveLength(13)
+    expect(config.layers[3]).toMatchObject({ title: 'New layer' })
+    expect(config.layers.find((l) => l?.title === 'Programs')).toMatchObject({ disabled: true })
+  })
+
+  it('what the configurator saves passes the validator the macropad is checked with, after edits of the macros of a new layer', async () => {
+    await openEditor()
+    await validatorRefusesABrokenConfig()
+    await openTab('Layers')
+    await newLayerOnF16()
 
     // Macros, on the new layer: two commands, then swapped.
     await click(layerKey('New layer'))
     await click(screen.getByRole('button', { name: 'Edit macros →' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'New layer' }).getAttribute('aria-pressed')).toBe('true'))
-    await drag(command('Lock'), padKey('F13'))
+    await dragTo(command('Lock'), padKey('F13'))
     await waitFor(() => expect(ws().slots.k4.macros.k1?.action).toBe('Lock'))
-    await drag(command('Hibernate'), padKey('F22'))
+    await dragTo(command('Hibernate'), padKey('F22'))
     await waitFor(() => expect(ws().slots.k4.macros.k10?.action).toBe('Hibernate'))
-    await drag(padKey('F13'), padKey('F14'))
+    await dragTo(padKey('F13'), padKey('F14'))
     await waitFor(() => expect(ws().slots.k4.macros.k2?.action).toBe('Lock'))
 
-    await save()
-    const text = (await read('local/config.json'))!
-    expect(await validatorProblems(text)).toEqual([])
-    // The file really holds the edits the validator passed.
-    const config = JSON.parse(text) as SavedConfig
-    expect(config.keys).toHaveLength(13)
+    const config = await savedPassingTheValidator()
     expect(config.layers[3]).toMatchObject({ title: 'New layer' })
     expect(config.layers[3]!.macros[1]).toMatchObject({ action: 'Lock' })
-    expect(config.layers.find((l) => l?.title === 'Programs')).toMatchObject({ disabled: true })
+    expect(config.layers[3]!.macros[9]).toMatchObject({ action: 'Hibernate' })
   })
 
   it('cancelling the folder picker leaves the start screen as it was', async () => {
@@ -311,7 +359,7 @@ describe('in the browser, on a real folder', () => {
 
   it('when another program changed the config: the save is refused, and Reload from disk shows that version', async () => {
     await openEditor()
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(dirty()).toBe(true))
 
     const theirs = { ...(await saved()), fn: { key: 'Pause', row: 4, col: 1, width: 2 } }
@@ -331,7 +379,7 @@ describe('in the browser, on a real folder', () => {
 
   it('when another program changed the config: Overwrite anyway saves the drag and keeps their version as .bak', async () => {
     await openEditor()
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(dirty()).toBe(true))
 
     const theirs = JSON.stringify({ ...(await saved()), fn: { key: 'Pause', row: 4, col: 1, width: 2 } }, null, 2) + '\n'
@@ -388,7 +436,7 @@ describe('in the browser, on a real folder', () => {
       })
     expect(closing()).toBe(false)
 
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(dirty()).toBe(true))
     expect(closing()).toBe(true)
 
@@ -398,7 +446,7 @@ describe('in the browser, on a real folder', () => {
 
   it('Open folder with unsaved drags asks before throwing them away', async () => {
     await openEditor()
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(dirty()).toBe(true))
 
     await click(screen.getByRole('button', { name: 'Open folder' }))
@@ -500,7 +548,7 @@ describe('in the browser, when the remembered folder needs permission again or i
 
   it('a save after the folder was deleted fails out loud and keeps the edits', async () => {
     await openEditor()
-    await drag(padKey('F24'), cell(5, 1))
+    await dragTo(padKey('F24'), cell(5, 1))
     await waitFor(() => expect(dirty()).toBe(true))
     await (await navigator.storage.getDirectory()).removeEntry(FOLDER, { recursive: true })
 

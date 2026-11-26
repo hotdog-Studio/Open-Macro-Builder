@@ -223,12 +223,6 @@ function Get-E2eStatusText {
     }
 }
 
-# What a form says: the texts of its controls, for a failure message.
-function Get-E2eFormText {
-    param([IntPtr]$Form)
-    (@([Macropad.WindowApi]::Children($Form) | ForEach-Object { Get-ControlText $_ } | Where-Object { $_ }) -join ' | ')
-}
-
 # The one rule for what is the test's among the windows a case's key may have brought. A window is the
 # run's because the case saw its own press bring it and recorded it at that moment (Add-E2eRunWindow):
 # the case closes those itself. This is for the others: a window that fits, was not there before the
@@ -411,12 +405,24 @@ $script:E2eHookSettleMs = 300
 # hotkeys.log after its mark Hotkeys, the stand-in's log after Mark, the macropad's whole error log (an
 # error the macropad met while it loaded the hotkeys is there), its command log after Commands (the
 # PowerShell macropad logs E2eHotkey there, as its keys' commands; the AutoHotkey one logs nothing for a
-# hotkey), and the window in front.
+# hotkey), the window in front, and the macropad's own windows with what they say (the PowerShell macropad
+# shows a message box when it cannot load the layout's hotkeys, which is in no log and is closed after the
+# case).
 function Get-E2eHookSeen {
     param($Standin, [int]$Hotkeys, [int]$Mark, [int]$Commands)
     $show = { param($lines) if (@($lines).Count -gt 0) { @($lines) -join ' / ' } else { 'nothing' } }
     "hotkeys.log since: $(& $show @(Get-E2eHotkeyLines $Hotkeys)); $($Standin.Name)'s lines since: $(& $show @(Read-E2eLog $Standin.Log | Select-Object -Skip $Mark)); " +
-    "the macropad's error log: $(& $show @(Get-E2eErrorLines)); its command log since: $(& $show @(Get-E2eCommandLines $Commands)); in front: $(Get-E2eForegroundText)"
+    "the macropad's error log: $(& $show @(Get-E2eErrorLines)); its command log since: $(& $show @(Get-E2eCommandLines $Commands)); in front: $(Get-E2eForegroundText); " +
+    "the macropad's windows: $(Get-E2eMacropadDialogText)"
+}
+
+# A hotstring with an action (the X option) typed with its ending key leaves of the abbreviation nothing,
+# whatever the version does with the ending key: the PowerShell macropad types the Space after erasing, and
+# AutoHotkey may or may not. So Text, what the window holds, is empty or that one space. A part of the
+# abbreviation left (1 of 6 Backspaces gives 'e2eru', 5 give 'e') is the abbreviation not erased.
+function Assert-E2eAbbreviationErased {
+    param([string]$Text, [string]$Seen)
+    $Text | Should -BeIn @('', ' ') -Because "the hotstring erases the abbreviation it was typed with, all of it (the window holds '$Text'; $Seen)"
 }
 
 # Presses Chord into the stand-in once it has been in front for E2eHookSettleMs. The marks taken just
@@ -1315,7 +1321,7 @@ function Get-E2eCases {
                 $seen = Get-E2eHookSeen $b $hotkeys $ctx.Mark $commands
                 if ($null -eq $line) { throw "Typing e2erun and Space into B, a key at a time, must run the hotstring :X:e2erun, whose action E2eHotkey writes ':X:e2erun' to hotkeys.log, within 3 s; it did not (B holds '$text'; $seen)." }
                 (@(Get-E2eHotkeyLines $hotkeys) -join ' / ') | Should -BeExactly ':X:e2erun' -Because "the hotstring runs once, and nothing else runs ($seen)"
-                $text | Should -Not -BeLike '*e2erun*' -Because "the hotstring erases the abbreviation it was typed with (B holds '$text'; $seen)"
+                Assert-E2eAbbreviationErased $text $seen
                 if ($ctx.Lang -eq 'ps') { [void](Assert-E2eCommandDone $commands 'E2eHotkey' -TimeoutMs 3000) }
             }
         }

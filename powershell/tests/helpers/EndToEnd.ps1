@@ -1490,6 +1490,16 @@ function Start-E2eMacropad {
         $lines = @(Get-E2eCommandLines $commands)
         throw "The $Lang macropad did not answer its keys within 30 s: $(Get-E2eCommandText (Get-E2eCommandState $lines 'E2eMark') 'E2eMark' $lines). The macropad's windows: $(Get-E2eMacropadDialogText)."
     }
+    # Answering its keys is no proof that the layout loaded. The PowerShell macropad registers its macro
+    # keys first, then the layout's hotkeys; when the second step fails (main.ps1), it shows the message box
+    # 'failed to start', whose message loop still takes the macro keys, so the readiness taps above are
+    # answered, and every case would fail with no word of why. A macropad that started shows no window
+    # with a title: its overlay has none and shows only while Fn is held, its tooltips have none, and its
+    # tray icon, hotkey window and (AutoHotkey) script window are never visible.
+    $dialogs = Get-E2eMacropadWindows -Others  # already a list
+    if ($dialogs.Count -gt 0) {
+        throw "The $Lang macropad answered its keys, but it shows a window of its own, which one that loaded its layout does not (the PowerShell one that failed to load it shows a message box, and goes on taking its keys behind it): $(Get-E2eMacropadDialogText)."
+    }
     $script:E2eRun.Macropad
 }
 
@@ -1543,13 +1553,19 @@ function Get-E2eMacropadWindowsText {
     (@($all | ForEach-Object { $r = [Macropad.WindowApi]::Rect($_); "$_ '$([Macropad.WindowApi]::Title($_))' $([Macropad.WindowApi]::ClassName($_)) at $($r[0]), $($r[1]) size $($r[2]) x $($r[3])" }) -join '; ')
 }
 
+# What a form says: the texts of its controls, for a failure message.
+function Get-E2eFormText {
+    param([IntPtr]$Form)
+    (@([Macropad.WindowApi]::Children($Form) | ForEach-Object { Get-ControlText $_ } | Where-Object { $_ }) -join ' | ')
+}
+
 # The macropad's windows that have a title (a form, a message box), each with what its controls say, for a
 # failure message: 'none' when it shows none. It never throws: it adds to a failure, never replaces one.
 function Get-E2eMacropadDialogText {
     try {
         $all = Get-E2eMacropadWindows -Others
         if ($all.Count -eq 0) { return 'none' }
-        (@($all | ForEach-Object { "'$([Macropad.WindowApi]::Title($_))' says: $(@([Macropad.WindowApi]::Children($_) | ForEach-Object { Get-ControlText $_ } | Where-Object { $_ }) -join ' | ')" }) -join '; ')
+        (@($all | ForEach-Object { "'$([Macropad.WindowApi]::Title($_))' says: $(Get-E2eFormText $_)" }) -join '; ')
     } catch { "they could not be read ($($_.Exception.Message))" }
 }
 

@@ -499,13 +499,112 @@ Describe 'End-to-end windows: the helpers use the macropad''s window list as Get
         }
     }
 
+    # What a form says is one function of the harness, which the cases and the dialog text of a start
+    # that failed both call.
+    Context 'Get-E2eFormText' {
+        It 'is defined once, in the harness file, and not again in the cases' {
+            (Get-Command Get-E2eFormText).ScriptBlock.File | Should -Be (Join-Path $PSScriptRoot 'helpers\EndToEnd.ps1')
+            (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helpers\EndToEnd.ps1') -Raw) | Should -Match '(?m)^function Get-E2eFormText '
+            (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helpers\EndToEndCases.ps1') -Raw) | Should -Not -Match '(?m)^function Get-E2eFormText ' -Because 'a second definition would be a second copy of the expression'
+        }
+
+        It 'says nothing for a handle that is no window' {
+            Get-E2eFormText $script:First | Should -BeExactly ''
+        }
+
+        It 'is what the dialog text of the macropad''s windows says of each window, as its other user, the cases, say it of a form' {
+            $script:Handles = @($script:First, $script:Second)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Others }
+            Mock Get-E2eFormText { "controls of $([int]$Form)" }
+            Get-E2eMacropadDialogText | Should -BeExactly "'' says: controls of $([int]$script:First); '' says: controls of $([int]$script:Second)"
+            (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helpers\EndToEndCases.ps1') -Raw) | Should -Match 'Get-E2eFormText \$ctx\.Form' -Because 'the cases call it as before'
+        }
+    }
+
+    # A macropad that answers its keys has loaded its layout, except that the PowerShell one can fail
+    # after it registered the macro keys (Register-LayoutHotkeys, in main.ps1) and show its message box
+    # 'failed to start', whose message loop still takes the hotkeys: the start must say so.
+    Context 'Start-E2eMacropad, once the macropad answers its keys' {
+        BeforeEach {
+            $script:E2eRun = [pscustomobject]@{ Dir = $TestDrive; Macropad = $null; Standins = @{ B = [pscustomobject]@{ Hwnd = [IntPtr]0x0BAD0003 } } }
+            Mock Get-E2eMacropadEnvironment { @{} }
+            Mock Start-E2eProcess { [pscustomobject]@{ Id = 4242; HasExited = $false } }
+            Mock Get-E2eCommandMark { 0 }
+            Mock Set-E2eActive { $true }
+            Mock Wait-E2eCondition { $true }  # the macropad answers
+        }
+
+        It 'throws, naming what its <Count> window(s) say, when a window with a title shows' -ForEach @(@{ Count = 1 }, @{ Count = 2 }) {
+            $script:Handles = @($script:First, $script:Second | Select-Object -First $Count)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Others }
+            Mock Get-E2eMacropadDialogText { "'Layered Macropad failed to start' says: boom" }
+            { Start-E2eMacropad ps 1 } | Should -Throw -ExpectedMessage "The ps macropad answered its keys, but it shows a window of its own, which one that loaded its layout does not*: 'Layered Macropad failed to start' says: boom."
+        }
+
+        It 'gives the macropad when no window with a title shows' {
+            Mock Get-E2eMacropadWindows { , @() } -ParameterFilter { $Others }
+            Mock Get-E2eMacropadDialogText { throw 'no window to name' }
+            $m = Start-E2eMacropad ps 1
+            $m.Lang | Should -Be 'ps'
+            $m.Chunk | Should -Be 1
+            Should -Invoke Get-E2eMacropadWindows -Times 1 -Exactly -ParameterFilter { $Others }
+        }
+
+        It 'does not look for the window while the macropad has not answered, where the failure names them itself' {
+            Mock Wait-E2eCondition { $null }
+            Mock Get-E2eMacropadWindows { throw 'not asked' }
+            Mock Get-E2eCommandLines { @() }
+            Mock Get-E2eMacropadDialogText { 'the windows' }
+            { Start-E2eMacropad ps 1 } | Should -Throw -ExpectedMessage '*did not answer its keys within 30 s*The macropad''s windows: the windows.'
+        }
+    }
+
     # The calls a desktop is needed for (the waits inside a case) cannot be run here: the text of the
-    # harness and of the cases is read instead, so that no call wraps the list again.
-    It 'is never wrapped in @(...), in the harness or in a case' {
-        $wrapped = @(foreach ($f in 'EndToEnd.ps1', 'EndToEndCases.ps1') {
-                Select-String -LiteralPath (Join-Path $PSScriptRoot "helpers\$f") -Pattern '@\(\s*Get-E2eMacropadWindows' | ForEach-Object { "$f`:$($_.LineNumber): $($_.Line.Trim())" }
-            })
-        $wrapped -join "`n" | Should -BeNullOrEmpty
+    # harness and of the cases is read instead. A call of Get-E2eMacropadWindows gives its list as one
+    # object, so the list must be taken as it comes, in a variable or by .Count: wrapped in @(...) it is a
+    # list of one element, and piped (Get-E2eMacropadWindows -Others | ForEach-Object ...) the pipeline
+    # hands over the list as one object, so that $_ is the whole list and not a window. The same pattern
+    # reads a sample text and the files, so the samples show what the files are held to.
+    Context 'a call of Get-E2eMacropadWindows that takes the list as it comes' {
+        BeforeAll {
+            function Find-E2eWindowListMisuse {
+                param([string]$Text)
+                $pattern = '@\(\s*Get-E2eMacropadWindows|Get-E2eMacropadWindows[^|;)\r\n]*\)?\s*\|'
+                foreach ($m in [regex]::Matches($Text, $pattern)) {
+                    $line = ($Text.Substring(0, $m.Index) -split "`n").Count
+                    "$line`: $($m.Value.Trim())"
+                }
+            }
+        }
+
+        It 'finds a call <Why>' -ForEach @(
+            @{ Why = 'wrapped in @(...)'; Text = '$n = @(Get-E2eMacropadWindows -Others).Count' }
+            @{ Why = 'wrapped with a space after the bracket'; Text = '$n = @( Get-E2eMacropadWindows).Count' }
+            @{ Why = 'wrapped across two lines'; Text = "`$n = @(`r`n    Get-E2eMacropadWindows -Others`r`n).Count" }
+            @{ Why = 'piped'; Text = 'Get-E2eMacropadWindows -Others | ForEach-Object { $_ }' }
+            @{ Why = 'piped, with the arguments before the pipe'; Text = '$t = Get-E2eMacropadWindows -Tooltips -Overlay | Select-Object -First 1' }
+            @{ Why = 'piped from a group in brackets'; Text = '(Get-E2eMacropadWindows -Others) | Where-Object { $_ }' }
+            @{ Why = 'piped to a pipe at the start of the next line'; Text = "Get-E2eMacropadWindows -Others`r`n    | ForEach-Object { `$_ }" }
+        ) {
+            @(Find-E2eWindowListMisuse $Text).Count | Should -Be 1
+        }
+
+        It 'finds nothing in a call that takes the list as it comes: <Why>' -ForEach @(
+            @{ Why = 'a variable'; Text = '$left = Get-E2eMacropadWindows -Others  # already a list' }
+            @{ Why = 'a count of the list'; Text = 'if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)) { throw "no" }' }
+            @{ Why = 'a count piped on'; Text = '(Get-E2eMacropadWindows -Overlay).Count | Should -Be 0' }
+            @{ Why = 'a call, then a pipe in another statement'; Text = '$w = Get-E2eMacropadWindows; $w | ForEach-Object { $_ }' }
+            @{ Why = 'a variable that holds the list, piped'; Text = "`$left = Get-E2eMacropadWindows -Others`r`n`$left | ForEach-Object { `$_ }" }
+        ) {
+            @(Find-E2eWindowListMisuse $Text).Count | Should -Be 0
+        }
+
+        It 'is never wrapped in @(...) or piped, in the harness or in a case' {
+            $found = @(foreach ($f in 'EndToEnd.ps1', 'EndToEndCases.ps1') {
+                    Find-E2eWindowListMisuse (Get-Content -LiteralPath (Join-Path $PSScriptRoot "helpers\$f") -Raw) | ForEach-Object { "$f`:$_" }
+                })
+            $found -join "`n" | Should -BeNullOrEmpty
+        }
     }
 }
 
@@ -587,6 +686,63 @@ Describe 'End-to-end hotkeys and hotstrings: a layout of their own, and the text
             @(Get-E2eHotkeyLines 0) -join ' / ' | Should -BeExactly '^!F9 / :X:e2erun'
             @(Get-E2eHotkeyLines $mark) -join ' / ' | Should -BeExactly ':X:e2erun'
             Get-E2eHotkeyLogPath | Should -Be (Join-Path $TestDrive 'hotkeys.log') -Because 'it is in the run''s folder, which the clean-up removes'
+        }
+    }
+
+    # What a failed case says it saw (Get-E2eHookSeen) names the macropad's windows: a message box 'failed to
+    # start' of the PowerShell macropad is not in any log, and is closed by the clean-up after the case.
+    Context 'Get-E2eHookSeen' {
+        BeforeEach {
+            $script:Standin = [pscustomobject]@{ Name = 'B'; Log = (Join-Path $TestDrive 'standin-B.log') }
+            Mock Get-E2eErrorLines { @() }
+            Mock Get-E2eCommandLines { @() }
+            Mock Get-E2eForegroundText { "'B' (e2eapp.exe, class AutoHotkeyGUI)" }
+        }
+
+        It 'names the macropad''s windows and what they say' {
+            Mock Get-E2eMacropadDialogText { "'Layered Macropad failed to start' says: boom | OK" }
+            Get-E2eHookSeen $script:Standin 0 0 0 | Should -BeExactly "hotkeys.log since: nothing; B's lines since: nothing; the macropad's error log: nothing; its command log since: nothing; in front: 'B' (e2eapp.exe, class AutoHotkeyGUI); the macropad's windows: 'Layered Macropad failed to start' says: boom | OK"
+        }
+
+        It 'says none when the macropad shows no window with a title, from the list as Get-E2eMacropadWindows gives it' {
+            Mock Get-E2eMacropadWindows { , @() } -ParameterFilter { $Others }
+            Get-E2eHookSeen $script:Standin 0 0 0 | Should -BeLike "*; in front: *; the macropad's windows: none"
+        }
+
+        It 'names a window of the macropad''s that the real list holds' {
+            Mock Get-E2eMacropadWindows { , @([IntPtr]0x0BAD0001) } -ParameterFilter { $Others }
+            Get-E2eHookSeen $script:Standin 0 0 0 | Should -BeLike "*; the macropad's windows: '' says: "
+        }
+    }
+
+    # E2eHotstringAction holds the window to what a hotstring with an action leaves of the abbreviation: nothing,
+    # or the Space it was ended with (AutoHotkey may type the ending character again, and the PowerShell
+    # macropad does), and no part of the abbreviation. What each version's log folds to for each outcome
+    # (the keys down are e 2 e r u n, then Backspaces, then the Space as the version types it; the key ups,
+    # which add nothing, are left out):
+    Context 'Assert-E2eAbbreviationErased' {
+        BeforeAll {
+            $script:Down = { param($vk) "down vk=$vk sc=000 repeat=0 mods=-" }
+            $script:Typed = @('45', '32', '45', '52', '55', '4E') | ForEach-Object { & $script:Down $_ }
+        }
+
+        It '<Version>, <What>: the text folds to "<Fold>", and the check passes: <Passes>' -ForEach @(
+            @{ Version = 'ahk'; What = 'all 6 erased, the ending Space not typed again'; Backspaces = 6; Ending = @(); Fold = ''; Passes = $true }
+            @{ Version = 'ahk'; What = 'all 6 erased, the ending Space typed again'; Backspaces = 6; Ending = @('20'); Fold = ' '; Passes = $true }
+            @{ Version = 'ps'; What = 'all 6 erased, the Space typed after them'; Backspaces = 6; Ending = @('char'); Fold = ' '; Passes = $true }
+            @{ Version = 'ahk'; What = '1 of 6 erased'; Backspaces = 1; Ending = @(); Fold = 'e2eru'; Passes = $false }
+            @{ Version = 'ahk'; What = '5 of 6 erased'; Backspaces = 5; Ending = @(); Fold = 'e'; Passes = $false }
+            @{ Version = 'ps'; What = '1 of 6 erased'; Backspaces = 1; Ending = @('char'); Fold = 'e2eru '; Passes = $false }
+            @{ Version = 'ps'; What = '5 of 6 erased'; Backspaces = 5; Ending = @('char'); Fold = 'e '; Passes = $false }
+            @{ Version = 'ahk'; What = 'none erased (the action ran, the keys stayed)'; Backspaces = 0; Ending = @(); Fold = 'e2erun'; Passes = $false }
+            @{ Version = 'ps'; What = 'none erased, the Space typed'; Backspaces = 0; Ending = @('char'); Fold = 'e2erun '; Passes = $false }
+            @{ Version = 'ps'; What = 'none erased, the Space let through (the hotstring did not fire)'; Backspaces = 0; Ending = @('20'); Fold = 'e2erun '; Passes = $false }
+        ) {
+            $lines = @($script:Typed) + (@(& $script:Down '08') * $Backspaces) + @($Ending | ForEach-Object { if ($_ -eq 'char') { 'char 0020' } else { & $script:Down $_ } })
+            $text = ConvertTo-E2eTypedText $lines
+            $text | Should -BeExactly $Fold
+            $outcome = { Assert-E2eAbbreviationErased $text 'seen' }
+            if ($Passes) { $outcome | Should -Not -Throw } else { $outcome | Should -Throw -ExpectedMessage '*the hotstring erases the abbreviation it was typed with*' }
         }
     }
 

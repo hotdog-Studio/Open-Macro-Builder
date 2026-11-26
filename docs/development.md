@@ -20,7 +20,7 @@ The macropad itself only runs on Windows. The configurator, the validator and th
 - `config.json`: the example layout.
 - `ahk/`: the AutoHotkey version (`main.ahk`, `lib/`, `commands/`, `tests/`).
 - `powershell/`: the PowerShell version, its tests and its docs.
-- `img/`: icon sets, one folder per icon; `icon.svg` and `logo.svg`, and the `icon.ico`, `logo.ico` and `logo.png` made from them.
+- `img/`: icon sets, one folder per icon (a set in `local/img/` of the same name is used first; `ahk/lib/assets.ahk` and `powershell/lib/Assets.ps1` resolve both, with the sized pictures and empty frames); `icon.svg` and `logo.svg`, and the `icon.ico`, `logo.ico` and `logo.png` made from them.
 - `qmk/`: the VIA/QMK layout of the EPOMAKER EK21 keypad this was built for.
 - `scripts/`: the config validator, the private-details check, the version and release scripts that CI runs (`ci-version.mjs`, `ci-release.mjs`, see [releasing.md](releasing.md)) and their tests.
 - `configurator/`: the web and desktop configurator (React, Vite, TypeScript, Electron).

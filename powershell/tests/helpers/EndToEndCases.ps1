@@ -26,6 +26,10 @@
 #             (CloseDesktop needs the desktop CreateDesktop made); the case then does not run. When the
 #             earlier case failed, that failure is what fails the suite
 #   Macro     @{ name; description } for the layout entry, when the command reads them
+#   Icons     $true for the case that reads the overlay's icons: it goes into a layout of its own, after every other
+#             case and before those with Hooks, whose layers have the test's icon set (Write-E2eLayout)
+#   Hooks     $true for the cases that press the layout file's hotkeys and type its hotstrings: a layout of their
+#             own, after every other case
 #   Targets   programs whose windows the case expects in front (not a person's interference)
 #   Arrange, Assert, CleanUp   scriptblocks given the case's context ($ctx: Case, Lang, Run, Front, ...).
 #             The macro key is pressed into the window the case names: $ctx.Front when Arrange sets it,
@@ -1278,6 +1282,43 @@ function Get-E2eCases {
 
         # ---- custom\vsstudio (no Visual Studio is used) ----
         foreach ($c in 'VsStudioShowSolutionExplorer', 'VsStudioBuild', 'VsStudioGoToDefinition') { @{ Command = $c; File = 'custom\vsstudio' } }
+
+        # ======== The icon set, in a layout of its own ========
+        # Icons: the case goes into the layout of the cases with Icons, after every other case and before those
+        # with Hooks (keep it there), a layout of one layer with the key's own command and a second, empty layer,
+        # both with the test's icon set (e2e_icons: $script:E2eIconSet in EndToEnd.ps1). No other case's overlay
+        # shows it, so its solid pictures change nothing another case sees or clicks. Its own key runs
+        # E2eNothing: what it proves is what the overlay draws.
+        @{ Command = 'E2eNothing'; Name = 'E2eIconSet'; File = 'e2e'; Kind = 'Custom'; Icons = $true
+            Covers  = 'while Fn is held, the overlay draws an icon set from the file the 1.0.8 lookup picks for a key of 1 x 1 unit: in the layout of this case both layers have the test''s set e2e_icons, which exists in img (one colour for all four of its pictures, the shared set) and in local\img (a second colour for its four base files layer.png, macro.png, selected.png and selected_macro.png, and a colour of its own for each of layer_1x1.png, macro_1x1.png, selected_1x1.png and selected_macro_1x1.png), all solid and opaque. The colour at the middle of the icon of key 1 and of key 2 on the screen (a 7 x 7 px block, 12 levels of tolerance) must be that of the state''s picture drawn for 1 x 1 in local\img: not the shared set''s (the set of local\img is used before the one of img) and not the set''s base file (a picture drawn for the key''s size is used when the set has one). With layer 1 selected, key 1 is selected and has a macro marker (selected_macro_1x1.png) and key 2 is not selected and has one (macro_1x1.png); a click on the icon of key 2 selects layer 2, which has no macros, so then key 1 is not selected and has no marker (layer_1x1.png) and key 2 is selected with none (selected_1x1.png): all four states, with the pointer off the overlay while its colours are read, and the files worked out here from the layout and the rules of the overlay, not from the macropad. A failure names the file whose colour the icon showed instead. The click takes neither the keyboard nor the foreground from the window in front (B). Not run: a key of another size, so the picture drawn for a size the set lacks and the empty frames of any size (img\empty_<w>x<h>.png, else empty.png), since every key of the test''s layouts is 1 x 1; the base file of a set that has no sized one; a set that only img has; and macro icons, markers off and iconAction "Macro"'
+            Arrange = { param($ctx) Assert-E2eIconSetOptions; [void](Use-E2eStandin 'B') }
+            Assert  = {
+                param($ctx)
+                $b = $ctx.Run.Standins['B']
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                Invoke-E2eOverlayPointer {
+                    param($overlay)
+                    $layout = Get-E2eLayoutModel
+                    # Layer 1 is selected (the case's own key is on it): key 1 is the selected one.
+                    Assert-E2eIconSetShown $overlay 1 $layout @(1, 2)
+                    $p = Get-E2eOverlayPoint 2 Icon
+                    Wait-ScreenChange  # the pointer on the icon
+                    Move-E2ePointer $p.X $p.Y
+                    Assert-E2eOnOverlay $p $overlay 'the middle of the icon of key 2'
+                    Wait-ScreenChange  # the click selects layer 2: the overlay's icons change
+                    # From the click on, the harness's record of the layer is unknown (0): the next case selects its own.
+                    $ctx.Run.Macropad.Layer = 0
+                    Send-E2eClick $p.X $p.Y
+                    # Off the overlay, so that no tooltip of the icon is over what is read (a tooltip is another window).
+                    Wait-ScreenChange
+                    Move-E2ePointerOffOverlay
+                    [void](Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)
+                    Assert-E2eIconSetShown $overlay 2 $layout @(1, 2)
+                    [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "a click on the overlay takes neither the keyboard nor the foreground (in front: $(Get-E2eForegroundText))"
+                }
+                [Macropad.WindowApi]::Foreground() | Should -Be $b.Hwnd -Because "B is still the active window once Fn is let go (in front: $(Get-E2eForegroundText))"
+            }
+        }
 
         # ======== The layout file's hotkeys and hotstrings, in a layout of their own ========
         # Hooks: the case goes into the layout of the cases with Hooks, the only one with the layout file's

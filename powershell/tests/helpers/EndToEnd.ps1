@@ -1013,7 +1013,8 @@ function New-E2eRun {
 
 # A copy of the macropad's tracked folders (ahk without its tests, powershell's program, lib and
 # commands, img, config.json) in the run's folder: the macropads under test start from it, so they never
-# load the person's own commands from local/, which is not copied.
+# load the person's own commands from local/, which is not copied. It has the test's own icon set
+# (Install-E2eIconSet), in its img and in a local\img of its own, which only the icon case's layout uses.
 function Install-E2eApp {
     $app = Join-Path $script:E2eRun.Dir 'app'
     foreach ($d in 'ahk', 'powershell') { [void](New-Item -ItemType Directory -Path (Join-Path $app $d)) }
@@ -1021,6 +1022,7 @@ function Install-E2eApp {
     foreach ($name in 'main.ps1', 'config.ps1', 'launch.vbs', 'lib', 'commands') { Copy-Item -LiteralPath (Join-Path $script:E2eRepo "powershell\$name") -Destination (Join-Path $app 'powershell') -Recurse }
     Copy-Item -LiteralPath (Join-Path $script:E2eRepo 'img') -Destination $app -Recurse
     Copy-Item -LiteralPath (Join-Path $script:E2eRepo 'config.json') -Destination $app
+    Install-E2eIconSet $app
     # The PowerShell macropad's loader: the test's own commands, then main.ps1, run with -File as
     # launch.vbs runs main.ps1. Each path is a single-quoted string, with ' written twice.
     $quote = { param($p) "'" + $p.Replace("'", "''") + "'" }
@@ -2030,6 +2032,13 @@ function Invoke-E2eOverlayPointer {
     if ($e2eProblems.Count -gt 0) { throw "Letting go of the overlay: $($e2eProblems -join '; ')" }
 }
 
+# Puts the pointer where Invoke-E2eOverlayPointer rests it before Fn goes down: on the title bar of the
+# stand-in B, off the overlay (the middle of the screen).
+function Move-E2ePointerOffOverlay {
+    $rest = Get-WindowRect $script:E2eRun.Standins['B'].Hwnd
+    Move-E2ePointer ($rest.X + [int]($rest.Width / 2)) ($rest.Y + 10)
+}
+
 # The display options a case that uses the pointer on the overlay counts on, as the example layout has
 # them (Get-E2eLayoutOptions): labels shown and macro icons off, so that a key's label shows its command
 # and a click on the label runs it, in both versions; with -IconSelectsLayer also iconAction 'Layer' (the
@@ -2043,6 +2052,216 @@ function Assert-E2eOverlayOptions {
     if (-not $ok) {
         $want = if ($IconSelectsLayer) { "showLabels true, useMacroIcons false and iconAction 'Layer'" } else { 'showLabels true and useMacroIcons false' }
         throw "The case counts on the example layout's $want; config.json has showLabels $($o.showLabels), useMacroIcons $($o.useMacroIcons), iconAction '$($o.iconAction)'."
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The icon set of the icon case (E2eIconSet). Both macropads take an icon set from local\img\<name> when
+# that folder holds a layer.png, else from img\<name>, and a key of w x h units shows <state>_<w>x<h>.png
+# from the set when it has it, else <state>.png. The test's set, $script:E2eIconSet, has solid opaque
+# pictures, each file in a colour of its own (Get-E2eIconSetFiles), so that the colour at the middle of
+# a key's icon on the screen says which file the macropad drew:
+#   img\<set>\<state>.png            one colour (S), the shared set, which must lose to the personal one;
+#   local\img\<set>\<state>.png      another (B), the personal set's base files, which must lose to the
+#                                    sized ones, since every key of the test's layouts is 1 x 1 unit;
+#   local\img\<set>\<state>_1x1.png  one colour for each of the four states.
+# The copy of the app (Install-E2eApp) has them, in its own folders: nothing is read from the person's
+# local\. Only the layouts of the cases with Icons use the set (Write-E2eLayout).
+
+$script:E2eIconSet = 'e2e_icons'
+$script:E2eIconStates = @('layer', 'macro', 'selected', 'selected_macro')
+# How far a channel of what the screen shows may be from the file's colour: a display with 16 bits of
+# colour keeps 5 or 6 bits a channel, so up to 8 levels off, and the pictures are 170 or more levels apart.
+$script:E2eIconColorTolerance = 12
+
+# What Install-E2eIconSet writes, relative to the app's folder: Path, Rgb (the file's colour) and Why
+# (what it means that a key shows this colour when it should show another file's).
+function Get-E2eIconSetFiles {
+    $shared = @(200, 30, 30)
+    $base = @(30, 30, 200)
+    $sized = @{ layer = @(30, 200, 30); macro = @(200, 200, 30); selected = @(30, 200, 200); selected_macro = @(200, 30, 200) }
+    $set = $script:E2eIconSet
+    @(
+        foreach ($state in $script:E2eIconStates) { [pscustomobject]@{ Path = "img\$set\$state.png"; Rgb = $shared; Why = 'the shared set in img, so the set in local\img was not used' } }
+        foreach ($state in $script:E2eIconStates) { [pscustomobject]@{ Path = "local\img\$set\$state.png"; Rgb = $base; Why = 'a base file of the set in local\img, so the picture drawn for a key of 1 x 1 was not used' } }
+        foreach ($state in $script:E2eIconStates) { [pscustomobject]@{ Path = "local\img\$set\${state}_1x1.png"; Rgb = $sized[$state]; Why = 'a picture of the set drawn for a key of 1 x 1, but of another state than this key shows' } }
+    )
+}
+
+# A PNG of one opaque colour, Size x Size px.
+function Write-E2eSolidPng {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][int[]]$Rgb, [int]$Size = 64)
+    Add-Type -AssemblyName System.Drawing
+    $bitmap = New-Object System.Drawing.Bitmap($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+        $canvas = [System.Drawing.Graphics]::FromImage($bitmap)
+        try { $canvas.Clear([System.Drawing.Color]::FromArgb(255, $Rgb[0], $Rgb[1], $Rgb[2])) } finally { $canvas.Dispose() }
+        $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $bitmap.Dispose() }
+}
+
+# Writes the test's icon set into the app's copy, in its img and its local\img (the folders are new).
+function Install-E2eIconSet {
+    param([Parameter(Mandatory)][string]$App)
+    foreach ($file in Get-E2eIconSetFiles) {
+        $path = Join-Path $App $file.Path
+        [void](New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent))
+        Write-E2eSolidPng $path $file.Rgb
+    }
+}
+
+# Which file of the test's set a 1 x 1 key shows, from the rules and not from the code under test: the
+# key is selected when its layer is (Key -eq Selected, both 1 based), and has a macro marker when
+# markers are shown and the selected layer has a macro at the key's number (Macros, the selected layer's:
+# one slot each, an empty one $null, the list as long as the layer has slots or shorter). The path
+# relative to the app: always the sized file of the personal set, which has one for 1 x 1 in every state.
+function Get-E2eIconSetFile {
+    param([Parameter(Mandatory)][int]$Selected, [Parameter(Mandatory)][int]$Key, [object[]]$Macros, [bool]$Markers)
+    $macros = @($Macros)
+    $has = $Markers -and $Key -le $macros.Count -and $null -ne $macros[$Key - 1]
+    if ($Key -eq $Selected) { $state = if ($has) { 'selected_macro' } else { 'selected' } }
+    else { $state = if ($has) { 'macro' } else { 'layer' } }
+    "local\img\$($script:E2eIconSet)\${state}_1x1.png"
+}
+
+# Whether two colours (red, green and blue) are within Tolerance of each other in every channel.
+function Test-E2eColorNear {
+    param([int[]]$A, [int[]]$B, [int]$Tolerance = $script:E2eIconColorTolerance)
+    for ($i = 0; $i -lt 3; $i++) { if ([math]::Abs($A[$i] - $B[$i]) -gt $Tolerance) { return $false } }
+    $true
+}
+
+# What the colour Rgb means for the test's set: the paths of the files that have it, and what it means
+# that a key shows it, in words; $null when it is the colour of no file of the set.
+function Get-E2eIconColorOwner {
+    param([Parameter(Mandatory)][int[]]$Rgb)
+    $hit = @(Get-E2eIconSetFiles | Where-Object { Test-E2eColorNear $_.Rgb $Rgb })
+    if ($hit.Count -eq 0) { return $null }
+    "the colour of $(($hit | ForEach-Object { $_.Path }) -join ', '): $($hit[0].Why)"
+}
+
+# The mean colour of pixels (each red, green, blue), each channel rounded to a whole number.
+function Get-E2eMeanColor {
+    param([Parameter(Mandatory)][object[]]$Pixels)
+    $sum = @(0, 0, 0)
+    foreach ($p in $Pixels) { for ($i = 0; $i -lt 3; $i++) { $sum[$i] += $p[$i] } }
+    , @(for ($i = 0; $i -lt 3; $i++) { [int][math]::Round($sum[$i] / @($Pixels).Count) })
+}
+
+# The mean colour of a bitmap (red, green, blue).
+function Get-E2eBitmapColor {
+    param([Parameter(Mandatory)]$Bitmap)
+    $pixels = @(for ($y = 0; $y -lt $Bitmap.Height; $y++) { for ($x = 0; $x -lt $Bitmap.Width; $x++) { $c = $Bitmap.GetPixel($x, $y); , @([int]$c.R, [int]$c.G, [int]$c.B) } })
+    Get-E2eMeanColor $pixels
+}
+
+# Copies a square of the screen into a bitmap's device context, layered windows included (BitBlt with
+# SRCCOPY and CAPTUREBLT): the overlay is a layered window (a colour key makes its background see-through),
+# which a plain copy of the screen can leave out. Graphics.CopyFromScreen takes CaptureBlt only alone,
+# not with SourceCopy (it refuses the sum as no value of CopyPixelOperation), so the call is made here.
+function Initialize-E2eScreenCopy {
+    if ('OmbE2e.ScreenCopy' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace OmbE2e
+{
+    public static class ScreenCopy
+    {
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDC(IntPtr hwnd);
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+        [DllImport("gdi32.dll")]
+        private static extern bool BitBlt(IntPtr dest, int x, int y, int w, int h, IntPtr src, int sx, int sy, int rop);
+
+        // Copies the w x h px of the screen at (x, y) to (0, 0) of the device context dest; false when it fails.
+        public static bool Copy(IntPtr dest, int x, int y, int w, int h)
+        {
+            IntPtr screen = GetDC(IntPtr.Zero);
+            if (screen == IntPtr.Zero) return false;
+            try { return BitBlt(dest, 0, 0, w, h, screen, x, y, 0x00CC0020 | 0x40000000); }
+            finally { ReleaseDC(IntPtr.Zero, screen); }
+        }
+    }
+}
+'@
+}
+
+# The mean colour of a square of the screen, 2 x Radius + 1 px a side, around a point (the units of the
+# pointer and of GetWindowRect in this process, which Get-E2eOverlayPoint gives), layered windows
+# included (Initialize-E2eScreenCopy).
+function Get-E2eScreenColor {
+    param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y, [int]$Radius = 3)
+    Add-Type -AssemblyName System.Drawing
+    Initialize-E2eScreenCopy
+    $side = 2 * $Radius + 1
+    $bitmap = New-Object System.Drawing.Bitmap($side, $side, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+        $canvas = [System.Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $dc = $canvas.GetHdc()
+            try { $copied = [OmbE2e.ScreenCopy]::Copy($dc, ($X - $Radius), ($Y - $Radius), $side, $side) } finally { $canvas.ReleaseHdc($dc) }
+        } finally { $canvas.Dispose() }
+        if (-not $copied) { throw "The screen could not be copied at ($X, $Y), $side x $side px." }
+        Get-E2eBitmapColor $bitmap
+    } finally { $bitmap.Dispose() }
+}
+
+# The display options the icon case counts on: those of E2eOverlayIcon (labels shown, macro icons off, a
+# click on an icon selects the layer) and macro markers, which give a key the macro or selected macro
+# picture. Throws, naming the options, when config.json says otherwise.
+function Assert-E2eIconSetOptions {
+    Assert-E2eOverlayOptions -IconSelectsLayer
+    $o = Get-E2eLayoutOptions
+    if ($o.showMacroMarkers -ne $true) { throw "The case counts on the example layout's showMacroMarkers true, which gives a key a macro or selected macro picture; config.json has showMacroMarkers $($o.showMacroMarkers)." }
+}
+
+# What the icons of keys Slots (1 based) show now, on the overlay's window, with Selected the layer that
+# is selected (Layout is the model of the layout file, Get-E2eLayoutModel). Each key as Slot, Want (the
+# file it must show, Get-E2eIconSetFile), WantRgb, Rgb (the colour at the middle of its icon; $null when
+# another window is over that point), Ok (it is Want's colour) and Text (what it shows, in words, for a
+# message).
+function Read-E2eIconSetKeys {
+    param([IntPtr]$Overlay, [int]$Selected, $Layout, [int[]]$Slots)
+    $files = @(Get-E2eIconSetFiles)
+    $macros = @(@($Layout.Layers)[$Selected - 1].Macros)
+    foreach ($slot in $Slots) {
+        $want = Get-E2eIconSetFile -Selected $Selected -Key $slot -Macros $macros -Markers ([bool]$Layout.ShowMacroMarkers)
+        $wantRgb = @($files | Where-Object { $_.Path -eq $want })[0].Rgb
+        $p = Get-E2eOverlayPoint $slot Icon
+        $top = [OmbE2e.Input]::TopWindowAt($p.X, $p.Y)
+        $rgb = $null; $ok = $false
+        if ($top -ne $Overlay) {
+            $text = "is covered: the window there is $(if ($top -eq [IntPtr]::Zero) { 'none' } else { Get-E2eWindowText $top })"
+        } else {
+            $rgb = Get-E2eScreenColor $p.X $p.Y
+            $ok = Test-E2eColorNear $rgb $wantRgb
+            $owner = Get-E2eIconColorOwner $rgb
+            $text = "reads $($rgb -join ', '), $(if ($owner) { $owner } else { 'the colour of no file of the set' })"
+        }
+        [pscustomobject]@{
+            Slot = $slot; Want = $want; WantRgb = $wantRgb; Rgb = $rgb; Ok = $ok
+            Text = "key $slot, with layer $Selected selected, must show $want (colour $($wantRgb -join ', ')); the middle of its icon, at ($($p.X), $($p.Y)) (the layout's rectangle $($p.Rect) at scale $($p.Scale)), $text"
+        }
+    }
+}
+
+# Waits up to 3 s for the icons of keys Slots to show the files Get-E2eIconSetFile says for the selected
+# layer, and throws what the last look saw of those that did not. A tooltip or another window over a key's
+# icon is waited out too: it is no reading of the icon.
+function Assert-E2eIconSetShown {
+    param([IntPtr]$Overlay, [int]$Selected, $Layout, [int[]]$Slots)
+    $seen = @{ Last = @() }
+    $ok = Wait-E2eCondition {
+        $r = @(Read-E2eIconSetKeys $Overlay $Selected $Layout $Slots)
+        $seen.Last = $r
+        if (@($r | Where-Object { -not $_.Ok }).Count -eq 0) { $true }
+    } -TimeoutMs 3000
+    if (-not $ok) {
+        $bad = @($seen.Last | Where-Object { -not $_.Ok })
+        throw "The overlay did not show the set's pictures for layer $Selected within 3 s: $(($bad | ForEach-Object { $_.Text }) -join '; '). The macropad's visible windows: $(Get-E2eMacropadWindowsText); in front: $(Get-E2eForegroundText)."
     }
 }
 
@@ -2122,40 +2341,49 @@ function Send-E2eText {
 # with it: adding cases never runs out of keys.
 
 # Where each of Count entries goes: Chunk, Layer and Slot, the first two slots of each chunk being the
-# harness's own; then where each of Hooks more entries goes (the cases with Hooks), from the chunk after
-# the last of the others on, so that no chunk holds both. Hooks says on each row which kind it is.
+# harness's own; then where each of Icons more entries goes (the cases with Icons), from the chunk after
+# the last of the others on, and last where each of Hooks more entries goes (the cases with Hooks), from
+# the chunk after the last of those, so that no chunk holds two kinds. Icons and Hooks say on each row
+# which kind it is.
 function Get-E2eSlotPlan {
-    param([int]$Count, [int]$KeyCount = $script:E2eKeyCount, [int]$Hooks = 0)
+    param([int]$Count, [int]$KeyCount = $script:E2eKeyCount, [int]$Hooks = 0, [int]$Icons = 0)
     $perChunk = $KeyCount * $KeyCount - 2
+    $plainChunks = [math]::Ceiling($Count / $perChunk)
+    $iconChunks = [math]::Ceiling($Icons / $perChunk)
     $groups = @(
-        @{ Count = $Count; First = 1; Hooks = $false }
-        @{ Count = $Hooks; First = [math]::Ceiling($Count / $perChunk) + 1; Hooks = $true }
+        @{ Count = $Count; First = 1; Hooks = $false; Icons = $false }
+        @{ Count = $Icons; First = $plainChunks + 1; Hooks = $false; Icons = $true }
+        @{ Count = $Hooks; First = $plainChunks + $iconChunks + 1; Hooks = $true; Icons = $false }
     )
     , @(foreach ($g in $groups) {
             for ($i = 0; $i -lt $g.Count; $i++) {
                 $chunk = [math]::Floor($i / $perChunk) + $g.First
                 $n = ($i % $perChunk) + 2
-                [pscustomobject]@{ Chunk = $chunk; Layer = [math]::Floor($n / $KeyCount) + 1; Slot = ($n % $KeyCount) + 1; Hooks = $g.Hooks }
+                [pscustomobject]@{ Chunk = $chunk; Layer = [math]::Floor($n / $KeyCount) + 1; Slot = ($n % $KeyCount) + 1; Hooks = $g.Hooks; Icons = $g.Icons }
             }
         })
 }
 
 # Writes the layout files of the cases (layout-<lang>-<chunk>.json in the run's folder) and gives each case
-# its Chunk, Layer and Slot. The cases with Hooks go into layouts of their own, after those of all the
-# others, and only those layouts have the layout file's hotkeys and hotstrings ($script:E2eHookLayout):
-# the key hook they bring (the PowerShell macropad installs one only for a layout that has them) cannot
-# touch any other case, and the others keep the keys they had without them.
+# its Chunk, Layer and Slot. The cases with Icons go into layouts of their own after the others, whose
+# layers all have the test's own icon set ($script:E2eIconSet), so that no other case's overlay shows it;
+# the cases with Hooks go into layouts of their own after those, and only those layouts have the layout
+# file's hotkeys and hotstrings ($script:E2eHookLayout): the key hook they bring (the PowerShell macropad
+# installs its hook only for a layout that has some) cannot touch any other case, and the others keep the
+# keys they had without them. A case has Icons or Hooks, not both.
 function Write-E2eLayout {
     param([object[]]$Cases)
-    $plain = @($Cases | Where-Object { -not $_.Hooks })
+    $plain = @($Cases | Where-Object { -not $_.Hooks -and -not $_.Icons })
+    $iconed = @($Cases | Where-Object { $_.Icons })
     $hooked = @($Cases | Where-Object { $_.Hooks })
-    $ordered = @($plain) + @($hooked)
-    $plan = Get-E2eSlotPlan $plain.Count -Hooks $hooked.Count
+    $ordered = @($plain) + @($iconed) + @($hooked)
+    $plan = Get-E2eSlotPlan $plain.Count -Hooks $hooked.Count -Icons $iconed.Count
     $chunks = [math]::Max(1, ($plan | Measure-Object Chunk -Maximum).Maximum)
     for ($i = 0; $i -lt $ordered.Count; $i++) { foreach ($k in 'Chunk', 'Layer', 'Slot') { $ordered[$i].$k = $plan[$i].$k } }
     for ($chunk = 1; $chunk -le $chunks; $chunk++) {
         $mine = @($ordered | Where-Object { $_.Chunk -eq $chunk })
         $withHooks = @($mine | Where-Object { $_.Hooks }).Count -gt 0
+        $iconSet = if (@($mine | Where-Object { $_.Icons }).Count -gt 0) { $script:E2eIconSet } else { 'default_commands' }
         # One layout file per language: a case for one language only leaves its key empty in the other's.
         foreach ($lang in 'ahk', 'ps') {
             $slots = [System.Collections.Generic.List[object]]::new()
@@ -2167,7 +2395,7 @@ function Write-E2eLayout {
                 if ($case.Macro) { foreach ($k in $case.Macro.Keys) { $entry[$k] = $case.Macro[$k] } }
                 $slots.Add($entry)
             }
-            Write-E2eLayoutFile $slots.ToArray() (Join-Path $script:E2eRun.Dir "layout-$lang-$chunk.json") -Hooks:$withHooks
+            Write-E2eLayoutFile $slots.ToArray() (Join-Path $script:E2eRun.Dir "layout-$lang-$chunk.json") -Hooks:$withHooks -IconSet $iconSet
         }
     }
     $script:E2eRun.Chunks = $chunks
@@ -2190,16 +2418,17 @@ function Get-E2eLayoutOptions {
 # Writes a layout file: the test's keys (F13 to F23, Fn F24) with the Slots on layers of 11 keys, and
 # the display options of the example layout (Get-E2eLayoutOptions). A layout whose slots fill one layer
 # gets a second layer without macros, so that there is always another layer to select: a click on an
-# icon (E2eOverlayIcon) selects layer 1 from it. With -Hooks it also has the layout file's hotkeys and
-# hotstrings that the cases with Hooks press and type ($script:E2eHookLayout).
+# icon (E2eOverlayIcon) selects layer 1 from it. Every layer has the icon set IconSet. With -Hooks it also
+# has the layout file's hotkeys and hotstrings that the cases with Hooks press and type
+# ($script:E2eHookLayout).
 function Write-E2eLayoutFile {
-    param([object[]]$Slots, [string]$Path, $Options = (Get-E2eLayoutOptions), [switch]$Hooks)
+    param([object[]]$Slots, [string]$Path, $Options = (Get-E2eLayoutOptions), [switch]$Hooks, [string]$IconSet = 'default_commands')
     $keys = @(for ($i = 0; $i -lt $script:E2eKeyCount; $i++) { @{ key = "F$(13 + $i)"; row = [math]::Floor($i / 4) + 1; col = ($i % 4) + 1 } })
     $layers = @(for ($l = 0; $l * $script:E2eKeyCount -lt $Slots.Count; $l++) {
             $last = [math]::Min($Slots.Count, ($l + 1) * $script:E2eKeyCount) - 1
-            @{ title = "Test $($l + 1)"; icon = 'default_commands'; macros = @($Slots[($l * $script:E2eKeyCount)..$last]) }
+            @{ title = "Test $($l + 1)"; icon = $IconSet; macros = @($Slots[($l * $script:E2eKeyCount)..$last]) }
         })
-    if ($layers.Count -eq 1) { $layers += @{ title = 'Test 2'; icon = 'default_commands'; macros = @() } }
+    if ($layers.Count -eq 1) { $layers += @{ title = 'Test 2'; icon = $IconSet; macros = @() } }
     $layout = @{ fn = @{ key = 'F24'; row = 4; col = 1 }; keys = $keys; layers = $layers; default = 1 }
     foreach ($p in $Options.PSObject.Properties) { $layout[$p.Name] = $p.Value }
     if ($Hooks) { foreach ($k in $script:E2eHookLayout.Keys) { $layout[$k] = $script:E2eHookLayout[$k] } }

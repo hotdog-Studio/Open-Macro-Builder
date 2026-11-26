@@ -30,6 +30,10 @@
 # the only one with "hotkeys" and "hotstrings"), the keys a hotstring is typed with, what E2eHotkey
 # writes, and the text a stand-in holds after the key events it received (ConvertTo-E2eTypedText).
 #
+# The icon case's set (E2eIconSet): the solid pictures the test writes into the app's copy, which file a
+# 1 x 1 key must show from the rules of the overlay, the colours, the layout of its own the case runs in
+# (the only one whose layers have the set), and what the case says when an icon shows another file.
+#
 # These are unit tests on files in TestDrive: they show no window and press no key, so they run in the
 # normal suite, not under the EndToEnd tag. None of them measures time or races a clock: a rule about
 # how long something took is handed its numbers, and a wait is handed its looks. A test that lives
@@ -923,6 +927,210 @@ Describe 'End-to-end windows: what is a tooltip, an overlay and a form of the ma
 # go (AtFn: yes, no, or not known when the look failed), whether one showed in the wait that began once
 # the overlay was seen hidden (SeenAfter), and when that wait found none (Ms; $null at the limit). Every
 # combination the wait can give has its row: a wait that ran out saw a tooltip, so SeenAfter is $true there.
+# The icon case (E2eIconSet) proves from the screen which file of an icon set the overlay draws. What needs no
+# desktop is here: the set's files, the file a key must show (worked out from the rules of the overlay), the
+# colours, the layout the case runs in, and what the case says when an icon shows another file's colour.
+Describe 'End-to-end icon set: the files, the colours, and the layout the icon case runs in' {
+    BeforeAll {
+        foreach ($f in 'Assets', 'Model', 'ConfigJson') { . "$root\powershell\lib\$f.ps1" }
+        . "$PSScriptRoot\helpers\EndToEndCases.ps1"
+        Add-Type -AssemblyName System.Drawing
+    }
+    BeforeEach {
+        $script:E2eRun = [pscustomobject]@{ Dir = $TestDrive; Chunks = 0; Deadline = [DateTime]::MaxValue; LimitMinutes = 20; Case = ''; SlowWaits = [System.Collections.Generic.List[string]]::new() }
+    }
+    AfterEach { $script:E2eRun = $null }
+
+    Context 'the files' {
+        It 'has the four base files in each of img and local\img, and a 1 x 1 picture of each state in local\img' {
+            $paths = @(Get-E2eIconSetFiles | ForEach-Object { $_.Path })
+            $paths.Count | Should -Be 12
+            ($paths -join ', ') | Should -BeExactly ((@(
+                        'img\e2e_icons\layer.png', 'img\e2e_icons\macro.png', 'img\e2e_icons\selected.png', 'img\e2e_icons\selected_macro.png'
+                        'local\img\e2e_icons\layer.png', 'local\img\e2e_icons\macro.png', 'local\img\e2e_icons\selected.png', 'local\img\e2e_icons\selected_macro.png'
+                        'local\img\e2e_icons\layer_1x1.png', 'local\img\e2e_icons\macro_1x1.png', 'local\img\e2e_icons\selected_1x1.png', 'local\img\e2e_icons\selected_macro_1x1.png'
+                    )) -join ', ')
+        }
+
+        It 'gives the shared set one colour, the base files another, and each 1 x 1 picture one of its own, all far apart' {
+            $files = @(Get-E2eIconSetFiles)
+            $colors = @($files | ForEach-Object { $_.Rgb -join ',' } | Sort-Object -Unique)
+            $colors.Count | Should -Be 6 -Because 'shared, base and four sized: six colours'
+            @($files | Where-Object { $_.Path -like 'img\*' } | ForEach-Object { $_.Rgb -join ',' } | Sort-Object -Unique).Count | Should -Be 1
+            @($files | Where-Object { $_.Path -like 'local\img\*_1x1.png' } | ForEach-Object { $_.Rgb -join ',' } | Sort-Object -Unique).Count | Should -Be 4
+            $distinct = @($files | Group-Object { $_.Rgb -join ',' } | ForEach-Object { , $_.Group[0].Rgb })
+            for ($i = 0; $i -lt $distinct.Count; $i++) {
+                for ($j = $i + 1; $j -lt $distinct.Count; $j++) {
+                    Test-E2eColorNear $distinct[$i] $distinct[$j] 100 | Should -BeFalse -Because "the colours $($distinct[$i] -join ',') and $($distinct[$j] -join ',') must tell the files apart within the display's tolerance"
+                }
+            }
+            foreach ($c in $distinct) { Test-E2eColorNear $c @(1, 1, 1) 100 | Should -BeFalse -Because 'the overlay''s transparent colour (1, 1, 1) must not be mistaken for a picture' }
+        }
+
+        It 'writes solid, opaque 64 x 64 PNGs of those colours into the app folder' {
+            $app = Join-Path $TestDrive 'app'
+            Install-E2eIconSet $app
+            foreach ($file in Get-E2eIconSetFiles) {
+                $path = Join-Path $app $file.Path
+                Test-Path -LiteralPath $path -PathType Leaf | Should -BeTrue -Because $file.Path
+                $bitmap = [System.Drawing.Bitmap]::FromStream([System.IO.MemoryStream]::new([System.IO.File]::ReadAllBytes($path)))
+                try {
+                    "$($bitmap.Width)x$($bitmap.Height)" | Should -BeExactly '64x64'
+                    foreach ($at in @(@(0, 0), @(31, 40), @(63, 63))) {
+                        $c = $bitmap.GetPixel($at[0], $at[1])
+                        "$($c.A) $($c.R),$($c.G),$($c.B)" | Should -BeExactly "255 $($file.Rgb -join ',')" -Because "$($file.Path) at $($at -join ',')"
+                    }
+                } finally { $bitmap.Dispose() }
+            }
+        }
+
+        It 'is written by Install-E2eApp, from the repository, into the app''s own img and local\img' {
+            (Get-Content -LiteralPath "$PSScriptRoot\helpers\EndToEnd.ps1" -Raw) | Should -Match '(?s)function Install-E2eApp \{.*?Install-E2eIconSet \$app'
+        }
+    }
+
+    Context 'Get-E2eIconSetFile' {
+        It 'gives <File> for key <Key> with layer <Selected> selected, macros <Macros> and markers <Markers>' -ForEach @(
+            @{ Selected = 1; Key = 1; Macros = @('a', 'b', 'c'); Markers = $true; File = 'selected_macro_1x1.png' }
+            @{ Selected = 1; Key = 2; Macros = @('a', 'b', 'c'); Markers = $true; File = 'macro_1x1.png' }
+            @{ Selected = 2; Key = 1; Macros = @(); Markers = $true; File = 'layer_1x1.png' }
+            @{ Selected = 2; Key = 2; Macros = @(); Markers = $true; File = 'selected_1x1.png' }
+            @{ Selected = 2; Key = 2; Macros = @($null, 'b'); Markers = $true; File = 'selected_macro_1x1.png' }
+            @{ Selected = 2; Key = 1; Macros = @($null, 'b'); Markers = $true; File = 'layer_1x1.png' }
+            @{ Selected = 1; Key = 5; Macros = @('a', 'b', 'c'); Markers = $true; File = 'layer_1x1.png' }
+            @{ Selected = 1; Key = 1; Macros = @('a', 'b', 'c'); Markers = $false; File = 'selected_1x1.png' }
+            @{ Selected = 1; Key = 2; Macros = @('a', 'b', 'c'); Markers = $false; File = 'layer_1x1.png' }
+        ) {
+            Get-E2eIconSetFile -Selected $Selected -Key $Key -Macros $Macros -Markers $Markers | Should -BeExactly "local\img\e2e_icons\$File"
+        }
+    }
+
+    Context 'colours' {
+        It 'takes a colour within the tolerance for the file''s and one over it for another' {
+            Test-E2eColorNear @(30, 200, 30) @(38, 192, 36) | Should -BeTrue
+            Test-E2eColorNear @(30, 200, 30) @(30, 200, 43) | Should -BeFalse
+            Test-E2eColorNear @(30, 200, 30) @(200, 30, 30) | Should -BeFalse
+        }
+
+        It 'says which files a colour is, and what it means that a key shows it' {
+            Get-E2eIconColorOwner @(200, 30, 30) | Should -BeLike 'the colour of img\e2e_icons\layer.png, img\e2e_icons\macro.png, img\e2e_icons\selected.png, img\e2e_icons\selected_macro.png: the shared set in img, so the set in local\img was not used'
+            Get-E2eIconColorOwner @(31, 29, 198) | Should -BeLike 'the colour of local\img\e2e_icons\layer.png, *selected_macro.png: a base file of the set in local\img, so the picture drawn for a key of 1 x 1 was not used'
+            Get-E2eIconColorOwner @(200, 200, 30) | Should -BeExactly 'the colour of local\img\e2e_icons\macro_1x1.png: a picture of the set drawn for a key of 1 x 1, but of another state than this key shows'
+            Get-E2eIconColorOwner @(128, 128, 128) | Should -BeNullOrEmpty
+        }
+
+        It 'has the screen copy that takes layered windows too, and it refuses a device context that is none' {
+            # Not run against the screen: what it reads of a real overlay is the end-to-end case's.
+            Initialize-E2eScreenCopy
+            ('OmbE2e.ScreenCopy' -as [type]) | Should -Not -BeNullOrEmpty
+            [OmbE2e.ScreenCopy]::Copy([IntPtr]::Zero, 0, 0, 1, 1) | Should -BeFalse
+        }
+
+        It 'reads the mean colour of pixels, and of a bitmap' {
+            (Get-E2eMeanColor @(@(10, 20, 30), @(20, 40, 50))) -join ',' | Should -BeExactly '15,30,40'
+            $bitmap = New-Object System.Drawing.Bitmap(3, 3)
+            try {
+                for ($y = 0; $y -lt 3; $y++) { for ($x = 0; $x -lt 3; $x++) { $bitmap.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(255, 200, 30, 30)) } }
+                $bitmap.SetPixel(1, 1, [System.Drawing.Color]::FromArgb(255, 209, 39, 39))
+                (Get-E2eBitmapColor $bitmap) -join ',' | Should -BeExactly '201,31,31'
+            } finally { $bitmap.Dispose() }
+        }
+    }
+
+    Context 'the layout of the case' {
+        BeforeAll {
+            $script:Plain = @(1..5 | ForEach-Object { @{ Command = "E2ePlain$_" } })
+            $script:Iconed = @{ Command = 'E2eNothing'; Name = 'E2eIconSet'; Icons = $true }
+            $script:Hooked = @{ Command = 'E2eNothing'; Name = 'E2eHooked'; Hooks = $true }
+            function Read-TestLayout { param([string]$Lang, [int]$Chunk) [System.IO.File]::ReadAllText((Join-Path $TestDrive "layout-$Lang-$Chunk.json")) | ConvertFrom-Json }
+        }
+
+        It 'puts the cases with Icons after the others and before those with Hooks, each in a layout of its own' {
+            $plan = Get-E2eSlotPlan 118 -KeyCount 11 -Icons 1 -Hooks 2
+            $plan.Count | Should -Be 121
+            (@($plan | Select-Object -Skip 118 | ForEach-Object { "$($_.Chunk) $($_.Layer) $($_.Slot) $($_.Icons) $($_.Hooks)" }) -join ', ') | Should -BeExactly '2 1 3 True False, 3 1 3 False True, 3 1 4 False True'
+        }
+
+        It 'leaves a plan with no Icons as it was' {
+            $with = Get-E2eSlotPlan 250 -KeyCount 11 -Hooks 2 -Icons 0
+            (@($with | Select-Object -Skip 250 | ForEach-Object { "$($_.Chunk) $($_.Layer) $($_.Slot) $($_.Icons)" }) -join ', ') | Should -BeExactly '4 1 3 False, 4 1 4 False'
+        }
+
+        It 'puts the case in the first layout when it is the only one (run.ps1 -Case)' {
+            (@(Get-E2eSlotPlan 0 -KeyCount 11 -Icons 1 | ForEach-Object { "$($_.Chunk) $($_.Layer) $($_.Slot)" }) -join ', ') | Should -BeExactly '1 1 3'
+        }
+
+        It 'gives the layers of the case''s layout, and no other, the test''s icon set' {
+            $cases = @($script:Plain) + @($script:Hooked) + @($script:Iconed)
+            Write-E2eLayout $cases
+            $script:E2eRun.Chunks | Should -Be 3
+            "$($script:Plain[0].Chunk) $($script:Iconed.Chunk) $($script:Hooked.Chunk)" | Should -BeExactly '1 2 3'
+            foreach ($lang in 'ahk', 'ps') {
+                @((Read-TestLayout $lang 1).layers | ForEach-Object { $_.icon }) -join ',' | Should -BeExactly 'default_commands,default_commands' -Because 'the other cases'' overlay is as it was'
+                @((Read-TestLayout $lang 2).layers | ForEach-Object { $_.icon }) -join ',' | Should -BeExactly 'e2e_icons,e2e_icons' -Because 'the icon case''s layer 1 and the layer after it'
+                @((Read-TestLayout $lang 3).layers | ForEach-Object { $_.icon }) -join ',' | Should -BeExactly 'default_commands,default_commands'
+                @((Read-TestLayout $lang 2).PSObject.Properties.Name) | Should -Not -Contain 'hotkeys'
+            }
+        }
+
+        It 'draws all four states of the set, from the layout file, on keys 1 and 2 when layer 1 and layer 2 are selected' {
+            # The premise of the case: the layout it runs in has a macro on each of layer 1's first three keys and none on
+            # layer 2, which is what makes key 1 and key 2 each show two of the four states.
+            $cases = @(Get-E2eCases -All)
+            $icons = @($cases | Where-Object { $_.Icons })
+            $icons.Count | Should -Be 1
+            Write-E2eLayout $cases
+            foreach ($lang in 'ahk', 'ps') {
+                $layout = Import-MacropadConfig (Join-Path $TestDrive "layout-$lang-$($icons[0].Chunk).json")
+                @($layout.Layers).Count | Should -Be 2
+                $got = foreach ($selected in 1, 2) {
+                    foreach ($key in 1, 2) {
+                        $file = Get-E2eIconSetFile -Selected $selected -Key $key -Macros @(@($layout.Layers)[$selected - 1].Macros) -Markers ([bool]$layout.ShowMacroMarkers)
+                        "layer $selected key ${key}: $(Split-Path $file -Leaf)"
+                    }
+                }
+                $got -join '; ' | Should -BeExactly 'layer 1 key 1: selected_macro_1x1.png; layer 1 key 2: macro_1x1.png; layer 2 key 1: layer_1x1.png; layer 2 key 2: selected_1x1.png' -Because "${lang}: each of the four states is shown once"
+                $layout.Layers[0].Icon.Name | Should -BeExactly 'e2e_icons'
+                $layout.Layers[1].Icon.Name | Should -BeExactly 'e2e_icons'
+            }
+        }
+
+        It 'runs the case with Icons after every plain case and before every case with Hooks' {
+            $all = @(Get-E2eCases -All)
+            $first = [array]::IndexOf(@($all | ForEach-Object { [bool]$_.Icons }), $true)
+            $first | Should -BeGreaterThan 0
+            @($all | Where-Object { $_.Icons } | ForEach-Object { $_.Name }) -join ', ' | Should -BeExactly 'E2eIconSet'
+            @($all | Select-Object -First $first | Where-Object { $_.Icons -or $_.Hooks }).Count | Should -Be 0
+            @($all | Select-Object -Skip ($first + 1) | Where-Object { -not $_.Hooks }).Count | Should -Be 0 -Because 'a case that is neither after the icon case would start the macropad again with the other layout'
+            @($all | Where-Object { $_.Icons -and $_.Hooks }).Count | Should -Be 0
+        }
+    }
+
+    Context 'Assert-E2eIconSetShown' {
+        BeforeAll {
+            $script:Reading = {
+                param([int]$Slot, [string]$Want, [int[]]$Got, [bool]$Ok)
+                [pscustomobject]@{ Slot = $Slot; Want = $Want; Rgb = $Got; Ok = $Ok; Text = "key $Slot, with layer 2 selected, must show $Want; the middle of its icon reads $($Got -join ', ')" }
+            }
+        }
+        BeforeEach {
+            Mock Wait-E2eCondition { & $Condition }
+            Mock Get-E2eMacropadWindowsText { 'none' }
+            Mock Get-E2eForegroundText { "'B'" }
+        }
+
+        It 'passes when every icon shows its file' {
+            Mock Read-E2eIconSetKeys { & $script:Reading 1 'layer_1x1.png' @(30, 200, 30) $true; & $script:Reading 2 'selected_1x1.png' @(30, 200, 200) $true }
+            { Assert-E2eIconSetShown ([IntPtr]1) 2 $null @(1, 2) } | Should -Not -Throw
+        }
+
+        It 'names the icon that shows another file''s colour, and only that one' {
+            Mock Read-E2eIconSetKeys { & $script:Reading 1 'layer_1x1.png' @(30, 200, 30) $true; & $script:Reading 2 'selected_1x1.png' @(30, 30, 200) $false }
+            { Assert-E2eIconSetShown ([IntPtr]1) 2 $null @(1, 2) } | Should -Throw -ExpectedMessage "The overlay did not show the set's pictures for layer 2 within 3 s: key 2, with layer 2 selected, must show selected_1x1.png; the middle of its icon reads 30, 30, 200. The macropad's visible windows: none; in front: 'B'."
+        }
+    }
+}
+
 Describe 'End-to-end overlay tooltip timing: the line the run prints' {
     It 'says <Why>' -ForEach @(
         @{ Why = 'one showing at Fn, seen after the hide, gone'; AtFn = $true; SeenAfter = $true; Ms = 1123; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when Fn was let go, gone 1123 ms after the overlay was seen hidden (limit 2500 ms)' }

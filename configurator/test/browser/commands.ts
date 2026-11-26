@@ -75,6 +75,12 @@ const rest = (frame: { evaluate: (fn: () => Promise<void>) => Promise<void> }) =
       }),
   )
 
+/**
+ * The test pages (by session) whose mouse button pointerPath left down: a carry not yet dropped. Kept
+ * here, where the button is pressed, so that releaseHeld lets go of that button and of nothing else.
+ */
+const held = new Set<string>()
+
 export const pointerPath: BrowserCommand<[path: PointerPath]> = async (ctx, path) => {
   const frame = await ctx.frame()
   const box = await (await frame.frameElement()).boundingBox()
@@ -85,13 +91,29 @@ export const pointerPath: BrowserCommand<[path: PointerPath]> = async (ctx, path
   const [first, ...others] = path.points
   if (first) {
     await mouse.move(box.x + first.x * sx, box.y + first.y * sy)
-    if (path.press) await mouse.down()
+    if (path.press) {
+      await mouse.down()
+      held.add(ctx.sessionId)
+    }
   }
   for (const p of others) await mouse.move(box.x + p.x * sx, box.y + p.y * sy, { steps: path.steps })
   if (path.release) {
     if (others.length > 0) await rest(frame)
     await mouse.up()
+    held.delete(ctx.sessionId)
   }
+}
+
+/**
+ * Lets go of the mouse button that pointerPath left down in this test page, if it did, and says
+ * whether it did: a test that ended between a carry and its drop (run past its limit, or failed) would
+ * otherwise hand it to the next test, whose moves would go out with the button held. Keys are Vitest's
+ * own: its userEvent.cleanup() lets go of them before every test.
+ */
+export const releaseHeld: BrowserCommand<[]> = async (ctx): Promise<boolean> => {
+  if (!held.delete(ctx.sessionId)) return false
+  await ctx.page.mouse.up()
+  return true
 }
 
 /**

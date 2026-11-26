@@ -1,13 +1,14 @@
 import { screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cleanUp, click, hoverPath, keyboard, rest, startApp, startOpenScreen, type Point } from '../../test/browser/harness'
+import { carry, cell, cleanUp, click, dirty, hover, hoverPath, keyboard, padKey, rest, startApp, startOpenScreen, type Point } from '../../test/browser/harness'
 import { editorView } from '../../test/codeEditor'
 
 // What the harness promises between tests: a test that ends early, here by running past its time limit,
 // leaves nothing behind for the next. Its body goes on running once what it awaited ends; it must stop at
 // that wait instead of sending its next key into the next test's editor, and its clean-up must not take
-// the next test's app away. Each pair is a test that runs past its limit on purpose (it.fails: running
-// past it is the outcome it expects), then the test that runs after it and looks.
+// the next test's app away, nor leave the mouse button down. Each pair is a test that runs past its limit
+// on purpose (it.fails: running past it is the outcome it expects), then the test that runs after it and
+// looks.
 //
 // The app is opened in a beforeEach, which has its own time limit, so that the first test's body does
 // nothing but go into the wait it is to run past its limit in, on a machine of any speed. It notes that it
@@ -23,8 +24,10 @@ const LIMIT = 500
 const LATE = 2000
 /** How long the pointer path of the third pair lasts: past its test's limit and its clean-up's. */
 const PATH_TIME = 2500
+/** A frame of the page: a pointer move takes at least one, as the page draws between moves. */
+const FRAME = 1000 / 60
 
-type Place = 'waitFor' | 'rest' | 'path'
+type Place = 'waitFor' | 'rest' | 'path' | 'carry'
 /** The places the tests that run past their limit got to, each noted right before it goes in. */
 const reached = new Set<Place>()
 /** What stopped each one's body: the error its wait threw when it ended after the test. */
@@ -72,7 +75,9 @@ async function onlyItsOwnTyping(place: Place): Promise<void> {
 
 /**
  * Points back and forth across the editor, as many as this machine moves the pointer through in about
- * `ms`: the time of a move is that of a short path less that of a shorter one.
+ * `ms`: the time of a move is that of a short path less that of a shorter one, after a move that pays
+ * for the first path of the file. At most as many as last `ms` at one frame a move, the least a move
+ * takes: however short the measure comes out, the path lasts `ms` or more there, and never more points.
  */
 async function pathLasting(ms: number): Promise<Point[]> {
   const box = editorEl().getBoundingClientRect()
@@ -82,9 +87,10 @@ async function pathLasting(ms: number): Promise<Point[]> {
     await hoverPath(across(n))
     return performance.now() - start
   }
+  await hoverPath(across(1))
   const short = await timed(10)
   const move = Math.max((await timed(60)) - short, 1) / 50
-  return across(Math.ceil(ms / move))
+  return across(Math.min(Math.ceil(ms / move), Math.ceil(ms / FRAME)))
 }
 
 describe('a test that runs past its limit while it waits in waitFor', () => {
@@ -156,5 +162,34 @@ describe('a test that runs past its limit with a pointer path still going after 
     expect(pathEnded).toBe(true)
     expect(document.getElementById('root')).toBe(root)
     expect(screen.getByRole('button', { name: 'Open folder' })).toBeTruthy()
+  })
+})
+
+describe('a test that runs past its limit with the mouse button held down by a carry', () => {
+  describe('the test that runs past its limit', () => {
+    beforeEach(async () => {
+      await startApp()
+      await carry(padKey('F24'), cell(5, 1))
+    })
+
+    it.fails('is ended by Vitest before its drop', () => runsPastItsLimitIn('carry', () => rest(LATE)), LIMIT)
+  })
+
+  it('opens its app and moves over a key with no button down, and nothing is dragged', async () => {
+    expect(reached.has('carry')).toBe(true)
+    // What the browser says of the buttons at every move of this test, its start's click included.
+    const buttons: number[] = []
+    const note = (e: PointerEvent) => buttons.push(e.buttons)
+    document.addEventListener('pointermove', note, true)
+    try {
+      await startApp()
+      await hover(padKey('F13'))
+      await hover(padKey('F14'))
+    } finally {
+      document.removeEventListener('pointermove', note, true)
+    }
+    expect(buttons.length).toBeGreaterThan(0)
+    expect(buttons.filter((b) => b !== 0)).toEqual([])
+    expect(dirty()).toBe(false)
   })
 })

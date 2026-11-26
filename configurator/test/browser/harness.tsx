@@ -18,6 +18,7 @@ export { checked, rest } from './lifetime'
 declare module 'vitest/browser' {
   interface BrowserCommands {
     pointerPath: (path: PointerPath) => Promise<void>
+    releaseHeld: () => Promise<boolean>
     touchPath: (path: TouchPath) => Promise<void>
     validateSavedConfig: (text: string) => Promise<string[]>
   }
@@ -130,8 +131,8 @@ export function unmount(): void {
 // Windows build agent a test once timed out with hundreds of keys still to type, and the four tests
 // after it failed on them. So, between one test and the next:
 // - cleanUp closes input, ends the test for the waits (lifetime.ts), puts the real clock back, waits
-//   for the commands in flight (and the changes to the browser's storage, inStorage) and takes the app
-//   away;
+//   for the commands in flight (and the changes to the browser's storage, inStorage), takes the app
+//   away and lets go of a mouse button a carry left down (keys held are let go by Vitest itself);
 // - a command is never longer than one key or one pointer path, so that wait is short;
 // - a body that outlived its test stops when the wait or command it was in ends: every await of a test
 //   that waits on the browser or on Node is checked (waitFor, findBy*, rest, input, viewport,
@@ -156,13 +157,16 @@ const inputEnded = async (): Promise<void> => {
 
 const refused = () => new Error('input sent after its test had ended')
 
-/** Keeps `work` in inFlight until it ends, so that cleanUp waits for it; a test that ended meanwhile stops when it ends. */
-function keptInFlight<T>(work: Promise<T>): Promise<T> {
+/** Keeps `work` in inFlight until it ends, so that cleanUp, and every command sent after it, waits for it. */
+function inFlightUntilEnded<T>(work: Promise<T>): Promise<T> {
   inFlight.add(work)
   const forget = () => inFlight.delete(work)
   void work.then(forget, forget)
-  return checked(work)
+  return work
 }
+
+/** Keeps `work` in inFlight until it ends; a test that ended meanwhile stops when it ends. */
+const keptInFlight = <T,>(work: Promise<T>): Promise<T> => checked(inFlightUntilEnded(work))
 
 /**
  * Sends a command that types, clicks or moves the pointer once every earlier one has ended, and only
@@ -187,19 +191,37 @@ function input<T>(send: () => PromiseLike<T>): Promise<T> {
  */
 export const inStorage = <T,>(change: () => Promise<T>): Promise<T> => keptInFlight(change())
 
+/** How long dnd-kit goes on swallowing clicks after a drag ends, and a little more, in milliseconds. */
+const DND_KIT_CLICK_GUARD = 60
+
 /**
  * Takes the app away after a test, whatever way the test ended, so that nothing of it reaches the
  * next: see the list above. The wait for what is in flight is for one key, one pointer path or one
  * change to the storage (the e2e tests' folder of the example: a second or two on the build agent)
- * at most, which keeps it far inside the hook's own limit (Vitest's 10 s).
+ * at most, which keeps it far inside the hook's own limit (30 s in browser mode).
+ *
+ * The button is let go after the app has gone, so that no app takes it as a drop, and after whatever
+ * was in flight; the release is in flight itself until it has ended, so the next test sends nothing
+ * before it and it can never lift a press of the next test. A drag the app was in when it went keeps
+ * dnd-kit's listeners on the document, among them one that swallows every click, until the button is
+ * let go; dnd-kit then takes them away 50 ms later, so the clean-up waits that long too.
  */
 export async function cleanUp(): Promise<void> {
   inputOpen = false
   endTest()
   vi.useRealTimers()
   const at = mounts
-  await inputEnded()
-  if (mounts === at) unmount()
+  await inFlightUntilEnded(
+    inputEnded().then(async () => {
+      if (mounts === at) unmount()
+      if (await commands.releaseHeld()) await new Promise((done) => setTimeout(done, DND_KIT_CLICK_GUARD))
+    }),
+  )
+  // A clean-up that ends after the next test has started (it ran past its hook limit, and the next test
+  // mounted meanwhile) must not end as a hook that passed: Vitest would then put back, as the running
+  // test's deadline, the one of the test before, long past, and every action of the next test would get
+  // a time limit of 1 ms. A hook already failed for its time ignores this error.
+  if (mounts !== at) throw new Error('this clean-up ended after the next test had started')
 }
 
 export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
@@ -326,7 +348,7 @@ const overlayBox = () =>
  * test is not, and its next press would land on nothing.
  */
 async function afterDrop(): Promise<void> {
-  await rest(60)
+  await rest(DND_KIT_CLICK_GUARD)
   await overlayGone(80)
 }
 

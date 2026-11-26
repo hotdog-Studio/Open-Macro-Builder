@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vite'
 import { starterPlugin } from './scripts/starter.mjs'
-import { pointerPath, touchPath, validateSavedConfig } from './test/browser/commands.ts'
+import { pointerPath, releaseHeld, touchPath, validateSavedConfig } from './test/browser/commands.ts'
 
 // The browser tests (src/**/*.browser.test.tsx): the app in headless Chromium, so elements have
 // real sizes and a drag is a real mouse press, move and release. jsdom lays nothing out, which is
@@ -67,7 +67,7 @@ export default defineConfig({
       // Wide and tall enough that the whole pad is on screen on every tab.
       viewport: { width: 1280, height: 900 },
       screenshotFailures: false,
-      commands: { pointerPath, touchPath, validateSavedConfig },
+      commands: { pointerPath, releaseHeld, touchPath, validateSavedConfig },
     },
   },
 })

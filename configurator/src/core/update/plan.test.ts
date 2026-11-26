@@ -175,6 +175,26 @@ describe('planUpdate: the check', () => {
     expect(listsOf(await planOf(changes, manifest))).toEqual({ ...NO_LISTS, ...lists })
   })
 
+  // The files 1.0.7 moved out of what a set-up folder gets: a 1.0.6 folder has them, and its manifest records them.
+  const DEVELOPER_FILES = [
+    'powershell/tools/spike-hotkeys.ps1',
+    'powershell/tools/spike-inputhook.ps1',
+    'powershell/tools/preview-overlay.ps1',
+    'ahk/dump_config.ahk',
+    'img/icon.png',
+  ]
+  it.each(
+    DEVELOPER_FILES.flatMap((path): [string, string, boolean][] => [
+      [path, 'as the manifest records it: removed', false],
+      [path, 'with other text than the manifest records: kept', true],
+    ]),
+  )('%s of a 1.0.6 folder, %s', async (path, _row, changed) => {
+    const recorded = `${path} 1.0.6\n`
+    const plan = await planOf({ [path]: changed ? 'my copy\n' : recorded }, { version: '1.0.6', files: { [path]: recorded } })
+    expect(listsOf(plan)).toEqual({ ...NO_LISTS, ...(changed ? { keptRemoved: [path] } : { remove: [path] }) })
+    expect(plan.news).toBe(!changed)
+  })
+
   it('never reads a path no version ever had, nor puts it in a list or in seen', async () => {
     const { app, index, known } = await BASE
     const folder = await guarded(await folderOf(app, { 'ahk/lib/mine.ahk': 'mine\n' }, null))

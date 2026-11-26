@@ -6,7 +6,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ### Removed
 
-- A folder the configurator sets up no longer gets the files only a developer of the project uses: `powershell/tools/spike-hotkeys.ps1`, `spike-inputhook.ps1` and `preview-overlay.ps1` (now `powershell/tests/tools/`), `ahk/dump_config.ahk` (now `ahk/tests/dump_config.ahk`) and `img/icon.png` (now `docs/img/icon.png`). The update dialog lists them under "Removed" for a folder that has them unchanged; one you changed is kept, and named under "Kept as they are" after the update.
+- A folder the configurator sets up no longer gets the files only a developer of the project uses: `powershell/tools/spike-hotkeys.ps1`, `spike-inputhook.ps1` and `preview-overlay.ps1` (now `powershell/tests/tools/`), `ahk/dump_config.ahk` (now `ahk/tests/dump_config.ahk`) and `img/icon.png` (now `docs/img/icon.png`). The update dialog lists them under "Removed" for a folder that has them unchanged; one you changed is kept, and named under "Kept as they are" after the update. The update removes files only, so the emptied `powershell/tools` folder stays; delete it if you like.
 - AutoHotkey version: the `Layout` class loses `AddNewLayer`, `AddLayer`, `AddBlankLayer`, `RemoveLayer`, `ShowMacroMarker`, `ShowLabel` and `UseMacroIcons`. Nothing in the scripts called them, the layout file sets the same options, and the PowerShell version never had them. A script of your own that calls one of them fails with an error where it calls it; set `showMacroMarkers`, `showLabels` and `useMacroIcons` in `config.json` instead.
 
 ### Fixed

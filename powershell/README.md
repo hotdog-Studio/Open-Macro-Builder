@@ -8,7 +8,7 @@ Hold the Fn key (ScrollLock) to show the overlay, and press a macro key (F13 to 
 
 - Windows PowerShell 5.1 (`powershell.exe`). PowerShell 7 is not needed.
 - Nothing else at runtime. WinForms and System.Drawing come with .NET Framework.
-- For the tests only, which are in the project's repository and not in a folder the configurator set up: Pester 6.2.0 or newer, the version CI runs, installed for the current user:
+- For the tests only, which are in the project's repository and not in a folder the configurator set up: Pester 6.2.0 or newer, the version CI runs and the only one the suite is run on (`tests\run.ps1` stops with exit code 1 before any test when an older one, or none, is installed), installed for the current user:
 
 ```powershell
 Install-Module Pester -MinimumVersion 6.2.0 -Scope CurrentUser -Force -SkipPublisherCheck

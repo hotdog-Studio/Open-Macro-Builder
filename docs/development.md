@@ -8,12 +8,12 @@ How to set the project up, where things are, and how to run every test. For how 
 | --- | --- |
 | The configurator, the validator and the script tests | [Node.js](https://nodejs.org/) 24 |
 | The AutoHotkey version | [AutoHotkey v2](https://www.autohotkey.com/download/) on Windows |
-| The PowerShell version and its tests | Windows PowerShell 5.1 (in Windows) and [Pester](https://pester.dev/) 6.2.0 or newer, the version CI runs (`run.ps1` refuses an older one) |
+| The PowerShell version and its tests | Windows PowerShell 5.1 (in Windows) and [Pester](https://pester.dev/) 6.2.0 or newer, the version CI runs and the only one the suite is run on (`run.ps1` stops with exit code 1 before any test when an older one, or none, is installed) |
 | The end-to-end test | Windows PowerShell 5.1, Pester 6.2.0 or newer, [AutoHotkey v2](https://www.autohotkey.com/download/) and [Python](https://www.python.org/downloads/) on `PATH`, on a Windows desktop you can give up for a few minutes |
 | The browser tests | Chromium for Playwright: `npx playwright install chromium` in `configurator/` |
 | The Docker images | Docker with buildx |
 
-The macropad itself only runs on Windows. The configurator, the validator and their tests also run on Linux and macOS, except the tests that need Windows, which skip themselves elsewhere: the desktop-app tests (they also need the Electron binary and a display), the pictures of the pad and the header tests among the browser tests ([below](#the-pictures-of-the-pad)), and a few unit tests in `configurator/electron` that need Windows paths, the real process list or the real PowerShell (in `ipc.test.ts`, `macropad.test.ts` and `syntax.test.ts`).
+The macropad itself only runs on Windows. The configurator, the validator and their tests also run on Linux and macOS, except the desktop-app tests, which need the Electron binary and, on Linux, a display (they skip themselves without the binary, and on Linux without a display), and the tests that need Windows, which skip themselves elsewhere: the pictures of the pad and the header tests among the browser tests ([below](#the-pictures-of-the-pad)), and a few unit tests in `configurator/electron` that need Windows paths, the real process list or the real PowerShell (in `ipc.test.ts`, `macropad.test.ts` and `syntax.test.ts`).
 
 ## Repository layout
 
@@ -148,7 +148,7 @@ Jenkins runs the `Jenkinsfile`, one stage after the other:
 11. On `develop` only: packages the desktop app on the Windows agent (`windows-x64`), and builds the Linux images for both architectures, starting each one to check that it serves the page. The arm64 image is started on the arm64 agent (`linux-arm64`).
 12. On `develop` only: publishes all of it as a release. [releasing.md](releasing.md) has the version scheme and the order of the steps.
 
-So every suite runs in CI. What still does not run there is a test that skips itself for want of something the agent lacks: above all the conditional end-to-end cases (`NextScreen` and `PreviousScreen` need a second monitor, for example), which run only on a desktop that has what they need, and a Pester test that skips itself in the same way, such as the one of the default playback device on a machine without one. The end-to-end stage's log ends with the list of cases that did not run, with the reason, and the JUnit reports of the other stages mark each skipped test.
+So every suite runs in CI. What still does not run there is a test that skips itself for want of something the agent lacks: above all the conditional end-to-end cases, which run only on a desktop that has what they need, and a Pester test that skips itself in the same way, such as the one of the default playback device on a machine without one. In the first build of 1.0.7, on the Windows agent with a desktop, four end-to-end cases did not run, in each of the two macropads: `NextScreen` and `PreviousScreen` (the agent has no second monitor), `OpenPowershell` (the agent's own console is a PowerShell window that is not the test's) and `OpenCalculator (second press while it starts)` (the second press never came while the first Calculator window was still kept off the screen). Those are facts of that agent, not of every machine; [the end-to-end test](#the-end-to-end-test) says what each conditional case needs. The end-to-end stage's log ends with the list of cases that did not run, with the reason, and the JUnit reports of the other stages mark each skipped test.
 
 The `Jenkinsfile` header lists the globals, such as `OMB_NTFY_URL` for build notifications.
 

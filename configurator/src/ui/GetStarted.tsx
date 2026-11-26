@@ -201,7 +201,7 @@ function AfterChange({ desktop }: Readonly<{ desktop: boolean }>) {
         {desktop && (
           <>
             {' '}
-            While a macropad started from this folder is running, saving in this app offers{' '}
+            While a macropad started from your folder is running, saving in this app offers{' '}
             <Strong>Reload macropad</Strong>, which restarts it for you. A macropad started from another folder is not
             found.
           </>

@@ -431,6 +431,13 @@ $script:E2eFloorMs = 350
 # How long a check before a press waits for the window it expects, while one of the test's own windows
 # still has the keyboard (Wait-E2eFront).
 $script:E2eFrontMs = 3000
+# How long a tooltip of the macropad's may still show once its overlay is seen hidden, with the pointer put
+# back: in both versions the tooltip goes with the overlay. The PowerShell macropad switches its ToolTip off
+# and on in the same handler that hides the form (Hide-Overlay), so it is gone when the overlay is seen to
+# be; AutoHotkey's goes on WM_MOUSELEAVE, which the pointer's leaving and the window's hiding bring at
+# once. This is a margin for a slow machine, not a time the tooltip needs: Windows Forms' own tip runs
+# 5 s (AutoPopDelay), so a tooltip left to run out cannot pass.
+$script:E2eTooltipGoneMs = 1500
 $script:E2eChangeClock = $null
 $script:E2eWarning = 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
 # The banner's window (ahk\tests\e2e\banner.ahk), as Find-Window reads it.
@@ -1889,8 +1896,9 @@ function Assert-E2eOnOverlay {
 
 # Holds Fn until the overlay shows and gives Action the overlay's window; then, however Action ended,
 # lets Fn go and puts the pointer back where it was, and waits for the overlay to hide and for every
-# tooltip of the macropad's to be gone: a tooltip has no title, as the overlay has none, and one left on
-# the screen would stand over the next case. Before Fn goes down, the pointer rests on the title bar of
+# tooltip of the macropad's to be gone, within $script:E2eTooltipGoneMs of the overlay being seen hidden (a
+# tooltip goes with its overlay in both versions): a tooltip has no title, as the overlay has none, and one
+# left on the screen would stand over the next case. Before Fn goes down, the pointer rests on the title bar of
 # the stand-in B (top left of the screen), off the overlay (the middle of the screen), so that no tooltip
 # shows before Action puts the pointer where it wants it. Each change of the screen is paced. What this
 # throws starts with Action's failure, and what could not be put back follows it. The variables have
@@ -1926,7 +1934,7 @@ function Invoke-E2eOverlayPointer {
     }
     & $e2eStep {
         $shown = Test-E2eTooltipUp
-        if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)) { throw "a tooltip of the macropad's still showed 6 s after Fn was let go and the pointer put back; the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
+        if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs $script:E2eTooltipGoneMs)) { throw "a tooltip of the macropad's still showed $($script:E2eTooltipGoneMs) ms after the overlay was seen hidden, Fn let go and the pointer put back (the tooltip must go with the overlay); the macropad's visible windows: $(Get-E2eMacropadWindowsText)" }
         if ($shown) { Wait-ScreenChange -Observed }
     }
     if ($e2eFailure) {

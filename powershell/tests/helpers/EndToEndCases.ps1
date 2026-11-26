@@ -593,7 +593,7 @@ function Get-E2eCases {
                     $slot = $ctx.Case.Slot
                     $what = "the middle of the label of key $slot, on layer $($ctx.Case.Layer)"
                     # A tooltip that showed already would pass for the label's.
-                    if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs 6000)) {
+                    if (-not (Wait-E2eCondition { (Get-E2eMacropadWindows -Tooltips).Count -eq 0 } -TimeoutMs $script:E2eTooltipGoneMs)) {
                         throw "A tooltip of the macropad's showed before the pointer went to the label, while the pointer rested at ($([OmbE2e.Input]::MousePosition() -join ', ')); the macropad's visible windows: $(Get-E2eMacropadWindowsText)."
                     }
                     $p = Get-E2eOverlayPoint $slot Label

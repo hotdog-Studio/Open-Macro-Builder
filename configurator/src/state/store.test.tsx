@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Component, useLayoutEffect, type ReactNode } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renameKey } from '../core/config/ops'
 import { parseConfig } from '../core/config/parse'
 import { MemoryFolder } from '../core/folder/memory'
@@ -148,24 +148,39 @@ describe('useApp and useEditor', () => {
     return <p>fine</p>
   }
 
+  /**
+   * Renders `ui`, in which a hook throws `message` and Catch shows it. React reports an error that a
+   * boundary caught on console.error: here that report is expected, so it is checked, not printed.
+   */
+  function renderCaught(ui: ReactNode, message: string): void {
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      render(ui)
+      expect(reported.mock.calls.flat().some((arg) => arg instanceof Error && arg.message === message)).toBe(true)
+    } finally {
+      reported.mockRestore()
+    }
+    expect(screen.getByText(message)).toBeTruthy()
+  }
+
   it('useApp refuses to run outside the provider', () => {
-    render(
+    renderCaught(
       <Catch>
         <Use hook={useApp} />
       </Catch>,
+      'useApp must be used inside AppProvider',
     )
-    expect(screen.getByText('useApp must be used inside AppProvider')).toBeTruthy()
   })
 
   it('useEditor refuses to run before a folder is open', () => {
     const platform: Platform = { kind: 'browser', openFolder: async () => null, createFolder: async () => null, restoreFolder: async () => null }
-    render(
+    renderCaught(
       <AppProvider platform={platform} updateSource={null}>
         <Catch>
           <Use hook={useEditor} />
         </Catch>
       </AppProvider>,
+      'useEditor needs an open folder',
     )
-    expect(screen.getByText('useEditor needs an open folder')).toBeTruthy()
   })
 })

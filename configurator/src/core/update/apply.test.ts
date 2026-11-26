@@ -748,6 +748,24 @@ describe("applyUpdate: the include file is the person's text", () => {
     expect(guarded.refused).toEqual([])
   })
 
+  it('keeps the ending of every line of one with both kinds that its list does not change', async () => {
+    const mixed = (text: string) => text.replace('\n', '\r\n')
+    const folder = await folderOf()
+    await folder.writeBytes(INCLUDE_FILE, encode(mixed(includeText('; my config', WINDOWS, CHROME, GONE))))
+    const { guarded, result } = await update(folder)
+    expect(result.kept).toContain(INCLUDE_FILE)
+    expect(folder.text(INCLUDE_FILE)).toBe(mixed(includeText('; my config', WINDOWS, CHROME, NEW)))
+    expect(guarded.refused).toEqual([])
+  })
+
+  it('replaces a file of both kinds of ending with the app\'s copy, whatever endings it had', async () => {
+    const folder = await folderOf({ [JSON_FILE]: 'my\r\njson\n' })
+    const { result } = await update(folder, { picks: { replaceChanged: [JSON_FILE], restoreDeleted: [] } })
+    expect(result.ok).toBe(true)
+    expect(folder.text(JSON_FILE)).toBe(APP[JSON_FILE])
+    expect(folder.text(backupOf(JSON_FILE))).toBe('my\r\njson\n')
+  })
+
   it('leaves one that is not UTF-8 byte for byte when its list needs no change', async () => {
     const bytes = notUtf8(includeText('; my config', WINDOWS, CHROME, NEW))
     const folder = await folderOf({ ...UP_TO_DATE, 'config.json': 'config 1.0.5\n' })

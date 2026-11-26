@@ -122,8 +122,8 @@ async function removeInclude(
 
 /**
  * Puts back what removeInclude removed. Read fresh and written with the version just read: when
- * nothing else touched the include file since, it gets its exact text back (the line where it was);
- * otherwise the line is added again as addInclude adds it.
+ * nothing else touched the include file since, it gets its exact bytes back (the line where it was, with
+ * its own line ending, as `removed.before` holds it); otherwise the line is added again as addInclude adds it.
  */
 async function restoreInclude(
   folder: FolderAccess,
@@ -134,7 +134,9 @@ async function restoreInclude(
 ): Promise<void> {
   const include = await readTextFile(folder, listPath)
   if (include !== null && include.version === removed.after.version) {
-    await writeTextFile(folder, { ...include, text: removed.before.text })
+    // Not `include` with the old text: that file has one kind of ending once the line was gone, and the line would
+    // come back with the file's usual one instead of its own.
+    await writeTextFile(folder, { ...removed.before, version: include.version })
   } else {
     await addInclude(folder, lang, listPath, path)
   }

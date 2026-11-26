@@ -1365,3 +1365,50 @@ describe('command files', () => {
     })
   })
 })
+
+describe('a file with both kinds of line ending', () => {
+  const HUB_TEXT = '#Requires AutoHotkey v2.0\r\n#Include mine.ahk\n#Include z.ahk\r\n'
+  const heldFile = (h: { edit(): EditState }, path: string) => h.edit().commandFiles.find((f) => f.file.path === path)!.file
+
+  it('is saved by the Commands tab twice with every line it did not edit as it was', async () => {
+    const mixed = 'Mine(Macro)\n{\n  ; one\r\n  ; two\n}\n'
+    const h = await opened({ files: { [MINE]: mixed } })
+    const edited = (replace: [string, string]) => heldFile(h, MINE).text.replace(...replace)
+    h.actions.editCommand(MINE, edited(['two', 'TWO']), versionOf(h, MINE))
+    expect(await h.actions.saveCommandFile(MINE)).toBe('saved')
+    expect(h.folder.text(MINE)).toBe('Mine(Macro)\n{\n  ; one\r\n  ; TWO\n}\n')
+    expect(heldFile(h, MINE).original).toBe('Mine(Macro)\n{\n  ; one\r\n  ; TWO\n}\n')
+    h.actions.editCommand(MINE, edited(['Mine(', 'Mine2(']), versionOf(h, MINE))
+    expect(await h.actions.saveCommandFile(MINE)).toBe('saved')
+    expect(h.folder.text(MINE)).toBe('Mine2(Macro)\n{\n  ; one\r\n  ; TWO\n}\n')
+  })
+
+  it('is saved as the layout twice with every line it did not edit as it was', async () => {
+    const mixed = EXAMPLE.split('\n').map((line, i) => (i % 2 === 1 ? `${line}\r` : line)).join('\n')
+    const h = await opened({ files: { [CONFIG]: mixed } })
+    const untouched = (text: string, key: string) => text.split('\n').filter((line) => !line.includes(key))
+    h.send({ type: 'edit', ws: renameKey(h.edit().ws, 'k1', 'F9') })
+    expect(await h.actions.save()).toBe('saved')
+    const first = h.folder.text(CONFIG)!
+    expect(untouched(first, 'F9')).toEqual(untouched(mixed, 'F13'))
+    expect(first).toContain('\r\n')
+    h.send({ type: 'edit', ws: renameKey(h.edit().ws, 'k1', 'F8') })
+    expect(await h.actions.save()).toBe('saved')
+    expect(untouched(h.folder.text(CONFIG)!, 'F8')).toEqual(untouched(first, 'F9'))
+  })
+
+  it('has the line of a new command file added to its include file with the other lines as they were', async () => {
+    const h = await opened({ files: { [HUB]: HUB_TEXT } })
+    expect(await h.actions.createCommandFiles({ group: 'yours', name: 'fresh', langs: ['ahk'] })).toBeNull()
+    expect(h.folder.text(HUB)).toBe(`${HUB_TEXT}#Include fresh.ahk\r\n`)
+  })
+
+  it('has its include line put back exactly when a delete fails', async () => {
+    const h = await opened({ files: { ...withMine.files, [HUB]: HUB_TEXT } })
+    h.folder.onRemove = () => {
+      throw new Error('The file is locked.')
+    }
+    expect(await h.actions.deleteCommandFile(MINE)).toBe(`${MINE} was not deleted: The file is locked.`)
+    expect(h.folder.text(HUB)).toBe(HUB_TEXT)
+  })
+})

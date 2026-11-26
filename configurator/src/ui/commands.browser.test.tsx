@@ -442,13 +442,13 @@ describe('Commands tab: files', () => {
     expect(within(nav()).getByRole('heading', { name: 'Yours' })).toBeTruthy()
   })
 
-  it('Delete this file lists the keys that stop working; Escape keeps the file, Delete removes it', async () => {
+  it('Delete this file says the macropad will not start and names the keys; Escape keeps the file, Delete removes it', async () => {
     const { folder } = await start()
     await click(pairButton('media'))
     await click(toolbarButton('Delete this file'))
 
     const ask = await screen.findByRole('dialog', { name: 'Delete media.ahk?' })
-    expect(ask.textContent).toContain('Media · F13 (PreviousTrack)')
+    expect(ask.textContent).toContain('PreviousTrack (Media · F13)')
     await key('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(folder.text(MEDIA)).not.toBeNull()

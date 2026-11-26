@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { LANGUAGES, type CommandFile, type LangId } from '../core/languages'
+import type { CommandFile, LangId } from '../core/languages'
 import { withoutFullStop } from '../core/message'
 import type { UpdateDone, UpdatePicks } from '../core/update/apply'
 import { INCLUDE_FILE } from '../core/update/includeList'
@@ -10,6 +10,7 @@ import { compareVersions } from '../core/update/version'
 import { useEditor, type UpdateOffer, type UpdateOutcome } from '../state/store'
 import { scriptsWritten, updateBlockers } from '../state/updateActions'
 import { ConfirmDialog } from './ConfirmDialog'
+import { commandLine, remedy } from './UnsetCommands'
 
 const TITLE = 'Update the scripts in this folder'
 const LOCAL = 'Nothing under local/ is changed.'
@@ -84,30 +85,6 @@ function NamedPaths({ heading, paths }: Readonly<{ heading: string; paths: strin
       <Paths aria-labelledby={id} paths={paths} />
     </>
   )
-}
-
-/**
- * The language a command is missing from, when the person runs more than one and only one of them misses it:
- * ` in the PowerShell version`. Empty otherwise.
- */
-function languageNote(command: NamedCommand, languages: readonly LangId[]): string {
-  if (languages.length < 2 || command.langs.length !== 1) return ''
-  return ` in the ${LANGUAGES[command.langs[0]].label} version`
-}
-
-/** A command, where it is missing when that is one language of several, and where the layout runs it. */
-function commandLine(command: NamedCommand, languages: readonly LangId[]): string {
-  const places = command.places.map((place) => place.name).join(', ')
-  return `${command.name}${languageNote(command, languages)} (${places})`
-}
-
-/** What to take out of the layout, by where it runs the commands: keys in the Macros tab, hotkeys and hotstrings in the file. */
-function remedy(commands: readonly NamedCommand[]): string {
-  const kinds = new Set(commands.flatMap((command) => command.places.map((place) => place.kind)))
-  const parts: string[] = []
-  if (kinds.has('key')) parts.push('clear those keys in the Macros tab')
-  if (kinds.has('hotkey') || kinds.has('hotstring')) parts.push('take those hotkeys and hotstrings out of the layout file')
-  return parts.join(' and ')
 }
 
 /** What the macropad does about such commands, and how to set it right. */

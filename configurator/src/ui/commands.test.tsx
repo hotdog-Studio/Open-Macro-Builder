@@ -1241,7 +1241,7 @@ describe('new and deleted files', () => {
   const newFileDialog = () => screen.getByRole('dialog', { name: 'New command file' })
 
   /** The example config changed by `change`, as a hand-edited file would be. */
-  function exampleWith(change: (c: { layers: { title: string; macros: unknown[] }[] }) => void): string {
+  function exampleWith(change: (c: { layers: { title: string; macros: unknown[]; disabled?: boolean }[]; hotkeys: unknown[] }) => void): string {
     const parsed = JSON.parse(EXAMPLE)
     change(parsed)
     return JSON.stringify(parsed, null, 2) + '\n'
@@ -1372,7 +1372,7 @@ describe('new and deleted files', () => {
     await user.click(pairButton('other'))
     await user.click(screen.getByRole('button', { name: 'Delete this file' }))
     let dialog = screen.getByRole('dialog', { name: 'Delete other.ahk?' })
-    expect(within(dialog).getByText('No key in the current layout uses its commands.')).toBeTruthy()
+    expect(within(dialog).getByText('Nothing in your layout runs its commands.')).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(folder.text('local/ahk/other.ahk')).toBe('Other(Macro)\n{\n}\n')
 
@@ -1381,8 +1381,7 @@ describe('new and deleted files', () => {
     typeAt(0, '; unsaved\n')
     await user.click(screen.getByRole('button', { name: 'Delete this file' }))
     dialog = screen.getByRole('dialog', { name: 'Delete mine.ahk?' })
-    expect(within(dialog).getByText('These keys would stop working in AutoHotkey:')).toBeTruthy()
-    expect(within(dialog).getAllByRole('listitem').map((li) => li.textContent)).toEqual([`${layer} · ${key} (MyCmd)`])
+    expect(within(dialog).getAllByRole('listitem').map((li) => li.textContent)).toEqual([`MyCmd (${layer} · ${key})`])
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(folder.text('local/ahk/mine.ahk')).toBeNull())
@@ -1401,6 +1400,67 @@ describe('new and deleted files', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     await save(user, 'mine.ahk')
     expect(folder.text('local/ahk/mine.ahk')).toBe(`; x\n${AHK_STARTER('mine')}`)
+  })
+
+  /** Opens the delete dialog of mine.ahk, whose MyCmd is run by the layout where `change` puts it. */
+  async function deleteMineDialog(
+    change: (c: { layers: { title: string; macros: unknown[]; disabled?: boolean }[]; hotkeys: unknown[] }) => void,
+    extra: Record<string, string> = {},
+  ) {
+    const { user } = await start({
+      files: {
+        [CONFIG]: exampleWith(change),
+        [HUB]: '#Requires AutoHotkey v2.0\n#Include mine.ahk\n',
+        'local/ahk/mine.ahk': 'MyCmd(Macro)\n{\n}\n',
+        ...extra,
+      },
+    })
+    await user.click(pairButton('mine'))
+    await user.click(screen.getByRole('button', { name: 'Delete this file' }))
+    return within(screen.getByRole('dialog', { name: 'Delete mine.ahk?' }))
+  }
+
+  it('says the macropad will not start, and names the command with the key that runs it', async () => {
+    const dialog = await deleteMineDialog((c) => {
+      c.layers[0].macros[3] = { action: 'MyCmd', name: 'Mine' }
+    })
+    expect(
+      dialog.getByText('The AutoHotkey macropad will not start while your layout runs these commands, which no other file defines:'),
+    ).toBeTruthy()
+    expect(dialog.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['MyCmd (Media · F16)'])
+    expect(dialog.getByText('Clear those keys in the Macros tab first, or keep the commands in another file.')).toBeTruthy()
+    expect(dialog.getByRole('button', { name: 'Delete' })).toBeTruthy()
+  })
+
+  it('names a hotkey of the layout file that runs a command of the file', async () => {
+    const dialog = await deleteMineDialog((c) => {
+      c.hotkeys = [{ hotkey: '^!e', action: 'MyCmd' }]
+    })
+    expect(dialog.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['MyCmd (Hotkey ^!e)'])
+    expect(
+      dialog.getByText('Take those hotkeys and hotstrings out of the layout file first, or keep the commands in another file.'),
+    ).toBeTruthy()
+  })
+
+  it.each([
+    [
+      'leaves out a parked layer, which the macropad never loads',
+      (c: { layers: { title: string; macros: unknown[]; disabled?: boolean }[] }) => {
+        c.layers.push({ title: 'Spare', disabled: true, macros: [{ action: 'MyCmd', name: 'Mine' }] })
+      },
+      {},
+    ],
+    [
+      'says nothing runs its commands when another file defines them too',
+      (c: { layers: { macros: unknown[] }[] }) => {
+        c.layers[0].macros[3] = { action: 'MyCmd', name: 'Mine' }
+      },
+      { 'local/ahk/twin.ahk': 'MyCmd(Macro)\n{\n}\n', [HUB]: '#Requires AutoHotkey v2.0\n#Include mine.ahk\n#Include twin.ahk\n' },
+    ],
+  ])('%s', async (_name, change, extra) => {
+    const dialog = await deleteMineDialog(change, extra)
+    expect(dialog.getByText('Nothing in your layout runs its commands.')).toBeTruthy()
+    expect(dialog.queryAllByRole('listitem')).toHaveLength(0)
   })
 
   it('refuses to delete a file that changed on disk', async () => {

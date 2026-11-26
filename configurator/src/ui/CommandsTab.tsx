@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { buildDictionary, parseCache, type DictEntry, type Dictionary } from '../core/commands/dictionary'
 import type { Reference } from '../core/commands/reference'
 import { checkNewFile } from '../core/commands/files'
@@ -6,7 +6,8 @@ import { pairOutline, paramMismatches, type OutlineEntry, type PairTexts, type P
 import { commandCount, commandPairs, languagesDiffer, type CommandPair } from '../core/commands/pairs'
 import { keysUsing } from '../core/commands/usage'
 import { EncodingError } from '../core/folder/textFile'
-import { definedNames, isCommand, LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
+import { LANG_IDS, LANGUAGES, type CommandFile, type LangId } from '../core/languages'
+import { lostCommands } from '../core/update/lostCommands'
 import type { SyntaxProblem } from '../platform/types'
 import { loadAhkReference } from '../state/ahkReference'
 import { shownPair, type AfterSave, type CommandDialog } from '../state/commandsSlice'
@@ -18,6 +19,7 @@ import { NewCommandButton } from './NewCommandDialog'
 import { DocHoverProvider, useDocHover } from './DocHover'
 import { OtherCommands } from './OtherCommands'
 import { LeftPanel, RightPanel, STYLE } from './Panels'
+import { commandLine, remedy } from './UnsetCommands'
 
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
@@ -110,44 +112,51 @@ function LanguageButtons({ pair }: Readonly<{ pair: CommandPair }>) {
   )
 }
 
-/** Delete this file's confirmation: the keys that stop working once the file's commands are gone. */
+/** What Delete this file says when no command of the file is one the layout runs and no other file defines. */
+const NOTHING_RUNS = 'Nothing in your layout runs its commands.'
+
+/**
+ * Delete this file's confirmation: the commands of the file that no other file defines and the layout runs
+ * (the macropad does not start on one), where it runs them, and what to do about that. Delete stays available.
+ */
 function DeleteDialog({ file, onClose }: Readonly<{ file: CommandFile; onClose: () => void }>) {
   const { state, dispatch, actions } = useEditor()
   const path = file.file.path
   const label = LANGUAGES[file.lang].label
-  const uses = useMemo(() => {
-    // Only the commands no other file of the language defines stop working.
-    const others = definedNames(
-      state.commandFiles.filter((f) => f.file.path !== path),
-      file.lang,
-    )
-    return file.functions
-      .filter((fn) => isCommand(fn) && !others.has(fn.name.toLowerCase()))
-      .flatMap((fn) => keysUsing(state.ws, fn.name).map((u) => ({ ...u, name: fn.name })))
-  }, [state.commandFiles, state.ws, file, path])
+  const lost = useMemo(
+    () =>
+      lostCommands(
+        state.ws,
+        [file.lang],
+        state.commandFiles,
+        state.commandFiles.filter((f) => f.file.path !== path),
+      ),
+    [state.commandFiles, state.ws, file.lang, path],
+  )
   const remove = async () => {
     onClose()
     const error = await actions.deleteCommandFile(path)
     if (error) dispatch({ type: 'banner', banner: { text: error, kind: 'error' } })
   }
+  const headingId = useId()
+  const first = remedy(lost)
   return (
     <ConfirmDialog
       title={`Delete ${fileName(path)}?`}
       onCancel={onClose}
       choices={[{ label: 'Delete', danger: true, onChoose: () => void remove() }]}
     >
-      {uses.length === 0 ? (
-        <p>No key in the current layout uses its commands.</p>
+      {lost.length === 0 ? (
+        <p>{NOTHING_RUNS}</p>
       ) : (
         <>
-          <p>{`These keys would stop working in ${label}:`}</p>
-          <ul className="mt-2 space-y-0.5">
-            {uses.map((u) => (
-              <li key={`${u.parked}\0${u.layer}\0${u.key}\0${u.name}`}>
-                {`${u.layer} · ${u.key} (${u.name}${u.parked ? ', parked' : ''})`}
-              </li>
+          <p id={headingId}>{`The ${label} macropad will not start while your layout runs these commands, which no other file defines:`}</p>
+          <ul aria-labelledby={headingId} className="mt-2 space-y-0.5">
+            {lost.map((command) => (
+              <li key={command.name}>{commandLine(command, [file.lang])}</li>
             ))}
           </ul>
+          <p className="mt-2">{`${first.charAt(0).toUpperCase()}${first.slice(1)} first, or keep the commands in another file.`}</p>
         </>
       )}
     </ConfirmDialog>

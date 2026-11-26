@@ -183,6 +183,8 @@ Everything specific to you lives in `local/`, which git ignores, so your hosts, 
 
 Beside a command file, `<file>.bak` is the change from outside that you replaced with **Overwrite anyway** when you saved that file in the configurator.
 
+Beside any file the desktop app writes, `<file>.omb-tmp` is a save that did not finish, and you can delete it. The app writes each file whole as `<file>.omb-tmp` and then puts it in the file's place, so the file itself is never left half written; the `.omb-tmp` stays only when the app was ended between the two.
+
 ## Roadmap
 
 **A macOS version.** A third version beside `ahk/` and `powershell/`, written in Lua for [Hammerspoon](https://www.hammerspoon.org/), reading the same layout file and icons. It is not started: it waits on a Mac to build and test it on. What is known so far:

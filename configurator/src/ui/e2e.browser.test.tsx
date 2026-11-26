@@ -268,27 +268,35 @@ describe('in the browser, on a real folder', () => {
     expect(screen.getByRole('button', { name: 'F24 1×2' })).toBeTruthy()
   })
 
-  it('drags on the Macros tab are saved to the folder, and are there when the app starts again', async () => {
+  it('drags on the Macros tab, on a layer swapped on the Layers tab, are saved to the folder, and are there when the app starts again', async () => {
     await openEditor()
     const before = await read('local/config.json')
 
-    // Macros (Media, the start layer, on F13): a command onto F16, and swap the macros of F13 and F14.
+    // Layers: swap Media and Programs, so that the macros below are those of a layer that moved in this session.
+    await openTab('Layers')
+    await dragTo(layerKey('Media'), layerKey('Programs'))
+    await waitFor(() => expect(ws().slots.k2?.title).toBe('Media'))
+
+    // Macros (Media, the start layer, now on F14): a command onto F16, and swap the macros of F13 and F14.
     await openTab('Macros')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Media' }).getAttribute('aria-pressed')).toBe('true'))
     await dragTo(command('Lock'), padKey('F16'))
-    await waitFor(() => expect(ws().slots.k1.macros.k4?.action).toBe('Lock'))
+    await waitFor(() => expect(ws().slots.k2.macros.k4?.action).toBe('Lock'))
     await dragTo(padKey('F13'), padKey('F14'))
-    await waitFor(() => expect(ws().slots.k1.macros.k1?.name).toBe('Play'))
+    await waitFor(() => expect(ws().slots.k2.macros.k1?.name).toBe('Play'))
 
     const config = await saveAndStartAgain(before)
-    expect(config.layers[0]?.title).toBe('Media')
-    const media = config.layers[0]!.macros
+    // A layer's place in the list is the key it is on: Programs on F13, Media on F14.
+    expect(config.layers[0]?.title).toBe('Programs')
+    expect(config.layers[1]?.title).toBe('Media')
+    const media = config.layers[1]!.macros
     expect(media[0]).toMatchObject({ action: 'PlayPause', name: 'Play' })
     expect(media[1]).toMatchObject({ action: 'PreviousTrack', name: 'Prev' })
     expect(media[3]).toMatchObject({ action: 'Lock', name: 'Lock' })
     // Started again, on what was saved.
-    expect(ws().slots.k1.macros.k4).toMatchObject({ action: 'Lock' })
-    expect(ws().slots.k1.macros.k1).toMatchObject({ action: 'PlayPause', name: 'Play' })
+    expect(ws().slots.k2?.title).toBe('Media')
+    expect(ws().slots.k2.macros.k4).toMatchObject({ action: 'Lock' })
+    expect(ws().slots.k2.macros.k1).toMatchObject({ action: 'PlayPause', name: 'Play' })
   })
 
   it('a save with nothing else changed writes the same file back', async () => {

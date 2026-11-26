@@ -1442,6 +1442,36 @@ describe('new and deleted files', () => {
     ).toBeTruthy()
   })
 
+  it('joins where a command runs and what to take out, when a key and a hotkey run it', async () => {
+    const dialog = await deleteMineDialog((c) => {
+      c.layers[0].macros[3] = { action: 'MyCmd', name: 'Mine' }
+      c.hotkeys = [{ hotkey: '^!e', action: 'MyCmd' }]
+    })
+    expect(dialog.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['MyCmd (Media · F16, Hotkey ^!e)'])
+    expect(
+      dialog.getByText(
+        'Clear those keys in the Macros tab and take those hotkeys and hotstrings out of the layout file first, or keep the commands in another file.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it("names the file's own language in the heading", async () => {
+    const config = exampleWith((c) => {
+      c.layers[0].macros[3] = { action: 'PsCmd', name: 'Mine' }
+    })
+    const { user } = await start({
+      files: { [CONFIG]: config, 'local/powershell/commands/psonly.ps1': 'function PsCmd { param($Macro) }\n' },
+    })
+    await user.click(pairButton('psonly'))
+    await user.click(langButton('PowerShell'))
+    await user.click(screen.getByRole('button', { name: 'Delete this file' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Delete psonly.ps1?' }))
+    expect(
+      dialog.getByText('The PowerShell macropad will not start while your layout runs these commands, which no other file defines:'),
+    ).toBeTruthy()
+    expect(dialog.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['PsCmd (Media · F16)'])
+  })
+
   it.each([
     [
       'leaves out a parked layer, which the macropad never loads',

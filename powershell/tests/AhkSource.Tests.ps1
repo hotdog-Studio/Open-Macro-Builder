@@ -10,12 +10,24 @@
 # How a call is compared: the function's body (comments and blank lines are already left out by
 # Get-AhkFunctionSource) loses its spaces and tabs outside quotes, as does the expected call, and
 # must contain the call exactly once. Spaces inside a string stay, so "shutdown /r /t 1" and
-# "shutdown /r/t 1" are two calls. Case and the kind of quote are not normalised: a changed spelling
-# fails and is read by a person, where a changed number or program would never be told from a changed
-# spelling. What AutoHotkey reads without regard to case is matched the same way here: the names of
-# functions, of the system calls counted below, of Sleep, SendMessage, GroupAdd and ActivateOrOpen, and
-# the name of a window group. Window titles are compared exactly. The body must also make no other system call (a second Run, DllCall, SendMessage ...),
-# whatever it is called with.
+# "shutdown /r/t 1" are two calls. The expected call's own text is compared exactly: a changed
+# spelling, case or kind of quote fails and is read by a person, so a changed number or program can
+# never pass as one. The body must also make no other system call (a second Run, DllCall,
+# SendMessage ...), whatever it is called with.
+#
+# What AutoHotkey reads without regard to case is matched the same way here: the names of functions
+# and of the system calls counted, Sleep, SendMessage, GroupAdd, ActivateOrOpen and the name of a
+# window group. Window titles are compared exactly, as AutoHotkey matches title text.
+#
+# The shell windows: the titles a GroupAdd adds in each of the two functions must be the -WinTitle
+# strings of the PowerShell version, and the function must activate the group they are added to.
+# A GroupAdd that is not two string literals stops the test, and a GroupAdd anywhere else under
+# ahk\ fails the count of them, since only the two functions are read for titles.
+#
+# The blocks called 'The check of ...' and one test of the shell windows block check the checks:
+# each runs them against a copy of the source text written to the test drive, so a missing, doubled
+# or changed call, a second system call, a wrong wait, a GroupAdd out of place and a changed title
+# are shown to fail. The real files are never edited.
 BeforeAll {
     $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
     . "$PSScriptRoot\helpers\CommandSource.ps1"

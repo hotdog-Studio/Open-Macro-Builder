@@ -65,6 +65,7 @@ catch {
     $found = Get-Module Pester -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
     Write-Host ("Pester 6.2.0 or newer is needed; " + $(if ($found) { "the newest installed is $($found.Version)." } else { 'none is installed.' }))
     Write-Host 'Install it: Install-Module Pester -MinimumVersion 6.2.0 -Scope CurrentUser -Force -SkipPublisherCheck'
+    Write-Host "Import-Module said: $($_.Exception.Message)"
     exit 1
 }
 $c = New-PesterConfiguration

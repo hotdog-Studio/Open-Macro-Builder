@@ -837,6 +837,9 @@ Describe 'End-to-end windows: what is a tooltip, an overlay and a form of the ma
         @{ Class = 'MyTooltips_class32'; Title = ''; Kind = 'Overlay' }
         @{ Class = 'WindowsForms10.tooltips_class32'; Title = ''; Kind = 'Overlay' }
         @{ Class = 'WindowsForms10.Window.8.app.0.tooltips_class32'; Title = ''; Kind = 'Overlay' }
+        @{ Class = 'tooltips_class32x'; Title = ''; Kind = 'Overlay' }
+        @{ Class = 'WindowsForms10.tooltips_class32.app.'; Title = ''; Kind = 'Overlay' }
+        @{ Class = 'TOOLTIPS_CLASS32'; Title = ''; Kind = 'Tooltip' }
     ) {
         Get-E2eWindowKind $Title $Class | Should -BeExactly $Kind
     }

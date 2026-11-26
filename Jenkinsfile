@@ -9,7 +9,7 @@
 //   OMB_SONAR_PROJECT_KEY  overrides sonar.projectKey from sonar-project.properties
 //   OMB_WINDOWS_LABEL      label of the Windows agent (default windows-x64). It runs the Pester
 //                          suite (every branch) and packages the desktop app (develop), so it needs
-//                          Windows PowerShell 5.1, Pester 5.5+ installed for all users, AutoHotkey
+//                          Windows PowerShell 5.1, Pester 6.2.0+ installed for all users, AutoHotkey
 //                          v2, Node and Git.
 //   OMB_WINDOWS_DESKTOP_LABEL  label of the Windows agent with a real, logged-in desktop that runs
 //                          the Integration tests, the end-to-end test and the configurator's tests, the
@@ -98,9 +98,10 @@ def stopIfFailed(String what) {
 }
 
 // Runs `body` on an agent with `label`, giving the wait for the agent and the work `minutes`
-// together. Returns false when no such agent took the work in time (the Windows agent is a desktop
-// PC that may be off; a stage never falls back to another machine). A failure of the work itself
-// is thrown on.
+// together. Returns false when no such agent took the work in time (the Windows agent is a VM meant
+// to be always on, but it has one executor, which another job's build may hold, and it can be
+// offline, while it restarts for example; a stage never falls back to another machine). A failure
+// of the work itself is thrown on.
 def onAgent(String label, int minutes, Closure body) {
     def started = false
     try {
@@ -262,9 +263,10 @@ node {
         // 75%. ... analyzed commands in ... files." (75 is Pester's target; nothing fails on it), and
         // the JaCoCo file results/pester/coverage.xml is archived. A run that stops early writes no
         // such file, hence allowEmptyArchive.
-        // The agent is a desktop PC that may be off, hence the long wait. Like the end-to-end stage,
-        // it can start in a workspace that an earlier build still holds (checkoutIntoWorkspace);
-        // what that build left working there is ended by the end-to-end stage's first clean-up.
+        // The agent may be busy with another build or offline (onAgent), hence the long wait. Like
+        // the end-to-end stage, it can start in a workspace that an earlier build still holds
+        // (checkoutIntoWorkspace); what that build left working there is ended by the end-to-end
+        // stage's first clean-up.
         def label = env.OMB_WINDOWS_LABEL ?: 'windows-x64'
         if (!onAgent(label, 45) {
             try {
@@ -445,8 +447,8 @@ node {
     stage('Desktop App') {
         // The installer and the portable exe (configurator/electron-builder.yml), which only
         // Windows can build. They carry this build's number: npm version writes it into the
-        // workspace's package.json, and nothing is committed. The agent is a desktop PC that may
-        // be off, hence the long wait.
+        // workspace's package.json, and nothing is committed. The agent may be busy with another
+        // build or offline (onAgent), hence the long wait.
         def label = env.OMB_WINDOWS_LABEL ?: 'windows-x64'
         if (!releasing) {
             echo "Skipping the desktop app: only develop builds on the '${label}' agent"

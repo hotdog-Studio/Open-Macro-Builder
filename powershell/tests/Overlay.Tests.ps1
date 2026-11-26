@@ -78,7 +78,7 @@ Describe 'New-Overlay / Select-Layer' {
 # the form leaves a tip that is showing on the screen until its own five seconds run out. Hide-Overlay
 # switches the ToolTip off and on again (Active), which is to take a showing tip away. Whether a tip that
 # shows goes is seen on a screen only, in the end-to-end case E2eOverlayIcon (Invoke-E2eOverlayPointer),
-# which lets Fn go with a tip seen up, after earlier hides, and wants it gone within 2.5 s of the overlay
+# which lets Fn go with a tip seen up, after earlier hides, and wants it gone within 1 s of the overlay
 # being seen hidden: a proof when the tip came up with the pointer still, evidence only when it came after
 # the case moved the pointer (its line says which). These tests do not show it: they pass on the code before the change as well, and
 # cannot fail for the defect itself. What they guard is that hiding leaves the tooltip switched on and

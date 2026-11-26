@@ -235,7 +235,7 @@ function Show-Overlay {
 # dotnet/winforms ToolTip.cs does. A tooltip control that is deactivated hides the tip it shows
 # (TOOLTIPS_Activate in Wine's dlls/comctl32/tooltips.c, as read there; Windows' own control was not
 # read). Whether it takes the tip off a real desktop is what the end-to-end case E2eOverlayIcon checks:
-# it lets Fn go with a tip seen up and the pointer left still, and wants the tip gone within 2.5 s of the
+# it lets Fn go with a tip seen up and the pointer left still, and wants the tip gone within 1 s of the
 # overlay being seen hidden, where a tip left to its own 5 s cannot be (the case fails as proving
 # nothing when too much of the 5 s may have passed). That is a proof when the tip came up after the click
 # with the pointer still, as in build #4, where the tip outlived the overlay before this change; when it

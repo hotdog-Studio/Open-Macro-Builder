@@ -443,19 +443,30 @@ $script:E2eFrontMs = 3000
 # hide can take a tip away, and the line each case prints (Format-E2eOverlayTooltipTime) says how long
 # it took. Build #4's case times did not measure it (E2eOverlayLabel took 4.46 s in AutoHotkey and
 # 3.38 s in PowerShell, E2eOverlayIcon 4.89 s and 8.6 s, 4.8 s of the last this wait).
-# The limit is what separates the PowerShell tip of before 1.0.7, which ran out its own 5 s (AutoPopDelay)
+# In both versions the tip goes in the statement after the one that hides the overlay, in the same
+# handler (Hide-Overlay, which Invoke-EngineFnRelease calls with nothing after the hide but the switch;
+# ToggleLayerSelection). No code of the macropad's runs between the two, but for a message handler that
+# AutoHotkey may run between two lines: the overlay's, OnMouseEvent, only removes the tip on a leave and
+# shows one on a move over the overlay, which a hidden overlay under a still pointer does not get. The
+# harness can see the overlay hidden between those two statements, so the wait's first look may still
+# see the tip; its next look, some 50 ms later, must find it gone. So 1000 ms is a margin for a slow
+# machine, not for any latency of the macropad's. A wait of this kind met from about 667 ms on (two
+# thirds of 1000) is named in the run's list of waits that came close to their limit (Add-E2eSlowWait).
+# E2eOverlayLabel's wait for no tooltip before it points at the label has the same limit.
+# The limit also separates the PowerShell tip of before 1.0.7, which ran out its own 5 s (AutoPopDelay)
 # from when it showed, from one that goes with the overlay. E2eOverlayIcon lets Fn go with a tip up whose
 # showing it does not see exactly: by build #4 it comes up shortly after the click, and the label wait,
 # the wait for the tip and pacing floors lie between that and Fn's release. So the case starts a clock
 # when the pointer reaches the icon, before which no tip of the icon can show, and hands it to
 # Invoke-E2eOverlayPointer; in the PowerShell macropad the case fails ("the run proved nothing") when that
-# clock reads more than $script:E2eTooltipProofMs as this wait begins. Within that, an old tip has more
-# than 5000 - 2000 = 3000 ms left when this wait begins, so a tip left to run out fails the 2500 ms limit
-# by more than 500 ms. Ordinarily the clock reads about a second then: the pacing floor before the click,
-# the click, the label and tip waits, the floor before Fn's release, and the hide. An AutoHotkey tip has
-# no lifetime of its own, so there the bound guards nothing and is not applied.
-$script:E2eTooltipGoneMs = 2500
-$script:E2eTooltipProofMs = 2000
+# clock reads more than $script:E2eTooltipProofMs as this wait begins. Within that, an old tip has at
+# least 5000 - 3500 = 1500 ms left when this wait begins, and the wait gives up after its first look and
+# 1000 ms more, so a tip left to run out fails the 1000 ms limit by at least 500 ms less one look.
+# Ordinarily the clock reads about a second then: the pacing floor before the click, the click, the label
+# and tip waits, the floor before Fn's release, and the hide. An AutoHotkey tip has no lifetime of its own,
+# so there the bound guards nothing and is not applied.
+$script:E2eTooltipGoneMs = 1000
+$script:E2eTooltipProofMs = 3500
 $script:E2eChangeClock = $null
 $script:E2eWarning = 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
 # The banner's window (ahk\tests\e2e\banner.ahk), as Find-Window reads it.

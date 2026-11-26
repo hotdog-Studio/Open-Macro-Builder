@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view'
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { at as pointOn, carry, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, startApp, strip, type Point } from '../../test/browser/harness'
+import { at as pointOn, carry, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, rest, startApp, strip, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { HOVER_TIME } from './code/hoverDocs'
 import { GRACE } from './DocHover'
@@ -108,13 +108,16 @@ describe('Commands tab: reading a command file', () => {
     // on the Windows build agent, at some 80 ms a key, and the test is about the layout, not about typing.
     const long = 'x' + '0123456789'.repeat(60)
     const media = new TextDecoder().decode((await repoFiles())[MEDIA])
-    // The file has no line break at its end; the new line breaks as the checkout breaks the others.
+    // The file has no line break at its end, and gets none after the long line either: Ctrl+End puts the
+    // caret at the end of it, and the editor scrolls sideways to show it. The new line breaks as the
+    // checkout breaks the others.
     const eol = media.includes('\r\n') ? '\r\n' : '\n'
-    const withLong = `${media}${eol}${long}${eol}`
+    const withLong = `${media}${eol}${long}`
     await startApp('Commands', undefined, { files: { [MEDIA]: new TextEncoder().encode(withLong) } })
     await openFile('media')
     await key('{Control>}{End}{/Control}')
-    expect(text()).toContain(`\n${long}\n`)
+    expect(text().endsWith(`\n${long}`)).toBe(true)
+    await waitFor(() => expect(scroller().scrollLeft).toBeGreaterThan(0))
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
     expect(document.body.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
     // The editor scrolls inside itself instead.
@@ -253,7 +256,7 @@ function layoutOfEditor() {
 
 describe('Commands tab: leaving the editor with the keyboard', () => {
   /** A real wait: CodeMirror's own Escape lasts two seconds by the clock, so this is past it without any fake timer to misjudge. */
-  const pastCodeMirrorsLimit = () => new Promise((resolve) => setTimeout(resolve, 2400))
+  const pastCodeMirrorsLimit = () => rest(2400)
 
   it('says how in a line of the editor, which the editor names for a screen reader', async () => {
     await start()
@@ -688,7 +691,7 @@ async function pointAt(pos: number): Promise<Point> {
 /** Two characters into the first place `needle` stands in the text. */
 const wordPoint = (needle: string) => pointAt(text().indexOf(needle) + 2)
 const card = () => document.querySelector<HTMLElement>('.cm-tooltip')
-const pause = (ms: number) => new Promise((done) => setTimeout(done, ms))
+const pause = rest
 /**
  * How long to rest the pointer to show that no card comes: twice the hover delay, and a margin. A wait
  * for a condition cannot prove that something does not appear, so this one is tied to the delay it outlasts.
@@ -1056,26 +1059,30 @@ describe('Commands tab: docs on hover', () => {
     const frames = () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
 
     /** Moves the pointer to each point in turn, and holds it there for its milliseconds of the timers' clock. */
-    async function stops([[to, ms], ...rest]: [Point, number][]): Promise<void> {
+    async function stops([[to, ms], ...others]: [Point, number][]): Promise<void> {
       await hoverPath([to])
       await frames()
       vi.advanceTimersByTime(ms)
-      if (rest.length > 0) await stops(rest)
+      if (others.length > 0) await stops(others)
     }
 
     /**
-     * Stops at each point for its time, as stops() does, with the page's timers on a clock the test turns
-     * (Vitest's fake setTimeout and clearTimeout); the moves, the events, the frames and React run as they
-     * do for a person. The grace is such a timer, so a stop is exactly as long as it says against it, on
-     * any machine. By the real clock a stop lasts as long as the machine takes to move the pointer twice,
-     * and the Windows build agent never once took less than the grace. The last stop is the rest that
-     * follows: as long as the grace or longer, every timer it starts has run by the time the real clock
-     * is back.
+     * Runs `move` with the page's timers on a clock the test turns (Vitest's fake setTimeout and
+     * clearTimeout); the moves, the events, the frames and React run as they do for a person. The grace
+     * is such a timer, so a stop is exactly as long as it says against it, on any machine. By the real
+     * clock a stop lasts as long as the machine takes to move the pointer twice, and the Windows build
+     * agent never once took less than the grace. A grace still pending when the real clock comes back
+     * would be dropped, and would keep the card from ever starting another; none can be: `move` ends with
+     * a rest of the grace or longer after its last move, which runs every grace started until then, and a
+     * look that could start another comes from an event or a render, which come only after the real clock
+     * is back (the clock is not empty then: CodeMirror's own hover timer, which measures by the real Date,
+     * starts again on it while the pointer is over the editor). If the test ends inside, cleanUp puts the
+     * real clock back.
      */
-    async function stopsOnClock(points: [Point, number][]): Promise<void> {
+    async function onClock(move: () => Promise<void>): Promise<void> {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       try {
-        await stops(points)
+        await move()
       } finally {
         vi.useRealTimers()
       }
@@ -1087,13 +1094,28 @@ describe('Commands tab: docs on hover', () => {
     /** Starts from `from` and stops on each spot of `path` for STOP, then rests on the last for CARD_STAYS. */
     async function along(from: From, path: Spot[]): Promise<Awaited<ReturnType<typeof startFrom>>> {
       const started = await startFrom(from)
-      await stopsOnClock(path.map((s, i) => [started.spot(s), i < path.length - 1 ? STOP : CARD_STAYS]))
+      await onClock(() => stops(path.map((s, i) => [started.spot(s), i < path.length - 1 ? STOP : CARD_STAYS])))
+      return started
+    }
+
+    /**
+     * Starts from `from` and moves through every spot of `path` in one command, back to back, so that the
+     * next enter or leave can come before React has drawn the last; the stops take no time on the timers'
+     * clock. Then the pointer rests on the last spot for CARD_STAYS.
+     */
+    async function alongInOne(from: From, path: Spot[]): Promise<Awaited<ReturnType<typeof startFrom>>> {
+      const started = await startFrom(from)
+      await onClock(async () => {
+        await hoverPath(path.map((s) => started.spot(s)))
+        await frames()
+        vi.advanceTimersByTime(CARD_STAYS)
+      })
       return started
     }
 
     // Each path starts with the pointer on `from` and moves through the spots in turn, straight from one to
     // the next (a spot on the way is a stop, shorter than the grace); then the pointer rests on the last one.
-    it.each<[string, From, Spot[], Card]>([
+    const PATHS: [string, From, Spot[], Card][] = [
       ['row → the same row', 'row', ['row, another point'], 'row'],
       ['row → other row', 'row', ['other row'], 'other row'],
       ['row → card', 'row', ['card'], 'row'],
@@ -1114,19 +1136,34 @@ describe('Commands tab: docs on hover', () => {
       ['card → outside the window', 'card', ['outside the window'], 'none'],
       ['elsewhere → row', 'elsewhere', ['row'], 'row'],
       ['elsewhere → other row', 'elsewhere', ['other row'], 'other row'],
-    ])('%s', async (_name, from, path, card) => {
+    ]
+
+    /** Once the pointer has rested: whose card is up, and whether it is the card that was up from the start. */
+    async function expectCard(card: Card, { names, tip }: Awaited<ReturnType<typeof startFrom>>): Promise<void> {
+      if (card === 'none') {
+        await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+        return
+      }
+      // Past the grace after which a card left behind goes, by the timers' clock and then by the real one: the
+      // card is the one of where the pointer rests, and the same card all along, never gone and back.
+      await pause(CARD_STAYS)
+      const now = screen.getByRole('tooltip')
+      expect(now.textContent).toContain(names[card])
+      if (tip) expect(now).toBe(tip)
+    }
+
+    it.each(PATHS)('%s', async (_name, from, path, card) => {
       try {
-        const { names, tip } = await along(from, path)
-        if (card === 'none') {
-          await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
-        } else {
-          // Past the grace after which a card left behind goes, by the timers' clock and then by the real one: the
-          // card is the one of where the pointer rests, and the same card all along, never gone and back.
-          await pause(CARD_STAYS)
-          const now = screen.getByRole('tooltip')
-          expect(now.textContent).toContain(names[card])
-          if (tip) expect(now).toBe(tip)
-        }
+        await expectCard(card, await along(from, path))
+      } finally {
+        await page.viewport(1280, 900)
+      }
+    })
+
+    // The paths with a stop on the way once more, their moves sent back to back in one command.
+    it.each(PATHS.filter(([, , path]) => path.length > 1))('%s, the stop as short as one command makes it', async (_name, from, path, card) => {
+      try {
+        await expectCard(card, await alongInOne(from, path))
       } finally {
         await page.viewport(1280, 900)
       }
@@ -1234,11 +1271,13 @@ describe('Commands tab: docs on hover', () => {
       // the gap together do not.
       try {
         const { spot, tip } = await startFrom('card')
-        await stopsOnClock([
-          [spot('other row'), STOP],
-          [spot('gap'), Math.round(GRACE / 2)],
-          [spot('other row'), CARD_STAYS],
-        ])
+        await onClock(() =>
+          stops([
+            [spot('other row'), STOP],
+            [spot('gap'), Math.round(GRACE / 2)],
+            [spot('other row'), CARD_STAYS],
+          ]),
+        )
         await pause(CARD_STAYS)
         expect(screen.getByRole('tooltip')).toBe(tip)
       } finally {

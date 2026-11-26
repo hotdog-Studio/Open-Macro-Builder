@@ -104,8 +104,8 @@ describe('Commands tab: reading a command file', () => {
   })
 
   it('does not make the page scroll sideways at 1280 px, even with a very long line in the file', async () => {
-    // The line is in the file, not typed: 601 keys took this test past its time limit on the Windows
-    // build agent, at some 80 ms a key, and the test is about the layout, not about typing.
+    // The line is in the file, not typed: typing its 601 characters took this test past its time limit
+    // on the Windows build agent, at some 80 ms a key, and the test is about the layout, not about typing.
     const long = 'x' + '0123456789'.repeat(60)
     const media = new TextDecoder().decode((await repoFiles())[MEDIA])
     // The file has no line break at its end; the new line breaks as the checkout breaks the others.

@@ -9,9 +9,6 @@
 ; *********************** Header - some configuration  ***********************
 ; #Warn  ; Without this line the warnings are on, shown as dialogs (all but LocalSameAsGlobal); a #Warn line changes which are on and how they are shown.
 
-; TODOS:
-; - Web app to generate the layers and macros json config FUTURE
-
 ; *********************** Main ********************************
 ; To use CreateImageButton function must first call
 UseGDIP()

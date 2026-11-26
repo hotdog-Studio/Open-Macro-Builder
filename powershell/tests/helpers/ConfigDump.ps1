@@ -1,4 +1,4 @@
-# Canonical text dump of a loaded config, line for line the same as ahk/dump_config.ahk prints,
+# Canonical text dump of a loaded config, line for line the same as ahk/tests/dump_config.ahk prints,
 # so the PowerShell and AutoHotkey loaders can be compared as plain strings.
 
 function Get-IconFolder {

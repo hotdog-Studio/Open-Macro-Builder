@@ -48,7 +48,7 @@ Describe 'config <_>' -ForEach $configs {
     It 'reads the same way in ahk/config.ahk' -Tag Integration {
         . "$PSScriptRoot\helpers\Ahk.ps1"
         $saved = $env:OMB_CONFIG; $env:OMB_CONFIG = $path
-        try { $r = Invoke-AhkScript "$root\ahk\dump_config.ahk" } finally { $env:OMB_CONFIG = $saved }
+        try { $r = Invoke-AhkScript "$root\ahk\tests\dump_config.ahk" } finally { $env:OMB_CONFIG = $saved }
         if ($null -eq $r) { Set-ItResult -Skipped -Because 'AutoHotkey v2 is not installed'; return }
         $r.ExitCode | Should -Be 0 -Because $r.Err
         ($r.Out -replace "`r`n", "`n").TrimEnd("`n") | Should -BeExactly (Get-MacropadConfigDump $layout @(Import-MacropadHotkeys $path))

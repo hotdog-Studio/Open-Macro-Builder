@@ -1,10 +1,10 @@
 # Manual visual check of the overlay: shows it for 5 s, moving the selection after 2 s.
 # Uses config.ps1 when it and the commands load, otherwise a 3-key test fixture.
 # -ScreenshotPath saves <path>-before.png and <path>-after.png of the overlay area.
-# Usage: powershell -NoProfile -File powershell\tools\preview-overlay.ps1 [-ScreenshotPath C:\temp\overlay]
+# Usage: powershell -NoProfile -File powershell\tests\tools\preview-overlay.ps1 [-ScreenshotPath C:\temp\overlay]
 param([string]$ScreenshotPath = '')
 
-$root = Split-Path $PSScriptRoot -Parent
+$root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 foreach ($f in 'Native', 'Assets', 'Model', 'Overlay') { . (Join-Path $root "lib\$f.ps1") }
 
 $layout = $null

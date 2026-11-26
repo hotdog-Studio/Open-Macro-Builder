@@ -30,6 +30,12 @@ describe('listStarterFiles', () => {
     expect(files.filter((p) => /\.(xcf|bak|omb-tmp)$/.test(p))).toEqual([])
   })
 
+  it('carries no file that only a developer of the project uses', () => {
+    for (const gone of ['ahk/dump_config.ahk', 'img/icon.png']) expect(files).not.toContain(gone)
+    expect(files.filter((path) => path.startsWith('powershell/tools/'))).toEqual([])
+    for (const kept of ['ahk/main.ahk', 'powershell/launch.vbs', 'img/icon.ico', 'config.json']) expect(files).toContain(kept)
+  })
+
   it('stays inside the four sources, with forward slashes, sorted', () => {
     expect(files.every((p) => p === 'config.json' || /^(ahk|powershell|img)\//.test(p))).toBe(true)
     expect(files.some((p) => p.includes('\\'))).toBe(false)

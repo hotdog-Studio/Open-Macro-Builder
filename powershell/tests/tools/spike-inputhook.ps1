@@ -6,10 +6,10 @@
 #   hotstrings: 'btw ' -> 'by the way ', '@@' -> 'hello@example.com' (no end char needed),
 #   4..6        'now ' prints "Fired 6" and leaves only the space
 # Type into Notepad to try the hotstrings.
-# Exit both macropads first. Usage: powershell -NoProfile -File powershell\tools\spike-inputhook.ps1 [-Seconds 60]
+# Exit both macropads first. Usage: powershell -NoProfile -File powershell\tests\tools\spike-inputhook.ps1 [-Seconds 60]
 param([int]$Seconds = 60)
 
-foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'AhkSyntax', 'WinTitle', 'Hotkeys') { . "$PSScriptRoot\..\lib\$f.ps1" }
+foreach ($f in 'Native', 'Interop', 'Pump', 'Input', 'AhkSyntax', 'WinTitle', 'Hotkeys') { . "$PSScriptRoot\..\..\lib\$f.ps1" }
 
 $hook = [Macropad.InputHook]::new()
 $watcher = $null

@@ -112,7 +112,7 @@ The tests that the header fits on one row (`the header, drawn with the fonts of 
 cd configurator && node scripts/make-icon.mjs
 ```
 
-`img/icon.png` is the hotdog at 400 by 400 pixels: the picture of the hotdog Studio organisation on GitHub. Nothing in the project reads it, and `make-icon.mjs` does not remake it.
+`docs/img/icon.png` is the hotdog at 400 by 400 pixels: the picture of the hotdog Studio organisation on GitHub. Nothing in the project reads it, and `make-icon.mjs` does not remake it. It lies in `docs/img`, not `img`, so a folder the configurator sets up does not get it.
 
 ## Keeping private details out of git
 

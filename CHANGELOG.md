@@ -4,6 +4,11 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ## Unreleased
 
+### Removed
+
+- A folder the configurator sets up no longer gets the files only a developer of the project uses: `powershell/tools/spike-hotkeys.ps1`, `spike-inputhook.ps1` and `preview-overlay.ps1` (now `powershell/tests/tools/`), `ahk/dump_config.ahk` (now `ahk/tests/dump_config.ahk`) and `img/icon.png` (now `docs/img/icon.png`). The update dialog lists them under "Removed" for a folder that has them unchanged; one you changed is kept, and named under "Kept as they are" after the update.
+- AutoHotkey version: the `Layout` class loses `AddNewLayer`, `AddLayer`, `AddBlankLayer`, `RemoveLayer`, `ShowMacroMarker`, `ShowLabel` and `UseMacroIcons`. Nothing in the scripts called them, the layout file sets the same options, and the PowerShell version never had them. A script of your own that calls one of them fails with an error where it calls it; set `showMacroMarkers`, `showLabels` and `useMacroIcons` in `config.json` instead.
+
 ### Fixed
 
 - PowerShell version: a key runs the command it names even when PowerShell has an alias of the same name. A command called `sleep`, `start`, `move`, `sort` or any other of PowerShell's 151 aliases used to run the cmdlet behind the alias (or fail with an error about its parameters), because PowerShell picks an alias before a function; it now runs your function. The macropad also says "The command '<name>' is not defined." when a key names a command that nothing defines.

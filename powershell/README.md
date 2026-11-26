@@ -152,7 +152,7 @@ powershell -NoProfile -File powershell\tests\run.ps1 -EndToEnd
 
 It starts the real macropad, this version and the AutoHotkey one in turn, presses the macro keys and checks what every command did (see "The end-to-end test" in `docs/development.md`). It flashes more than the unit tests, at most three changes of the screen a second; the list of what it opens, moves and shows is under "The end-to-end test" in `docs/development.md`. It stops any macropad that runs and starts it again at the end, as it was started; the macropads it tests start from a copy that leaves out your own commands in `local/`. It needs AutoHotkey v2 and Python, and skips itself without AutoHotkey (under `-Ci` it fails instead).
 
-`tools/spike-hotkeys.ps1` and `tools/preview-overlay.ps1` are manual checks for the hotkeys and the overlay.
+`tests/tools/spike-hotkeys.ps1`, `tests/tools/spike-inputhook.ps1` and `tests/tools/preview-overlay.ps1` are manual checks for the hotkeys and the overlay. They are in the project's repository only: a folder the configurator sets up does not get `tests/`.
 
 ## Start with Windows
 
@@ -175,7 +175,7 @@ To switch back, set `TargetPath` to `<repo>\macropad_ahk\ahk\main.ahk`, `Argumen
 
 The Fn key (ScrollLock) is handled by a low-level keyboard hook (`WH_KEYBOARD_LL`), not by `RegisterHotKey`.
 
-`RegisterHotKey` was tried first (see `tools/spike-hotkeys.ps1` history). It fired once per press with `MOD_NOREPEAT`, and polling `GetAsyncKeyState` caught the release. But Windows still toggled the Scroll Lock state on every Fn press, because a registered hotkey does not stop the key from reaching the keyboard state. The AutoHotkey version never toggled it, because its hook swallows the key.
+`RegisterHotKey` was tried first (see the history of `tests/tools/spike-hotkeys.ps1` in the project's repository). It fired once per press with `MOD_NOREPEAT`, and polling `GetAsyncKeyState` caught the release. But Windows still toggled the Scroll Lock state on every Fn press, because a registered hotkey does not stop the key from reaching the keyboard state. The AutoHotkey version never toggled it, because its hook swallows the key.
 
 The hook in `lib/Native.ps1` (`Macropad.KeyHook`) swallows ScrollLock and posts its down and up transitions to the hotkey window, which raises `FnDown` and `FnUp`. The hook runs on its own thread with its own message loop. A macro that keeps the PowerShell thread busy for seconds therefore cannot stall keyboard input for the rest of the system, and Windows never removes the hook for timing out.
 
@@ -185,5 +185,4 @@ The twelve macro keys (F13 to F24) still use `RegisterHotKey` with `MOD_NOREPEAT
 
 - The overlay never takes focus, so clicking it leaves keys going to the app you were in.
 - The built-in commands send keys as chords (`'LWin+Left'`, with `Send-Chord`) instead of AutoHotkey `Send` syntax. Your own commands can use `Send` syntax too, with `Send-Ahk`.
-- The fluent `Layout` methods (`AddLayer`, `RemoveLayer`, `ShowLabel` and so on) are not ported.
 - The helpers for your own commands (`commands/helper.ps1`) are not quite the same set. The first parameter of `ActivateOrOpen`, `Open` and `EnsureActiveOrOpen` is the program's exe name (`'notepad.exe'`), where the AutoHotkey version takes a WinTitle (`"ahk_exe notepad.exe"`). Only this version has `ActivateOrOpenWindow` (a window found by its WinTitle, such as a shell in Windows Terminal), `Show-MessageBox` (AutoHotkey's `MsgBox`), `Get-ExplorerWindows` and `Open-ExplorerWindow`.

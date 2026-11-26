@@ -1,10 +1,12 @@
 #Requires AutoHotkey v2.0
 #NoTrayIcon
-; Prints the layout config.ahk builds from ..\config.json in the same canonical form as
+; Prints the layout config.ahk builds from the file OMB_CONFIG names in the same canonical form as
 ; powershell\tests\helpers\ConfigDump.ps1, so powershell\tests\Config.Tests.ps1 can check that
-; both versions read the file the same way. Run: AutoHotkey64.exe /ErrorStdOut dump_config.ahk
-#Include lib\ui.ahk
-#Include config.ahk
+; both versions read the file the same way. Set OMB_CONFIG first: this script lies in ahk\tests, where
+; config.ahk's own search for ..\config.json would look in the wrong folder.
+; Run: AutoHotkey64.exe /ErrorStdOut dump_config.ahk
+#Include ..\lib\ui.ahk
+#Include ..\config.ahk
 
 IconFolder(icon) {
     if (!IsObject(icon))

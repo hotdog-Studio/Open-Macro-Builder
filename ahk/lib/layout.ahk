@@ -3,8 +3,6 @@
 #Include create_image_button.ahk
 #Include layer.ahk
 
-; TODO - Then add in macro icons switch on
-
 /**
  * @class
  * @description
@@ -79,105 +77,6 @@ class Layout {
     }
     
     /**
-     * @description Adds a new layer to the layout. If an index is provided, the layer is added at that index, otherwise it is added to the end of the layers array.
-     * @param {(String)} Title
-     * The title of the new layer.
-     * @param {(Icon)} Icon
-     * The icon of the new layer.
-     * @param {(Macro[])} NewMacros
-     * An array of macros to add to the new layer. The number of macros must not exceed the number of keys in the layout.
-     * @param {(Number)} [Index=0]
-     * The index at which to insert the new layer. If `0` or not provided, the layer is added to the end of the layers array.
-     * @returns {Layout} The current layout object, allowing for method chaining.
-     * @throws {Error}
-     * - If adding the new layer would exceed the number of buttons in the layout.
-     * - If the number of macros exceeds the number of buttons in the layout.
-     */
-    AddNewLayer(Title, Icon, NewMacros, Index := 0) {
-        return this.AddLayer(Layer(Title, Icon, NewMacros), Index)
-    }
-
-    
-    /**
-     * @description Adds a new layer to the layout. If an index is provided, the layer is added at that index, otherwise it is added to the end of the layers array.
-     * @param {(Layer)} Layer
-     * The layer object to add.
-     * @param {(Number)} [Index=0]
-     * The index at which to insert the new layer. If `0` or not provided, the layer is added to the end of the layers array.
-     * @returns {Layout} The current layout object, allowing for method chaining.
-     * @throws {Error}
-     * - If adding the new layer would exceed the number of buttons in the layout.
-     * - If the number of macros exceeds the number of buttons in the layout.
-     */
-    AddLayer(Layer, Index := 0) {        
-        if (Index) {
-            if (Index < 1 || Index > this.keys.Length) {
-                throw Error("Index out of bounds.")
-            }
-            if (this.layers.Length < Index) {
-                Loop Index - this.layers.Length
-                    this.AddBlankLayer()
-            }
-            this.layers[Index] := Layer(Layer.title, Layer.icon, Layer.newMacros)
-        } else {
-            if (this.layers.Length >= this.keys.Length) {
-                message := "Too many layers (" (this.layers.Length + 1) ") for this amount of buttons (" this.keys.Length "). Cannot add layer: " Layer.title
-                throw Error(message)
-            }
-            if (Layer.newMacros.Length > this.keys.Length) {
-                message := "Too many macros (" Layer.newMacros.Length ") for this amount of buttons (" this.keys.Length "). - " Layer.title " Layer"
-                throw Error(message)
-            }
-            this.layers.Push(Layer(Layer.title, Layer.icon, Layer.newMacros))
-        }
-        return this
-    }
-
-    /**
-     * @description Adds a blank layer to the layout.
-     * @param {(Number)} [Index=0]
-     * The index at which to set to a blank layer. If `0` or not provided, the layer is added to the end of the layers array.
-     * @returns {Layout} The current layout object, allowing for method chaining.
-     * @throws {Error}
-     * - If adding the new layer would exceed the number of buttons in the layout.
-     */
-    AddBlankLayer(Index := 0) {
-        if (Index) {
-            if (Index < 1 || Index > this.keys.Length) {
-                throw Error("Index out of bounds.")
-            }
-            if (this.layers.Length < Index) {
-                Loop Index - this.layers.Length
-                    this.AddBlankLayer()
-            }
-            this.layers[Index] := ""
-        } else {
-            if (this.layers.Length >= this.keys.Length) {
-                message := "Too many layers (" (this.layers.Length + 1) ") for this amount of buttons (" this.keys.Length "). Cannot add blank layer."
-                throw Error(message)
-            }
-            this.layers.Push("")
-        }
-        return this
-    }
-
-    /**
-     * @description Removes and returns the layer at the specified index, setting that index to a blank layer.
-     * @param {(Number)} Index
-     * The index of the layer to remove.
-     * @returns {(Layer|String)} The removed layer, or an empty string if the layer was already blank.
-     * @throws {Error} If the index is out of bounds.
-     */
-    RemoveLayer(Index) {
-        if (Index < 1 || Index > this.layers.Length) {
-            throw Error("Index out of bounds.")
-        }
-        val := this.layers[Index]
-        this.layers[Index] := ""
-        return val
-    }
-
-    /**
      * @description Shows the function key if label is provided, otherwise toggles its visibility.
      * @param {(Boolean)} Label Whether to show the function key label.
      * @param {(String)} [Text] Optional text to display instead of the function key name.
@@ -192,34 +91,6 @@ class Layout {
                 this.showFn := this.fn.key
             }
         }
-        return this
-    }
-
-    /**
-     * @description Enables the display of macro icons on the buttons.
-     * @returns {Layout} The current layout object, allowing for method chaining.
-     */
-    ShowMacroMarker() {
-        this.showMacroMarkers := true
-        return this
-    }
-    
-    /**
-     * @description Enables the display of macro labels on the buttons.
-     * @returns {Layout} The current layout object, allowing for method chaining.
-     */
-    ShowLabel() {
-        this.showLabels := true
-        this.__ApplyLabels()
-        return this
-    }
-
-    /**
-     * @description Enables the use of macro icons on the buttons instead of layer icons when a macro is assigned. If a macro has no icon, it will use the layer icon.
-     * @returns {Layout} The current layout object, allowing for method chaining.
-     */
-    UseMacroIcons() {
-        this.macroIcons := true
         return this
     }
 

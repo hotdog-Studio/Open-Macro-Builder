@@ -1,10 +1,10 @@
 # Manual check of the hotkey mechanics: the low-level hook that swallows ScrollLock (Fn)
 # and reports its down/up, and RegisterHotKey for F13.
 # Exit the AutoHotkey macropad first: its keyboard hook swallows these keys.
-# Usage: powershell -NoProfile -File powershell\tools\spike-hotkeys.ps1 [-Seconds 30]
+# Usage: powershell -NoProfile -File powershell\tests\tools\spike-hotkeys.ps1 [-Seconds 30]
 param([int]$Seconds = 30)
 
-. "$PSScriptRoot\..\lib\Native.ps1"
+. "$PSScriptRoot\..\..\lib\Native.ps1"
 
 function Get-ScrollLockState { [Macropad.Native]::GetKeyState(0x91) -band 1 }
 

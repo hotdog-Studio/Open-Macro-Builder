@@ -98,13 +98,13 @@ try {
 
   /** The .ico file of an SVG, with an image at each of SIZES. */
   async function ico(svg) {
-    const entries = []
-    for (const size of SIZES) {
-      const { rgba, png } = await draw(svg, size)
-      // The largest is kept as a PNG, as Windows itself writes icons; the rest as plain bitmaps,
-      // which every reader of .ico files understands.
-      entries.push({ size, data: size === 256 ? Buffer.from(png, 'base64') : bitmapEntry(size, rgba) })
-    }
+    const drawn = await Promise.all(SIZES.map((size) => draw(svg, size)))
+    // The largest is kept as a PNG, as Windows itself writes icons; the rest as plain bitmaps,
+    // which every reader of .ico files understands.
+    const entries = SIZES.map((size, i) => ({
+      size,
+      data: size === 256 ? Buffer.from(drawn[i].png, 'base64') : bitmapEntry(size, drawn[i].rgba),
+    }))
     return icoFile(entries)
   }
 

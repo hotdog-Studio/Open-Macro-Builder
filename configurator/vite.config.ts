@@ -31,10 +31,13 @@ export default defineConfig({
     testTimeout: 20000,
     coverage: {
       provider: 'v8',
-      include: ['src/**', 'electron/**'],
+      // scripts/ holds the build scripts, starter.mjs among them (it decides which files go into every
+      // folder the app sets up). build-electron.mjs and make-icon.mjs only start tools and show as
+      // uncovered here; sonar.coverage.exclusions leaves them out of SonarQube's figure.
+      include: ['src/**', 'electron/**', 'scripts/**'],
       // A declaration file beside plain JavaScript (src/core/update/canonical.d.mts) holds no code, and the
-      // provider would try to parse it as JavaScript.
-      exclude: ['**/*.d.mts'],
+      // provider would try to parse it as JavaScript. Test files are not code under test.
+      exclude: ['**/*.d.mts', '**/*.test.*'],
       // projectRoot makes the SF: lines repo-root-relative (configurator/src/...), which is how
       // SonarQube, whose project root is the repo root, finds the files.
       reporter: ['text', ['lcov', { projectRoot: '..' }]],

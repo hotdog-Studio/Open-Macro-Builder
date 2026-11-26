@@ -14,7 +14,7 @@ const RESOLVED_ID = '\0' + VIRTUAL_ID
 const INDEX_VIRTUAL_ID = 'virtual:omb-starter-index'
 const INDEX_RESOLVED_ID = '\0' + INDEX_VIRTUAL_ID
 
-const SOURCE_FOLDERS = ['ahk', 'powershell', 'img']
+const SOURCE_FOLDERS = new Set(['ahk', 'powershell', 'img'])
 // Tests and personal files stay behind; so do image sources, editor or atomic-write leftovers and manifests.
 const SKIPPED_FOLDERS = new Set(['tests', 'local'])
 const SKIPPED_FILES = /\.(xcf|bak|omb-tmp)$/
@@ -33,7 +33,7 @@ export function isStarterFile(path) {
   if (path === 'config.json') return true
   const parts = path.split('/')
   const name = parts.pop()
-  if (parts.length === 0 || !SOURCE_FOLDERS.includes(parts[0])) return false
+  if (parts.length === 0 || !SOURCE_FOLDERS.has(parts[0])) return false
   return !parts.slice(1).some((folder) => SKIPPED_FOLDERS.has(folder)) && !skipped(name)
 }
 
@@ -52,7 +52,7 @@ function collect(root, rel, into) {
 export function listStarterFiles(repoRoot) {
   const files = ['config.json']
   for (const folder of SOURCE_FOLDERS) collect(repoRoot, folder, files)
-  return files.sort()
+  return files.sort((a, b) => Number(a > b) - Number(a < b))
 }
 
 /**

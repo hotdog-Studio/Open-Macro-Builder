@@ -27,7 +27,9 @@ export function compareVersions(a, b) {
 }
 
 function git(repoRoot, args, input) {
-  const result = spawnSync('git', ['-C', repoRoot, ...args], { input, maxBuffer: 1 << 30 })
+  // `git` is found on PATH, as scripts/ci-version.mjs and scripts/ci-release.mjs do: a person runs this
+  // on their own clone, and whoever controls their PATH already controls what they run (hence NOSONAR).
+  const result = spawnSync('git', ['-C', repoRoot, ...args], { input, maxBuffer: 1 << 30 }) // NOSONAR S4036
   if (result.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${result.error?.message ?? result.stderr.toString('utf8')}`)
   }
@@ -131,8 +133,10 @@ export function mergeReleases(perRelease) {
         throw new Error(`two paths differ only by case: ${other} and ${path} (v${version})`)
       }
       spelled.set(path.toLowerCase(), path)
-      const byPrint = (files[path] ??= {})
-      ;(byPrint[print] ??= []).push(version)
+      files[path] ??= {}
+      const byPrint = files[path]
+      byPrint[print] ??= []
+      byPrint[print].push(version)
     }
   }
   const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => Number(a > b) - Number(a < b)))

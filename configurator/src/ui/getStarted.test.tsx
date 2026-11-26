@@ -59,7 +59,7 @@ const AUTOHOTKEY_PARAGRAPH =
 const FOUND = 'AutoHotkey v2 is already installed on this PC.'
 const NOT_FOUND = 'AutoHotkey v2 was not found on this PC.'
 const RELOAD_SENTENCE =
-  'While the macropad is running, saving in this app offers Reload macropad, which restarts it for you.'
+  'While a macropad started from this folder is running, saving in this app offers Reload macropad, which restarts it for you. A macropad started from another folder is not found.'
 const STEP_5 = 'Open your folder in File Explorer.'
 const STEP_5_AHK = 'For AutoHotkey, open the ahk folder and double-click main.ahk.'
 const STEP_5_PS = 'For PowerShell, open the powershell folder and double-click launch.vbs.'

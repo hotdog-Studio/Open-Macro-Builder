@@ -4,7 +4,7 @@ The images serve the **web configurator**: the built page and a small web server
 
 Two things to know before you use one:
 
-- **The macropad does not run in the container.** It is AutoHotkey or PowerShell on Windows and cannot run in a container; its scripts ride along in the page only as the starter copy for a new folder. The page edits the Open Macro Builder folder on the computer whose browser opens it, wherever the container runs.
+- **The macropad does not run in the container.** It is AutoHotkey or PowerShell on Windows and cannot run in a container; its scripts ride along in the page as the app's copy: the page sets up a new folder with them, and offers them as an update to a folder whose scripts are older ([the readme](../readme.md#configurator) says what an update does). The page edits the Open Macro Builder folder on the computer whose browser opens it, wherever the container runs.
 - **The page can open a folder only on `https://` or on `localhost`.** That is a browser rule for the File System Access API, in Chrome and Edge. On the same computer, `http://localhost:8080` works. From another device you must put HTTPS in front of the container (see [From another device](#from-another-device)).
 
 ## Run it

@@ -431,13 +431,21 @@ $script:E2eFloorMs = 350
 # How long a check before a press waits for the window it expects, while one of the test's own windows
 # still has the keyboard (Wait-E2eFront).
 $script:E2eFrontMs = 3000
-# How long a tooltip of the macropad's may still show once its overlay is seen hidden, with the pointer put
-# back: in both versions the tooltip goes with the overlay. The PowerShell macropad switches its ToolTip off
-# and on in the same handler that hides the form (Hide-Overlay), so it is gone when the overlay is seen to
-# be; AutoHotkey's goes on WM_MOUSELEAVE, which the pointer's leaving and the window's hiding bring at
-# once. This is a margin for a slow machine, not a time the tooltip needs: Windows Forms' own tip runs
-# 5 s (AutoPopDelay), so a tooltip left to run out cannot pass.
-$script:E2eTooltipGoneMs = 1500
+# How long a tooltip of the macropad's may still show once its overlay is seen hidden, Fn let go and the
+# pointer put back: in both versions the tooltip goes with the overlay. Each by its own mechanism. The
+# PowerShell macropad switches its ToolTip off and on again in Hide-Overlay, in the handler that hides the
+# form, so the tip is gone before the overlay is seen to be. AutoHotkey's goes in OnMouseEvent
+# (ahk/lib/io.ahk) on WM_MOUSELEAVE, which Windows posts to the overlay's window after TrackMouseEvent
+# (TME_LEAVE) when the pointer leaves it or the window hides (selectionGui.Hide(), also in io.ahk); no
+# timer of the script is in it, so how long the message takes is Windows', and the script handles it when
+# its thread is free. That time was not measured: the two cases of build #4 took about 1.1 s longer in
+# AutoHotkey than in PowerShell, which fits a tip that goes up to about a second after the window hides but
+# is not proof. So the limit is a margin of more than twice that, and still far under what the old
+# PowerShell behaviour needed: its tip ran out its 5 s (AutoPopDelay) from when it showed, and 4807 ms of
+# them were left when this wait began in E2eOverlayIcon. The steps between a tip's showing and this wait's
+# start (two or three pacing floors of 350 ms, the looks of the waits) take about 1.5 s at most, so what
+# is left of the 5 s then is over 3.5 s, and a tip left to run out cannot be gone within 2.5 s.
+$script:E2eTooltipGoneMs = 2500
 $script:E2eChangeClock = $null
 $script:E2eWarning = 'Photosensitivity warning: this test opens, moves and closes windows. Look away if flashing affects you.'
 # The banner's window (ahk\tests\e2e\banner.ahk), as Find-Window reads it.

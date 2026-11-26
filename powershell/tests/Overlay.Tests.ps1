@@ -75,13 +75,16 @@ Describe 'New-Overlay / Select-Layer' {
 }
 # Hide-Overlay puts the overlay's tooltip away with the overlay: the tooltip is a window of its own (the
 # common control Windows Forms makes for System.Windows.Forms.ToolTip), not a child of the form, so hiding
-# the form leaves a tip that is showing on the screen until its own five seconds run out. Whether a tip
-# that shows goes is seen on a screen, in the end-to-end test (Invoke-E2eOverlayPointer, which waits for
-# it); what these check needs no window, the form never being shown: that hiding the overlay is safe at
-# any time and leaves the tooltip ready for the next time it shows, with its texts and switched on.
+# the form leaves a tip that is showing on the screen until its own five seconds run out. Hide-Overlay
+# switches the ToolTip off and on again (Active), which takes a showing tip away. Whether a tip that shows
+# goes is seen on a screen only, in the end-to-end test (E2eOverlayIcon, Invoke-E2eOverlayPointer), and
+# these tests do not show it: they pass on the code before the change as well, and cannot fail for the
+# defect itself. What they guard is that hiding leaves the tooltip switched on and with its texts, so they
+# would fail a version that switched it off and forgot to switch it on again.
 Describe 'Hide-Overlay' {
-    BeforeAll { $o = New-Overlay (New-Fixture) }
-    It 'leaves the tooltip switched on, with every text it had, after hiding an overlay that was never shown' {
+    BeforeAll { . "$PSScriptRoot\..\lib\Interop.ps1" }   # the window functions (Macropad.WindowApi); it only compiles types
+    It 'leaves the tooltip switched on, with its texts, when it hides an overlay that was never shown' {
+        $o = New-Overlay (New-Fixture)
         Select-Layer $o 0 | Should -BeTrue
         Hide-Overlay $o
         $o.ToolTip.Active | Should -BeTrue
@@ -89,15 +92,28 @@ Describe 'Hide-Overlay' {
         $o.ToolTip.GetToolTip($o.Labels[0]) | Should -Be "M0`nd0"
         $o.ToolTip.GetToolTip($o.Buttons[0]) | Should -Be 'A'
     }
-    It 'leaves the tooltip switched on when it hides the overlay again, and again' {
-        1..3 | ForEach-Object { Hide-Overlay $o }
-        $o.ToolTip.Active | Should -BeTrue
-    }
-    It 'gives the tooltip the texts of a layer selected after it hid' {
-        Hide-Overlay $o
-        Select-Layer $o 2 | Should -BeTrue
-        Hide-Overlay $o
-        $o.ToolTip.Active | Should -BeTrue
-        $o.ToolTip.GetToolTip($o.Labels[1]) | Should -Be "M1b`nd1b"
+    # The tooltip's own window is made when the handle of a control that has a tip is: the ToolTip's
+    # HandleCreated handler for that control looks up its top-level control (the form, whose handle is made
+    # first) and creates its window, a popup of the form without WS_VISIBLE that the control itself shows
+    # only when the pointer rests on a tool (dotnet/winforms ToolTip.cs: HandleCreated, CreateRegion,
+    # TopLevelCreated, CreateHandle). Creating a label's handle without Show() makes the windows and nothing
+    # visible; from then on the Active setter sends TTM_ACTIVATE, as it does in the macropad, and hiding
+    # must not throw.
+    It 'hides, and leaves the tooltip switched on, once the form''s window and the tooltip''s exist but nothing shows' {
+        $tooltips = { @([Macropad.WindowApi]::TopLevel() | Where-Object { [Macropad.WindowApi]::ProcessId($_) -eq $PID -and [Macropad.WindowApi]::ClassName($_) -match 'tooltips_class32' }) }
+        $before = & $tooltips
+        $o = New-Overlay (New-Fixture)
+        try {
+            Select-Layer $o 0 | Should -BeTrue
+            $label = $o.Labels[0].Handle
+            $form = $o.Form.Handle
+            $made = @(& $tooltips | Where-Object { $_ -notin $before })
+            $made.Count | Should -BeGreaterThan 0 -Because 'the handle of a control with a tip brings the ToolTip''s own window with it, so Active reaches the control'
+            { Hide-Overlay $o } | Should -Not -Throw
+            $o.ToolTip.Active | Should -BeTrue
+            [Macropad.WindowApi]::Visible($form) | Should -BeFalse
+            foreach ($t in $made) { [Macropad.WindowApi]::Visible($t) | Should -BeFalse }
+            $o.ToolTip.GetToolTip($o.Labels[0]) | Should -Be "M0`nd0"
+        } finally { $o.Form.Dispose(); $o.ToolTip.Dispose() }
     }
 }

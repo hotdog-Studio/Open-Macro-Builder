@@ -1678,6 +1678,33 @@ describe('new and deleted files', () => {
       expect(folder.text(HUB)).toBe(`${HUB_HEADER}#Include new.ahk\n`)
     })
 
+    it('forgets a file that was deleted: one made by hand in its place is never listed', async () => {
+      const HAND = 'New(Macro)\n{\n}\n'
+      const { user, folder } = await start({ files: MINE })
+      const disk = lock(folder, [HUB])
+      const first = await create(user, 'new')
+      expect(await within(first).findByText(`${NEW_AHK} was created, but ${HUB} was not updated: the disk is full`)).toBeTruthy()
+      await user.click(within(first).getByRole('button', { name: 'Cancel' }))
+      disk.locked = false
+
+      // The person deletes the file the first try made, then makes one by hand and leaves it unlisted.
+      await user.click(langButton('AutoHotkey'))
+      await user.click(screen.getByRole('button', { name: 'Delete this file' }))
+      await user.click(within(screen.getByRole('dialog', { name: 'Delete new.ahk?' })).getByRole('button', { name: 'Delete' }))
+      await waitFor(() => expect(folder.text(NEW_AHK)).toBeNull())
+      await folder.writeBytes(NEW_AHK, enc.encode(HAND))
+      await act(async () => {
+        await seen.actions.recheckCommands()
+      })
+
+      // Both files exist and the hand-made one is not the app's to list: the name is refused, nothing is written.
+      const again = await newFile(user, 'new')
+      await user.click(within(again).getByRole('button', { name: 'Create' }))
+      expect(within(again).getByText(`${NEW_AHK} already exists.`)).toBeTruthy()
+      expect(folder.text(NEW_AHK)).toBe(HAND)
+      expect(await folder.readBytes(HUB)).toBeNull()
+    })
+
     it('never lists a file of that name that was made or switched off by hand', async () => {
       const HAND = 'X(Macro)\n{\n}\n'
       const hub = '#Requires AutoHotkey v2.0\n#Include mine.ahk\n'

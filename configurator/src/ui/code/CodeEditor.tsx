@@ -58,17 +58,22 @@ const TAB_HINT = 'Tab indents. To leave the editor with the keyboard, press Esc 
 let hintCount = 0
 
 /**
- * Escape arms leaving the editor: Tab or Shift+Tab pressed next moves the focus out, however long after
- * the Escape, until another key is pressed or the focus leaves. CodeMirror's own Escape (tab-focus mode)
- * lasts two seconds; this runs after it in the same event and lasts on. Infinity is a time never reached
- * by the clock, and a key other than Tab ends it as it ends CodeMirror's. A mode a person turned on
- * with Ctrl-m stays as it is (a number does not touch it), and a focus that leaves ends the armed one
- * (a time already past), so coming back finds Tab indenting again.
+ * Every Escape pressed in the text arms leaving the editor: Tab or Shift+Tab pressed next moves the
+ * focus out, however long after the Escape, until another key is pressed, the text is clicked or the
+ * focus leaves. CodeMirror's own Escape (tab-focus mode) lasts two seconds, and does not happen at all
+ * when a key binding takes the Escape first (it collapses a selection). These are observers: they run
+ * for every event before the handlers, whether or not a handler takes it, and change nothing about how
+ * it is handled. The Escape arms in a microtask, after CodeMirror's own handling of the same event.
+ * Infinity is a time the clock never reaches; a key other than Tab ends it, as it ends CodeMirror's.
+ * A mode a person turned on with Ctrl-m stays as it is (a number does not touch it). A click or a
+ * focus that leaves ends the armed one with a time already past, so Tab indents again.
  */
-const LEAVE_WITH_TAB = EditorView.domEventHandlers({
+const LEAVE_WITH_TAB = EditorView.domEventObservers({
   keydown(event, view) {
     if (event.key === 'Escape') queueMicrotask(() => view.setTabFocusMode(Infinity))
-    return false
+  },
+  mousedown(_event, view) {
+    view.setTabFocusMode(-1)
   },
   blur(_event, view) {
     view.setTabFocusMode(-1)

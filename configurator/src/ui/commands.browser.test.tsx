@@ -298,6 +298,59 @@ describe('Commands tab: leaving the editor with the keyboard', () => {
     expect(text().slice(before.length)).toMatch(/^ +x$/)
   })
 
+  it('a click in the text after the Esc disarms it: Tab indents and the focus stays', async () => {
+    await start()
+    await openFile('media')
+    const before = text()
+    await key('{Escape}')
+    await click(editorEl())
+    await key('{Tab}')
+    expect(document.activeElement).toBe(editorEl())
+    expect(text().length).toBeGreaterThan(before.length)
+  })
+
+  it('Esc with text selected collapses the selection and still arms: Tab leaves the editor', async () => {
+    await start()
+    await openFile('media')
+    const before = text()
+    await key('{Control>}a{/Control}')
+    expect(editorView().state.selection.main.empty).toBe(false)
+    await key('{Escape}')
+    expect(editorView().state.selection.main.empty).toBe(true)
+    await key('{Tab}')
+    expect(insideEditor()).toBe(false)
+    expect(text()).toBe(before)
+  })
+
+  it('Esc with text selected, then a letter, disarms it: Tab indents and the focus stays', async () => {
+    await start()
+    await openFile('media')
+    await key('{Control>}{End}{/Control}')
+    await key('{Enter}ab{Shift>}{ArrowLeft}{ArrowLeft}{/Shift}')
+    expect(editorView().state.selection.main.empty).toBe(false)
+    await key('{Escape}')
+    await key('x')
+    await key('{Tab}')
+    expect(document.activeElement).toBe(editorEl())
+    expect(text()).toMatch(/\n +xab$/)
+  })
+
+  it('an Esc that closes the search panel does not arm: back in the text, Tab indents', async () => {
+    await start()
+    await openFile('media')
+    await key('{Control>}{End}{/Control}')
+    await key('{Enter}')
+    const before = text()
+    await key('{Control>}f{/Control}')
+    await waitFor(() => expect(document.querySelector('.cm-search')).not.toBeNull())
+    await key('{Escape}')
+    await waitFor(() => expect(document.querySelector('.cm-search')).toBeNull())
+    expect(document.activeElement).toBe(editorEl())
+    await key('{Tab}')
+    expect(document.activeElement).toBe(editorEl())
+    expect(text().slice(before.length)).toMatch(/^ +$/)
+  })
+
   it('coming back into the editor, Tab indents again without an Esc', async () => {
     await start()
     await openFile('media')
@@ -343,9 +396,9 @@ describe('Commands tab: the hint line of the editor', () => {
   it('has a contrast of at least 4.5 against the editor when it is seen', async () => {
     await start()
     await openFile('media')
-    const text = luminance(rgbOf(getComputedStyle(hintEl()).color))
+    const ink = luminance(rgbOf(getComputedStyle(hintEl()).color))
     const back = luminance(rgbOf(getComputedStyle(document.querySelector('.cm-editor')!).backgroundColor))
-    const [light, dark] = text > back ? [text, back] : [back, text]
+    const [light, dark] = ink > back ? [ink, back] : [back, ink]
     expect((light + 0.05) / (dark + 0.05)).toBeGreaterThanOrEqual(4.5)
   })
 

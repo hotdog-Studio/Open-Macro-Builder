@@ -924,6 +924,7 @@ Describe 'End-to-end overlay tooltip timing: the line the run prints' {
         @{ Why = 'a tooltip was showing and went'; Showing = $true; Ms = 1123; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, gone after 1123 ms (limit 2500 ms)' }
         @{ Why = 'a tooltip went at the first look'; Showing = $true; Ms = 0; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, gone after 0 ms (limit 2500 ms)' }
         @{ Why = 'none was showing'; Showing = $false; Ms = 3; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none was showing when the overlay hid' }
+        @{ Why = 'none was showing, and one was at the limit'; Showing = $false; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: none was showing when the overlay hid, one showing at the limit (2500 ms)' }
         @{ Why = 'a tooltip was still showing at the limit'; Showing = $true; Ms = $null; Want = 'Overlay tooltip, ahk E2eOverlayIcon: showing when the overlay hid, still showing at the limit (2500 ms)' }
     ) {
         Format-E2eOverlayTooltipTime 'ahk E2eOverlayIcon' $Showing $Ms 2500 | Should -BeExactly $Want

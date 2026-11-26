@@ -434,16 +434,18 @@ $script:E2eFrontMs = 3000
 # How long a tooltip of the macropad's may still show once its overlay is seen hidden, Fn let go and the
 # pointer put back: in both versions the tooltip goes with the overlay. Each by its own mechanism. The
 # PowerShell macropad switches its ToolTip off and on again in Hide-Overlay, in the handler that hides the
-# form, so the tip is gone before the overlay is seen to be. AutoHotkey's goes in OnMouseEvent
+# form: it is meant to go with the hide, which these cases check. AutoHotkey's goes in OnMouseEvent
 # (ahk/lib/io.ahk) on WM_MOUSELEAVE, which Windows posts to the overlay's window after TrackMouseEvent
-# (TME_LEAVE) when the pointer leaves it or the window hides (selectionGui.Hide(), also in io.ahk); no
-# timer of the script is in it, so how long the message takes is Windows', and the script handles it when
-# its thread is free. That time was not measured: the two cases of build #4 took about 1.1 s longer in
-# AutoHotkey than in PowerShell, which fits a tip that goes up to about a second after the window hides but
-# is not proof. So the limit is a margin of more than twice that, and still far under what the old
+# (TME_LEAVE) when the pointer leaves it (Windows' documentation says no more; whether hiding the window
+# brings it too was not read, and the harness puts the pointer back anyway); no timer of the script is in
+# it, so how long the message takes is Windows', and the script handles it when its thread is free. That
+# time was not measured: the two cases of build #4 took about 1.1 s longer in AutoHotkey than in
+# PowerShell, which fits a tip that goes up to about a second but is not proof. So the limit is a margin
+# of more than twice that, and still far under what the old
 # PowerShell behaviour needed: its tip ran out its 5 s (AutoPopDelay) from when it showed, and 4807 ms of
 # them were left when this wait began in E2eOverlayIcon. The steps between a tip's showing and this wait's
-# start (two or three pacing floors of 350 ms, the looks of the waits) take about 1.5 s at most, so what
+# start (the pacing floors of 350 ms, one of them after the click, and the looks of the waits) take about
+# 1.5 s at most, so what
 # is left of the 5 s then is over 3.5 s, and a tip left to run out cannot be gone within 2.5 s.
 $script:E2eTooltipGoneMs = 2500
 $script:E2eChangeClock = $null
@@ -1904,11 +1906,13 @@ function Assert-E2eOnOverlay {
 
 # The line the end-to-end run prints for the wait that follows an overlay (Invoke-E2eOverlayPointer): the
 # case (the macropad and the case's name), whether a tooltip was showing when the overlay was seen hidden,
-# and how many milliseconds after that it was gone, counted from the start of the wait (GoneAfterMs; $null
-# when it was still there at the limit, LimitMs). The same clock and limit as the wait's own.
+# and how many milliseconds after that it was gone (GoneAfterMs; $null when a tooltip was still there at
+# the limit, LimitMs). Counted from just before the wait, so up to one look (tens of ms) more than the
+# wait's own count, which starts after its first look: a figure a little over the limit can be a pass.
 function Format-E2eOverlayTooltipTime {
     param([string]$Case, [bool]$Showing, $GoneAfterMs, [int]$LimitMs)
     if (-not $Showing -and $null -ne $GoneAfterMs) { return "Overlay tooltip, ${Case}: none was showing when the overlay hid" }
+    if (-not $Showing) { return "Overlay tooltip, ${Case}: none was showing when the overlay hid, one showing at the limit ($LimitMs ms)" }
     if ($null -eq $GoneAfterMs) { return "Overlay tooltip, ${Case}: showing when the overlay hid, still showing at the limit ($LimitMs ms)" }
     "Overlay tooltip, ${Case}: showing when the overlay hid, gone after $GoneAfterMs ms (limit $LimitMs ms)"
 }

@@ -1304,7 +1304,7 @@ describe('new and deleted files', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(folder.text('ahk/commands/custom/new.ahk')).toBe(AHK_STARTER('custom/new'))
+    expect(folder.text('ahk/commands/custom/new.ahk')).toBe(AHK_STARTER('new'))
     expect(await folder.readBytes('powershell/commands/custom/new.ps1')).toBeNull()
     const eol = eolOf(folder, 'ahk/config.ahk')
     const automation = `#Include commands\\custom\\automation.ahk${eol}`

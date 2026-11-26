@@ -71,7 +71,7 @@ export interface Language {
    * the file). Nothing else changes.
    */
   renameParam(text: string, fn: FunctionInfo, to: string): string
-  /** The text of a new command file of the pair. */
+  /** The text of a new command file of the pair: its comment names the file by the last part of the pair, without its folder. */
   starterFile(pair: string): string
   /** A new command with the Macro parameter, without a trailing newline; an empty description leaves out its line. */
   starterCommand(name: string, description: string): string

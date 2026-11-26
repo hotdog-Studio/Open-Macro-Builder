@@ -772,6 +772,36 @@ describe('starter command', () => {
   })
 })
 
+describe('starter text and a description read back', () => {
+  const read = (id: 'ahk' | 'ps', description: string) => {
+    const lang = LANGUAGES[id]
+    const text = `${lang.starterFile('x')}\n${lang.starterCommand('Go', description)}\n`
+    return lang.findFunctions(text).find((fn) => fn.name === 'Go')?.description
+  }
+
+  it.each(['ahk', 'ps'] as const)('reads back a description that starts with @ (%s)', (id) => {
+    expect(read(id, '@home: open the folder')).toBe('@home: open the folder')
+  })
+
+  // What a description may hold without ending its comment early or being taken for something else.
+  // The two columns are what each language reads back: a `*/` and a `#>` that ends the line are spaced apart.
+  it.each([
+    ['@', '@', '@'],
+    ['@description', '@description', '@description'],
+    ['has #> inside it', 'has #> inside it', 'has #> inside it'],
+    ['ends the way a PowerShell block does #>', 'ends the way a PowerShell block does #>', 'ends the way a PowerShell block does # >'],
+    ['fast */ copy, then /* more', 'fast * / copy, then /* more', 'fast */ copy, then /* more'],
+  ])('reads back the description %j in both languages', (description, inAhk, inPs) => {
+    expect(read('ahk', description)).toBe(inAhk)
+    expect(read('ps', description)).toBe(inPs)
+  })
+
+  it('names a new file by its own name, without its folder', () => {
+    expect(LANGUAGES.ahk.starterFile('custom/git')).toContain('; git commands.')
+    expect(LANGUAGES.ps.starterFile('custom/git')).toBe('# git commands.\n')
+  })
+})
+
 describe('starter command description', () => {
   it('keeps a */ inside the AutoHotkey comment', () => {
     const text = appendBlock('', LANGUAGES.ahk.starterCommand('Foo', 'fast */ copy'))

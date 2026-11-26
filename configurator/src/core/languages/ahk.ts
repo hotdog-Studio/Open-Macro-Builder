@@ -404,13 +404,15 @@ export const ahk: Language = {
   lineComment: ';',
   findFunctions,
   renameParam,
-  starterFile: (pair) => `#Requires AutoHotkey v2.0\n\n; ${pair} commands.\n`,
+  starterFile: (pair) => `#Requires AutoHotkey v2.0\n\n; ${pair.split('/').at(-1)} commands.\n`,
   starterCommand(name, description) {
-    // A `*/` in the description would close the doc comment early.
+    // A `*/` in the description would close the doc comment early, and a line that starts with `@`
+    // would read as a tag and not as text: it goes under `@description`.
     const line = oneLine(description).replaceAll('*/', '* /')
+    const text = line.startsWith('@') ? `@description ${line}` : line
     return (
       '/**\n' +
-      (line === '' ? '' : ` * ${line}\n`) +
+      (text === '' ? '' : ` * ${text}\n`) +
       ` * @param {Macro} Macro - The macro object.\n */\n${name}(Macro)\n{\n}`
     )
   },

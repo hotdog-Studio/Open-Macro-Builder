@@ -331,9 +331,10 @@ export const ps: Language = {
   lineComment: '#',
   findFunctions,
   renameParam,
-  starterFile: (pair) => `# ${pair} commands.\n`,
+  starterFile: (pair) => `# ${pair.split('/').at(-1)} commands.\n`,
   starterCommand(name, description) {
-    const line = oneLine(description)
+    // A line that ends in `#>` would look like the end of a help block above the function.
+    const line = oneLine(description).replace(/#>$/, '# >')
     return (line === '' ? '' : `# ${line}\n`) + `function ${name} {\n    param($Macro)\n}`
   },
   // PowerShell loads every file in its command folders: no include file lists them.

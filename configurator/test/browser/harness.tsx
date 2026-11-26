@@ -1,6 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
 import { cleanup, render, screen } from '@testing-library/react'
 import { useLayoutEffect } from 'react'
+import { vi } from 'vitest'
 import { commands, userEvent } from 'vitest/browser'
 import type { Workspace } from '../../src/core/config/model'
 import { MemoryFolder } from '../../src/core/folder/memory'
@@ -10,6 +11,9 @@ import { AppProvider, useApp, type Banner } from '../../src/state/store'
 import type { UpdateSource } from '../../src/state/updateActions'
 import { App } from '../../src/ui/App'
 import type { PointerPath, TouchPath } from './commands'
+import { endTest, rest } from './lifetime'
+
+export { rest } from './lifetime'
 
 declare module 'vitest/browser' {
   interface BrowserCommands {
@@ -92,6 +96,10 @@ export const dirty = (): boolean => editor().dirty
  * part-way through a test.
  */
 export function mount(platform: Platform, updateSource: UpdateSource | null = null): void {
+  // An app still here was left by a test whose clean-up has not finished: it goes, and that clean-up
+  // then leaves this one alone.
+  if (document.getElementById('root')) unmount()
+  mounts++
   inputOpen = true
   const root = document.createElement('div')
   root.id = 'root'
@@ -114,25 +122,42 @@ export function unmount(): void {
 
 // ---------------------------------------------------------------- input in flight
 
-/**
- * The commands that type, click or move the pointer, from when they are sent until they end. Each runs
- * in the Node side of Vitest, key by key and move by move, and nothing stops it when its test ends
- * first (a timeout, a failed assertion): its keys would land in the next test's editor. On the
- * Windows build agent a test once timed out with hundreds of keys still to type, and the four tests
- * after it failed on them.
- */
+// A test that ends first (a timeout, a failed assertion) stops nothing by itself: a command it sent
+// runs on in the Node side of Vitest, and its body goes on running once what it awaited ends. On the
+// Windows build agent a test once timed out with hundreds of keys still to type, and the four tests
+// after it failed on them. So, between one test and the next:
+// - cleanUp closes input, ends the test for the waits (lifetime.ts), puts the real clock back, waits
+//   for the commands in flight and takes the app away;
+// - a command is never longer than one key or one pointer path, so that wait is short;
+// - a body that outlived its test stops at its next wait (waitFor, findBy*, rest) or its next input;
+// - the next test sends nothing and mounts nothing until every earlier command has ended.
+
+/** The commands that type, click or move the pointer, from when they are sent until they end. */
 const inFlight = new Set<Promise<unknown>>()
 
-/**
- * Whether input may be sent: not from a test's clean-up until the next app is mounted. A test that
- * timed out goes on running once what it awaited ends, and its next key would otherwise go out too.
- */
+/** Whether input may be sent: not from a test's clean-up until the next app is mounted. */
 let inputOpen = true
 
-/** Sends a command that types, clicks or moves the pointer, and keeps it in inFlight until it ends. */
+/** How many apps have been mounted: a clean-up that ends after the next mount leaves that app alone. */
+let mounts = 0
+
+/** Every command still in flight has ended. */
+const inputEnded = async (): Promise<void> => {
+  await Promise.allSettled(inFlight)
+}
+
+const refused = () => new Error('input sent after its test had ended')
+
+/**
+ * Sends a command that types, clicks or moves the pointer once every earlier one has ended, and keeps
+ * it in inFlight until it ends.
+ */
 function input<T>(send: () => PromiseLike<T>): Promise<T> {
-  if (!inputOpen) return Promise.reject(new Error('input sent after its test had ended'))
-  const sent = Promise.resolve(send())
+  if (!inputOpen) return Promise.reject(refused())
+  const sent = inputEnded().then(() => {
+    if (!inputOpen) throw refused()
+    return send()
+  })
   inFlight.add(sent)
   const forget = () => inFlight.delete(sent)
   void sent.then(forget, forget)
@@ -140,15 +165,17 @@ function input<T>(send: () => PromiseLike<T>): Promise<T> {
 }
 
 /**
- * Takes the app away after a test, once every command it sent has ended, whatever way the test
- * ended: the input of one test never reaches the next. The wait is bounded by the hook's own time
- * limit (Vitest's 10 s), which no test's input comes near: the longest is 33 keys, under 3 s on the
- * Windows build agent at the some 80 ms a key in the editor it took there.
+ * Takes the app away after a test, whatever way the test ended, so that nothing of it reaches the
+ * next: see the list above. The wait for the commands in flight is for one key or one pointer path
+ * at most, which keeps it far inside the hook's own limit (Vitest's 10 s).
  */
 export async function cleanUp(): Promise<void> {
   inputOpen = false
-  await Promise.allSettled(inFlight)
-  unmount()
+  endTest()
+  vi.useRealTimers()
+  const at = mounts
+  await inputEnded()
+  if (mounts === at) unmount()
 }
 
 export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
@@ -156,8 +183,32 @@ export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Comma
 /** A real click, through the browser: in the middle of the element, or where `options` say. */
 export const click = (el: Element, options?: Parameters<typeof userEvent.click>[1]) => input(() => userEvent.click(el, options))
 
-/** Real typing, through the browser, in the syntax of userEvent.keyboard. */
-export const keyboard = (text: string) => input(() => userEvent.keyboard(text))
+const CLOSERS: Record<string, string> = { '{': '}', '[': ']' }
+
+/** The keys of a text in the syntax of userEvent.keyboard: `{Enter}`, `{Control>}`, `[KeyA]`, an escaped `{{` or `[[`, or one character. */
+function keysOf(text: string): string[] {
+  const keys: string[] = []
+  let at = 0
+  while (at < text.length) {
+    const close = CLOSERS[text[at]]
+    let end = at + 1
+    if (close !== undefined && text[at + 1] === text[at]) end = at + 2
+    else if (close !== undefined) end = text.indexOf(close, at) + 1 || text.length
+    keys.push(text.slice(at, end))
+    at = end
+  }
+  return keys
+}
+
+/** Presses the keys one command each: a key held with `>` stays held from one to the next. */
+async function pressEach([first, ...others]: string[]): Promise<void> {
+  if (first === undefined) return
+  await input(() => userEvent.keyboard(first))
+  await pressEach(others)
+}
+
+/** Real typing, through the browser, in the syntax of userEvent.keyboard: one command a key. */
+export const keyboard = (text: string): Promise<void> => pressEach(keysOf(text))
 
 /** Puts `text` in a field at once, through the browser, as pasting does. */
 export const fill = (el: Element, text: string) => input(() => userEvent.fill(el, text))
@@ -183,6 +234,7 @@ export async function startApp(tab: TabName = 'Pad shape', layout?: string, how:
   const kept = Object.entries(files).filter((entry): entry is [string, Uint8Array] => entry[1] !== null)
   const folder = new MemoryFolder(how.folderName ?? 'repo', Object.fromEntries(kept))
   const platform: Platform = { kind: how.kind ?? 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
+  await inputEnded()
   mount(platform, how.updateSource ?? null)
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
@@ -236,8 +288,6 @@ function path(points: Point[], press: boolean, release: boolean, steps: number):
   )
 }
 
-const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
-
 /** The invisible box dnd-kit's DragOverlay keeps over the page during a drag and its drop animation. */
 const overlayBox = () =>
   [...document.querySelectorAll<HTMLElement>('div')].some((d) => d.style.position === 'fixed' && d.style.zIndex === '999')
@@ -249,8 +299,15 @@ const overlayBox = () =>
  * test is not, and its next press would land on nothing.
  */
 async function afterDrop(): Promise<void> {
-  await sleep(60)
-  for (let i = 0; i < 80 && overlayBox(); i++) await sleep(25)
+  await rest(60)
+  await overlayGone(80)
+}
+
+/** Waits until the DragOverlay's box has gone, looking every 25 ms, `tries` times at most. */
+async function overlayGone(tries: number): Promise<void> {
+  if (tries === 0 || !overlayBox()) return
+  await rest(25)
+  await overlayGone(tries - 1)
 }
 
 /**
@@ -279,13 +336,10 @@ export function hover(to: Element | Point): Promise<void> {
 
 /**
  * Moves the real mouse through `points` in one command, straight from each to the next with no step
- * between: a point on the way is a stop, as short as the browser makes two moves. Resolves to how long
- * the whole command took in the page, in milliseconds, which is longer than any one stop in it.
+ * between: a point on the way is a stop, as short as the browser makes two moves.
  */
-export async function hoverPath(points: (Element | Point)[]): Promise<number> {
-  const started = performance.now()
-  await path(points.map(point), false, false, 1)
-  return performance.now() - started
+export function hoverPath(points: (Element | Point)[]): Promise<void> {
+  return path(points.map(point), false, false, 1)
 }
 
 /** Moves the mouse on to `to`, the button still down from carry(). */

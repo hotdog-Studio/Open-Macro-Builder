@@ -1,13 +1,13 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { banner, cell, cleanUp, dirty, offset, padKey, startApp, touchDrag, ws } from '../../test/browser/harness'
+import { banner, cell, cleanUp, dirty, offset, padKey, rest, startApp, touchDrag, ws } from '../../test/browser/harness'
 
 // The same drags with a finger on a touch screen instead of the mouse. The browser turns touches
 // into the pointer events the grid listens for, as long as the page does not scroll under the finger.
 
 afterEach(cleanUp)
 
-const settle = () => new Promise((done) => setTimeout(done, 150))
+const settle = () => rest(150)
 const keyOf = (name: string) => {
   const found = [ws().fn, ...ws().keys].find((k) => k.key === name)
   if (!found) throw new Error(`no key ${name}`)

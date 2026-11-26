@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { at, carried, carry, carryOn, cleanUp, click, dirty, drag, dragNoWait, drop, keyboard, offset, padKey, startApp, ws } from '../../test/browser/harness'
+import { at, carried, carry, carryOn, cleanUp, click, dirty, drag, dragNoWait, drop, keyboard, offset, padKey, rest, startApp, ws } from '../../test/browser/harness'
 
 // The example pad on the Layers tab: Media (the start layer) on F13, Programs on F14, Chrome on
 // F15, VS Code on F17, and so on. F16, F21 and F24 have no layer, and nothing is parked.
@@ -24,7 +24,7 @@ const allTitles = () => [...Object.values(ws().slots).map((l) => l.title), ...pa
 
 const start = () => startApp('Layers')
 /** A drop that changes nothing leaves no trace to wait for, so give the app time to get it wrong. */
-const settle = () => new Promise((done) => setTimeout(done, 150))
+const settle = () => rest(150)
 
 describe('Layers tab: dragging a layer between keys', () => {
   it('swaps two layers', async () => {

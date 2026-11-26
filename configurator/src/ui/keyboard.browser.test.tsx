@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { banner, cleanUp, click, dirty, drag, fill, keyboard, padKey, startApp, strip, ws } from '../../test/browser/harness'
+import { banner, cleanUp, click, dirty, drag, fill, keyboard, padKey, rest, startApp, strip, ws } from '../../test/browser/harness'
 
 // Everything the mouse can drag, done from the keyboard with real key presses: Alt + an arrow key
 // moves or swaps the focused key, Shift + Alt + an arrow key resizes it, and Enter on a command or
@@ -8,7 +8,7 @@ import { banner, cleanUp, click, dirty, drag, fill, keyboard, padKey, startApp, 
 
 afterEach(cleanUp)
 
-const settle = () => new Promise((done) => setTimeout(done, 150))
+const settle = () => rest(150)
 const alt = (arrow: 'Up' | 'Down' | 'Left' | 'Right') => keyboard(`{Alt>}{Arrow${arrow}}{/Alt}`)
 const shiftAlt = (arrow: 'Up' | 'Down' | 'Left' | 'Right') =>
   keyboard(`{Shift>}{Alt>}{Arrow${arrow}}{/Alt}{/Shift}`)

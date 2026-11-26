@@ -4,7 +4,7 @@ import { SETTINGS_PATH } from '../core/settings'
 import { idbHandleStore } from '../platform/browser'
 import { detectPlatform } from '../platform/detect'
 import type { Platform } from '../platform/types'
-import { banner, cell, cleanUp, click, dirty, drag, editableFiles, mount, offset, openTab, padKey, repoFiles, unmount, validatorProblems, ws } from '../../test/browser/harness'
+import { banner, cell, cleanUp, click, dirty, drag, editableFiles, mount, offset, openTab, padKey, repoFiles, rest, unmount, validatorProblems, ws } from '../../test/browser/harness'
 
 // End to end in the browser: the real platform code (platform/browser.ts) over a real folder
 // handle, the folder remembered in the real IndexedDB, and edits made by dragging. The folder is
@@ -303,7 +303,7 @@ describe('in the browser, on a real folder', () => {
     })
     launch()
     await click(await screen.findByRole('button', { name: 'Open folder' }))
-    await new Promise((done) => setTimeout(done, 200))
+    await rest(200)
     expect(screen.getByRole('button', { name: 'Open folder' })).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('list', { name: 'Keys' })).toBeNull()
@@ -455,7 +455,7 @@ describe('in the browser, when the remembered folder needs permission again or i
     launch()
 
     await click(await screen.findByRole('button', { name: `Reopen ${FOLDER}` }))
-    await new Promise((done) => setTimeout(done, 200))
+    await rest(200)
     expect(screen.queryByRole('list', { name: 'Keys' })).toBeNull()
     expect(screen.getByRole('button', { name: `Reopen ${FOLDER}` })).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
@@ -481,7 +481,7 @@ describe('in the browser, when the remembered folder needs permission again or i
     unmount()
     launch()
     await screen.findByRole('button', { name: 'Open folder' })
-    await new Promise((done) => setTimeout(done, 200))
+    await rest(200)
     expect(screen.queryByRole('alert')).toBeNull()
   })
 

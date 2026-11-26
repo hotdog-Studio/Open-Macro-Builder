@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Macro } from '../core/config/model'
-import { at, carried, carry, carryOn, cleanUp, click, dirty, drag, dragNoWait, drop, fill, keyboard, openTab, padKey, startApp, strip, ws } from '../../test/browser/harness'
+import { at, carried, carry, carryOn, cleanUp, click, dirty, drag, dragNoWait, drop, fill, keyboard, openTab, padKey, rest, startApp, strip, ws } from '../../test/browser/harness'
 
 // The example pad on the Macros tab opens on Media, the start layer: Prev on F13, Play on F14,
 // Next on F15, Vol + on F22 and Vol - on F23. The other keys have no macro. Programs, on F14 in
@@ -10,7 +10,7 @@ import { at, carried, carry, carryOn, cleanUp, click, dirty, drag, dragNoWait, d
 afterEach(cleanUp)
 
 const start = () => startApp('Macros')
-const settle = () => new Promise((done) => setTimeout(done, 150))
+const settle = () => rest(150)
 
 /** A row of the command list, scrolled into view so the mouse can reach it. */
 function command(name: string): HTMLElement {

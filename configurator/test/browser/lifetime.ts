@@ -4,10 +4,8 @@
 // test/browser/setup.ts, rest() below, and the harness's input and other calls that wait on the browser
 // or on Node) then stops that body before it acts on the next test's page.
 
-let generation = 0
-
 /** The number of the test now running; it changes when a test ends. */
-export const currentTest = (): number => generation
+let generation = 0
 
 /** Marks the end of a test: from now on every wait that began in it throws when it ends. */
 export function endTest(): void {
@@ -15,7 +13,7 @@ export function endTest(): void {
 }
 
 /** Throws when the test that was running at `since` has ended meanwhile. */
-export function stillRunning(since: number): void {
+function stillRunning(since: number): void {
   if (since !== generation) throw new Error('this test ended while it waited')
 }
 

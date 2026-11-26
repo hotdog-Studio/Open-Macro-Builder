@@ -11,7 +11,7 @@ import { AppProvider, useApp, type Banner } from '../../src/state/store'
 import type { UpdateSource } from '../../src/state/updateActions'
 import { App } from '../../src/ui/App'
 import type { PointerPath, TouchPath } from './commands'
-import { checked, currentTest, endTest, rest, stillRunning } from './lifetime'
+import { checked, endTest, rest } from './lifetime'
 
 export { checked, rest } from './lifetime'
 
@@ -100,10 +100,6 @@ export const dirty = (): boolean => editor().dirty
  * part-way through a test.
  */
 export function mount(platform: Platform, updateSource: UpdateSource | null = null): void {
-  // An app still here was left by a test whose clean-up has not finished: it goes, and that clean-up
-  // then leaves this one alone.
-  if (document.getElementById('root')) unmount()
-  mounts++
   inputOpen = true
   const root = document.createElement('div')
   root.id = 'root'
@@ -132,14 +128,31 @@ export function unmount(): void {
 // after it failed on them. So, between one test and the next:
 // - cleanUp closes input, ends the test for the waits (lifetime.ts), puts the real clock back, waits
 //   for the commands in flight (and the changes to the browser's storage, inStorage), takes the app
-//   away and lets go of a mouse button a carry left down (keys held are let go by Vitest itself);
-// - a command is never longer than one key or one pointer path, so that wait is short;
+//   away and lets go of a mouse button a carry left down (keys held are let go by Vitest itself). The
+//   next test starts when cleanUp has ended, so nothing of the test before is still going by then;
 // - a body that outlived its test stops when the wait or command it was in ends: every await of a test
 //   that waits on the browser or on Node is checked (waitFor, findBy*, rest, input, viewport,
-//   validatorProblems, repoFiles, inStorage, checked);
-// - the next test sends nothing until every earlier command has ended. startApp also mounts only then;
-//   startOpenScreen and mount itself do not wait: a mount takes away any app still there, and the
-//   clean-up that ends after it leaves the new one alone.
+//   validatorProblems, repoFiles, inStorage, checked); and input it sends before the next app is
+//   mounted is refused;
+// - a command is never longer than LONGEST_COMMAND moves or presses, which keeps that wait of cleanUp,
+//   and so cleanUp, far inside the time limit of its hook (see there). Nothing here is built for a
+//   clean-up that ends after the next test has started: the limit on a command is what rules it out.
+
+/**
+ * How long a single command may be: how many moves of the mouse or of a finger, or presses of a key.
+ *
+ * cleanUp waits for the command in flight when its test ended, and must itself end inside the time
+ * limit of its hook: 30 s (Vitest's hookTimeout in browser mode; vitest.browser.config.ts sets only
+ * testTimeout). On the Windows build agent, the slowest machine these tests run on, a move costs
+ * 0.3 s at most (a step of a drag, the dearest kind: a test of six drags in 11 moves each took 19.3 s
+ * in all) and a key 0.4 s at most (the slowest there, typed while another command typed too, which a
+ * test typing one key a command no longer meets). So a command of 20 lasts 8 s there at the very
+ * most, about a quarter of the limit; the rest is for what else the hook waits for (a change to the
+ * storage, the button let go, the window's size: a few seconds together there). The longest command
+ * the tests send is a drag in 10 steps, 11 moves. A click or a fill counts as one: Vitest gives it a
+ * time limit of its own, which runs out before that of the test that sent it.
+ */
+export const LONGEST_COMMAND = 20
 
 /** The commands that type, click or move the pointer, and the test's changes to the browser's storage, from when they start until they end. */
 const inFlight = new Set<Promise<unknown>>()
@@ -147,41 +160,33 @@ const inFlight = new Set<Promise<unknown>>()
 /** Whether input may be sent: not from a test's clean-up until the next app is mounted. */
 let inputOpen = true
 
-/** How many apps have been mounted: a clean-up that ends after the next mount leaves that app alone. */
-let mounts = 0
-
 /** Every command still in flight has ended. */
 const inputEnded = async (): Promise<void> => {
   await Promise.allSettled(inFlight)
 }
 
-const refused = () => new Error('input sent after its test had ended')
-
-/** Keeps `work` in inFlight until it ends, so that cleanUp, and every command sent after it, waits for it. */
-function inFlightUntilEnded<T>(work: Promise<T>): Promise<T> {
+/** Keeps `work` in inFlight until it ends, so that cleanUp waits for it; a test that ended meanwhile stops when it ends. */
+function keptInFlight<T>(work: Promise<T>): Promise<T> {
   inFlight.add(work)
   const forget = () => inFlight.delete(work)
   void work.then(forget, forget)
-  return work
+  return checked(work)
 }
 
-/** Keeps `work` in inFlight until it ends; a test that ended meanwhile stops when it ends. */
-const keptInFlight = <T,>(work: Promise<T>): Promise<T> => checked(inFlightUntilEnded(work))
-
 /**
- * Sends a command that types, clicks or moves the pointer once every earlier one has ended, and only
- * while the test that sent it is running, and keeps it in inFlight until it ends.
+ * Sends a command that types, clicks or moves the pointer, `length` moves or presses long, and keeps it
+ * in inFlight until it ends. Refuses one longer than LONGEST_COMMAND, and any sent after its test ended.
  */
-function input<T>(send: () => PromiseLike<T>): Promise<T> {
-  if (!inputOpen) return Promise.reject(refused())
-  const since = currentTest()
-  return keptInFlight(
-    inputEnded().then(() => {
-      if (!inputOpen) throw refused()
-      stillRunning(since)
-      return send()
-    }),
-  )
+function input<T>(length: number, send: () => PromiseLike<T>): Promise<T> {
+  if (length > LONGEST_COMMAND) {
+    return Promise.reject(
+      new Error(
+        `a command of ${length} moves or presses: one command may make ${LONGEST_COMMAND} at most, so that the clean-up after a test, which waits for the command in flight, ends inside its hook's time limit on the slowest build machine. Send it as several commands.`,
+      ),
+    )
+  }
+  if (!inputOpen) return Promise.reject(new Error('input sent after its test had ended'))
+  return keptInFlight(Promise.resolve().then(send))
 }
 
 /**
@@ -196,38 +201,29 @@ const DND_KIT_CLICK_GUARD = 60
 
 /**
  * Takes the app away after a test, whatever way the test ended, so that nothing of it reaches the
- * next: see the list above. The wait for what is in flight is for one key, one pointer path or one
- * change to the storage (the e2e tests' folder of the example: a second or two on the build agent)
- * at most, which keeps it far inside the hook's own limit (30 s in browser mode).
+ * next: see the list above. The wait for what is in flight is for one command, of LONGEST_COMMAND
+ * at most, and in the e2e tests for a change to the storage (the folder of the example: a second or
+ * two on the build agent), which keeps the clean-up far inside its hook's limit of 30 s.
  *
- * The button is let go after the app has gone, so that no app takes it as a drop, and after whatever
- * was in flight; the release is in flight itself until it has ended, so the next test sends nothing
- * before it and it can never lift a press of the next test. A drag the app was in when it went keeps
- * dnd-kit's listeners on the document, among them one that swallows every click, until the button is
- * let go; dnd-kit then takes them away 50 ms later, so the clean-up waits that long too.
+ * The button is let go after whatever was in flight, and after the app has gone, so that no app takes
+ * it as a drop. A drag the app was in when it went keeps dnd-kit's listeners on the document, among
+ * them one that stops every click, until the button is let go; dnd-kit then takes them away with a
+ * timer of 50 ms, so the clean-up waits for a longer timer, set after that one: the browser runs the
+ * two in that order on a machine of any speed.
  */
 export async function cleanUp(): Promise<void> {
   inputOpen = false
   endTest()
   vi.useRealTimers()
-  const at = mounts
-  await inFlightUntilEnded(
-    inputEnded().then(async () => {
-      if (mounts === at) unmount()
-      if (await commands.releaseHeld()) await new Promise((done) => setTimeout(done, DND_KIT_CLICK_GUARD))
-    }),
-  )
-  // A clean-up that ends after the next test has started (it ran past its hook limit, and the next test
-  // mounted meanwhile) must not end as a hook that passed: Vitest would then put back, as the running
-  // test's deadline, the one of the test before, long past, and every action of the next test would get
-  // a time limit of 1 ms. A hook already failed for its time ignores this error.
-  if (mounts !== at) throw new Error('this clean-up ended after the next test had started')
+  await inputEnded()
+  unmount()
+  if (await commands.releaseHeld()) await new Promise((done) => setTimeout(done, DND_KIT_CLICK_GUARD))
 }
 
 export type TabName = 'Get started' | 'Pad shape' | 'Layers' | 'Macros' | 'Commands'
 
 /** A real click, through the browser: in the middle of the element, or where `options` say. */
-export const click = (el: Element, options?: Parameters<typeof userEvent.click>[1]) => input(() => userEvent.click(el, options))
+export const click = (el: Element, options?: Parameters<typeof userEvent.click>[1]) => input(1, () => userEvent.click(el, options))
 
 const CLOSERS: Record<string, string> = { '{': '}', '[': ']' }
 
@@ -246,10 +242,13 @@ function keysOf(text: string): string[] {
   return keys
 }
 
+/** How many times a key of keysOf is pressed: once, or the count after its `>` (`{a>3}`, `{a>3/}`). */
+const pressesOf = (key: string): number => Number(/>(\d+)\/?[}\]]$/.exec(key)?.[1] ?? 1)
+
 /** Presses the keys one command each: a key held with `>` stays held from one to the next. */
 async function pressEach([first, ...others]: string[]): Promise<void> {
   if (first === undefined) return
-  await input(() => userEvent.keyboard(first))
+  await input(pressesOf(first), () => userEvent.keyboard(first))
   await pressEach(others)
 }
 
@@ -257,7 +256,7 @@ async function pressEach([first, ...others]: string[]): Promise<void> {
 export const keyboard = (text: string): Promise<void> => pressEach(keysOf(text))
 
 /** Puts `text` in a field at once, through the browser, as pasting does. */
-export const fill = (el: Element, text: string) => input(() => userEvent.fill(el, text))
+export const fill = (el: Element, text: string) => input(1, () => userEvent.fill(el, text))
 
 /** How startApp opens the app, beyond the tab and the layout. */
 export interface StartHow {
@@ -280,7 +279,6 @@ export async function startApp(tab: TabName = 'Pad shape', layout?: string, how:
   const kept = Object.entries(files).filter((entry): entry is [string, Uint8Array] => entry[1] !== null)
   const folder = new MemoryFolder(how.folderName ?? 'repo', Object.fromEntries(kept))
   const platform: Platform = { kind: how.kind ?? 'browser', openFolder: async () => folder, createFolder: async () => null, restoreFolder: async () => null }
-  await checked(inputEnded())
   mount(platform, how.updateSource ?? null)
   await click(await screen.findByRole('button', { name: 'Open folder' }))
   await screen.findByRole('list', { name: 'Keys' })
@@ -325,8 +323,11 @@ export const offset = (p: Element | Point, dx: number, dy: number): Point => {
   return { x: from.x + dx, y: from.y + dy }
 }
 
+/** How many moves a path makes: one to its first point, then `steps` to each of the others. */
+const movesOf = (points: Point[], steps: number): number => (points.length === 0 ? 0 : 1 + (points.length - 1) * steps)
+
 function path(points: Point[], press: boolean, release: boolean, steps: number): Promise<void> {
-  return input(() =>
+  return input(movesOf(points, steps), () =>
     commands.pointerPath({
       points,
       press,
@@ -398,9 +399,10 @@ export function carryOn(to: Element | Point, steps = 10): Promise<void> {
 
 /** A drag with one finger on a touch screen: down on `from`, across to `to`, and up. */
 export async function touchDrag(from: Element | Point, to: Element | Point, steps = 10): Promise<void> {
-  await input(() =>
+  const points = [point(from), point(to)]
+  await input(movesOf(points, steps), () =>
     commands.touchPath({
-      points: [point(from), point(to)],
+      points,
       steps,
       viewport: { width: window.innerWidth, height: window.innerHeight },
     }),

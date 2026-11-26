@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useReducer, type ReactNode } from 'react'
 import type { Workspace } from '../core/config/model'
 import { writeConfig } from '../core/config/write'
 import type { TextFile } from '../core/folder/textFile'
@@ -327,8 +327,12 @@ export function AppProvider({
     () => createActions(platform, dispatch, updateSource),
     [platform, updateSource],
   )
-  // Actions run from clicks and after awaits; they read the last committed state.
-  useEffect(() => sync(state), [sync, state])
+  // Actions run from clicks and after awaits; they read the last committed state. A layout effect, so the
+  // copy is taken in the commit itself: React runs a render's passive effects in a later task when the
+  // render did not come from an event (a save ending, a check after opening), and dispatches a click or a
+  // key to its handler without running them first, so a press on what that render shows would otherwise
+  // reach an action reading the state from before it.
+  useLayoutEffect(() => sync(state), [sync, state])
   // Stops watching config.json when the app goes away.
   useEffect(() => dispose, [dispose])
   const value = useMemo(() => ({ state, dispatch, actions, platform: platform.kind }), [state, actions, platform.kind])

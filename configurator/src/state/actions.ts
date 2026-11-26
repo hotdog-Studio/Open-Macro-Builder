@@ -226,7 +226,7 @@ async function readSession(folder: FolderAccess, configPath: string, library: Li
 
 /**
  * The side effects of the app (folder IO), dispatching their results. `sync` is
- * called by AppProvider after every commit, so actions read the latest state.
+ * called by AppProvider in every commit (a layout effect), so actions read the state the screen shows.
  * `updateSource` is what the check after opening compares a folder with (AppProvider gives the app's
  * own copy); null checks no folder.
  */

@@ -506,6 +506,32 @@ describe('Reload macropad', () => {
     expect(reloadMacropad).toHaveBeenCalledTimes(1)
   })
 
+  it('reloads for Reload macropad pressed the moment it shows', async () => {
+    // The offer comes after the save, outside any event: React shows it in one task and runs that render's
+    // effects in a later one. A press in between reaches its handler at once (React runs no pending effect
+    // before an event's handler), so the action must read the dialog the screen shows.
+    const reloadMacropad = vi.fn(async (): Promise<LangId | null> => 'ahk')
+    const { user } = await start({ platform: { kind: 'electron', findMacropad: async () => 'ahk', reloadMacropad } })
+    await editLabel(user)
+    let pressed = false
+    const observer = new MutationObserver(() => {
+      const button = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Reload macropad')
+      if (button && !pressed) {
+        pressed = true
+        fireEvent.click(button)
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      await user.click(saveButton())
+      await waitFor(() => expect(pressed).toBe(true))
+    } finally {
+      observer.disconnect()
+    }
+    expect(reloadMacropad).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Reloaded the AutoHotkey macropad.')).toBeTruthy()
+  })
+
   it('names the PowerShell macropad and keeps the warnings', async () => {
     const config = exampleWith((c) => {
       c.layers[0].macros[3] = { action: 'ZzAhkOnly', name: 'Only AHK' }

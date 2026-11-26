@@ -4,6 +4,16 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ## Unreleased
 
+## 1.0.9 - 2026-11-26
+
+### Added
+
+- Tests: the end-to-end test proves the icon lookup of 1.0.8 on a real overlay in both versions. A case, `E2eIconSet`, gives the test's copy an icon set in `img/` and another of the same name in `local/img/` with a picture drawn for 1x1 keys in each state, all in solid colours, holds Fn and reads the colours of the icons on the screen: each key must show the `local/img` set's picture for its size and state (layer, macro, selected and selected with a macro), and a failure names the file it showed instead. Keys of other sizes and the empty frames are not covered, as every key of the test's layout is 1x1.
+
+### Fixed
+
+- Tests: the end-to-end case `E2eOverlayIcon` finds the label of key 1 before it moves the pointer onto the key's icon. It looked for it after, and failed when the icon's tooltip came up first, as it did once in the AutoHotkey version.
+
 ## 1.0.8 - 2026-11-26
 
 ### Added

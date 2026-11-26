@@ -650,11 +650,14 @@ function Get-E2eCases {
                     param($overlay)
                     $p = Get-E2eOverlayPoint 1 Icon
                     $ctx.Clicked = "($($p.X), $($p.Y)), the middle of the icon of key 1 (the layout's rectangle $($p.Rect) at scale $($p.Scale))"
+                    # Found before the pointer goes onto the icon: Get-E2eOverlayPoint wants the overlay as the
+                    # macropad's only visible window, and the icon's tooltip can come up at once (build #1 of
+                    # feat/icon-e2e, AutoHotkey: the tooltip and its shadow were up when the label was looked for).
+                    $label = Get-E2eOverlayPoint 1 Label
                     Wait-ScreenChange  # the pointer on the icon brings up its tooltip
                     Move-E2ePointer $p.X $p.Y
                     $ctx.Tip.Since.Start()
                     Assert-E2eOnOverlay $p $overlay 'the middle of the icon of key 1'
-                    $label = Get-E2eOverlayPoint 1 Label
                     $want = @(@((Get-E2eLayoutModel).Layers)[0].Macros)[0].Name
                     $before = Get-E2eOverlayText $overlay $label
                     $ctx.BMark = Get-E2eStandinMark $b

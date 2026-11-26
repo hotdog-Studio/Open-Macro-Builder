@@ -1,7 +1,9 @@
 # The end-to-end test of the macropad, in both of its versions. It starts the real macropad on a real
 # desktop with a test layout (OMB_CONFIG), presses the real macro keys with SendInput, and checks what
 # really happened: a window that opened and is active, a file a script wrote, a window that moved, or
-# the exact keys a stand-in window received. Every case runs twice, once against the AutoHotkey
+# the exact keys a stand-in window received. The last cases press the hotkeys and type the hotstrings of
+# the layout file, in a layout of their own (the only one with "hotkeys" and "hotstrings"), so that
+# the key hook those bring cannot touch the other cases. Every case runs twice, once against the AutoHotkey
 # macropad (ahk\main.ahk) and once against the PowerShell one (powershell\main.ps1). The cases are in
 # helpers\EndToEndCases.ps1, the harness in helpers\EndToEnd.ps1, the fixtures in ahk\tests\e2e.
 #

@@ -399,6 +399,78 @@ function Close-E2eCalculators {
     Close-E2eUnrecordedWindows $script:E2eCalculator $Before
 }
 
+# ---- The layout file's hotkeys and hotstrings (the cases with Hooks) ----
+
+# How long a window is in front before a hotkey is pressed into it. AutoHotkey looks at the window a
+# hotkey's condition names when the key comes; the PowerShell macropad turns the condition on or off when
+# its UI thread hears that the foreground changed (ForegroundWatcher in powershell\lib\cs), a moment after
+# the window came forward. A person presses a key later than that moment; the test does too.
+$script:E2eHookSettleMs = 300
+
+# What a case saw after it pressed a hotkey or typed a hotstring into a stand-in, for a failure message:
+# hotkeys.log after its mark Hotkeys, the stand-in's log after Mark, the macropad's whole error log (an
+# error the macropad met while it loaded the hotkeys is there), its command log after Commands (the
+# PowerShell macropad logs E2eHotkey there, as its keys' commands; the AutoHotkey one logs nothing for a
+# hotkey), and the window in front.
+function Get-E2eHookSeen {
+    param($Standin, [int]$Hotkeys, [int]$Mark, [int]$Commands)
+    $show = { param($lines) if (@($lines).Count -gt 0) { @($lines) -join ' / ' } else { 'nothing' } }
+    "hotkeys.log since: $(& $show @(Get-E2eHotkeyLines $Hotkeys)); $($Standin.Name)'s lines since: $(& $show @(Read-E2eLog $Standin.Log | Select-Object -Skip $Mark)); " +
+    "the macropad's error log: $(& $show @(Get-E2eErrorLines)); its command log since: $(& $show @(Get-E2eCommandLines $Commands)); in front: $(Get-E2eForegroundText)"
+}
+
+# Presses Chord into the stand-in once it has been in front for E2eHookSettleMs. The marks taken just
+# before the press: Hotkeys (hotkeys.log), Mark (the stand-in's log), Commands (the command log).
+function Send-E2eHotkeyTo {
+    param($Standin, [string]$Chord)
+    Assert-E2eFront $Standin.Hwnd "the stand-in $($Standin.Name)"
+    Wait-Pump $script:E2eHookSettleMs
+    $marks = [pscustomobject]@{ Hotkeys = Get-E2eHotkeyMark; Mark = Get-E2eStandinMark $Standin; Commands = Get-E2eCommandMark }
+    Send-E2eChordTo $Standin.Hwnd $Chord
+    $marks
+}
+
+# A hotkey of the test's layout (Spec, pressed as Chord, whose own key is Vk) pressed with the stand-in in
+# front must run: hotkeys.log gets the line Spec within 3 s, and no other, and the key does not reach the
+# stand-in (a hotkey keeps its key from the window). Should no line come, the failure says whether the key
+# went through to the window (the hotkey did not run) or not (the key was swallowed and nothing ran). The
+# PowerShell macropad drops a hotkey that comes while a command of its runs, so its command log must then
+# say that E2eHotkey has finished: the case's next press finds it free.
+function Assert-E2eHotkeyRuns {
+    param($ctx, $Standin, [string]$Spec, [string]$Chord, [int]$Vk)
+    $m = Send-E2eHotkeyTo $Standin $Chord
+    $key = "F$($Vk - 0x6F)"
+    $line = Wait-E2eCondition { @(Get-E2eHotkeyLines $m.Hotkeys) | Where-Object { $_ -ceq $Spec } | Select-Object -First 1 } -TimeoutMs 3000
+    Wait-Pump 300  # a key or a line still on its way
+    $reached = @(Get-E2eStandinEvents $Standin $m.Mark | Where-Object { $_.Kind -eq 'down' -and $_.Vk -eq $Vk }).Count -gt 0
+    $seen = Get-E2eHookSeen $Standin $m.Hotkeys $m.Mark $m.Commands
+    if ($null -eq $line) {
+        $what = if ($reached) { "the hotkey did not run, and $key went through to $($Standin.Name)" } else { "$key did not reach $($Standin.Name) either: the key was swallowed, and nothing ran" }
+        throw "$Chord with $($Standin.Name) in front must run the hotkey $Spec, whose action E2eHotkey writes '$Spec' to hotkeys.log, within 3 s: $what ($seen)."
+    }
+    if ($reached) { throw "$Chord with $($Standin.Name) in front ran the hotkey $Spec, but $key reached $($Standin.Name) too: a hotkey keeps its key from the window ($seen)." }
+    (@(Get-E2eHotkeyLines $m.Hotkeys) -join ' / ') | Should -BeExactly $Spec -Because "the hotkey runs once, and nothing else runs ($seen)"
+    if ($ctx.Lang -eq 'ps') { [void](Assert-E2eCommandDone $m.Commands 'E2eHotkey' -TimeoutMs 3000) }
+}
+
+# A hotkey of the test's layout pressed with the stand-in in front while its window condition does not
+# hold (Why says so) must run nothing, and its key must reach the window in front as it was pressed:
+# hotkeys.log gets no line within a second, and the stand-in receives the key (Vk) with Ctrl and Alt held
+# within 3 s. A failure says which went wrong: a hotkey ran; or nothing ran and the key was swallowed; or
+# the key came with other modifiers held.
+function Assert-E2eHotkeyPasses {
+    param($Standin, [string]$Chord, [int]$Vk, [string]$Why)
+    $m = Send-E2eHotkeyTo $Standin $Chord
+    $key = "F$($Vk - 0x6F)"
+    $ran = Wait-E2eCondition { @(Get-E2eHotkeyLines $m.Hotkeys) | Select-Object -First 1 } -TimeoutMs 1000
+    if ($null -ne $ran) { throw "$Chord with $($Standin.Name) in front must run nothing, $Why; a hotkey ran within a second ($(Get-E2eHookSeen $Standin $m.Hotkeys $m.Mark $m.Commands))." }
+    $down = Wait-E2eCondition { Get-E2eStandinEvents $Standin $m.Mark | Where-Object { $_.Kind -eq 'down' -and $_.Vk -eq $Vk } | Select-Object -First 1 } -TimeoutMs 3000
+    $seen = Get-E2eHookSeen $Standin $m.Hotkeys $m.Mark $m.Commands
+    if ($null -eq $down) { throw "$Chord with $($Standin.Name) in front ran nothing, as it must ($Why), but $key did not reach $($Standin.Name) within 3 s either: the key was swallowed, and it must reach the window in front ($seen)." }
+    $down.Mods | Should -BeExactly 'CA' -Because "$($Standin.Name) receives $key with Ctrl and Alt held, as they were pressed ($seen)"
+    @(Get-E2eHotkeyLines $m.Hotkeys).Count | Should -Be 0 -Because "nothing runs, later either ($seen)"
+}
+
 # ---- The table ----
 
 # -All gives every case, also when OMB_E2E_CASE (run.ps1 -Case) picks some.
@@ -1172,6 +1244,85 @@ function Get-E2eCases {
 
         # ---- custom\vsstudio (no Visual Studio is used) ----
         foreach ($c in 'VsStudioShowSolutionExplorer', 'VsStudioBuild', 'VsStudioGoToDefinition') { @{ Command = $c; File = 'custom\vsstudio' } }
+
+        # ======== The layout file's hotkeys and hotstrings, in a layout of their own ========
+        # Hooks: the case goes into the layout of the cases with Hooks, the only one with the layout file's
+        # "hotkeys" and "hotstrings" ($script:E2eHookLayout in EndToEnd.ps1), after every other (keep these
+        # cases last). The PowerShell macropad installs its key hook only for such a layout, so no other case
+        # runs with it. The first five cases' own key runs E2eNothing: what they prove is what the keys
+        # pressed afterwards do. Their action, E2eHotkey, writes the name it is handed to hotkeys.log.
+        @{ Command = 'E2eNothing'; Name = 'E2eHotkey'; File = 'e2e'; Kind = 'Custom'; Hooks = $true
+            Covers  = 'a hotkey of the layout file with no window condition (^!F9) runs its action, which is handed the hotkey as its macro''s name, and keeps its key from the window in front (B)'
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B') }
+            Assert  = {
+                param($ctx)
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                Assert-E2eHotkeyRuns $ctx $ctx.Run.Standins['B'] '^!F9' 'Ctrl+Alt+F9' 0x78
+            }
+        }
+        @{ Command = 'E2eNothing'; Name = 'E2eHotkeyIfWinActive'; File = 'e2e'; Kind = 'Custom'; Hooks = $true
+            Covers  = 'a hotkey with ifWinActive (^!F10, ahk_exe e2eapp.exe) runs while B, a window of that program, is in front; with A (chrome.exe) in front it runs nothing and A receives the key with Ctrl and Alt held'
+            Arrange = { param($ctx) [void](Use-E2eStandin 'B') }
+            Assert  = {
+                param($ctx)
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                Assert-E2eHotkeyRuns $ctx $ctx.Run.Standins['B'] '^!F10' 'Ctrl+Alt+F10' 0x79
+                $a = Use-E2eStandin 'A'
+                Assert-E2eHotkeyPasses $a 'Ctrl+Alt+F10' 0x79 'since ^!F10 holds only while a window of e2eapp.exe is active, and A runs as chrome.exe'
+            }
+        }
+        @{ Command = 'E2eNothing'; Name = 'E2eHotkeyIfWinNotActive'; File = 'e2e'; Kind = 'Custom'; Hooks = $true
+            Covers  = 'a hotkey with ifWinNotActive (^!F11, ahk_exe e2eapp.exe) runs while A (chrome.exe) is in front; with B, a window of that program, in front it runs nothing and B receives the key with Ctrl and Alt held'
+            Arrange = { param($ctx) [void](Use-E2eStandin 'A') }
+            Assert  = {
+                param($ctx)
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                Assert-E2eHotkeyRuns $ctx $ctx.Run.Standins['A'] '^!F11' 'Ctrl+Alt+F11' 0x7A
+                $b = Use-E2eStandin 'B'
+                Assert-E2eHotkeyPasses $b 'Ctrl+Alt+F11' 0x7A 'since ^!F11 holds only while no window of e2eapp.exe is active, and B runs as e2eapp.exe'
+            }
+        }
+        @{ Command = 'E2eNothing'; Name = 'E2eHotstringText'; File = 'e2e'; Kind = 'Custom'; Hooks = $true
+            Covers  = 'a hotstring with a replacement (::e2ebtw), typed a key at a time and ended with Space, leaves in the window in front (B) its replacement and the Space, the abbreviation erased. Not run: the other ending characters, the options (*, ?, C, B0, O), and a hotstring with a window condition'
+            Arrange = { param($ctx) $ctx.Standin = Use-E2eStandin 'B'; $ctx.Mark = Get-E2eStandinMark $ctx.Standin }
+            Assert  = {
+                param($ctx)
+                $b = $ctx.Standin
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                $hotkeys = Get-E2eHotkeyMark
+                $commands = Get-E2eCommandMark
+                Send-E2eText $b.Hwnd 'e2ebtw '
+                $want = 'by the way '
+                [void](Wait-E2eCondition { if ((Get-E2eStandinText $b $ctx.Mark) -ceq $want) { $true } } -TimeoutMs 3000)
+                Wait-Pump 300  # a key still on its way
+                $text = Get-E2eStandinText $b $ctx.Mark
+                $text | Should -BeExactly $want -Because "typing e2ebtw and Space into B, a key at a time, must leave in B the replacement of ::e2ebtw and the Space, the abbreviation erased (B holds '$text'; $(Get-E2eHookSeen $b $hotkeys $ctx.Mark $commands))"
+            }
+        }
+        @{ Command = 'E2eNothing'; Name = 'E2eHotstringAction'; File = 'e2e'; Kind = 'Custom'; Hooks = $true
+            Covers  = 'a hotstring with the X option and an action (:X:e2erun), typed a key at a time and ended with Space, runs its action, which is handed the hotstring as its macro''s name, and erases the abbreviation from the window in front (B)'
+            Arrange = { param($ctx) $ctx.Standin = Use-E2eStandin 'B'; $ctx.Mark = Get-E2eStandinMark $ctx.Standin }
+            Assert  = {
+                param($ctx)
+                $b = $ctx.Standin
+                [void](Assert-E2eCommandDone $ctx.Commands 'E2eNothing' -TimeoutMs 8000)
+                $hotkeys = Get-E2eHotkeyMark
+                $commands = Get-E2eCommandMark
+                Send-E2eText $b.Hwnd 'e2erun '
+                $line = Wait-E2eCondition { @(Get-E2eHotkeyLines $hotkeys) | Where-Object { $_ -ceq ':X:e2erun' } | Select-Object -First 1 } -TimeoutMs 3000
+                Wait-Pump 300  # a key or a line still on its way
+                $text = Get-E2eStandinText $b $ctx.Mark
+                $seen = Get-E2eHookSeen $b $hotkeys $ctx.Mark $commands
+                if ($null -eq $line) { throw "Typing e2erun and Space into B, a key at a time, must run the hotstring :X:e2erun, whose action E2eHotkey writes ':X:e2erun' to hotkeys.log, within 3 s; it did not (B holds '$text'; $seen)." }
+                (@(Get-E2eHotkeyLines $hotkeys) -join ' / ') | Should -BeExactly ':X:e2erun' -Because "the hotstring runs once, and nothing else runs ($seen)"
+                $text | Should -Not -BeLike '*e2erun*' -Because "the hotstring erases the abbreviation it was typed with (B holds '$text'; $seen)"
+                if ($ctx.Lang -eq 'ps') { [void](Assert-E2eCommandDone $commands 'E2eHotkey' -TimeoutMs 3000) }
+            }
+        }
+        # A command's own keys pass the key hook of the layout above as they were sent: the PowerShell
+        # macropad's hook leaves alone the keys its process sends, AutoHotkey's those of its script.
+        @{ Command = 'VsCodeOpenTerminal'; Name = 'E2eChordWithHooks'; File = 'custom\vscode'; Hooks = $true
+            Covers = 'the keys of a command (Ctrl+Shift+backtick) reach the window in front unchanged while the layout file has hotkeys and hotstrings' }
     )
     $cases = @($cases | ForEach-Object { $_ })
     if ($env:OMB_E2E_CASE -and -not $All) { $cases = @($cases | Where-Object { $(if ($_.Name) { $_.Name } else { $_.Command }) -match $env:OMB_E2E_CASE }) }

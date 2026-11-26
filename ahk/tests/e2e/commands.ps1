@@ -23,6 +23,11 @@ function E2eMark { param($Macro) }
 # read in the macropad's command log that a click on a key's label ran that key's command.
 function E2eNothing { param($Macro) }
 
+# The action of the hotkeys and hotstrings of the test's layout ("hotkeys", "hotstrings"): appends the
+# name of its macro, which is the hotkey or the hotstring as the layout writes it ('^!F9', ':X:e2erun'),
+# to the run's hotkeys.log, as commands.ahk does.
+function E2eHotkey { param($Macro) E2eWrite 'hotkeys.log' $Macro.Name }
+
 # Ends the macropad, as its tray menu's Exit does.
 function E2eExit {
     param($Macro)

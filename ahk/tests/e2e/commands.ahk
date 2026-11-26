@@ -43,6 +43,16 @@ E2eNothing(Macro) {
 }
 
 /**
+ * The action of the hotkeys and hotstrings of the test's layout ("hotkeys", "hotstrings"): appends the
+ * name of its macro, which is the hotkey or the hotstring as the layout writes it ("^!F9", ":X:e2erun"),
+ * to the run's hotkeys.log. ConfigRunner in config.ahk calls it and writes no line of the command log.
+ * @param {Macro} Macro - The macro object, whose name is read.
+ */
+E2eHotkey(Macro) {
+    E2eWrite("hotkeys.log", Macro.name)
+}
+
+/**
  * Ends the macropad, as its tray menu's Exit does.
  * @param {Macro} Macro - The macro object (not used).
  */

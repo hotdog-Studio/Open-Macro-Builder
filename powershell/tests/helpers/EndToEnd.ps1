@@ -284,6 +284,21 @@ $script:E2eBannerWindow = 'Open Macro Builder end-to-end test ahk_class AutoHotk
 $script:E2eFnVk = 0x87
 $script:E2eFirstKeyVk = 0x7C
 $script:E2eKeyCount = 11
+# The layout file's hotkeys and hotstrings, in the layout of the cases with Hooks only (Write-E2eLayout):
+# a hotkey with no window condition, one only while the stand-in B's program (e2eapp.exe) is active, one
+# only while it is not, a hotstring that types a replacement and one that runs an action. E2eHotkey (the
+# test's own command) writes its macro's name, the hotkey or the hotstring as written here, to hotkeys.log.
+$script:E2eHookLayout = [ordered]@{
+    hotkeys    = @(
+        [ordered]@{ hotkey = '^!F9'; action = 'E2eHotkey' }
+        [ordered]@{ hotkey = '^!F10'; action = 'E2eHotkey'; ifWinActive = 'ahk_exe e2eapp.exe' }
+        [ordered]@{ hotkey = '^!F11'; action = 'E2eHotkey'; ifWinNotActive = 'ahk_exe e2eapp.exe' }
+    )
+    hotstrings = @(
+        [ordered]@{ hotstring = '::e2ebtw'; replacement = 'by the way' }
+        [ordered]@{ hotstring = ':X:e2erun'; action = 'E2eHotkey' }
+    )
+}
 # The keys a run may hold down: Shift, Ctrl, Alt (both sides), the Windows keys, and Fn.
 $script:E2eHoldableVk = @(0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C, 0x87)
 # The variables run.ps1 sets for the test: no program the test starts gets them, but for OMB_E2E, which
@@ -1460,16 +1475,20 @@ function Start-E2eMacropad {
     # (nobody at that desktop): on a developer's desktop the start fails, saying what was in front.
     $b = $script:E2eRun.Standins['B'].Hwnd
     if (-not (Set-E2eActive $b)) { throw "Not pressed: the stand-in B could not be made the active window for the readiness taps; $(Get-E2eForegroundText) was in front." }
-    $ready = Wait-E2eCondition {
-        if ($p.HasExited) { throw "The $Lang macropad exited at start (exit code $($p.ExitCode)). $((Get-E2eErrorLines) -join ' ')" }
-        if ($env:OMB_E2E_CI -eq '1') { [void](Set-E2eActive $b) }
-        Assert-E2eFront $b 'the stand-in B (readiness taps)'
-        Send-E2eTap $script:E2eFirstKeyVk
-        Wait-E2eCondition { @(Get-E2eCommandLines $commands) -contains 'done E2eMark' } -TimeoutMs 700
-    } -TimeoutMs 30000 -EveryMs 10
+    # A macropad that cannot start says why in a window of its own (the PowerShell one in a message box,
+    # 'failed to start', and stays until it is closed): a failure here names what those windows say.
+    try {
+        $ready = Wait-E2eCondition {
+            if ($p.HasExited) { throw "The $Lang macropad exited at start (exit code $($p.ExitCode)). $((Get-E2eErrorLines) -join ' ')" }
+            if ($env:OMB_E2E_CI -eq '1') { [void](Set-E2eActive $b) }
+            Assert-E2eFront $b 'the stand-in B (readiness taps)'
+            Send-E2eTap $script:E2eFirstKeyVk
+            Wait-E2eCondition { @(Get-E2eCommandLines $commands) -contains 'done E2eMark' } -TimeoutMs 700
+        } -TimeoutMs 30000 -EveryMs 10
+    } catch { throw "$($_.Exception.Message) The macropad's windows: $(Get-E2eMacropadDialogText)." }
     if (-not $ready) {
         $lines = @(Get-E2eCommandLines $commands)
-        throw "The $Lang macropad did not answer its keys within 30 s: $(Get-E2eCommandText (Get-E2eCommandState $lines 'E2eMark') 'E2eMark' $lines)"
+        throw "The $Lang macropad did not answer its keys within 30 s: $(Get-E2eCommandText (Get-E2eCommandState $lines 'E2eMark') 'E2eMark' $lines). The macropad's windows: $(Get-E2eMacropadDialogText)."
     }
     $script:E2eRun.Macropad
 }
@@ -1522,6 +1541,16 @@ function Get-E2eMacropadWindowsText {
     $all = Get-E2eMacropadWindows
     if ($all.Count -eq 0) { return 'none' }
     (@($all | ForEach-Object { $r = [Macropad.WindowApi]::Rect($_); "$_ '$([Macropad.WindowApi]::Title($_))' $([Macropad.WindowApi]::ClassName($_)) at $($r[0]), $($r[1]) size $($r[2]) x $($r[3])" }) -join '; ')
+}
+
+# The macropad's windows that have a title (a form, a message box), each with what its controls say, for a
+# failure message: 'none' when it shows none. It never throws: it adds to a failure, never replaces one.
+function Get-E2eMacropadDialogText {
+    try {
+        $all = Get-E2eMacropadWindows -Others
+        if ($all.Count -eq 0) { return 'none' }
+        (@($all | ForEach-Object { "'$([Macropad.WindowApi]::Title($_))' says: $(@([Macropad.WindowApi]::Children($_) | ForEach-Object { Get-ControlText $_ } | Where-Object { $_ }) -join ' | ')" }) -join '; ')
+    } catch { "they could not be read ($($_.Exception.Message))" }
 }
 
 # What the waits on the macropad's windows look at. Each gives nothing while the window is not there (the
@@ -1727,30 +1756,115 @@ function Assert-E2eOverlayOptions {
 }
 
 # ---------------------------------------------------------------------------------------------------
+# The layout file's hotkeys and hotstrings ($script:E2eHookLayout), which the cases with Hooks press and
+# type. Their action, E2eHotkey, appends its macro's name to hotkeys.log in the run's folder, in both
+# languages: the AutoHotkey macropad writes nothing to its command log for them (ConfigRunner in
+# ahk\config.ahk calls the action itself), so this file is what says that one ran, and which.
+
+function Get-E2eHotkeyLogPath { Join-Path $script:E2eRun.Dir 'hotkeys.log' }
+
+# How many lines hotkeys.log has now: read the lines after this mark.
+function Get-E2eHotkeyMark { @(Read-E2eLog (Get-E2eHotkeyLogPath)).Count }
+
+# The lines of hotkeys.log after Mark: one per run of a hotkey or hotstring, its name as the layout writes it.
+function Get-E2eHotkeyLines {
+    param([int]$Mark = 0)
+    @(Read-E2eLog (Get-E2eHotkeyLogPath) | Select-Object -Skip $Mark)
+}
+
+# The text a text box would hold after the key events of a stand-in's log lines, from empty: a typed
+# character (a 'char' line: text sent as such, which comes as VK_PACKET) is added, and so is what a key
+# pressed with neither Ctrl, Alt nor Win held types on a US keyboard: a letter (a capital with Shift),
+# a digit of the top row (without Shift), a space. Backspace takes the last character away, if there is
+# one. Each down counts, an auto-repeat too, as in a text box. Key ups, keys pressed with Ctrl, Alt or
+# Win, every other key (Shift with a digit among them) and lines that are no key add nothing. The
+# stand-in logs a key's down and up, not the character Windows makes of it (standin.ahk), so the
+# characters of keys are worked out here; the test types only letters, digits and spaces.
+function ConvertTo-E2eTypedText {
+    param([string[]]$Lines)
+    $text = [System.Text.StringBuilder]::new()
+    foreach ($line in @($Lines)) {
+        $c = $null
+        if ($line -cmatch '^char ([0-9A-F]{4})$') { $c = [char][Convert]::ToInt32($Matches[1], 16) }
+        elseif ($line -cmatch '^down vk=([0-9A-F]{2}) sc=[0-9A-F]+ repeat=\d mods=(\S+)$') {
+            $vk = [Convert]::ToInt32($Matches[1], 16)
+            $mods = $Matches[2]
+            if ($mods -cmatch '[CAW]') { continue }
+            if ($vk -eq 0x08) { $c = [char]8 }
+            elseif ($vk -eq 0x20) { $c = [char]' ' }
+            elseif ($vk -ge 0x41 -and $vk -le 0x5A) { $c = if ($mods.Contains('S')) { [char]$vk } else { [char]($vk + 0x20) } }
+            elseif ($vk -ge 0x30 -and $vk -le 0x39 -and -not $mods.Contains('S')) { $c = [char]$vk }
+        }
+        if ($null -eq $c) { continue }
+        if ($c -eq [char]8) { if ($text.Length -gt 0) { [void]$text.Remove($text.Length - 1, 1) } }
+        elseif (-not [char]::IsControl($c)) { [void]$text.Append($c) }
+    }
+    $text.ToString()
+}
+
+# The text a stand-in holds after the lines of its log after Mark (ConvertTo-E2eTypedText).
+function Get-E2eStandinText {
+    param($Standin, [int]$Mark = 0)
+    ConvertTo-E2eTypedText @(Read-E2eLog $Standin.Log | Select-Object -Skip $Mark)
+}
+
+# Types Text into Hwnd as a person types, a key at a time: each character is its own key (the library's
+# key name: a to z, 0 to 9, Space for a space), tapped alone with no modifier, and pressed only while Hwnd
+# is in front; between two keys the pause Send-E2eChord leaves between two events. A hotstring
+# recogniser sees each key as it comes, as from a keyboard. With no modifier a letter key types the small
+# letter and a key of the top row its digit, on a US keyboard and on the others that have digits there
+# (not on a French one, whose 2 key types an accented e): what is typed, and ConvertTo-E2eTypedText, count on that.
+function Send-E2eText {
+    param([IntPtr]$Hwnd, [string]$Text)
+    foreach ($ch in $Text.ToCharArray()) {
+        $vk = Get-VirtualKey $(if ($ch -eq ' ') { 'Space' } else { [string]$ch })
+        Assert-E2eFront $Hwnd
+        Send-E2eTap $vk
+        Wait-Pump 15
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------
 # The layouts. A layout has 11 layers of 11 keys; its first layer starts with the harness's own keys
 # (E2eMark, which the start waits for, and E2eExit, which ends the macropad). When the cases need more
 # keys than one layout has, they go on in a second layout (a chunk), and the macropad is started again
 # with it: adding cases never runs out of keys.
 
 # Where each of Count entries goes: Chunk, Layer and Slot, the first two slots of each chunk being the
-# harness's own.
+# harness's own; then where each of Hooks more entries goes (the cases with Hooks), from the chunk after
+# the last of the others on, so that no chunk holds both. Hooks says on each row which kind it is.
 function Get-E2eSlotPlan {
-    param([int]$Count, [int]$KeyCount = $script:E2eKeyCount)
+    param([int]$Count, [int]$KeyCount = $script:E2eKeyCount, [int]$Hooks = 0)
     $perChunk = $KeyCount * $KeyCount - 2
-    , @(for ($i = 0; $i -lt $Count; $i++) {
-            $chunk = [math]::Floor($i / $perChunk) + 1
-            $n = ($i % $perChunk) + 2
-            [pscustomobject]@{ Chunk = $chunk; Layer = [math]::Floor($n / $KeyCount) + 1; Slot = ($n % $KeyCount) + 1 }
+    $groups = @(
+        @{ Count = $Count; First = 1; Hooks = $false }
+        @{ Count = $Hooks; First = [math]::Ceiling($Count / $perChunk) + 1; Hooks = $true }
+    )
+    , @(foreach ($g in $groups) {
+            for ($i = 0; $i -lt $g.Count; $i++) {
+                $chunk = [math]::Floor($i / $perChunk) + $g.First
+                $n = ($i % $perChunk) + 2
+                [pscustomobject]@{ Chunk = $chunk; Layer = [math]::Floor($n / $KeyCount) + 1; Slot = ($n % $KeyCount) + 1; Hooks = $g.Hooks }
+            }
         })
 }
 
+# Writes the layout files of the cases (layout-<lang>-<chunk>.json in the run's folder) and gives each case
+# its Chunk, Layer and Slot. The cases with Hooks go into layouts of their own, after those of all the
+# others, and only those layouts have the layout file's hotkeys and hotstrings ($script:E2eHookLayout):
+# the key hook they bring (the PowerShell macropad installs one only for a layout that has them) cannot
+# touch any other case, and the others keep the keys they had without them.
 function Write-E2eLayout {
     param([object[]]$Cases)
-    $plan = Get-E2eSlotPlan $Cases.Count
+    $plain = @($Cases | Where-Object { -not $_.Hooks })
+    $hooked = @($Cases | Where-Object { $_.Hooks })
+    $ordered = @($plain) + @($hooked)
+    $plan = Get-E2eSlotPlan $plain.Count -Hooks $hooked.Count
     $chunks = [math]::Max(1, ($plan | Measure-Object Chunk -Maximum).Maximum)
-    for ($i = 0; $i -lt $Cases.Count; $i++) { foreach ($k in 'Chunk', 'Layer', 'Slot') { $Cases[$i].$k = $plan[$i].$k } }
+    for ($i = 0; $i -lt $ordered.Count; $i++) { foreach ($k in 'Chunk', 'Layer', 'Slot') { $ordered[$i].$k = $plan[$i].$k } }
     for ($chunk = 1; $chunk -le $chunks; $chunk++) {
-        $mine = @($Cases | Where-Object { $_.Chunk -eq $chunk })
+        $mine = @($ordered | Where-Object { $_.Chunk -eq $chunk })
+        $withHooks = @($mine | Where-Object { $_.Hooks }).Count -gt 0
         # One layout file per language: a case for one language only leaves its key empty in the other's.
         foreach ($lang in 'ahk', 'ps') {
             $slots = [System.Collections.Generic.List[object]]::new()
@@ -1762,7 +1876,7 @@ function Write-E2eLayout {
                 if ($case.Macro) { foreach ($k in $case.Macro.Keys) { $entry[$k] = $case.Macro[$k] } }
                 $slots.Add($entry)
             }
-            Write-E2eLayoutFile $slots.ToArray() (Join-Path $script:E2eRun.Dir "layout-$lang-$chunk.json")
+            Write-E2eLayoutFile $slots.ToArray() (Join-Path $script:E2eRun.Dir "layout-$lang-$chunk.json") -Hooks:$withHooks
         }
     }
     $script:E2eRun.Chunks = $chunks
@@ -1785,9 +1899,10 @@ function Get-E2eLayoutOptions {
 # Writes a layout file: the test's keys (F13 to F23, Fn F24) with the Slots on layers of 11 keys, and
 # the display options of the example layout (Get-E2eLayoutOptions). A layout whose slots fill one layer
 # gets a second layer without macros, so that there is always another layer to select: a click on an
-# icon (E2eOverlayIcon) selects layer 1 from it.
+# icon (E2eOverlayIcon) selects layer 1 from it. With -Hooks it also has the layout file's hotkeys and
+# hotstrings that the cases with Hooks press and type ($script:E2eHookLayout).
 function Write-E2eLayoutFile {
-    param([object[]]$Slots, [string]$Path, $Options = (Get-E2eLayoutOptions))
+    param([object[]]$Slots, [string]$Path, $Options = (Get-E2eLayoutOptions), [switch]$Hooks)
     $keys = @(for ($i = 0; $i -lt $script:E2eKeyCount; $i++) { @{ key = "F$(13 + $i)"; row = [math]::Floor($i / 4) + 1; col = ($i % 4) + 1 } })
     $layers = @(for ($l = 0; $l * $script:E2eKeyCount -lt $Slots.Count; $l++) {
             $last = [math]::Min($Slots.Count, ($l + 1) * $script:E2eKeyCount) - 1
@@ -1796,6 +1911,7 @@ function Write-E2eLayoutFile {
     if ($layers.Count -eq 1) { $layers += @{ title = 'Test 2'; icon = 'default_commands'; macros = @() } }
     $layout = @{ fn = @{ key = 'F24'; row = 4; col = 1 }; keys = $keys; layers = $layers; default = 1 }
     foreach ($p in $Options.PSObject.Properties) { $layout[$p.Name] = $p.Value }
+    if ($Hooks) { foreach ($k in $script:E2eHookLayout.Keys) { $layout[$k] = $script:E2eHookLayout[$k] } }
     [System.IO.File]::WriteAllText($Path, ($layout | ConvertTo-Json -Depth 8))
 }
 

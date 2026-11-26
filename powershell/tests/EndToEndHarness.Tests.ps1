@@ -22,6 +22,10 @@
 # that fills one), and where on the screen it finds a key's label or icon on an overlay drawn from one
 # (ConvertTo-E2eOverlayPoint, handed the rectangles a drawn overlay would have).
 #
+# Where the cases that press the layout file's hotkeys and type its hotstrings go (a layout of their own,
+# the only one with "hotkeys" and "hotstrings"), the keys a hotstring is typed with, what E2eHotkey
+# writes, and the text a stand-in holds after the key events it received (ConvertTo-E2eTypedText).
+#
 # These are unit tests on files in TestDrive: they show no window and press no key, so they run in the
 # normal suite, not under the EndToEnd tag. None of them measures time or races a clock: a rule about
 # how long something took is handed its numbers, and a wait is handed its looks. A test that lives
@@ -473,6 +477,172 @@ Describe 'End-to-end windows: the helpers use the macropad''s window list as Get
             $script:Handles = @($script:First, $script:Second | Select-Object -First $Count)
             Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Tooltips }
             Test-E2eTooltipUp | Should -Be $Want
+        }
+    }
+
+    Context 'Get-E2eMacropadDialogText' {
+        It 'says none when the macropad shows no window with a title' {
+            $script:Handles = @()
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Others }
+            Get-E2eMacropadDialogText | Should -BeExactly 'none'
+        }
+
+        It 'names each window with what it says, one after the other' {
+            $script:Handles = @($script:First, $script:Second)
+            Mock Get-E2eMacropadWindows { , @($script:Handles) } -ParameterFilter { $Others }
+            Get-E2eMacropadDialogText | Should -BeExactly "'' says: ; '' says: " -Because 'a handle that is no window has no title and no controls'
+        }
+
+        It 'says that the windows could not be read, and throws nothing, when reading them fails' {
+            Mock Get-E2eMacropadWindows { throw 'no list' } -ParameterFilter { $Others }
+            Get-E2eMacropadDialogText | Should -BeExactly 'they could not be read (no list)'
+        }
+    }
+
+    # The calls a desktop is needed for (the waits inside a case) cannot be run here: the text of the
+    # harness and of the cases is read instead, so that no call wraps the list again.
+    It 'is never wrapped in @(...), in the harness or in a case' {
+        $wrapped = @(foreach ($f in 'EndToEnd.ps1', 'EndToEndCases.ps1') {
+                Select-String -LiteralPath (Join-Path $PSScriptRoot "helpers\$f") -Pattern '@\(\s*Get-E2eMacropadWindows' | ForEach-Object { "$f`:$($_.LineNumber): $($_.Line.Trim())" }
+            })
+        $wrapped -join "`n" | Should -BeNullOrEmpty
+    }
+}
+
+# The cases with Hooks, which press the layout file's hotkeys and type its hotstrings: where the slot plan
+# puts them (a layout of their own, after every other), what their layout file says and what the
+# PowerShell macropad's loader reads from it, what the test's command E2eHotkey writes, which keys the
+# test types a hotstring with, and the text a stand-in holds after the key events it received
+# (ConvertTo-E2eTypedText), which tells a hotstring's replacement from what was typed.
+Describe 'End-to-end hotkeys and hotstrings: a layout of their own, and the text a stand-in holds' {
+    BeforeAll {
+        foreach ($f in 'Assets', 'Model', 'ConfigJson', 'Hotkeys') { . "$root\powershell\lib\$f.ps1" }
+        . "$PSScriptRoot\helpers\EndToEndCases.ps1"
+        $script:DirBefore = $env:OMB_E2E_DIR
+    }
+    BeforeEach {
+        $env:OMB_E2E_DIR = $TestDrive
+        $script:E2eRun = [pscustomobject]@{ Dir = $TestDrive; Chunks = 0; Deadline = [DateTime]::MaxValue; LimitMinutes = 20; Case = ''; SlowWaits = [System.Collections.Generic.List[string]]::new() }
+    }
+    AfterEach { $script:E2eRun = $null }
+    AfterAll { $env:OMB_E2E_DIR = $script:DirBefore }
+
+    Context 'ConvertTo-E2eTypedText' {
+        It 'folds what a stand-in received into the text a text box would hold' {
+            ConvertTo-E2eTypedText @(
+                'down vk=45 sc=012 repeat=0 mods=-', 'up vk=45 sc=012 repeat=0 mods=-',   # e
+                'down vk=32 sc=003 repeat=0 mods=-',                                       # 2
+                'down vk=08 sc=00E repeat=0 mods=-',                                       # Backspace
+                'char 0062', 'down vk=20 sc=039 repeat=0 mods=-',                          # b, Space
+                'down vk=41 sc=01E repeat=0 mods=S', 'down vk=41 sc=01E repeat=0 mods=C'   # A, then Ctrl+A (no text)
+            ) | Should -BeExactly 'eb A'
+        }
+
+        It 'folds <Why>' -ForEach @(
+            @{ Why = 'a letter with Shift held into a capital'; Lines = @('down vk=42 sc=030 repeat=0 mods=S'); Want = 'B' }
+            @{ Why = 'a letter alone into a small one'; Lines = @('down vk=5A sc=02C repeat=0 mods=-'); Want = 'z' }
+            @{ Why = 'a key of the digit row into its digit'; Lines = @('down vk=30 sc=00B repeat=0 mods=-', 'down vk=39 sc=00A repeat=0 mods=-'); Want = '09' }
+            @{ Why = 'a key of the digit row with Shift into nothing: it is not mapped'; Lines = @('down vk=31 sc=002 repeat=0 mods=S'); Want = '' }
+            @{ Why = 'Space with Shift held into a space'; Lines = @('down vk=20 sc=039 repeat=0 mods=S'); Want = ' ' }
+            @{ Why = 'Backspace on empty text into nothing taken away'; Lines = @('down vk=08 sc=00E repeat=0 mods=-', 'char 0061'); Want = 'a' }
+            @{ Why = 'Backspace after typed characters into one taken away'; Lines = @('char 0061', 'char 0062', 'down vk=08 sc=00E repeat=0 mods=-'); Want = 'a' }
+            @{ Why = 'typed characters into themselves, a space among them'; Lines = @('char 0062', 'char 0020', 'char 0079'); Want = 'b y' }
+            @{ Why = 'a key held down into a character for its press and one for each repeat'; Lines = @('down vk=45 sc=012 repeat=0 mods=-', 'down vk=45 sc=012 repeat=1 mods=-', 'down vk=45 sc=012 repeat=1 mods=-', 'up vk=45 sc=012 repeat=0 mods=-'); Want = 'eee' }
+            @{ Why = 'keys with Ctrl, Alt or Win held into nothing'; Lines = @('down vk=41 sc=01E repeat=0 mods=C', 'down vk=46 sc=021 repeat=0 mods=A', 'down vk=79 sc=044 repeat=0 mods=CA', 'down vk=44 sc=020 repeat=0 mods=W', 'down vk=54 sc=014 repeat=0 mods=CS', 'down vk=20 sc=039 repeat=0 mods=C'); Want = '' }
+            @{ Why = 'key ups, keys it does not map and lines that are no keys into nothing'; Lines = @('up vk=41 sc=01E repeat=0 mods=-', 'down vk=70 sc=03B repeat=0 mods=-', 'down vk=0D sc=01C repeat=0 mods=-', 'down vk=E8 sc=000 repeat=0 mods=-', 'down vk=7E sc=066 repeat=0 mods=-', 'down vk=10 sc=02A repeat=0 mods=S', 'click left 3 4', 'command 35024', 'close', 'start B pid=1 hwnd=2', 'char 000D'); Want = '' }
+            @{ Why = 'no lines into no text'; Lines = @(); Want = '' }
+        ) {
+            ConvertTo-E2eTypedText $Lines | Should -BeExactly $Want
+        }
+
+        It 'reads the text a stand-in holds from the lines of its log after a mark' {
+            $standin = [pscustomobject]@{ Name = 'B'; Log = (Join-Path $TestDrive 'standin-B.log') }
+            [System.IO.File]::WriteAllText($standin.Log, "start B pid=1 hwnd=2`nchar 0078`ndown vk=45 sc=012 repeat=0 mods=-`nchar 0062`n")
+            Get-E2eStandinText $standin 2 | Should -BeExactly 'eb' -Because 'the x before the mark is not counted'
+            Get-E2eStandinText $standin | Should -BeExactly 'xeb'
+        }
+    }
+
+    Context 'typing' {
+        It 'types a text a key at a time, into the window it names, each character its own key with no modifier' {
+            $script:Taps = [System.Collections.Generic.List[string]]::new()
+            Mock Assert-E2eFront { }
+            Mock Send-E2eTap { $script:Taps.Add('{0:X2}' -f $Vk) }
+            Mock Send-E2eKey { throw 'no key goes down but through Send-E2eTap' }
+            Mock Wait-Pump { }
+            Send-E2eText ([IntPtr]0x0BAD0001) 'e2ebtw '
+            $script:Taps -join ' ' | Should -BeExactly '45 32 45 42 54 57 20'
+            Should -Invoke Assert-E2eFront -Times 7 -Exactly -ParameterFilter { $Hwnd -eq [IntPtr]0x0BAD0001 } -Because 'each key is pressed only while the window is in front'
+        }
+    }
+
+    Context 'hotkeys.log' {
+        It 'gets from E2eHotkey the name of its macro, which is the hotkey or the hotstring as the layout writes it' {
+            Get-E2eHotkeyMark | Should -Be 0
+            @(Get-E2eHotkeyLines 0).Count | Should -Be 0
+            E2eHotkey (Macro 'E2eHotkey' '^!F9')
+            $mark = Get-E2eHotkeyMark
+            E2eHotkey (Macro 'E2eHotkey' ':X:e2erun')
+            $mark | Should -Be 1
+            @(Get-E2eHotkeyLines 0) -join ' / ' | Should -BeExactly '^!F9 / :X:e2erun'
+            @(Get-E2eHotkeyLines $mark) -join ' / ' | Should -BeExactly ':X:e2erun'
+            Get-E2eHotkeyLogPath | Should -Be (Join-Path $TestDrive 'hotkeys.log') -Because 'it is in the run''s folder, which the clean-up removes'
+        }
+    }
+
+    Context 'the layouts' {
+        It 'leaves every case without Hooks on its key, and puts the cases with Hooks in a layout of their own after them' {
+            $before = Get-E2eSlotPlan 118 -KeyCount 11
+            $plan = Get-E2eSlotPlan 118 -KeyCount 11 -Hooks 6
+            $plan.Count | Should -Be 124
+            $row = { param($p) "$($p.Chunk) $($p.Layer) $($p.Slot) $($p.Hooks)" }
+            (@(0..117 | ForEach-Object { & $row $plan[$_] }) -join ', ') | Should -BeExactly (@(0..117 | ForEach-Object { "$($before[$_].Chunk) $($before[$_].Layer) $($before[$_].Slot) False" }) -join ', ')
+            (@(118..123 | ForEach-Object { & $row $plan[$_] }) -join ', ') | Should -BeExactly '2 1 3 True, 2 1 4 True, 2 1 5 True, 2 1 6 True, 2 1 7 True, 2 1 8 True'
+        }
+
+        It 'starts the layout of the cases with Hooks after the last layout of the others' {
+            $plan = Get-E2eSlotPlan 250 -KeyCount 11 -Hooks 2
+            (@($plan | Select-Object -Skip 250 | ForEach-Object { "$($_.Chunk) $($_.Layer) $($_.Slot)" }) -join ', ') | Should -BeExactly '4 1 3, 4 1 4' -Because '250 cases fill three layouts of 119'
+        }
+
+        It 'puts the cases with Hooks in the first layout when they are the only ones (run.ps1 -Case)' {
+            $plan = Get-E2eSlotPlan 0 -KeyCount 11 -Hooks 2
+            (@($plan | ForEach-Object { "$($_.Chunk) $($_.Layer) $($_.Slot) $($_.Hooks)" }) -join ', ') | Should -BeExactly '1 1 3 True, 1 1 4 True'
+        }
+
+        It 'writes the hotkeys and hotstrings into the layout of the cases with Hooks only, wherever those stand in the list' {
+            $cases = @(@{ Command = 'E2ePlainOne' }, @{ Command = 'E2eNothing'; Hooks = $true }, @{ Command = 'E2ePlainTwo' })
+            Write-E2eLayout $cases
+            "$($cases[0].Chunk) $($cases[0].Slot), $($cases[2].Chunk) $($cases[2].Slot), $($cases[1].Chunk) $($cases[1].Slot)" | Should -BeExactly '1 3, 1 4, 2 3'
+            $script:E2eRun.Chunks | Should -Be 2
+            $entries = { param($list) @($list | ForEach-Object { @($_.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ';' }) -join ' / ' }
+            foreach ($lang in 'ahk', 'ps') {
+                $plain = [System.IO.File]::ReadAllText((Join-Path $TestDrive "layout-$lang-1.json")) | ConvertFrom-Json
+                @($plain.PSObject.Properties.Name) | Should -Not -Contain 'hotkeys' -Because "the $lang layout of the other cases has no hotkeys"
+                @($plain.PSObject.Properties.Name) | Should -Not -Contain 'hotstrings'
+                $hooks = [System.IO.File]::ReadAllText((Join-Path $TestDrive "layout-$lang-2.json")) | ConvertFrom-Json
+                & $entries $hooks.hotkeys | Should -BeExactly 'hotkey=^!F9;action=E2eHotkey / hotkey=^!F10;action=E2eHotkey;ifWinActive=ahk_exe e2eapp.exe / hotkey=^!F11;action=E2eHotkey;ifWinNotActive=ahk_exe e2eapp.exe'
+                & $entries $hooks.hotstrings | Should -BeExactly 'hotstring=::e2ebtw;replacement=by the way / hotstring=:X:e2erun;action=E2eHotkey'
+                @(@($hooks.layers)[0].macros | ForEach-Object { $_.action }) -join ',' | Should -BeExactly 'E2eMark,E2eExit,E2eNothing'
+            }
+        }
+
+        It 'writes hotkeys and hotstrings that the PowerShell macropad loads, with actions it has' {
+            Write-E2eLayout @(@{ Command = 'E2eNothing'; Hooks = $true })
+            $defs = @(Import-MacropadHotkeys (Join-Path $TestDrive 'layout-ps-1.json'))
+            (@($defs | ForEach-Object { "$($_.Kind)|$($_.Spec)|$($_.Macro.Name)|$($_.Replacement)|$($_.IfWinActive)|$($_.IfWinNotActive)" }) -join ' / ') |
+                Should -BeExactly 'Hotkey|^!F9|^!F9||| / Hotkey|^!F10|^!F10||ahk_exe e2eapp.exe| / Hotkey|^!F11|^!F11|||ahk_exe e2eapp.exe / Hotstring|::e2ebtw||by the way|| / Hotstring|:X:e2erun|:X:e2erun|||'
+            { Test-HotkeyActions $defs } | Should -Not -Throw -Because 'E2eHotkey is one of the test''s own commands (ahk\tests\e2e\commands.ps1)'
+        }
+
+        It 'runs the cases with Hooks after every other case of the table, and they are the six that press hotkeys and type hotstrings' {
+            $all = @(Get-E2eCases -All)
+            $flags = @($all | ForEach-Object { [bool]$_.Hooks })
+            $first = [array]::IndexOf($flags, $true)
+            $first | Should -BeGreaterThan 0
+            @($flags | Select-Object -Skip $first) | Should -Not -Contain $false -Because 'a case without Hooks after them would start the macropad again with the other layout'
+            (@($all | Where-Object { $_.Hooks } | ForEach-Object { if ($_.Name) { $_.Name } else { $_.Command } }) -join ', ') |
+                Should -BeExactly 'E2eHotkey, E2eHotkeyIfWinActive, E2eHotkeyIfWinNotActive, E2eHotstringText, E2eHotstringAction, E2eChordWithHooks'
         }
     }
 }

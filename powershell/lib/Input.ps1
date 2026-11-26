@@ -133,6 +133,35 @@ function ConvertTo-ChordInput {
     , [Macropad.KeyInput[]]@($inputs)
 }
 
+# The events that let go again the keys of a chord that Windows took in part: of the first Taken events
+# (the Inputs that ConvertTo-ChordInput made from Events), each key whose down was among them and whose up
+# was not, in the reverse order of the downs. Each is the record of an ordinary up of that key (the same
+# key, scan code and extended flag as its down, Up set), so Inject.Send tags it as every other. Gives
+# Inputs (Macropad.KeyInput[], empty when nothing is held) and Names (the key names, in that order).
+function Get-ChordRelease {
+    param([Parameter(Mandatory)][object[]]$Events, [Parameter(Mandatory)][object[]]$Inputs, [Parameter(Mandatory)][int]$Taken)
+    $held = [System.Collections.Generic.List[int]]::new()
+    for ($i = 0; $i -lt [Math]::Min($Taken, $Inputs.Count); $i++) {
+        if (-not $Inputs[$i].Up) { $held.Add($i); continue }
+        for ($j = $held.Count - 1; $j -ge 0; $j--) {
+            if ($Inputs[$held[$j]].Vk -eq $Inputs[$i].Vk) { $held.RemoveAt($j); break }
+        }
+    }
+    $ups = [System.Collections.Generic.List[Macropad.KeyInput]]::new()
+    $names = [System.Collections.Generic.List[string]]::new()
+    for ($j = $held.Count - 1; $j -ge 0; $j--) {
+        $down = $Inputs[$held[$j]]
+        $up = [Macropad.KeyInput]::new()
+        $up.Vk = $down.Vk
+        $up.Scan = $down.Scan
+        $up.Extended = $down.Extended
+        $up.Up = $true
+        $ups.Add($up)
+        $names.Add([string]$Events[$held[$j]].Name)
+    }
+    [pscustomobject]@{ Inputs = $ups.ToArray(); Names = $names.ToArray() }
+}
+
 # A seam for tests: one SendInput call with all the events given, each tagged (lib/cs/Inject.cs) so the
 # macropad's own hooks let it through. Returns how many of them Windows took.
 function Invoke-KeyInjection {
@@ -144,7 +173,7 @@ function Invoke-KeyInjection {
 .SYNOPSIS
 Presses a key combination such as Ctrl+Shift+T.
 .DESCRIPTION
-Holds every key but the last, taps the last, then lets the held keys go in reverse order. One key name alone works too. Every name is checked before anything is pressed, so an unknown name raises an error and sends nothing. All the key presses and releases of the chord go to Windows in one piece, so no other key can come between them. If Windows does not take them all, an error says how many it took.
+Holds every key but the last, taps the last, then lets the held keys go in reverse order. One key name alone works too. Every name is checked before anything is pressed, so an unknown name raises an error and sends nothing. All the key presses and releases of the chord go to Windows in one piece, so no other key can come between them. If Windows does not take them all, the keys it had pressed are let go again and an error says how many it took.
 .PARAMETER Chord
 Key names joined by '+', for example 'Ctrl+Shift+t' or 'LWin+Left'. Case does not matter, and Shift is pressed only when you name it. The key names are: Ctrl, LCtrl, RCtrl, Alt, LAlt, RAlt, Shift, LShift, RShift, Win, LWin, RWin; Left, Up, Right, Down, Home, End, PgUp, PgDn; Insert, Delete, Tab, Enter, Escape, Space, Backspace; PrintScreen, ScrollLock, CapsLock, NumLock, Pause; Media_Play_Pause, Media_Next, Media_Prev, Media_Stop, Volume_Up, Volume_Down, Volume_Mute; the letters a to z, the digits 0 to 9 and F1 to F24; and the symbol keys \ ' ; = , - . / ` [ ]. A symbol names the key that types that character, without Shift or AltGr, on the keyboard layout of the active window, so on a UK keyboard ' is the key marked ' and @, and ` the key left of 1. When the layout has no such key, or types the character only with Shift or AltGr (as a German keyboard types =), the key a US keyboard has for it is pressed. Any other single character, such as # on a UK keyboard, names the key that types it without Shift or AltGr on that layout; where no key does, the name is unknown. The plus key has no name, because '+' separates the names. Send-Chord sends keyboard keys only and does not click: to click a mouse button, use Send-Click. The button names LButton, RButton, MButton, XButton1 and XButton2 are there for Test-KeyPressed.
 .EXAMPLE
@@ -157,11 +186,22 @@ function Send-Chord {
     # One call with every event, as AutoHotkey's Send makes. With a call for each event and work between
     # them, a modifier was held for a tenth to a fifth of a second, and a key the person pressed, or any
     # other input, could land inside the chord.
-    $inputs = ConvertTo-ChordInput (ConvertTo-KeyEvent $Chord)
+    $events = ConvertTo-KeyEvent $Chord
+    $inputs = ConvertTo-ChordInput $events
     $taken = Invoke-KeyInjection $inputs
-    if ($taken -ne $inputs.Count) {
-        throw "Windows took $taken of the $($inputs.Count) key events of the chord '$Chord', so the chord was not sent whole."
+    if ($taken -eq $inputs.Count) { return }
+    $message = "Windows took $taken of the $($inputs.Count) key events of the chord '$Chord', so the chord was not sent whole."
+    # The first events it took may have pressed keys that stay down (a held Alt or Win, a letter that
+    # repeats): they are let go again, once, and the error says so.
+    $release = Get-ChordRelease $events $inputs $taken
+    if ($release.Inputs.Count -gt 0) {
+        $letGo = Invoke-KeyInjection $release.Inputs
+        $message += " The keys it had pressed were let go again: $($release.Names -join ', ')."
+        if ($letGo -ne $release.Inputs.Count) {
+            $message += " Windows took $letGo of the $($release.Inputs.Count) key events of that release, so a key may still be held."
+        }
     }
+    throw $message
 }
 
 <#

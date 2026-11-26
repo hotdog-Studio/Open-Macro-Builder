@@ -256,6 +256,80 @@ Describe 'Send-Chord' {
         { Send-Chord 'Alt+Tab' } | Should -Throw "Windows took $Taken of the 4 key events of the chord 'Alt+Tab'*"
     }
 }
+# When Windows takes only the first events of a chord, the keys it pressed would stay down (a held Alt
+# or Win, or a letter that repeats). Send-Chord lets them go again, in one more call, in the reverse
+# order of their downs, with the events of an ordinary up of each key, and then fails as before.
+Describe 'Send-Chord: a chord Windows took in part' {
+    BeforeAll {
+        function Format-ChordInput($Inputs) { (@($Inputs) | ForEach-Object { '{0:X2}{1} {2:X2}{3}' -f $_.Vk, ('v', '^')[[int]$_.Up], $_.Scan, ('', 'x')[[int]$_.Extended] }) -join ', ' }
+    }
+    BeforeEach {
+        # Windows takes the first call's events up to $script:Taken (all when it is not set), and every
+        # event of any call after it. Nothing reaches the desktop.
+        $script:Calls = [System.Collections.Generic.List[string]]::new()
+        $script:Taken = $null
+        Mock Get-ForegroundKeyboardLayout { [IntPtr]0x111 }
+        Mock Get-LayoutScanCode { if ($Layout -eq [IntPtr]0x111) { $Vk + 0x100 } else { 0 } }
+        Mock Invoke-KeyInjection {
+            $script:Calls.Add((Format-ChordInput $Inputs))
+            if ($script:Calls.Count -eq 1 -and $null -ne $script:Taken) { $script:Taken } else { @($Inputs).Count }
+        }
+    }
+    It 'lets Shift and Ctrl go, in that order, when Windows took only their downs' {
+        $script:Taken = 2
+        { Send-Chord 'Ctrl+Shift+t' } | Should -Throw "Windows took 2 of the 6 key events of the chord 'Ctrl+Shift+t'*"
+        $script:Calls.Count | Should -Be 2
+        $script:Calls[1] | Should -Be '10^ 110, 11^ 111'
+    }
+    It 'lets the letter go too when its down was taken, first of all' {
+        $script:Taken = 3
+        { Send-Chord 'Ctrl+Shift+t' } | Should -Throw "Windows took 3 of the 6*"
+        $script:Calls.Count | Should -Be 2
+        $script:Calls[1] | Should -Be '54^ 154, 10^ 110, 11^ 111'
+    }
+    It 'lets go only the keys whose up was not taken' {
+        $script:Taken = 4
+        { Send-Chord 'Ctrl+Shift+t' } | Should -Throw "Windows took 4 of the 6*"
+        $script:Calls[1] | Should -Be '10^ 110, 11^ 111'
+    }
+    It 'lets go with the extended flag the key has, as an ordinary up of it does' {
+        $script:Taken = 3
+        { Send-Chord 'Ctrl+LWin+Left' } | Should -Throw
+        $script:Calls[1] | Should -Be '25^ 125x, 5B^ 15Bx, 11^ 111'
+    }
+    It 'sends the release with the records and the MPAD tag an ordinary up of each key has' {
+        $script:Sent = $null
+        Mock Invoke-KeyInjection { if ($script:Sent) { $script:Release = $Inputs; @($Inputs).Count } else { $script:Sent = $true; 3 } }
+        { Send-Chord 'Ctrl+LWin+Left' } | Should -Throw
+        # The ups of the same chord, as they go out when it is taken whole. The release lets go of the keys
+        # in the reverse order of their downs, which here is the order of their ups in the chord.
+        $ups = @(foreach ($k in (ConvertTo-ChordInput (ConvertTo-KeyEvent 'Ctrl+LWin+Left'))) { if ($k.Up) { [Macropad.Inject]::Describe([Macropad.KeyInput[]]@($k)) } })
+        ($ups -join ' | ') | Should -Be '25 125 3 4D504144 | 5B 15B 3 4D504144 | 11 111 2 4D504144'
+        (@([Macropad.Inject]::Describe($script:Release)) -join ' | ') | Should -Be ($ups -join ' | ')
+    }
+    It 'says in its message which keys it let go' {
+        $script:Taken = 2
+        { Send-Chord 'Ctrl+Shift+t' } | Should -Throw "*so the chord was not sent whole. The keys it had pressed were let go again: Shift, Ctrl."
+    }
+    It 'sends no second call when Windows took none of the events' {
+        $script:Taken = 0
+        { Send-Chord 'Ctrl+Shift+t' } | Should -Throw "Windows took 0 of the 6*"
+        $script:Calls.Count | Should -Be 1
+    }
+    It 'sends no second call when Windows took every event' {
+        Send-Chord 'Ctrl+Shift+t'
+        $script:Calls.Count | Should -Be 1
+    }
+    It 'says so, and does not try again, when Windows took only part of the release too' {
+        $script:Taken = 2
+        Mock Invoke-KeyInjection {
+            $script:Calls.Add((Format-ChordInput $Inputs))
+            if ($script:Calls.Count -eq 1) { 2 } else { 1 }
+        }
+        { Send-Chord 'Ctrl+Shift+t' } | Should -Throw "*let go again: Shift, Ctrl. Windows took 1 of the 2 key events of that release, so a key may still be held."
+        $script:Calls.Count | Should -Be 2
+    }
+}
 Describe 'Send-Chord: what one call hands Windows' {
     It 'is each event with the flags and the MPAD tag it had when each event went in a call of its own' {
         Mock Get-ForegroundKeyboardLayout { [IntPtr]0x111 }

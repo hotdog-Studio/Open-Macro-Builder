@@ -136,21 +136,21 @@ namespace Macropad
             return lines.ToArray();
         }
 
-        // One key event in a call of its own; returns 1 when Windows took it, 0 when not.
-        public static int Key(int vk, bool up, bool extended)
+        // One key event in a call of its own.
+        public static void Key(int vk, bool up, bool extended)
         {
-            return Key(vk, -1, up, extended);
+            Key(vk, -1, up, extended);
         }
 
         // scan: the key's scan code on the target window's layout; -1 for this thread's layout.
-        public static int Key(int vk, int scan, bool up, bool extended)
+        public static void Key(int vk, int scan, bool up, bool extended)
         {
             KeyInput k = new KeyInput();
             k.Vk = vk;
             k.Scan = scan;
             k.Up = up;
             k.Extended = extended;
-            return Send(new KeyInput[] { k });
+            Send(new KeyInput[] { k });
         }
 
         // One tagged mouse event at the current cursor position.

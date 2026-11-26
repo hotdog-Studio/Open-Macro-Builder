@@ -66,7 +66,8 @@ export function changelogProblem(text, version) {
   if (!/^ - \d{4}-\d{2}-\d{2}\s*$/.test(heading.slice(`## ${version}`.length))) {
     return `the heading '${heading}' in CHANGELOG.md has no date: write it as '## ${version} - YYYY-MM-DD'`;
   }
-  const start = lines.indexOf('## Unreleased');
+  // Whatever its case or trailing space, a heading that reads "Unreleased" must not hide its entries.
+  const start = lines.findIndex((line) => /^## unreleased\s*$/i.test(line));
   if (start === -1) return null;
   const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
   const entries = lines.slice(start + 1, end === -1 ? undefined : end).filter((line) => line.startsWith('- '));

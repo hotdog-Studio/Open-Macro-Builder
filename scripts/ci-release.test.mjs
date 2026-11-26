@@ -251,8 +251,16 @@ test('a heading without its date is a problem', () => {
 });
 
 test('1.0.70 is not the heading of 1.0.7', () => {
-  assert.notEqual(changelogProblem(`${head}## 1.0.70 - 2026-12-01\n`, '1.0.7'), null);
+  assert.match(changelogProblem(`${head}## 1.0.70 - 2026-12-01\n`, '1.0.7'), /no heading '## 1\.0\.7 /);
 });
+
+// A heading that is spelt a little differently must not hide the entries under it.
+for (const unreleased of ['## Unreleased ', '## Unreleased\t', '## UNRELEASED', '## unreleased']) {
+  test(`entries under '${unreleased.replaceAll('\t', '<tab>')}' are still unreleased`, () => {
+    const text = `${head}${unreleased}\n\n### Fixed\n\n- x\n\n## 1.0.7 - 2026-12-01\n`;
+    assert.match(changelogProblem(text, '1.0.7'), /Unreleased/);
+  });
+}
 
 test('a changelog with Windows line endings is read the same', () => {
   const text = `${head}## Unreleased\n\n## 1.0.7 - 2026-12-01\n\n### Fixed\n\n- x\n`.replaceAll('\n', '\r\n');

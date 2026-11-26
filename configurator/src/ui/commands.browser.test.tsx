@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { at as pointOn, carry, checked, cleanUp, click, dirty, drag, drop, hover, hoverPath, keyboard, openTab, padKey, repoFiles, rest, startApp, strip, viewport, type Point } from '../../test/browser/harness'
 import { editorView, replaceAll } from '../../test/codeEditor'
 import { HOVER_TIME } from './code/hoverDocs'
-import { GRACE } from './DocHover'
+import { GAP, GRACE } from './DocHover'
 
 // The Commands tab in a real browser, where the code editor really types, selects, scrolls and
 // takes focus. The example repository has no files of "yours", so every pair is shared. The first
@@ -867,7 +867,9 @@ describe('Commands tab: docs on hover', () => {
 
   it('keeps the card of the list level with its row while the panel scrolls', async () => {
     const other = await powerShellList()
-    const row = within(other).getByRole('button', { name: /^Send-Chord\b/ })
+    // A row with a short card. A tall one (Send-Chord's, in the fonts of the Linux build server) has no room
+    // under its row once the row has moved down, and the page then rightly moves it up to keep it whole.
+    const row = within(other).getByRole('button', { name: /^Send-Key\b/ })
     // Near the top of the window, so the card has room under the row's top edge before and after.
     row.scrollIntoView({ block: 'start' })
     row.focus()
@@ -875,6 +877,8 @@ describe('Commands tab: docs on hover', () => {
     const level = () => Math.abs(tip.getBoundingClientRect().top - row.getBoundingClientRect().top)
     await waitFor(() => expect(level()).toBeLessThanOrEqual(1))
     const before = row.getBoundingClientRect().top
+    // The card still fits under the row 100 px further down, so level with it is where the page puts it there.
+    expect(before + 100 + tip.offsetHeight + GAP).toBeLessThanOrEqual(document.documentElement.clientHeight)
     other.closest('aside')!.scrollBy(0, -100)
     await waitFor(() => expect(row.getBoundingClientRect().top).toBeGreaterThan(before + 50))
     await waitFor(() => expect(level()).toBeLessThanOrEqual(1))

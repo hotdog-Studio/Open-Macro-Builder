@@ -42,9 +42,26 @@ describe('ahkMode', () => {
     ])
   })
 
-  it('directives are meta', () => {
-    expect(tokens('#Include x.ahk')[0]).toEqual(['#Include', 'meta'])
-  })
+  it.each([String.raw`#Include lib\x.ahk`, '  #HotIf WinActive("a")', '#HotIf', '\t#Include x.ahk', '#Requires AutoHotkey v2.0'])(
+    'colours the directive %s',
+    (line) => {
+      expect(tokens(line)[0][1]).toBe('meta')
+    },
+  )
+
+  it.each(['^#a::Run "x"', '#e::', '#Space::Send "y"', '  #e::', '<#e::', '#+s up::'])(
+    'does not colour the Win key of the hotkey %s as a directive',
+    (line) => {
+      expect(tokens(line).some(([, style]) => style === 'meta')).toBe(false)
+    },
+  )
+
+  it.each(['x := "#Include a"', '; #Include a', 'Send "#e" ; #HotIf', 'x := y #Include'])(
+    'does not colour a # that is no directive in %s',
+    (line) => {
+      expect(tokens(line).some(([, style]) => style === 'meta')).toBe(false)
+    },
+  )
 
   it('keywords', () => {
     expect(tokens('if x')[0]).toEqual(['if', 'keyword'])

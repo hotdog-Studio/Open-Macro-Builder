@@ -30,6 +30,15 @@ function atLineComment(stream: StringStream): boolean {
   return stream.sol() || /\s/.test(stream.string.charAt(stream.pos - 1))
 }
 
+/**
+ * Whether a directive (`#Include`, `#HotIf`) starts here: a `#` with nothing but spaces before it on
+ * the line, and no `::` before the next space. Otherwise it is the Win key of a hotkey (`#e::`, `^#a::`).
+ */
+function atDirective(stream: StringStream): boolean {
+  if (stream.peek() !== '#' || stream.string.slice(0, stream.pos).trim() !== '') return false
+  return !stream.string.slice(stream.pos).split(/\s/, 1)[0].includes('::')
+}
+
 /** Reads a string to its closing quote; a backtick escapes the character after it. */
 function quoted(stream: StringStream, quote: string): 'string' {
   stream.next()
@@ -58,7 +67,7 @@ export const ahkMode: StreamParser<AhkState> = {
     const quote = stream.peek()
     if (quote === '"' || quote === "'") return quoted(stream, quote)
 
-    if (stream.match(/^#[A-Za-z_]\w*/)) return 'meta'
+    if (atDirective(stream) && stream.match(/^#[A-Za-z_]\w*/)) return 'meta'
     if (stream.match(/^(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?)/)) return 'number'
 
     if (stream.match(/^[A-Za-z_]\w*/)) {

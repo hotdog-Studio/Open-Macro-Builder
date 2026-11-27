@@ -4,7 +4,7 @@ What changed in each version, newest first. The format follows [Keep a Changelog
 
 ## Unreleased
 
-## 1.0.9 - 2026-11-26
+## 1.0.9 - 2026-11-27
 
 ### Added
 
